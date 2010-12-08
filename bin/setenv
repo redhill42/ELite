@@ -1,0 +1,31 @@
+#!/bin/sh
+#Copyright (c) 2001-2009 The Operamasks Community.  All rights reserved.
+#export JAVA_HOME variable here, for example:
+#export JAVA_HOME=/usr/java/jdk-1.5.0_07
+
+BINDIR=`dirname $0`
+ELITE_HOME=`cd $BINDIR/.. > /dev/null 2>&1 && pwd`
+export ELITE_HOME
+
+if [ -n "$JAVA_HOME"  ] ; then
+    JAVA_RUN=$JAVA_HOME/bin/java
+    export JAVA_HOME
+else
+    JAVA_RUN=`which java 2> /dev/null `
+    if [ -z "$JAVA_RUN" ] ; then
+        JAVA_RUN=java
+    fi
+fi
+
+export JAVA_RUN
+
+CP=.
+
+for i in $ELITE_HOME/lib/*.jar
+do
+    ELITE_CLASSPATH="$ELITE_CLASSPATH:$i"
+done
+CP=$CP$ELITE_CLASSPATH
+
+export CP
+

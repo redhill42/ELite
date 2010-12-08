@@ -1,0 +1,1698 @@
+/*
+ * $Id: function.xel,v 1.6 2009/05/07 16:57:04 danielyuan Exp $
+ *
+ * Copyright (C) 2006 Operamasks Community.
+ * Copyright (C) 2000-2006 Apusic Systems, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see http://www.gnu.org/licenses.
+ */
+
+/*
+ * JScience - Java(TM) Tools and Libraries for the Advancement of Sciences.
+ * Copyright (C) 2006 - JScience (http://jscience.org/)
+ * All rights reserved.
+ *
+ * Permission to use, copy, modify, and distribute this software is
+ * freely granted, provided that this notice is preserved.
+ */
+
+/**
+ * This interface represents a symbol on whose value a Function depends.
+ */
+class Variable
+{
+    private _symbol, _value;
+
+    /**
+     * Create a new variable with a unique symbol.
+     *
+     * @param symbol the variable symbol.
+     */
+    public Variable(symbol::Symbol) {
+        this._symbol = symbol;
+    }
+
+    private static final _sym2var = {}
+
+    /**
+     * Get a variable with a unique symbol.
+     *
+     * @param symbol the variable symbol.
+     * @return the variable corresponding to the symbol
+     */
+    public static valueOf(symbol::Symbol) {
+        synchronized (_sym2var) {
+            define var = _sym2var[symbol];
+            if (var == null) {
+                var = new Variable(symbol);
+                _sym2var[symbol] = var;
+            }
+            return var;
+        }
+    }
+
+    /**
+     * Returns the symbol for this variable.
+     *
+     * @return this variable's symbol.
+     */
+    public getSymbol() => _symbol;
+
+    /**
+     * Returns the variable value.
+     *
+     * @return the value of this variable hold.
+     */
+    public getValue() => _value;
+
+    /**
+     * Set value for this variable.
+     *
+     * @param value the new variable value.
+     */
+    public void setValue(value) => _value = value;
+
+    /**
+     * Returns the String representation of this variable.
+     */
+    public toString() => _symbol.getName();
+
+    /**
+     * The unary negation operator. Convert this variable to a polynomial
+     * function and returns the negation of function.
+     */
+    public __neg__() {
+        return Polynomial.valueOf(-1, self);
+    }
+
+    /**
+     * The binary plus operator. Convert this variable to a polynomial
+     * function and plus the given function.
+     */
+    public static +(x, y) {
+        return Function['+'](x, y);
+    }
+
+    /**
+     * The binary minus operator. Convert this variable to a polynomial
+     * function and minus the given function.
+     */
+    public static -(x, y) {
+        return Function['-'](x, y);
+    }
+
+    /**
+     * The binary times operator. Convert this variable to a polynomial
+     * function and times the given function.
+     */
+    public static *(x, y) {
+        return Function['*'](x, y);
+    }
+
+    /**
+     * The binary divide operator. Convert this variable to a polynomial
+     * function and divides the given function.
+     */
+    public static /(x, y) {
+        return Function['/'](x, y);
+    }
+
+    /**
+     * The binary power operator. Convert this variable to a polynomial
+     * function and powers the given exponent.
+     */
+    public ^(n::int) {
+        if (n == 0) {
+            return Constant.ONE;
+        } else if (n < 0) {
+            return RationalFunction.valueOf(Constant.ONE,
+                Polynomial.valueOf(1, Polynomial.Term.valueOf(self, -n)));
+        } else {
+            return Polynomial.valueOf(1, Polynomial.Term.valueOf(self, n));
+        }
+    }
+}
+
+// Convert Symbol to Variable implicitly.
+Symbol.attach('__coerce__') { self, type =>
+    if (type == Variable) {
+        return Variable.valueOf(self);
+    } else {
+        throw new ClassCastException(type.toString());
+    }
+}
+
+Symbol.attach('__pos__') { x => Variable.valueOf(x) }
+Symbol.attach('__neg__') { x => -Variable.valueOf(x) }
+Symbol.attach('+')  { x,y => Function['+'](x, y) }
+Symbol.attach('?+') { x,y => Function['+'](y, x) }
+Symbol.attach('-')  { x,y => Function['-'](x, y) }
+Symbol.attach('?-') { x,y => Function['-'](y, x) }
+Symbol.attach('*')  { x,y => Function['*'](x, y) }
+Symbol.attach('?*') { x,y => Function['*'](y, x) }
+Symbol.attach('/')  { x,y => Function['/'](x, y) }
+Symbol.attach('?/') { x,y => Function['/'](y, x) }
+Symbol.attach('^')  { x,n => Variable.valueOf(x) ^ n }
+Symbol.attach('~')  { x,y => Function['~'](x, y) }
+Symbol.attach('?~') { x,y => Function['~'](y, x) }
+
+/**
+ * This abstract class represents a mapping between two sets such that
+ * there is a unique element in the second set assigned to each element
+ * in the first set.
+ *
+ * Functions can be discrete or continuous and multivariate functions
+ * (functions with multiple variables) are also supported as illustrated
+ * below:
+ * <pre>
+ *     // Define variable and function
+ *     define x = new Variable(:x);
+ *     define y = new Variable(:y);
+ *     define f = x^2 + x*y + 1;
+ *
+ *     print("f(x,y) = ${f}");
+ *
+ *     // Evaluates f(1,0)
+ *     print("f(1,0) = ${f(1,0)}");
+ *
+ *     // Calculates df(x,y)/dx
+ *     print("df(x,y)/dx = ${f.differentiate(x)}");
+ *
+ *     > f(x,y) = x^2 + xy + 1
+ *     > f(1,0) = 2
+ *     > df(x,y)/dx = 2x + y
+ * </pre>
+ *
+ * Functions are often given by formula (e.g. <code>f(x) = x^2-x+1,
+ * f(x,y) = x*y</code>) but the general function instance might tabulate
+ * the values, solve an equation, etc.
+ */
+abstract class Function
+{
+    /**
+     * Returns a Function representation from any input object.
+     */
+    public static valueOf(x) => norm(x);
+
+    /**
+     * Returns a lexically ordered list of the variables (or arguments)
+     * for this function (empty list for constant functions).
+     *
+     * @return this function current unset variables (sorted).
+     */
+    public abstract getVariables();
+
+    /**
+     * Evaluates this function using its variables current values.
+     *
+     * @return the evaluation of this function.
+     * @throws IllegalStateException if any of this function's variable is not set.
+     */
+    public abstract evaluate();
+
+    /**
+     * Retrieves the variable from this function having the specified
+     * symbol (convenience method).
+     *
+     * @return the variable having the specified symbol or <code>null</code> if none.
+     */
+    public getVariable(symbol) {
+        return getVariables().find { symbol == $.symbol };
+    }
+
+    /**
+     * Evaluates this function for the specified argument value.
+     *
+     * @param args the variables values used for the evaluation.
+     * @return the evaluation of this function.
+     * @throws IllegalArgumentException if <code>args.length != variables.length</code>
+     */
+    public __call__(args...) {
+        define vars = getVariables();
+        if (args.length != vars.length) {
+            throw new IllegalArgumentException(
+                "Found ${args.length} arguments, but ${vars.length} required");
+        }
+
+        if (vars.length == 0) {
+            return evaluate();
+        } else if (vars.length == 1) {
+            define var = vars[0];
+            define prev = var.value;
+            var.value = args[0];
+            try {
+                return evaluate();
+            } finally {
+                var.value = prev;
+            }
+        } else {
+            define save = new Object[vars.length];
+            for (define i in [0..*vars.length]) {
+                save[i] = vars[i].value;
+                vars[i].value = args[i];
+            }
+            try {
+                return evaluate();
+            } finally {
+                for (define i in [0..*vars.length]) {
+                    vars[i].value = save[i];
+                }
+            }
+        }
+    }
+
+    /**
+     * Returns the composition of this function with the one specified.
+     *
+     * @param that the function for which the return value is passed as
+     *        argument to this function.
+     * @return the function <code>(this o that)</code>
+     * @throws UnsupportedOperationException if this function is not monovariate.
+     */
+    public compose(that) {
+        if (getVariables().length != 1) {
+            throw new UnsupportedOperationException("This function is not monovariate");
+        }
+        return new Compose(self, that);
+    }
+
+    /**
+     * Returns the first derivative of this function with respect to
+     * the specified variable.
+     *
+     * @param v the variable for which the derivative is calculated.
+     * @return <code>d[this]/dv</code>
+     * @see <a href="http://mathworld.wolfram.com/Derivative.html">
+     *      Derivative -- from MathWorld</a>
+     * @throws UnsupportedOperationException if the derivative is undefined.
+     */
+    public differentiate(v::Variable) {
+        return new Derivative(self, v);
+    }
+
+    define d(v) => differentiate(v);
+    
+    /**
+     * Returns an integral of this function with respect to
+     * the specified variable.
+     *
+     * @param v the variable for which the integral is calculated.
+     * @return <code>S[this*dv]</code>
+     * @see <a href="http://mathworld.wolfram.com/Integral.html">
+     *      Integral -- from MathWorld</a>
+     */
+    public integrate(v::Variable) {
+        return new Integral(self, v);
+    }
+
+    private static norm(x) {
+        | ::Function => x
+        | ::Variable => Polynomial(1, x)
+        | ::Symbol   => Polynomial(1, Variable(x))
+        | else       => Constant(x)
+    }
+
+    /**
+     * Returns the sum of this function with the one specified.
+     *
+     * @param x the function is being added.
+     * @param y the function to be added.
+     * @return <code>x + y</code>
+     */
+    public static +(x, y) {
+        norm(x).plus(norm(y));
+    }
+
+    /**
+     * Returns the difference of this function with the one specified.
+     *
+     * @param x the function is being subtracted.
+     * @param y the function to be subtracted.
+     * @return <code>x - y</code>.
+     */
+    public static -(x, y) {
+        norm(x).minus(norm(y));
+    }
+
+    /**
+     * Returns the product of this function with the one specified.
+     *
+     * @param x the function multiplicant.
+     * @param y the function multiplier.
+     * @return <code>x * y</code>.
+     */
+    public static *(x, y) {
+        norm(x).times(norm(y));
+    }
+
+    /**
+     * Returns the quotient of this function with the one specified.
+     *
+     * @param x the function dividend.
+     * @param y the function divisor.
+     * @return <code>x / y</code>.
+     */
+    public static /(x, y) {
+        norm(x).divide(norm(y));
+    }
+
+    /**
+     * Returns this function raised at the specified exponent.
+     *
+     * @param n the exponent.
+     * @return <code>this<sup>n</sup></code>
+     * @throws IllegalArgumentException if <code>n &lt;= 0</code>
+     */
+    public ^(n) {
+        return pow(n);
+    }
+
+    /**
+     * Returns the composition of this function with the one specified.
+     *
+     * @param x the function is being composed.
+     * @param y the function to be composed
+     * @return the function <code>(this o that)</code>
+     */
+    public static ~(x, y) {
+        norm(x).compose(norm(y));
+    }
+
+    /**
+     * Compares two functions for equality.
+     */
+    public static ==(x, y) {
+        return norm(x).equals(norm(y));
+    }
+
+    /**
+     * Compares two functions for not equality.
+     */
+    public static !=(x, y) {
+        return not norm(x).equals(norm(y));
+    }
+
+    public plus(that) {
+        return new Plus(self, that);
+    }
+
+    public minus(that) {
+        return new Minus(self, that);
+    }
+
+    public times(that) {
+        return new Times(self, that);
+    }
+
+    public divide(that) {
+        return new Divide(self, that);
+    }
+
+    public pow(n::int) {
+        if (n == 0) {
+            return Constant.ONE;
+        } else if (n < 0) {
+            return RationalFunction.valueOf(Constant.ONE, pow(-n));
+        }
+
+        define pow2 = self;
+        define result = pow2;
+        while (--n != 0) {
+            while (n % 2 == 0) {
+                pow2 = pow2 * pow2;
+                n >>= 1;
+            }
+            result = result * pow2;
+        }
+        return result;
+    }
+
+    // Merges the variable from the specified function into a single table.
+    static merge(left, right) {
+        if (right in left)
+            return left;
+        if (left in right)
+            return right;
+
+        define result = [];
+        define iLeft = left.iterator();
+        define iRight = right.iterator();
+        define l = null, r = null;
+        while (true) {
+            if (!iLeft.hasNext() || !iRight.hasNext()) {
+                if (l != null) result << l;
+                if (r != null) result << r;
+                while (iLeft.hasNext())
+                    result << iLeft.next();
+                while (iRight.hasNext())
+                    result << iRight.next();
+                return result;
+            }
+            l = l ?? iLeft.next();
+            r = r ?? iRight.next();
+            if (l == r) {
+                result << l;
+                l = r = null;
+            } else if (l.symbol < r.symbol) {
+                result << l;
+                l = null;
+            } else if (l.symbol > r.symbol) {
+                result << r;
+                r = null;
+            } else {
+                throw "Duplicate symbol ${l.symbol}";
+            }
+        }
+    }
+
+    // Function composition (default implementation).
+    private static class Compose extends Function {
+        private f, g;
+
+        public Compose(f, g) {
+            (this.f, this.g) = (f, g);
+        }
+
+        public getVariables() {
+            return g.getVariables();
+        }
+
+        public evaluate() {
+            return f(g.evaluate());
+        }
+
+        public differentiate(v::Variable) {
+            // Chain rule: http://en.wikipedia.org/wiki/Chain_rule
+            return f.differentiate(v).compose(g).times(g.differentiate(v));
+        }
+
+        public toString() {
+            return "($f)o($g)";
+        }
+
+        public equals(that) {
+            return that is Compose and f == that.f and g == that.g;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor g.hashCode();
+        }
+    }
+
+    // Function derivative (default implementation)
+    private static class Derivative extends Function {
+        private f, v;
+
+        public Derivative(f, v) {
+            (this.f, this.v) = (f, v);
+        }
+
+        public getVariables() {
+            return f.getVariables();
+        }
+
+        public evaluate() {
+            throw "Derivative of $f undefined";
+        }
+
+        public toString() {
+            return "d[$f]/d${v.symbol}";
+        }
+
+        public equals(that) {
+            return that is Derivative and f==that.f and v==that.v;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor v.hashCode();
+        }
+    }
+
+    // Function integral (default implementation).
+    private static class Integral extends Function {
+        private f, v;
+
+        public Integral(f, v) {
+            (this.f, this.v) = (f, v);
+        }
+
+        public getVariables() {
+            return f.variables;
+        }
+
+        public evaluate() {
+            throw "Integral of $f undefined";
+        }
+
+        public toString() {
+            return "S[$f.d${v.symbol}]";
+        }
+
+        public equals(that) {
+            return that is Integrate and f==that.f and v==that.v;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor v.hashCode();
+        }
+    }
+
+    // Function addition (default implementation).
+    private static class Plus extends Function {
+        private f, g;
+
+        public Plus(f, g) {
+            (this.f, this.g) = (f, g);
+        }
+
+        public getVariables() {
+            return Function.merge(f.variables, g.variables);
+        }
+
+        public differentiate(v::Variable) {
+            return f.differentiate(v) + g.differentiate(v);
+        }
+
+        public integrate(v::Variable) {
+            return f.integrate(v) + g.integrate(v);
+        }
+
+        public evaluate() {
+            return f.evaluate() + g.evaluate();
+        }
+
+        public toString() {
+            return "($f)+($g)";
+        }
+
+        public equals(that) {
+            return that is Plus and f==that.f and g==that.g;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor g.hashCode();
+        }
+    }
+
+    // Function addition (default implementation).
+    private static class Minus extends Function {
+        private f, g;
+
+        public Minus(f, g) {
+            (this.f, this.g) = (f, g);
+        }
+
+        public getVariables() {
+            return Function.merge(f.variables, g.variables);
+        }
+
+        public differentiate(v::Variable) {
+            return f.differentiate(v) - g.differentiate(v);
+        }
+
+        public integrate(v::Variable) {
+            return f.integrate(v) - g.integrate(v);
+        }
+
+        public evaluate() {
+            return f.evaluate() - g.evaluate();
+        }
+
+        public toString() {
+            return "($f)-($g)";
+        }
+
+        public equals(that) {
+            return that is Minus and f==that.f and g==that.g;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor g.hashCode();
+        }
+    }
+
+    // Function multiplication (default implementation).
+    private static class Times extends Function {
+        private f, g;
+
+        public Times(f, g) {
+            (this.f, this.g) = (f, g);
+        }
+
+        public getVariables() {
+            return Function.merge(f.variables, g.variables);
+        }
+
+        public differentiate(v::Variable) {
+            return f.differentiate(v)*g + f*g.differentiate(v);
+        }
+
+        public evaluate() {
+            return f.evaluate() * g.evaluate();
+        }
+
+        public toString() {
+            return "($f)*($g)";
+        }
+
+        public equals(that) {
+            return that is Times and f==that.f and g==that.g;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor g.hashCode();
+        }
+    }
+
+    // Function multiplication (default implementation).
+    private static class Divide extends Function {
+        private f, g;
+
+        public Divide(f, g) {
+            (this.f, this.g) = (f, g);
+        }
+
+        public getVariables() {
+            return Function.merge(f.variables, g.variables);
+        }
+
+        public differentiate(v::Variable) {
+            return (f.differentiate(v) - f/g*g.differentiate(v)) / g;
+        }
+
+        public evaluate() {
+            return f.evaluate() / g.evaluate();
+        }
+
+        public toString() {
+            return "($f)/($g)";
+        }
+
+        public equals(that) {
+            return that is Divide and f==that.f and g==that.g;
+        }
+
+        public hashCode() {
+            return f.hashCode() xor g.hashCode();
+        }
+    }
+}
+
+/**
+ * This class represents a mathematical expression involving a sum of powers
+ * in one or more variables multiplied by coefficients
+ * (such as <code>x^2 + x*y + 3*y^2</code>).
+ */
+class Polynomial extends Function
+{
+    /**
+     * This class represents the term of a polynomial such as x*y^2.
+     */
+    static class Term implements Comparable
+    {
+        /**
+         * Holds the multiplicative identity.
+         */
+        public static ONE = new Term(0);
+
+        // Holds the variables (ordered).
+        private _variables;
+
+        // Holds the corresponding powers (positive and different from zero).
+        private _powers;
+
+        // Holds the number of variables.
+        private _size;
+
+        /**
+         * Creates a new term of specified capacity.
+         *
+         * @param capacity the maximum number of variables.
+         */
+        private Term(capacity) {
+            _variables = new Object[capacity];
+            _powers = new int[capacity];
+            _size = 0;
+        }
+
+        /**
+         * Returns the term corresponding to the specified variable raised to
+         * the specified power.
+         *
+         * @param v the variable.
+         * @param n the power.
+         * @return the term for <code>v<sup>n</sup></code>
+         * @throws IllegalArgumentException if <code>n &lt; 0</code>
+         */
+        public static valueOf(v, n) {
+            if (n == 0)
+                return ONE;
+            if (n < 0)
+                throw new IllegalArgumentException("negative power is not allowed.");
+
+            define term = new Term(1);
+            term._variables[0] = v;
+            term._powers[0] = n;
+            term._size = 1;
+            return term;
+        }
+
+        /**
+         * Returns the number of variables for this term.
+         *
+         * @return the number of variables.
+         */
+        public getSize() => _size;
+
+        /**
+         * Returns a list of the variables for this term (empty list for
+         * constant function).
+         */
+        public getVariables() {
+            if (_size == _variables.length) {
+                return _variables;
+            } else if (_size == 0) {
+                return new Object[0];
+            } else {
+                return _variables[0..*_size];
+            }
+        }
+
+        /**
+         * Returns the power of the specified variable.
+         *
+         * @param v the variable for which the power is returned.
+         * @return the power of the corresponding variable or <code>0</code> if
+         *         this term does not hold the specified variable.
+         */
+        public getPower(v) {
+            for (define i,x in _variables) {
+                if (v == x) {
+                    return _powers[i];
+                }
+            }
+            return 0;
+        }
+
+        /**
+         * Returns the product of this term with the one specified.
+         *
+         * @param that the term multiplier.
+         * @return <code>this * that</code>.
+         * @throws IllegalArgumentException if the specified term holds a
+         *         variable having the same symbol as one of the variable of
+         *         this term; but both variables are distinct.
+         */
+        public times(that) {
+            define thisSize = this._size;
+            define thatSize = that._size;
+            define result = new Term(thisSize + thatSize);
+            result._size = 0;
+            for (define i = 0, j = 0;;) {
+                define left = (i < thisSize) ? this._variables[i] : null;
+                define right = (j < thatSize) ? that._variables[j] : null;
+                if (left == null) {
+                    if (right == null)
+                        return result;
+                    result._powers[result._size] = that._powers[j++];
+                    result._variables[result._size++] = right;
+                } else if (right == null) {
+                    result._powers[result._size] = this._powers[i++];
+                    result._variables[result._size++] = left;
+                } else if (left == right) {
+                    result._powers[result._size] = this._powers[i++] + that._powers[j++];
+                    result._variables[result._size++] = right;
+                } else if (left.symbol < right.symbol) {
+                    result._powers[result._size] = this._powers[i++];
+                    result._variables[result._size++] = left;
+                } else if (left.symbol > right.symbol) {
+                    result._powers[result._size] = that._powers[j++];
+                    result._variables[result._size++] = right;
+                } else {
+                    throw new IllegalArgumentException(
+                        "Found distinct variables with same symbol: ${left.symbol}");
+                }
+            }
+        }
+
+        /**
+         * Returns the division of this term with the one specified.
+         *
+         * @param that the term divisor.
+         * @return <code>this / that</code>
+         * @throws UnsupportedOperationException if this division would
+         *         result in negative power.
+         * @throws IllegalArgumentException if the specified term holds a
+         *         variable having the same symbol as one of the variable of
+         *         this term; but both variables are distinct.
+         */
+        public divide(that) {
+            define thisSize = this._size;
+            define thatSize = that._size;
+            define result = new Term(Math.max(thisSize, thatSize));
+            result._size = 0;
+            for (define i = 0, j = 0;;) {
+                define left = (i < thisSize) ? this._variables[i] : null;
+                define right = (j < thatSize) ? that._variables[j] : null;
+                if (left == null) {
+                    if (right == null)
+                        return result;
+                    throw new UnsupportedOperationException(
+                        "$this/$that would result in a negative power");
+                } else if (right == null) {
+                    result._powers[result._size] = this._powers[i++];
+                    result._variables[result._size++] = left;
+                } else if (left == right) {
+                    define power = this._powers[i++] - that._powers[j++];
+                    if (power < 0) {
+                        throw new UnsupportedOperationException(
+                            "$this/$that would result in a negative power");
+                    } else if (power > 0) {
+                        result._powers[result._size] = power;
+                        result._variables[result._size++] = right;
+                    }
+                } else if (left.symbol < right.symbol) {
+                    result._powers[result._size] = this._powers[i++];
+                    result._variables[result._size++] = left;
+                } else if (left.symbol > right.symbol) {
+                    throw new UnsupportedOperationException(
+                        "$this/$that would result in a negative power");
+                } else {
+                    throw new IllegalArgumentException(
+                        "Found distinct variables with same symbol: ${left.symbol}");
+                }
+            }
+        }
+
+        /**
+         * Indicates if this term is equal to the object specified.
+         *
+         * @param obj the object to compare for equality.
+         * @return <code>true</code> if this term and the specified object are
+         *         considered equal; <code>false</code> otherwise.
+         */
+        public equals(that) {
+            if (this === that)
+                return true;
+            if (that is not Term)
+                return false;
+            if (this._size != that._size)
+                return false;
+            for (define i in [0..*_size]) {
+                if (_variables[i] != that._variables[i] || _powers[i] != that._powers[i])
+                    return false;
+            }
+            return true;
+        }
+
+        /**
+         * Returns a hash code for this term.
+         *
+         * @return a hash code value for this object.
+         */
+        public hashCode() {
+            if (this._hash == 0) {
+                define h = 0;
+                for (define i in [0..*size]) {
+                    h += _variables[i].hashCode() * _powers[i];
+                }
+                this._hash = h;
+            }
+            return _hash;
+        }
+
+        private _hash;
+
+        /**
+         * Returns the String representation of this term.
+         */
+        public toString() {
+            define buf = new StringBuilder();
+            for (define i in [0..*_size]) {
+                buf << _variables[i].symbol.name;
+                if (_powers[i] != 1)
+                    buf << _powers[i];
+            }
+            return buf.toString();
+        }
+
+        /**
+         * Compares this term with the one specified for order.
+         */
+        public compareTo(that) {
+            define n = Math.min(this._size, that._size);
+            for (define i in [0..*n]) {
+                define cmp = this._variables[i].symbol.compareTo(that._variables[i].symbol);
+                if (cmp != 0)
+                    return cmp;
+                cmp = that._powers[i] - this._powers[i];
+                if (cmp != 0)
+                    return cmp;
+            }
+            return that._size - this._size;
+        }
+
+        /**
+         * Evaluates this term by replacing its variables by their current values.
+         *
+         * @return the evaluation of this term or <code>null</code> if ONE.
+         * @throws IllegalStateException if any of this term's variable is not set.
+         */
+        public evaluate() {
+            define result = null;
+            for (define i in [0..*_size]) {
+                define n = _powers[i];
+                if (n > 0) {
+                    define pow2 = _variables[i].value ?? global[_variables[i].symbol.name];
+                    result = (result == null) ? pow2 : result * pow2;
+                    while (--n != 0) {
+                        while (n % 2 == 0) {
+                            pow2 = pow2 * pow2;
+                            n >>= 1;
+                        }
+                        result = result * pow2;
+                    }
+                }
+            }
+            return result;
+        }
+    }
+
+    /**
+     * Holds the term to coefficients mapping
+     * (never empty, holds Term.ONE when constant)
+     */
+    protected _term2coef = new TreeMap();
+
+    /**
+     * Caches the list of variables.
+     */
+    private _variables = null;
+
+    /**
+     * Construct a polynomial.
+     */
+    protected Polynomial() {}
+
+    /**
+     * Returns an univariate polynomial of degree one with the specified
+     * coefficient multiplier.
+     *
+     * @param coefficient the coefficient for the variable of degree 1.
+     * @param variable the variable for this polynomial.
+     * @return <code>valueOf(coefficient, Term.valueOf(variable, 1))</code>
+     */
+    public static valueOf(coefficient, term) {
+        if (term is Variable) {
+            term = Term.valueOf(term, 1);
+        }
+
+        if (term == Term.ONE)
+            return Constant.valueOf(coefficient);
+        if (coefficient == 0)
+            return Constant.valueOf(coefficient);
+
+        define p = new Polynomial();
+        p._term2coef[term] = coefficient;
+        return p;
+    }
+
+    /**
+     * Returns the terms of this polynomial.
+     *
+     * @return this polynomial's terms.
+     */
+    public getTerms() {
+        return _term2coef.keySet();
+    }
+
+    /**
+     * Returns the coefficient for the specified term.
+     *
+     * @param term the term for which the coefficient is returned.
+     * @return the coefficient for the specified term or <code>null</code>
+     *         if this polynomial does not contain the specified term.
+     */
+    public getCoefficient(term) {
+        return _term2coef[term];
+    }
+
+    /**
+     * Returns the order of this polynomial for the specified variable.
+     *
+     * @return the polynomial order relative to the specified variable.
+     */
+    public getOrder(v) {
+        define order = 0;
+        for (define term in _term2coef.keySet()) {
+            define power = term.getPower(v);
+            if (power > order)
+                order = power;
+        }
+        return order;
+    }
+
+    /**
+     * Returns the leading term with the highest order of this polynomial
+     * for the specified variable.
+     *
+     * @return the polynomial's leading term relative to the specified
+     *         variable, or <code>null</code> if so such variable found.
+     */
+    public getLeadingTerm(v) {
+        define term = null;
+        define order = 0;
+        for (define t in _term2coef.keySet()) {
+            define power = t.getPower(v);
+            if (power != 0 && (term == null || power > order)) {
+                term = t;
+                order = t.getPower(v);
+            }
+        }
+        return term;
+    }
+
+    /**
+     * Returns the opposite of this polynomial.
+     *
+     * @return <code> - this</code>
+     */
+    public __neg__() {
+        define result = new Polynomial();
+        for (define term,coef in _term2coef) {
+            result._term2coef[term] = -coef;
+        }
+        return result;
+    }
+
+    /**
+     * Returns the sum of two polynomials.
+     *
+     * @param that the polynomial being added.
+     * @return <code>this + that</code>
+     */
+    public plus(that) {
+        if (that is RationalFunction) {
+            return RationalFunction.valueOf(this.times(that.divisor).plus(that.dividend),
+                                            that.divisor);
+        }
+
+        if (that is Polynomial) {
+            define result = new Polynomial;
+            result._term2coef.putAll(this._term2coef);
+            result._term2coef.putAll(that._term2coef);
+            define i = result._term2coef.entrySet().iterator();
+            while (i.hasNext()) {
+                define e = i.next();
+                define term = e.key;
+                define thisCoef = this._term2coef[term];
+                define thatCoef = that._term2coef[term];
+                if ((thisCoef != null) && (thatCoef != null)) {
+                    define sum = thisCoef + thatCoef;
+                    if (sum == 0) {
+                        i.remove();
+                    } else {
+                        e.setValue(sum);
+                    }
+                } else if (e.value == 0) {
+                    i.remove();
+                }
+            }
+            if (empty result._term2coef)
+                result = Constant.ZERO;
+            return result;
+        }
+
+        return super.plus(that);
+    }
+
+    /**
+     * Returns the difference of two polynomials.
+     *
+     * @param that the polynomial being subtracted.
+     * @return <code>this - that</code>
+     */
+    public minus(that) {
+        if (that is Polynomial or that is RationalFunction) {
+            return this.plus(-that);
+        } else {
+            return super.minus(that);
+        }
+    }
+
+    /**
+     * Returns the product of two polynomials.
+     *
+     * @param that the polynomial multiplier.
+     * @return <code>this · that</code>
+     */
+    public times(that) {
+        if (that is RationalFunction) {
+            return this * that.dividend / that.divisor;
+        }
+
+        if (that is Polynomial) {
+            define result = new Polynomial();
+            for (define t1,c1 in this._term2coef) {
+                for (define t2,c2 in that._term2coef) {
+                    define t = t1.times(t2);
+                    define c = c1*c2;
+                    define prev = result.getCoefficient(t);
+                    define coef = (prev != null) ? prev + c : c;
+                    if (coef != 0) {
+                        result._term2coef[t] = coef;
+                    } else if (prev != null) {
+                        result._term2coef.remove(t);
+                    }
+                }
+            }
+            if (empty result._term2coef)
+                result = Constant.ZERO;
+            return result;
+        }
+
+        return super.times(that);
+    }
+
+    /**
+     * Returns the division of two polynomials.
+     *
+     * @param that the polynomial divisor.
+     * @return <code>this / that</code>
+     */
+    public divide(that) {
+        if (that is RationalFunction) {
+            return this * that.divisor / that.dividend;
+        }
+
+        if (that is Polynomial) {
+            return let ((q,r) = divmod(that)) {
+                (r == Constant.ZERO) ? q : RationalFunction.valueOf(self, that)
+            }
+        }
+
+        return super.divide(that);
+    }
+
+    /**
+     * Returns the remainder of two polynomials.
+     *
+     * @param that the polynomial divisor.
+     * @return <code>this % that</code>
+     */
+    public remainder(that) {
+        let ((_,r) = divmod(that)) r
+    }
+
+    public %(that) {
+        return remainder(that);
+    }
+
+    /**
+     * Returns the quotient and remainder of two polynomials.
+     *
+     * @param that the polynomial divisor.
+     * @return the tuple of <code>(this div that, this mod that)</code>
+     */
+    public divmod(that) {
+        define div_cst(cst) {
+            if (cst is Number and cst == 1) {
+                return (self, Constant.ZERO);
+            } else {
+                define q = new Polynomial();
+                for (define t,c in _term2coef) {
+                    q._term2coef[t] = c / cst;
+                }
+                return (q, Constant.ZERO);
+            }
+        }
+
+        define div_term(term, var, coef) {
+            define q = null, r = null;
+            define order = term.getPower(var);
+            for (define t,c in this._term2coef) {
+                if (t.getPower(var) >= order) {
+                    if (!(coef is Number and coef == 1))
+                        c = c / coef;
+                    if (q == null)
+                        q = new Polynomial();
+                    q._term2coef[t.divide(term)] = c;
+                } else {
+                    if (r == null)
+                        r = new Polynomial();
+                    r._term2coef[t] = c;
+                }
+            }
+            return (q ?? Constant.ZERO, r ?? Constant.ZERO);
+        }
+
+        if (that is not Polynomial) {
+            if (that is Function) {
+                return (Constant.ZERO, self);
+            } else if (that is Variable) {
+                return div_term(Term.valueOf(that, 1), that, 1);
+            } else if (that is Symbol) {
+                that = Variable.valueOf(that);
+                return div_term(Term.valueOf(that, 1), that, 1);
+            } else {
+                return div_cst(that);
+            }
+        }
+        
+        define vars = that.getVariables();
+
+        if (vars.length == 0) {
+            // optimize constant divisor
+            return div_cst(that.getCoefficient(Term.ONE));
+        }
+
+        if (vars.length != 1) {
+            // cannot divide for multivariate polynomials
+            return (Constant.ZERO, self);
+        }
+
+        define var = vars[0];
+        if (var not in this.getVariables()) {
+            // cannot divide for multivariate polynomials
+            return (Constant.ZERO, self);
+        }
+
+        if (that._term2coef.size() == 1) {
+            // optimize for monomial divisor
+            define t = that._term2coef.keySet().iterator().next();
+            return div_term(t, var, that.getCoefficient(t));
+        }
+
+        define ut = this.getLeadingTerm(var);
+        define vt = that.getLeadingTerm(var); // assert != null
+        define vc = that.getCoefficient(vt);
+
+        if (ut == null || ut.getPower(var) < vt.getPower(var)) {
+            return (Constant.ZERO, self);
+        }
+
+        define dividend = self;
+        define q = new Polynomial();
+        define r = new Polynomial();
+
+        while (ut != null && ut.getPower(var) >= vt.getPower(var)) {
+            define t = ut.divide(vt);
+            define c = dividend.getCoefficient(ut) / vc;
+            q._term2coef[t] = c;
+
+            // calculate termorary result of q * divisor
+            r._term2coef.clear();
+            for (define t2,c2 in that._term2coef) {
+                r._term2coef[t2.times(t)] = c2 * c;
+            }
+
+            dividend = dividend - r;
+            ut = dividend.getLeadingTerm(var);
+        }
+
+        if (empty q._term2coef)
+            q = Constant.ZERO;
+        return (q, dividend);
+    }
+
+    /**
+     * Returns the greatest common divisor of two polynomials.
+     *
+     * @param that polynomial which the GCD is to be computed.
+     * @return <code>gcd(this, that)</code>
+     */
+    public gcd(that::Polynomial) {
+        if (this.getVariables().length > 1 && that.getVariables().length > 1) {
+            // not implemented
+            return Constant.ONE;
+        }
+
+        // find the GCD of polynomials
+        define a = this;
+        define b = that;
+        define r;
+        while (b != 0) {
+            r = a.remainder(b); a = b; b = r;
+        }
+
+        // find the GCD of integer coefficients.
+        define g = null;
+        for (define t,c in a._term2coef) {
+            if (c is Integer or c is Long or c is java.math.BigInteger or c is Rational) {
+                g = (g == null) ? c : sys.gcd(g, c);
+            } else {
+                g = null;
+                break;
+            }
+        }
+        if (g != null && g != 1) {
+            for (define e in a._term2coef) {
+                e.setValue(e.value / g);
+            }
+        }
+        return a;
+    }
+
+    /**
+     * Returns the composition of this polynomial with the one specified.
+     *
+     * @param  that the polynomial for which the return value is passed as
+     *         argument to this function.
+     * @return the polynomial <code>(this o that)</code>
+     * @throws FunctionException if this function is not univariate.
+     */
+    public compose(that) {
+        if (that is Polynomial) {
+            define vars = getVariables();
+            if (vars.length != 1)
+                throw "This polynomial is not monovariate";
+            define v = vars[0];
+            define result = null;
+            for (define term,coef in this._term2coef) {
+                define cst = Constant.valueOf(coef);
+                define power = term.getPower(v);
+                if (power > 0) {
+                    define fn = that ^ power;
+                    result = (result != null) ? result + cst*fn : cst*fn;
+                } else {
+                    result = (result != null) ? result + cst : cst;
+                }
+            }
+            return result;
+        }
+
+        return super.compose(that);
+    }
+
+    public differentiate(v::Variable) {
+        if (this.getOrder(v) > 0) {
+            define result = null;
+            define vt = Term.valueOf(v, 1);
+            for (define term,coef in this._term2coef) {
+                define power = term.getPower(v);
+                if (power > 0) {
+                    define p = valueOf(coef*power, term.divide(vt));
+                    result = (result != null) ? result + p : p;
+                }
+            }
+            return result;
+        } else {
+            return Constant.ZERO;
+        }
+    }
+
+    public integrate(v::Variable) {
+        define result = null;
+        define vt = Term.valueOf(v, 1);
+        for (define term,coef in this._term2coef) {
+            define power = term.getPower(v);
+            define p = valueOf(coef/(power+1), term.times(vt));
+            result = (result != null) ? result + p : p;
+        }
+        return result;
+    }
+
+    public getVariables() {
+        if (_variables == null) {
+            // We multiply all terms togethers, the resulting product
+            // will hold all variables (powers are always positive).
+            define product = null;
+            for (define term in _term2coef.keySet()) {
+                product = (product != null) ? product.times(term) : term;
+            }
+            _variables = product.getVariables().asList();
+        }
+        return _variables;
+    }
+
+    public evaluate() {
+        define sum = null;
+        for (define term,coef in _term2coef) {
+            define termValue = term.evaluate();
+            define value = (termValue != null) ? termValue * coef : coef;
+            sum = (sum == null) ? value : sum + value;
+        }
+        return sum;
+    }
+
+    public toString() {
+        define sb = new StringBuilder();
+        define first = true;
+        for (define term,coef in _term2coef) {
+            if (coef is Integer or coef is Long) {
+                if (coef == 1) {
+                    if (!first) sb << " + ";
+                    sb << (term == Term.ONE ? "1" : term);
+                } else if (coef == -1) {
+                    sb << (first ? "-" : " - ");
+                    sb << (term == Term.ONE ? "1" : term);
+                } else if (coef < 0) {
+                    sb << (first ? "-" : " - ");
+                    sb << (-coef) << term;
+                } else {
+                    if (!first) sb << " + ";
+                    sb << coef << term;
+                }
+            } else {
+                if (!first) sb << " + ";
+                sb << "[" << coef << "]" << term;
+            }
+            first = false;
+        }
+        return sb.toString();
+    }
+
+    public equals(that) {
+        return that is Polynomial and _term2coef == that._term2coef;
+    }
+
+    public hashCode() {
+        return _term2coef.hashCode();
+    }
+}
+
+/**
+ * This class represents a constant function (polynomial of degree 0).
+ */
+class Constant extends Polynomial
+{
+    /**
+     * Holds the constant zero.
+     */
+    public static ZERO = new Constant(0);
+
+    /**
+     * Holds the constant one.
+     */
+    public static ONE = new Constant(1);
+
+    /**
+     * Construct a constant function of specified value.
+     *
+     * @param value the value returned by this function.
+     */
+    private Constant(value) {
+        _term2coef[Polynomial.Term.ONE] = value;
+    }
+
+    /**
+     * Create a constant function of specified value.
+     *
+     * @param value the value returned by this function.
+     * @return the function holds the constant value.
+     */
+    public static valueOf(value) {
+        return new Constant(value);
+    }
+
+    /**
+     * Returns the constant value for this function.
+     *
+     * @return <code>getCoefficient(Term.ONE)</code>
+     */
+    public getValue() {
+        return getCoefficient(Polynomial.Term.ONE);
+    }
+}
+
+/**
+ * This class represents the quotient of two polynomial.
+ */
+class RationalFunction extends Function
+{
+    private _dividend, _divisor;
+
+    /**
+     * Construct the rational function from the specified dividend and divisor.
+     *
+     * @param dividend the dividend value.
+     * @param divisor the divisor value.
+     */
+    private RationalFunction(dividend, divisor) {
+        (_dividend, _divisor) = (dividend, divisor);
+    }
+
+    /**
+     * Create the rational function from the specified dividend and divisor.
+     *
+     * @param dividend the dividend value.
+     * @param divisor the divisor value.
+     * @return <code>dividend / divisor</code>
+     */
+    public static valueOf(dividend, divisor=Constant.ONE) {
+        return new RationalFunction(dividend, divisor);
+    }
+
+    /**
+     * Returns the dividend of this rational function.
+     *
+     * @return this rational function dividend.
+     */
+    public getDividend() {
+        return _dividend;
+    }
+
+    /**
+     * Returns the divisor of this rational function.
+     *
+     * @return this rational function divisor.
+     */
+    public getDivisor() {
+        return _divisor;
+    }
+
+    /**
+     * Returns the opposite of this rational function.
+     *
+     * @return <code>- this</code>
+     */
+    public __neg__() {
+        return valueOf(-_dividend, _divisor);
+    }
+
+    /**
+     * Returns the sum of two rational functions.
+     *
+     * @param that the rational function to add.
+     * @return <code>this + that</code>
+     */
+    public plus(that) {
+        if (that is RationalFunction) {
+            return valueOf(this._dividend * that._divisor + this._divisor * that._dividend,
+                           this._divisor * that._divisor);
+        } else if (that is Polynomial) {
+            return valueOf(this._dividend + this._divisor * that, this._divisor);
+        } else {
+            return super.plus(that);
+        }
+    }
+
+    /**
+     * Returns the difference of two rational functions.
+     *
+     * @param that the rational function to subtract.
+     * @return <code>this - that</code>
+     */
+    public minus(that) {
+        if (that is RationalFunction or that is Polynomial) {
+            return this.plus(-that);
+        } else {
+            return super.minus(that);
+        }
+    }
+
+    /**
+     * Returns the product of two rational functions.
+     *
+     * @param that the rational function multiplier.
+     * @return <code>this * that</code>
+     */
+    public times(that) {
+        if (that is RationalFunction) {
+            return (this._dividend * that.dividend) / (this._divisor * that._divisor);
+        } else if (that is Polynomial) {
+            return this._dividend * that / this._divisor;
+        } else {
+            return super.times(that);
+        }
+    }
+
+    /**
+     * Returns the inverse of this rational function.
+     *
+     * @return <code>1 / this</code>
+     */
+    public inverse() {
+        return valueOf(_divisor, _dividend);
+    }
+
+    /**
+     * Returns the quotient of two rational functions.
+     *
+     * @param that the rational function divisor.
+     * @return <code>this / that</code>
+     */
+    public divide(that) {
+        if (that is RationalFunction) {
+            return this.times(that.inverse());
+        } else if (that is Polynomial) {
+            return this._dividend / (this._divisor * that);
+        } else {
+            return super.divide(that);
+        }
+    }
+
+    public differentiate(v::Variable) {
+        return ((_divisor * _dividend.differentiate(v))
+              - (_dividend * _divisor.differentiate(v)))
+              / (_divisor * _divisor);
+    }
+
+    public normalize() {
+        define g = _dividend.gcd(_divisor);
+        if (g == Constant.ONE) {
+            return this;
+        }
+
+        define a = _dividend.divide(g);
+        define b = _divisor.divide(g);
+        if (a == Constant.ZERO || b == Constant.ONE) {
+            return a;
+        } else {
+            return valueOf(a, b);
+        }
+    }
+    
+    public getVariables() {
+        return Function.merge(_dividend.variables, _divisor.variables);
+    }
+
+    public evaluate() {
+        return _dividend.evaluate() / _divisor.evaluate();
+    }
+
+    public toString() {
+        return "($_dividend)/($_divisor)";
+    }
+
+    public equals(that) {
+        return that is RationalFunction
+           and _dividend == that._dividend
+           and _divisor == that._divisor;
+    }
+
+    public hashCode() {
+        return _dividend.hashCode() xor _divisor.hashCode();
+    }
+}

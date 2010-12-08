@@ -1,0 +1,150 @@
+require 'syntax'
+require 'math'
+
+/* 快速排序算法 */
+define qsort(ls) {
+    | [] => []
+    | [x:xs] => qsort([y | y <- xs, y < x]) ~ x ~ qsort([y | y <- xs, y >= x])
+}
+
+define lst = shuffle([1..10]);
+print(lst);
+print(qsort(lst));
+
+
+/* 利用列表聚合解决8皇后问题 */
+define queens(n) {
+    define scan(i) {
+        | 0 => [[]]
+        | _ => [[q:qs] | qs <- scan(i-1), q <- [1..n], safe(q, qs)];
+    }
+    scan(n);
+}
+
+define safe(q, qs) {
+    define check(x, xs, n) {
+        case (xs) {
+        | [] => false
+	| [#x|#(x+n)|#(x-n) : _] => true
+	| [_ : ys] => check(x,ys,n+1)
+        }
+    }
+    not check(q, qs, 1);
+}
+
+define count = 0;
+for (x in queens(8)) {
+    print("${++count}: ${x}");
+}
+
+/*
+利用列表聚合实现非确定性计算。本示例演示了列表聚合的另一种语法格式，利用ELite
+元编程能力所定义的一种新的语法。
+
+Baker, Cooper, Fletcher, Miller和Smith住在一个五层公寓楼的不同层，Baker
+不住在顶层，Cooper不住在底层，Fletcher不住在顶层也不住在底层。Miller住的比
+Cooper高一层，Smith不住在Fletcher相临的层，Fletcher不住在Cooper相临的层。
+请问他们各住在哪层。
+
+我们可以通过简单地枚举出所有的可能性，并加上给定约束条件的方式，来确定这
+几个人居住的楼层：
+*/
+
+define multiple_dwelling =
+    select {baker:baker, cooper:cooper, fletcher:fletcher, miller:miller, smith:smith}
+     from baker in [1..5],
+          cooper in [1..5],
+          fletcher in [1..5],
+          miller in [1..5],
+          smith in [1..5]
+    where distinct([baker, cooper, fletcher, miller, smith])
+      and baker != 5
+      and cooper != 1
+      and fletcher != 5
+      and fletcher != 1
+      and miller > cooper
+      and abs(smith - fletcher) != 1
+      and abs(fletcher - cooper) != 1;
+
+/* distinct确定一个表里的各个元素是否互不相同 */
+define distinct(items) {
+    | []     => true
+    | [x:xs] => x not in xs and distinct(xs)
+}
+
+print(multiple_dwelling);
+
+
+/*
+S先生与P先生问题
+
+设有两个自然数X, Y, 2<=X<=Y<=99，S先生知道这两个数的和S，
+P先生知道这两个数的积P，他们二人进行了如下对话：
+
+S：我不知道这两个数是什么，但我相信你也不知道。
+P：我知道这两个数是什么了。
+S：那么我也知道了。
+
+请从以上两人的对话中推导出X和Y的值。
+*/
+
+define puzzle(lb,hb) {
+    /**
+     * 条件一: 也就是S先生的第一句话。
+     * 把S分成任意的两个数M和N的和之后，再判断M和N的乘积P是否只有M和N这一对因子。
+     * 如果只有一对因子，则S先生不能肯定P先生不能说出这两个数，则条件一不满足。
+     */
+    define cond1(x,y) {
+        define S = x+y;
+        empty [(m,n) where m in [lb..S/2], n = S-m, unique(m,n)];
+    }
+
+    /**
+     * 判断M和N的乘积P是否只有M和N这一对因子。
+     */
+    define unique(m,n) {
+        define P = m*n;
+        empty [v where v in [lb..sqrt(P)], v != m, P%v == 0];
+    }
+
+    /**
+     * 条件二
+     * 将X和Y的乘积P分解成另外一组因子M2和N2之后，再用条件一判断。
+     * 如果条件一成立，则表示P先生存在两组或以上满足条件一的积分解，
+     * 因此P先生就不能通过S先生的第一句话得出这两个数，则条件二不成立。
+     */
+    define cond2(x,y) {
+        define P = x*y;
+        empty [(m2,n2) where m2 in [lb..sqrt(P)],
+                             m2 != x,
+                             P % m2 == 0,
+                             n2 = int(P/m2),
+                             n2 < hb,
+                             cond1(m2,n2)]
+    }
+
+    /**
+     * 条件三
+     * 与条件二类似，如果S先生经过分析后得出除了X和Y之外，存在其他的和分解(M3,N3)也满足
+     * 条件二，则S先生不能通过前面的对话确定这两个数，则条件三不满足。
+     */
+    define cond3(x,y) {
+        define S = x+y;
+        empty [(m3,n3) where m3 in [lb..S/2],
+                             m3 != x,
+                             n3 = S - m3,
+                             cond2(m3,n3)];
+    }
+
+    /**
+     * 主程序，生成可能的组合情况，再用三个条件分别测试。
+     */
+    [(x,y) where x in [lb..hb],
+                 y in [x..hb],
+                 cond1(x,y),
+                 cond2(x,y),
+                 cond3(x,y)]
+}
+
+// 输出S先生和P先生问题在[2..99]之间的唯一解
+print(puzzle(2,99).first);

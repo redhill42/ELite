@@ -1,0 +1,22 @@
+/* 各种风格的 "Hello, World!" 程序 */
+
+/* Java 风格 */
+System.out.println("Hello, World!");
+
+/* C++ 风格 */
+stdout << "Hello, World!" << endl;
+
+/* 函数式风格 */
+print("Hello, World!");
+
+/* 对象风格 */
+"Hello, World!".print();
+
+/* 消息传递风格 */
+"Hello, World!" -> print;
+
+/* 各种风格的组合调用，虽然风格不一但都是等价的 */
+define sayHello(thing) => "Hello, ${thing}!";
+print(sayHello('World'));   // 括号太多
+'World'.sayHello().print(); // 好一点
+'World'->sayHello->print;   // 还不错

@@ -1,0 +1,173 @@
+require 'xml'
+
+print("-----------------------------------------");
+
+// Parse an string into an XML object
+define John = "<employee><name>John</name><age>25</age></employee>";
+define Sue = "<employee><name>Sue</name><age>32</age></employee>";
+define tagName = "employees";
+define employees = ("<" ~ tagName ~ ">" ~ John ~ Sue ~ "</" ~ tagName ~ ">").toXML();
+print("The employees XML object constructed from a string is:\n" ~ employees);
+
+print("-----------------------------------------");
+
+// Use an XML literal to create an XML object
+define order = <order>
+    <customer>
+        <firstname>John</firstname>
+        <lastname>Doe</lastname>
+    </customer>
+    <item>
+        <description>Big Screen Television</description>
+        <price>1299.99</price>
+        <quantity>1</quantity>
+    </item>
+</order>
+
+// Construct the full customer name
+define name = order.customer.firstname ~ " " ~ order.customer.lastname;
+
+// Calculate the total price
+define total = order.item.price.@@value * order.item.quantity.@@value;
+
+print("The order XML object constructed using a literal is:\n" ~ order);
+print("The total price of ${name}'s order is ${total}");
+
+print("-----------------------------------------");
+
+// Construct a new XML object using expando and super-expando properties
+define order = <order/>
+order.customer.name = "Fred Jones";
+order.customer.address.street = "123 Long Lang";
+order.customer.address.city = "Underwood";
+order.customer.address.state = "CA";
+order.item[0].description = "Small Rodents";
+order.item[0].quantity = 10;
+order.item[0].price = 6.95;
+
+print("The order constructed using expandos and super-expandos is:\n" ~ order);
+
+// append a new item to the order
+order.item += <item><description>Catapult</description><price>139.95</price></item>;
+
+print("-----------------------------------------");
+print("The order after appending a new item is:\n" ~ order);
+print("-----------------------------------------");
+
+// dynamically construct an XML element using embedded expressions
+define tagName = "name";
+define attributeName = "id";
+define attributeValue = 5;
+define content = "Fred";
+
+define x = <$tagName $attributeName="${attributeValue}">${content}</$tagName>;
+
+print("The dynamically computed element value is:\n" ~ x.toXMLString());
+
+print("-----------------------------------------");
+
+// dynamically construct an XML element using object model
+class Customer(firstname, lastname) {
+    toXML() {
+        <customer>
+            <firstname>$firstname</firstname>
+            <lastname>$lastname</lastname>
+        </customer>
+    }
+}
+
+class Item(description, price, quantity) {
+    toXML() {
+        <item>
+            <description>$description</description>
+            <price>$price</price>
+            <quantity>$quantity</quantity>
+        </item>
+    }
+}
+
+define customer = new Customer('John', 'Doe');
+define items = [new Item('Big Screen Television', 1299.99, 1),
+                new Item('DVD Player', 399.99, 1)];
+define order = <order>${customer}${items}</order>
+
+print("The order constructed using object model is:\n" ~ order);
+
+print("-----------------------------------------");
+
+// Create a SOAP message
+define message = <soap:Envelope
+        xmlns:soap='http://schemas.xmlsopa.org/soap/envelop/'
+        soap:encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'>
+    <soap:Body>
+        <m:GetLastTradePrice xmlns:m='http://mycompany.com/stocks'>
+            <symbol>DIS</symbol>
+        </m:GetLastTradePrice>
+    </soap:Body>
+</soap:Envelope>
+
+// extract the soap encoding style and body from the soap message
+define encodingStyle = message.@soap:encodingStyle;
+
+print("The encoding style of the soap message is specified by:\n" ~ encodingStyle);
+
+// change the stock symbol
+message.soap:Body.m:GetLastTradePrice.symbol = "MYCO";
+
+define body = message.soap:Body;
+
+print("The body of the soap message is:\n" ~ body);
+
+print("-----------------------------------------");
+
+// create and manipulate an XML object using the default xml namespace
+
+define xmlns = 'http://default.namespace.com';
+define x = <x/>
+x.a = 'one';
+x.b = 'two';
+x.c = <c xmlns='http://some.other.namespace.com'>three</c>
+
+print("XML object constructed using the default xml namespace:\n" ~ x);
+
+define xmlns = null;
+
+print("-----------------------------------------");
+
+define order = <order id="123456" timestamp="${new Date}">
+    <customer>
+        <firstname>John</firstname>
+        <lastname>Doe</lastname>
+    </customer>
+    <item id="3456">
+        <description>Big Screen Television</description>
+        <price>1299.99</price>
+        <quantity>1</quantity>
+    </item>
+    <item id="56789">
+        <description>DVD Player</description>
+        <price>399.99</price>
+        <quantity>1</quantity>
+    </item>
+</order>;
+
+// get the customer element from the order
+print("The customer is:\n" ~ order.customer);
+
+// get the id attribute from the order
+print("The order id is: ${order.@id}");
+
+// get all the child elements from the order element
+print("The children of the order are:\n" ~ order.@@child);
+
+// get second item by numeric index
+ print("The second item is:\n" ~ order.item[1]);
+
+// calculate the total price of the order
+define totalprice = 0;
+for (i in order.item) {
+    totalprice += i.price.@@value * i.quantity.@@value;
+}
+print("The total price of the order is: $totalprice");
+
+print("----------------------------------------");

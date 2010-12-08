@@ -1,0 +1,61 @@
+/*
+ * The red-black tree set.
+ */
+class TreeSet {
+    private @data Color = R | B
+    private @data Tree  = Empty | Node(color::Color, lhs::Tree, value, rhs::Tree)
+
+    private root
+
+    public TreeSet()   => root = Empty()
+    public void add(x) => root = make_black(insert(root, x))
+    public contains(x) => member(root, x)
+    public size()      => card(root)
+
+    private make_black(t) {
+        | Node(!B(),a,y,b) => Node(B(),a,y,b)
+        | else => t
+    }
+
+    private insert(t, x) {
+        | Empty, x => Node(R(), t, x, t)
+        | Node(_,_,x,_), x => t
+        | Node(color,a,y,b), x => x < y ? balance(color, insert(a,x), y, b)
+                                        : balance(color, a, y, insert(b,x))
+    }
+
+    private balance(color, lhs, elt, rhs) {
+        | B(), Node(R(), Node(R(),a,x,b), y, c), z, d =>
+            Node(R(), Node(B(),a,x,b), y, Node(B(),c,z,d))
+        | B(), Node(R(), a, x, Node(R(),b,y,c)), z, d =>
+            Node(R(), Node(B(),a,x,b), y, Node(B(),c,z,d))
+        | B(), a, x, Node(R(), Node(R(),b,y,c), z, d) =>
+            Node(R(), Node(B(),a,x,b), y, Node(B(),c,z,d))
+        | B(), a, x, Node(R(), b, y, Node(R(),c,z,d)) =>
+            Node(R(), Node(B(),a,x,b), y, Node(B(),c,z,d))
+        | else => Node(color, lhs, elt, rhs)
+    }
+
+    private member(t, x) {
+        | Empty, _ => false
+        | Node(_,_,x,_), x => true
+        | Node(_,a,y,b), x => x < y ? member(a,x) : member(b,x)
+    }
+
+    private card(t) {
+        | Empty => 0
+        | Node(_,a,_,b) => 1 + card(a) + card(b)
+    }
+}
+
+
+void run(n) {
+    define set = TreeSet();
+    define data = [1..n].shuffle()
+    data.each(set.add)
+    assert data.size() == n
+    assert data.forall(set.contains)
+}
+
+run(10)
+

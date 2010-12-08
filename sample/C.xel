@@ -1,0 +1,401 @@
+grammar {
+
+%left   COMMA                   /* ,                                    */
+%right  EQUAL ASSIGNOP          /* =   *= /= %= += -= <<= >>= &= |= ^=  */
+%right  QUEST COLON             /* ? :                                  */
+%left   OROR                    /* ||                                   */
+%left   ANDAND                  /* &&                                   */
+%left   OR                      /* |                                    */
+%left   XOR                     /* ^                                    */
+%left   AND                     /* &                                    */
+%left   EQUOP                   /* == !=                                */
+%left   RELOP                   /* <= >= < >                            */
+%left   SHIFTOP                 /* >> <<                                */
+%left   PLUS MINUS              /* + -                                  */
+%left   STAR DIVOP              /* * / %                                */
+%right  "sizeof" UNOP INCOP     /* sizeof   ! ~     ++ --               */
+%left   LB RB LP RP STRUCTOP    /* [ ] ( ) . ->                         */
+
+%nonassoc CLASS     /* extern register auto static typedef */
+
+%nonassoc "else"    /* This gives a high precedence to ELSE to suppress
+                     * the shift/reduce conflict error message in:
+                     *   s -> IF LP expr RP expr | IF LP expr RP s ELSE s
+                     * The precedence of the first production is the same
+                     * as RP. Making ELSE higher precedence forces
+                     * resolution in favor of the shift.
+                     */
+
+
+/*----------------------------------------------------
+ * Grammar specification.
+ */
+ 
+program : 'C' LC ext_def_list RC
+        ;
+
+ext_def_list
+        : ext_def_list ext_def
+        | /* epsilon */
+        ;
+
+opt_specifiers
+        : specifiers
+        | /* empty */           %prec COMMA
+        ;
+
+specifiers
+        : type_or_class
+        | specifiers type_or_class
+        ;
+
+type    : type_specifier
+        | type type_specifier
+        ;
+
+type_or_class
+        : type_specifier
+        | CLASS
+        ;
+type_specifier
+        : TYPE
+        | enum_specifier
+        | struct_specifier
+        ;
+
+var_decl
+        : new_name      %prec COMMA
+        | var_decl LP RP
+        | var_decl LP var_list RP
+        | var_decl LB RB
+        | var_decl LB const_expr RB
+        | STAR var_decl     %prec UNOP
+        | LP var_decl RP
+        ;
+
+new_name: NAME
+        ;
+
+name    : NAME
+        ;
+
+ext_decl_list
+        : ext_decl
+        | ext_decl_list COMMA ext_decl
+        ;
+
+ext_decl
+        : var_decl
+        | var_decl EQUAL initializer
+        | funct_decl
+        ;
+
+funct_decl
+        : STAR funct_decl
+        | funct_decl LB RB
+        | funct_decl LB const_expr RB
+        | LP funct_decl RP
+        | funct_decl LP RP
+        | new_name LP RP
+        | new_name LP name_list RP
+        | new_name LP var_list RP
+        ;
+name_list
+        : new_name
+        | name_list COMMA new_name
+        ;
+var_list
+        : param_declaration
+        | var_list COMMA param_declaration
+        ;
+param_declaration
+        : type var_decl
+        | abstract_decl
+        | ELLIPSIS
+        ;
+
+abstract_decl
+        : type abs_decl
+        ;
+
+abs_decl
+        : /* epsilon */
+        | LP abs_decl RP LP RP
+        | STAR abs_decl
+        | abs_decl LB RB
+        | abs_decl LB const_expr RB
+        | LP abs_decl RP
+        ;
+
+struct_specifier
+        : STRUCT opt_tag LC def_list RC
+        | STRUCT tag
+        ;
+
+opt_tag : tag
+        | /* empty */
+        ;
+
+tag     : NAME
+        ;
+
+def_list
+        : def_list def
+        | /* epsilon */
+        ;
+
+def     : specifiers decl_list SEMI
+        | specifiers SEMI
+        ;
+
+decl_list
+        : decl
+        | decl_list COMMA decl
+        ;
+
+decl    : funct_decl
+        | var_decl
+        | var_decl EQUAL initializer
+        | var_decl COLON const_expr         %prec COMMA
+        | COLON const_expr                  %prec COMMA
+
+enum_specifier
+        : "enum" name opt_enum_list
+        | "enum" LC enumerator_list RC
+
+opt_enum_list
+        : LC enumerator_list RC
+        | /* empty */
+
+enumerator_list
+        : enumerator
+        | enumerator_list COMMA enumerator
+        ;
+
+enumerator
+        : name
+        | name EQUAL const_expr
+        ;
+
+compound_stmt
+        : LC local_defs stmt_list RC
+        ;
+
+local_defs
+        : def_list
+        ;
+
+ext_def : opt_specifiers ext_decl_list SEMI
+        | opt_specifiers SEMI
+        | opt_specifiers funct_decl def_list compound_stmt
+        ;
+
+stmt_list
+        : stmt_list statement
+        | /* epsilon */
+        ;
+
+statement
+        : SEMI
+        | compound_stmt
+        | expr SEMI
+        | "return" SEMI
+        | "return" expr SEMI
+        | "goto" target SEMI
+        | target COLON statement
+        | "if" LP test RP statement
+        | "if" LP test RP statement "else" statement
+        | "while" LP test RP statement
+        | "do" statement "while" LP test RP SEMI
+        | "for" LP opt_expr SEMI test SEMI opt_expr RP statement
+        | "break" SEMI
+        | "continue" SEMI
+        | "switch" LP expr RP compound_stmt
+        | "case" const_expr COLON
+        | "default" COLON
+        ;
+
+target  : NAME
+        ;
+
+test    : expr
+        | /* empty */
+        ;
+
+unary   : LP expr RP
+        | FCON
+        | ICON
+        | NAME
+        | string_const                  %prec COMMA
+        | "sizeof" LP string_const RP   %prec "sizeof"
+        | "sizeof" LP expr RP           %prec "sizeof"
+        | "sizeof" LP abstract_decl RP  %prec "sizeof"
+        | LP abstract_decl RP unary     %prec UNOP
+        | MINUS unary                   %prec UNOP
+        | UNOP unary
+        | unary INCOP
+        | INCOP unary
+        | AND unary                     %prec UNOP
+        | STAR unary                    %prec UNOP
+        | unary LB expr RB              %prec UNOP
+        | unary STRUCTOP NAME           %prec STRUCTOP
+        | unary LP args RP
+        | unary LP RP
+        ;
+
+args    : non_comma_expr                %prec COMMA
+        | non_comma_expr COMMA args
+        ;
+
+expr    : expr COMMA non_comma_expr
+        | non_comma_expr
+        ;
+
+non_comma_expr
+        : non_comma_expr QUEST non_comma_expr COLON non_comma_expr
+        | non_comma_expr ASSIGNOP non_comma_expr
+        | non_comma_expr EQUAL non_comma_expr
+        | or_expr
+        ;
+
+or_expr : or_list
+        ;
+or_list : or_list OROR and_expr
+        | and_expr
+        ;
+
+and_expr: and_list
+        ;
+and_list: and_list ANDAND binary
+        | binary
+        ;
+
+binary  : binary RELOP binary
+        | binary EQUOP binary
+        | binary STAR binary
+        | binary DIVOP binary
+        | binary SHIFTOP binary
+        | binary AND binary
+        | binary XOR binary
+        | binary OR binary
+        | binary PLUS binary
+        | binary MINUS binary
+        | unary
+        ;
+
+opt_expr
+        : expr
+        | /* epsilon */
+        ;
+
+const_expr
+        : expr              %prec COMMA
+        ;
+
+initializer
+        : expr              %prec COMMA
+        | LC initializer_list RC
+        ;
+
+initializer_list
+        : initializer
+        | initializer_list COMMA initializer
+        ;
+
+string_const
+        : STRING
+        | string_const STRING
+        ;
+
+
+/*----------------------------------------------------
+ * Lexical specification.
+ */
+
+%fragment {
+letter  "[_a-zA-Z]"     /* Letter                               */
+alnum   "[_a-zA-Z0-9]"  /* Alphanumeric character               */
+h       "[0-9a-fA-F]"   /* Hexadecimal digit                    */
+o       "[0-7]"         /* Octal-digit                          */
+d       "[0-9]"         /* Decimal digit                        */
+suffix  "[UuLl]"        /* Suffix in integral numeric constant  */
+}
+
+STRING  : /"(\\.|[^"])*"/
+
+ICON    : /'.'/
+        | /'\\.'/
+        | /'\\{o}({o}{o}?)?'/
+        | /'\\x{h}({h}{h}?)?'/
+        | /0{o}*{suffix}?/
+        | /0x{h}+{suffix}?/
+        | /[1-9]{d}*{suffix}?/
+
+FCON    : /({d}+|{d}+\.{d}*|{d}*\.{d}+)([eE][\-+]?{d}+)?[fF]?/
+
+LP      : '('
+RP      : ')'
+LC      : '{'
+RC      : '}'
+LB      : '['
+RB      : ']'
+STRUCTOP: '->' | '.'
+INCOP   : '++' | '--'
+UNOP    : '~' | '!'
+STAR    : '*'
+DIVOP   : '/' | '%'
+PLUS    : '+'
+MINUS   : '-'
+SHIFTOP : '<<' | '>>'
+RELOP   : '<=' | '<' | '>' | '>='
+EQUOP   : '==' | '!='
+ASSIGNOP: /[*\/%+\-&|^]=/ | /(<<|>>)=/
+EQUAL   : '='
+AND     : '&'
+XOR     : '^'
+OR      : '|'
+ANDAND  : '&&'
+OROR    : '||'
+QUEST   : '?'
+COLON   : ':'
+COMMA   : ','
+SEMI    : ';'
+ELLIPSIS: '...'
+
+NAME    : /{letter}{alnum}*/
+
+CLASS   : "auto"
+        | "extern"
+        | "register"
+        | "static"
+        | "typedef"
+        ;
+TYPE    : "char"
+        | "double"
+        | "float"
+        | "int"
+        | "long"
+        | "short"
+        | "unsigned"
+        | "void"
+        ;
+STRUCT  : "struct"
+        | "union"
+        ;
+}
+
+
+C {
+    void main(args)
+    char *args;
+    {
+        int sum = 0;
+        int i;
+
+        for (i = 0; i < 10; i++) {
+            sum += i;
+        }
+
+        printf("sum=%d\n", sum);
+    }
+}

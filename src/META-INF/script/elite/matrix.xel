@@ -1,0 +1,850 @@
+/*
+ * $Id: matrix.xel,v 1.6 2009/05/13 05:39:05 danielyuan Exp $
+ *
+ * Copyright (C) 2006 Operamasks Community.
+ * Copyright (C) 2000-2006 Apusic Systems, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see http://www.gnu.org/licenses.
+ */
+
+/**
+ * This class represents a immutable vector.
+ */
+class Vector
+{
+    // vector elements.
+    define _values;
+
+    private Vector(values) {
+        this._values = values;
+    }
+
+    /**
+     * Create a vector with the specified elements.
+     *
+     * @param elements the vector elements.
+     * @return the vector having the specified elements.
+     */
+    public static valueOf(elements...) {
+        return new Vector(elements.toArray());
+    }
+
+    /**
+     * create a vector wraps with the specified elements.
+     *
+     * @param elements the collection of vector elements
+     * @return the vector having the specified elements.
+     */
+    public static wrap(elements) {
+        | ::Array => new Vector(elements);
+        | ::List => new Vector(elements.toArray());
+        | ::Vector => elements;
+    }
+
+    /**
+     * Create a vector by evaluating f with i ranging from 1 to n.
+     *
+     * @param n the vector dimension
+     * @param f the procedure to evaluate vector elements
+     * @return the vector having elements by evaluating f
+     */
+    public static build(n, f) {
+        define V = new Object[n];
+        for (define i in [1..n]) {
+            V[i-1] = f(i);
+        }
+        return new Vector(V);
+    }
+
+    /**
+     * Returns the number of elements in the vector.
+     *
+     * @return the vector dimension.
+     */
+    public getLength() {
+        return _values.length;
+    }
+
+    /**
+     * Returns the vector element at the specified index.
+     *
+     * @param index the element index.
+     * @return the vector element at <code>index</code>.
+     */
+    public get(index) {
+        return _values[index];
+    }
+
+    /**
+     * Returns the vector element at the specified index.
+     *
+     * @param index the element index.
+     * @return the vector element at <code>index</code>.
+     */
+    public [](index) {
+        return _values[index];
+    }
+
+    /**
+     * Returns a vector that is the result of iteration of the given procedure
+     * over all elements of the vector.
+     */
+    public map(proc) {
+        return new Vector(_values.map(proc));
+    }
+
+    /**
+     * Returns a vector that is the result of iteration of the given procedure
+     * over all elements of this vector and another vector.
+     */
+    public map2(other::Vector, proc) {
+        if (_values.length != other._values.length) {
+            throw new UnsupportedOperationException("Vector dimensions mismatch");
+        }
+        return new Vector(_values.map2(other._values, proc));
+    }
+
+    /**
+     * Returns negation of the vector.
+     */
+    public __neg__() {
+        map(\x => -x)
+    }
+
+    /**
+     * Returns the sum of vectors.
+     *
+     * @param lhs the vector to be added.
+     * @param rhs the vector to be added.
+     * @return <code>lhs + rhs</code>.
+     */
+    public static +(lhs, rhs) {
+        if (lhs is Vector) {
+            if (rhs is Vector) {
+                lhs.map2(rhs, \x,y => x+y);
+            } else if (rhs is Matrix) {
+                throw new UnsupportedOperationException("Vector + Matrix");
+            } else {
+                lhs.map(\x => x+rhs);
+            }
+        } else {
+            rhs.map(\x => lhs+x);
+        }
+    }
+
+    /**
+     * Returns the difference of two vectors.
+     *
+     * @param lhs the vector to be subtracted.
+     * @param rhs the vector to be subtracted.
+     * @return <code>lhs - rhs</code>.
+     */
+    public static -(lhs, rhs) {
+        if (lhs is Vector) {
+            if (rhs is Vector) {
+                lhs.map2(rhs, \x,y => x-y);
+            } else if (rhs is Matrix) {
+                throw new UnsupportedOperationException("Vector + Matrix");
+            } else {
+                lhs.map(\x => x-lhs);
+            }
+        } else {
+            rhs.map(\x => lhs-x);
+        }
+    }
+
+    /**
+     * Returns the product of two vectors or product of a vector and a factor.
+     *
+     * @param lhs the vector or factor multiplicant.
+     * @param rhs the vector or factor multiplier.
+     * @return <code>lhs * rhs</code>.
+     */
+    public static *(lhs, rhs) {
+        if (lhs is Vector) {
+            if (rhs is Vector) {
+                if (lhs.length != rhs.length)
+                    throw new UnsupportedOperationException("Vector dimensions mismatch");
+                return fold2(lhs._values, rhs._values, 0, \z,x,y => z+x*y);
+            } else if (rhs is Matrix) {
+                return (Matrix([lhs]) * rhs).row(0);
+            } else {
+                return lhs.map(\x => x*rhs);
+            }
+        } else {
+            return rhs.map(\x => lhs*x);
+        }
+    }
+
+    /**
+     * Returns an array containing all elements in the vector.
+     *
+     * @param type the array element type.
+     * @return the array containing all elements in the vector.
+     */
+    public toArray(type = Object) {
+        define a = Array.newInstance(type, _values.length);
+        for (define i in [0..*_values.length]) {
+            a[i] = _values[i];
+        }
+        return a;
+    }
+
+    /**
+     * Compares two vectors for equality.
+     *
+     * @param that the vector to compare for equality.
+     * @return <code>true</code> if this vector and the specified objects
+     *         are both vectors with equal elements; <code>false</code> otherwise.
+     */
+    public equals(that) {
+        if (that is not Vector)
+            return false;
+        define len = _values.length;
+        if (len != that._values.length)
+            return false;
+        for (define i in [0..*len]) {
+            if (_values[i] != that._values[i])
+                return false;
+        }
+        return true;
+    }
+
+    /**
+     * Returns a hash code value for this vector.
+     *
+     * @return hash code value
+     */
+    public hashCode() {
+        define h = 0;
+        for (define i in [0..*_values.length]) {
+            h = h * 31 + _values[i].hashCode();
+        }
+        return h;
+    }
+
+    /**
+     * Returns the String representation of this vector.
+     *
+     * @return String representation.
+     */
+    public toString() {
+        return "Vector$_values";
+    }
+}
+
+/**
+ * This class represents an immutable matrix.
+ */
+class Matrix
+{
+    define _rows;  // row data
+    define _m;     // number of columns
+
+    private Matrix(values, copy = true) {
+        if (copy) {
+            define n = values.length;
+            define m = null;
+            define rows = new Object[n];
+
+            define i = 0;
+            for (define row in values) {
+                if (row is List) {
+                    row = row.toArray();
+                } else if (row is Vector) {
+                    row = row.toArray();
+                } else if (row is Array) {
+                    // ok
+                } else {
+                    throw new IllegalArgumentException("Not a matrix");
+                }
+
+                if (m == null) {
+                    m = row.length;
+                } else if (m != row.length) {
+                    throw new IllegalArgumentException("Not a matrix");
+                }
+
+                rows[i++] = row;
+            }
+
+            this._rows = rows;
+            this._m = m;
+        } else {
+            this._rows = values;
+            this._m = values[0].length;
+        }
+    }
+
+    /**
+     * Create a matrix with the specified elements.
+     *
+     * @param rows the matrix elements.
+     * @return the matrix having the specified elements.
+     */
+    public static valueOf(rows) {
+        return new Matrix(rows, true);
+    }
+
+    /**
+     * Create an n by m matrix by evaluating f with i ranging from 1 to n
+     * and j ranging from 1 to m.
+     *
+     * @param n numer of rows in the matrix
+     * @param m number of columns in the matrix
+     * @param f the procedure to evaluate matrix elements
+     * @return the matrix having elements by evaluating f
+     */
+    public static build(n, m, f) {
+        define M = new Object[n][m];
+        for (define i in [0..*n]) {
+            for (define j in [0..*m]) {
+                M[i][j] = f(i+1, j+1);
+            }
+        }
+        return new Matrix(M, false);
+    }
+
+    /**
+     * Create matrix where the diagonal elements are composed of values.
+     *
+     * @param values matrix diagonal elements.
+     * @return matrix composed with diagonal elements.
+     */
+    public static diagonal(values...) {
+        define n = values.length;
+        define M = new Object[n][n];
+        for (define i in [0..*n]) {
+            M[i][0..n] = 0;
+            M[i][i] = values[i];
+        }
+        return new Matrix(M, false);
+    }
+
+    /**
+     * Creates an n by n diagonal matrix where each diagonal element is value.
+     *
+     * @param n the matrix dimension.
+     * @param value the matrix diagonal element value.
+     * @return matrix composed with diagonal element value.
+     */
+    public static scalar(n, value) {
+        define M = new Object[n][n];
+        for (define i in [0..*n]) {
+            M[i][0..n] = 0;
+            M[i][i] = value;
+        }
+        return new Matrix(M, false);
+    }
+
+    /**
+     * Create an n by m constant element matrix.
+     *
+     * @param n the number of rows in the matrix.
+     * @param m the number of columns in the matrix.
+     * @param value the matrix constant element value.
+     * @return constant element matrix.
+     */
+    public static fill(n, m, value) {
+        define M = new Object[n][m];
+        for (define i in [0..*n]) {
+            M[i][0..*m] = value;
+        }
+        return new Matrix(M, false);
+    }
+
+    /**
+     * Create an n by n identity matrix.
+     *
+     * @param n the matrix dimension.
+     * @return identity matrix.
+     */
+    public static identity(n) {
+        scalar(n, 1);
+    }
+
+    /**
+     * Creaet an n by n zero matrix.
+     *
+     * @param n the matrix dimension.
+     * @return zero matrix.
+     */
+    public static zero(n) {
+        fill(n, n, 0);
+    }
+
+    /**
+     * Create an n by m matrix fill with random numbers.
+     *
+     * @param n the number of rows of the matrix.
+     * @param m the number of columns of the matrix.
+     * @return random matrix.
+     */
+    public static random(n, m) {
+        define M = new Object[n][m];
+        for (define i in [0..*n]) {
+            for (define j in [0..*m]) {
+                M[i][j] = Math.random();
+            }
+        }
+        return new Matrix(M, false);
+    }
+
+    /**
+     * Returns the number of rows in the matrix.
+     */
+    public getRow_count() {
+        return _rows.length;
+    }
+
+    /**
+     * Return the number of columns in the matrix.
+     */
+    public getColumn_count() {
+        return _m;
+    }
+
+    /**
+     * Indicates if this matrix is square.
+     *
+     * @return <code>row_count == column_count</code>.
+     */
+    public isSquare() {
+        _rows.length == _m;
+    }
+
+    /**
+     * Get the element value at the specified index.
+     *
+     * @param i the row index.
+     * @param j the column index.
+     * @return the element value.
+     */
+    public get(i, j) {
+        return _rows[i][j];
+    }
+
+    /**
+     * Returns the row data at the specified index.
+     *
+     * @param i the row index.
+     * @return the row data.
+     */
+    public [](i) {
+        return _rows[i];
+    }
+
+    /**
+     * Returns the row vector identified by the specified index in the matrix.
+     *
+     * @param i the row index.
+     * @return the vector for the specified row.
+     */
+    public row(i) {
+        if (i < 0 || i >= _rows.length) {
+            throw new IndexOutOfBoundsException("Index:$j");
+        }
+        return Vector.wrap(_rows[i]);
+    }
+
+    /**
+     * Returns the column vector identified by the specified index in the matrix.
+     *
+     * @param j the column index.
+     * @return the vector for the specified column.
+     */
+    public column(j) {
+        if (j < 0 || j >= _m) {
+            throw new IndexOutOfBoundsException("Index:$j");
+        }
+        define n = _rows.length;
+        define V = new Object[n];
+        for (define i in [0..*n]) {
+            V[i] = _rows[i][j];
+        }
+        return Vector.wrap(V);
+    }
+
+    /**
+     * Returns a matrix that is the result of iteration of the given procedure
+     * over all elements of the matrix.
+     */
+    public map(proc) {
+        new Matrix(_rows.map(\row=>row.map(proc)), false);
+    }
+
+    /**
+     * Returns a matrix that is the result of iteration of the given procedure
+     * over all elements of this and other matrix.
+     */
+    public map2(other::Matrix, proc) {
+        if (_rows.length != other._rows.length || _m != other._m) {
+            throw new UnsupportedOperationException("Matrices have different dimensions");
+        }
+        return new Matrix(_rows.map2(other._rows, \r1,r2 => r1.map2(r2, proc)), false);
+    }
+
+    /**
+     * Returns the negation of this matrix.
+     *
+     * @return <code>-this</code>.
+     */
+    public __neg__() {
+        map(\x => -x);
+    }
+
+    /**
+     * Returns the sum of two matrices.
+     *
+     * @param lhs the matrix to be added.
+     * @param rhs the matrix to be added.
+     * @return <code>lhs + rhs</code>.
+     */
+    public static +(lhs, rhs) {
+        if (lhs is Matrix) {
+            if (rhs is Matrix) {
+                lhs.map2(rhs, \x,y => x+y);
+            } else if (rhs is Vector) {
+                throw new UnsupportedOperationException("Matrix + Vector");
+            } else {
+                lhs.map(\x => x+rhs);
+            }
+        } else {
+            rhs.map(\x => lhs+x);
+        }
+    }
+
+    /**
+     * Returns the difference between two matrices.
+     *
+     * @param lhs the matrix to be subtracted.
+     * @param rhs the matrix to be subtracted.
+     * @return <code>lhs - rhs</code>.
+     */
+    public static -(lhs, rhs) {
+        if (lhs is Matrix) {
+            if (rhs is Matrix) {
+                lhs.map2(rhs, \x,y => x-y);
+            } else if (rhs is Vector) {
+                throw new UnsupportedOperationException("Matrix + Vector");
+            } else {
+                lhs.map(\x => x-rhs);
+            }
+        } else {
+            rhs.map(\x => lhs-x);
+        }
+    }
+
+    /**
+     * Returns the product of matrix by matrix, vector, or factor.
+     *
+     * @param lhs the multiplicant.
+     * @param rhs the multiplier.
+     * @return <code>lhs * rhs</code>.
+     */
+    public static *(lhs, rhs) {
+        if (lhs is Matrix) {
+            if (rhs is Matrix) {
+                /* Matrix * Matrix */
+                if (lhs.column_count != rhs.row_count) {
+                    throw new UnsupportedOperationException("Matrix dimensions mismatch");
+                }
+
+                let (l = lhs._rows, r = rhs.transpose()._rows) {
+                    new Matrix(l.map(\li => r.map(\ri => fold2(li, ri, 0, \z,x,y=>z+x*y))), false);
+                }
+            } else if (rhs is Vector) {
+                /* Matrix * Vector */
+                if (lhs.column_count != rhs.length) {
+                    throw new UnsupportedOperationException("Matrix dimensions mismatch");
+                }
+
+                let (l = lhs._rows, r = rhs._values) {
+                    Vector.wrap(l.map(\li => fold2(li, r, 0, \z,x,y=>z+x*y)));
+                }
+            } else {
+                /* Matrix * factor */
+                lhs.map(\x=>x*rhs);
+            }
+        } else {
+            /* factor * Matrix */
+            rhs.map(\x=>lhs*x);
+        }
+    }
+
+    /**
+     * Returns divison of two matrices.
+     *
+     * @param lhs the matrix dividend.
+     * @param rhs the matrix divisor.
+     * @return <code>lhs / rhs</code>.
+     */
+    public static /(lhs, rhs) {
+        if (lhs is Matrix) {
+            if (rhs is Matrix) {
+                return lhs * rhs.inverse();
+            } else if (rhs is Vector) {
+                throw new UnsupportedOperationException("Matrix / Vector");
+            } else {
+                return lhs.map(\x=>x/rhs);
+            }
+        } else {
+            return rhs.map(\x=>lhs/x);
+        }
+    }
+
+    /**
+     * Returns the matrix raised at the specified exponent.
+     *
+     * @param n the exponent.
+     * @return <code>this ^ n</code>
+     */
+    public ^(n::int) {
+        if (!isSquare()) {
+            throw new UnsupportedOperationException("Not a square matrix");
+        }
+
+        if (n == 0) {
+            Matrix.identity(_rows.length)
+        } else if (n < 0) {
+            inverse() ^ -n
+        } else {
+            let pow(x=self, i=n-1, z=self) {
+                i==0 ? z : i%2==0 ? pow(x*x, i>>1, z) : pow(x, i-1, z*x)
+            }
+        }
+    }
+
+    /**
+     * Returns the inverse of this matrix (must be square).
+     *
+     * @return <code>1 / this</code>
+     */
+    public inverse() {
+        if (!isSquare()) {
+            throw new UnsupportedOperationException("Not a square matrix");
+        }
+
+        define src = this.toArray();
+        define size = src.length - 1;
+
+        define dst = new Object[size+1][size+1];
+        for (define i in [0..size]) {
+            dst[i][0..*] = 0;
+            dst[i][i] = 1;
+        }
+
+        for (define k in [0..size]) {
+            define akk = src[k][k];
+            if (akk == 0) {
+                define i = k;
+                while (src[i][k] == 0) {
+                    if (++i > size) {
+                        throw new UnsupportedOperationException("Not a regular matrix");
+                    }
+                }
+                (src[i], src[k]) = (src[k], src[i]);
+                (dst[i], dst[k]) = (dst[k], dst[i]);
+                akk = src[k][k];
+            }
+
+            for (define i in [0..size]) {
+                if (i != k) {
+                    define q = src[i][k] / akk;
+                    src[i][k] = 0;
+                    for (define j in [k+1..size]) {
+                        src[i][j] -= src[k][j] * q;
+                    }
+                    for (define j in [0..size]) {
+                        dst[i][j] -= dst[k][j] * q;
+                    }
+                }
+            }
+
+            for (define j in [k+1..size]) {
+                src[k][j] /= akk;
+            }
+            for (define j in [0..size]) {
+                dst[k][j] /= akk;
+            }
+        }
+
+        return new Matrix(dst, false);
+    }
+
+    /**
+     * Returns the determinant of the matrix.
+     *
+     * @return the matrix determinant.
+     */
+    public determinant() {
+        if (!isSquare()) {
+            return 0;
+        }
+
+        define a = this.toArray();
+        define size = a.length - 1;
+        define det = 1;
+
+        for (define k in [0..size]) {
+            define akk = a[k][k];
+            if (akk == 0) {
+                define i = k;
+                while (a[i][k] == 0) {
+                    if (++i > size)
+                        return 0;
+                }
+                (a[i], a[k]) = (a[k], a[i]);
+                akk = a[k][k];
+                det = -det;
+            }
+
+            for (define i in [k+1..size]) {
+                define q = a[i][k] / akk;
+                for (define j in [k+1..size]) {
+                    a[i][j] -= a[k][j] * q;
+                }
+            }
+
+            det *= akk;
+        }
+
+        return det;
+    }
+
+    /**
+     * Returns the cofactor of an element in the matrix. It is the value
+     * obtained by evaluating the determinant formed by the elements not
+     * in that particular row or column.
+     *
+     * @param i the row index.
+     * @param j the column index.
+     * @return the cofactor.
+     */
+    public cofactor(i, j) {
+        if (!isSquare()) {
+            throw new UnsupportedOperationException("Not a square matrix");
+        }
+
+        define k1 = 0;
+        define M = _rows.map { row =>
+            define k2 = 0;
+            row.filter(\_=>k2++ != j)
+        }.filter(\_=>k1++ != i)
+        new Matrix(M).determinant();
+    }
+
+    /**
+     * Returns the adjoint of this matrix. It is obtained by replacing each
+     * element in this matrix with its cofactor and applying a + or - sign
+     * according (-1)^(i+j), and then finding the transpose of the resulting
+     * matrix.
+     *
+     * @return the adjoint of this matrix.
+     */
+    public adjoint() {
+        define n = _rows.length;
+        define m = _m;
+        define M = new Object[m][n];
+        for (define i in [0..*n]) {
+            for (define j in [0..*m]) {
+                define cofactor = this.cofactor(i, j);
+                M[j][i] = (i+j)%2 == 0 ? cofactor : -cofactor;
+            }
+        }
+        return new Matrix(M, false);
+    }
+    
+    /**
+     * Returns the trace of the matrix.
+     *
+     * @return sum of diagonal elements.
+     */
+    public trace() {
+        define n = Math.min(_rows.length, _m);
+        define tr = _rows[0][0];
+        for (define i in [1..*n]) {
+            tr += _rows[i][i];
+        }
+        return tr;
+    }
+
+    /**
+     * Returns the transpose of the matrix.
+     *
+     * @return <code>A'</code>.
+     */
+    public transpose() {
+        define m = this._m;
+        define n = this._rows.length;
+        define M = new Object[m][n];
+        for (define i in [0..*m]) {
+            for (define j in [0..*n]) {
+                M[i][j] = _rows[j][i];
+            }
+        }
+        return new Matrix(M, false);
+    }
+
+    /**
+     * Returns a two dimensional array containing all elements in the matrix.
+     *
+     * @param type the array element type.
+     * @return the array containing all elements in the matrix.
+     */
+    public toArray(type = Object) {
+        define a = Array.newInstance(type, new int[]{_rows.length, _m});
+        for (define i in [0..*_rows.length]) {
+            for (define j in [0..*_m]) {
+                a[i][j] = _rows[i][j];
+            }
+        }
+        return a;
+    }
+
+    /**
+     * Compares two matrices for equality.
+     *
+     * @param that the matrix to compare for equality.
+     * @return <code>true</code> if this matrix and the specified objects
+     *         are both matrics with equal elements; <code>false</code> otherwise.
+     */
+    public equals(that) {
+        return that is Matrix and _rows == that._rows;
+    }
+
+    /**
+     * Returns a hash code value for this matrix.
+     *
+     * @return hash code value
+     */
+    public hashCode() {
+        define h = 0;
+        for (define i in [0..*_rows.length]) {
+            for (define j in [0..*_m]) {
+                h = h*31 + _rows[i][j];
+            }
+        }
+        return h;
+    }
+
+    /**
+     * Returns the String representation of this matrix.
+     *
+     * @return String representation.
+     */
+    public toString() {
+        return "Matrix$_rows";
+    }
+}

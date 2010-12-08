@@ -1,0 +1,365 @@
+/*
+ * $Id: complex.xel,v 1.4 2009/05/07 16:57:04 danielyuan Exp $
+ *
+ * Copyright (C) 2006 Operamasks Community.
+ * Copyright (C) 2000-2006 Apusic Systems, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see http://www.gnu.org/licenses.
+ */
+
+import module math:elite.lang.MathLib;
+
+/**
+ * Represents an immutable complex number.
+ */
+class Complex(final real, final imag=0) extends Number
+{
+    /**
+     * The imaginary unit.
+     */
+    public static final I = Complex(0, 1);
+
+    /**
+     * Create a complex number having the specified magnitude and argument.
+     *
+     * @param magnitude the magnitude of this complex number.
+     * @param argument the argument of this complex number.
+     * @return the complex number
+     */
+    public static polar(magnitude, argument) {
+        return Complex(magnitude*math:cos(argument), magnitude*math:sin(argument));
+    }
+
+    /**
+     * Returns this complex number (unary + operator).
+     */
+    public __pos__() {
+        return this;
+    }
+
+    /**
+     * Returns the negation of this complex.
+     */
+    public __neg__() {
+        return Complex(-real, -imag);
+    }
+
+    /**
+     * Returns the sum of this complex with the one specified.
+     *
+     * @param x the complex is being added.
+     * @param y the complex to be added.
+     * @return <code>x + y</code>
+     */
+    public static +(x, y) {
+        | Complex(a,b), Complex(c,d) => Complex(a+c, b+d)
+        | Complex(a,b), _ => Complex(a+y, b)
+        | _, Complex(c,d) => Complex(x+c, d)
+    }
+
+    /**
+     * Returns the difference between this complex and the one specified.
+     *
+     * @param x the complex is being subtracted.
+     * @param y the complex to be subtracted.
+     * @return <code>x - y</code>.
+     */
+    public static -(x, y) {
+        | Complex(a,b), Complex(c,d) => Complex(a-c, b-d)
+        | Complex(a,b), _ => Complex(a-y, b)
+        | _, Complex(c,d) => Complex(x-c, d)
+    }
+
+    /**
+     * Returns the product of this complex with the one specified.
+     *
+     * @param x the complex multiplicant.
+     * @param y the complex multiplier.
+     * @return <code>x * y</code>
+     */
+    public static *(x, y) {
+        | Complex(a,b), Complex(c,d) => Complex(a*c-b*d, b*c+a*d)
+        | Complex(a,b), _ => Complex(a*y, b*y)
+        | _, Complex(c,d) => Complex(x*c, x*d)
+    }
+
+    /**
+     * Returns this complex divided by the specified complex.
+     *
+     * @param x the complex dividend.
+     * @param y the complex divisor.
+     * @return <code>x / y</code>.
+     */
+    public static /(x, y) {
+        | Complex(a,b), Complex(c,d) =>
+            define t = c*c + d*d
+            Complex((a*c + b*d)/t, (b*c - a*d)/t)
+
+        | Complex(a,b), _ =>
+            Complex(a/y, b/y)
+
+        | _, Complex(c,d) =>
+            define t = c*c + d*d
+            Complex(x*c/t, -x*d/t)
+    }
+
+    /**
+     * Returns the inverse of this complex.
+     *
+     * @return <code>1 / this</code>.
+     */
+    public inverse() {
+        define tmp = real*real + imag*imag;
+        return Complex(real/tmp, -imag/tmp);
+    }
+
+    /**
+     * Returns the conjugate of this complex number.
+     *
+     * @return <code>(this.real, -this.imag)</code>.
+     */
+    public conjugate() {
+        return Complex(real, -imag);
+    }
+
+    /**
+     * Returns the magnitude of this complex number, also referred to
+     * as the "modulus" or "length".
+     */
+    public magnitude() {
+        return Math.hypot(real, imag);
+    }
+
+    /**
+     * Returns the argument of this complex number. It is the angle
+     * in radians, measured counter-clockwise from the real axis.
+     *
+     * @return argument of this complex number.
+     */
+    public argument() {
+        return Math.atan2(imag, real);
+    }
+
+    public abs() => magnitude()
+
+    /**
+     * Returns one of the two square root of this complex number.
+     *
+     * @return <code>sqrt(this)</code>.
+     */
+    public sqrt() {
+        define m = math:sqrt(this.magnitude());
+        define a = this.argument() / 2;
+        return Complex(m*math:cos(a), m*math:sin(a));
+    }
+
+    /**
+     * Returns the complex base <i>e</i> of this complex.
+     *
+     * @return <code>exp(this)</code>.
+     */
+    public exp() {
+        define m = math:exp(real);
+        return Complex(m*math:cos(imag), m*math:sin(imag));
+    }
+
+    /**
+     * Returns the natural logarithm (base e) of this complex.
+     *
+     * @return <code>log(this)</code>.
+     */
+    public log() {
+        return Complex(math:log(this.magnitude()), this.argument());
+    }
+
+    /**
+     * Returns the cosine of this complex.
+     *
+     * @return <code>cos(this)</code>
+     */
+    public cos() {
+        return Complex(math:cos(real)*math:cosh(imag), -math:sin(real)*math:sinh(imag));
+    }
+
+    /**
+     * Returns the hyperbolic cosine of this complex.
+     *
+     * @return <code>cosh(this)</code>
+     */
+    public cosh() {
+        return Complex(math:cosh(real)*math:cos(imag), math:sinh(real)*math:sin(imag));
+    }
+
+    /**
+     * Returns the sine of this complex.
+     *
+     * @return <code>sin(this)</code>
+     */
+    public sin() {
+        return Complex(math:sin(real)*math:cosh(imag), math:cos(real)*math:sinh(imag));
+    }
+
+    /**
+     * Returns the hyperbolic sine of this complex.
+     *
+     * @return <code>sinh(this)</code>
+     */
+    public sinh() {
+        return Complex(math:sinh(real)*math:cos(imag), math:cosh(real)*math:sin(imag));
+    }
+
+    /**
+     * Return the complex tangent of this complex.
+     *
+     * @return <code>tan(this)</code>
+     */
+    public tan() {
+        return this.sin() / this.cos();
+    }
+
+    /**
+     * Returns the hyperbolic tangent of this complex.
+     *
+     * @return <code>tanh(this)</code>
+     */
+    public tanh() {
+        return this.sinh() / this.cosh();
+    }
+
+    /**
+     * Returns this complex raised to the specified power.
+     *
+     * @that the exponent.
+     * @return <code>this^that</code>.
+     */
+    public pow(that) {
+        | 0 => Complex(1)
+        | 1 => this
+        | -1 => inverse()
+
+        | n::Integer =>
+            define x = this;
+            if (n < 0) { 
+                x = x.inverse();
+                n = -n;
+            }
+
+            define z = x;
+            let Complex(r,i) = x;
+            while (--n != 0) {
+                while (n % 2 == 0) {
+                    (r,i) = (r*r - i*i, 2*r*i);
+                    n >>= 1;
+                }
+                z *= Complex(r, i);
+            }
+            return z;
+
+        | Complex(r,i) =>
+            define r1 = math:log(this.magnitude());
+            define i1 = this.argument();
+            define r2 = (r1 * r) - (i1 * i);
+            define i2 = (r1 * i) + (i1 * r);
+            define m = math:exp(r2);
+            Complex(m*math:cos(i2), m*math:sin(i2));
+
+        | e =>
+            define m = this.magnitude() ^ e
+            define a = this.argument() * e
+            Complex(m*math:cos(a), m*math:sin(a));
+    }
+
+    public static ^(x, e) {
+        if (x is not Complex)
+            x = Complex(x);
+        return x.pow(e);
+    }
+
+    /**
+     * Compares this complex against the specified object.
+     *
+     * @param that the object to compare with.
+     * @return <code>true</code> if the objects are the same;
+     *         <code>false</code> otherwise.
+     */
+    public equals(that) {
+        if (that is Complex) {
+            return real == that.real && imag == that.imag;
+        } else {
+            return real == that && imag == 0;
+        }
+    }
+
+    /**
+     * Returns the hash code for this complex number.
+     *
+     * @return the hash code value.
+     */
+    public hashCode() {
+        return real.hashCode() xor imag.hashCode();
+    }
+
+    /**
+     * Returns the String representation of this complex number.
+     */
+    public toString() {
+        case (real, imag) {
+        | r, 0         => "$r"
+        | 0, i::Number => "${i}i"
+        | 0, i         => "(${i})i"
+        | r, i::Number => i > 0 ? "${r}+${i}i" : "${r}${i}i"
+        | r, i         => "(${r})+(${i})i"
+        }
+    }
+
+    /**
+     * Returns the real component of this Complex number as a long.
+     */
+    public longValue() => real;
+
+    /**
+     * Returns the real component of this Complex number as an int.
+     */
+    public intValue() => real;
+
+    /**
+     * Returns the real component of this Complex number as a short.
+     */
+    public shortValue() => real;
+
+    /**
+     * Returns the real component of this Complex number as a byte.
+     */
+    public byteValue() => real;
+
+    /**
+     * Returns the real component of this Complex number as a double.
+     */
+    public doubleValue() => real;
+
+    /**
+     * Returns the real component of this Complex number as a float.
+     */
+    public floatValue() => real;
+}
+
+define sqrt(x::Number) {
+    if (x is Complex) {
+        return x.sqrt();
+    } else if (x < 0) {
+        return Complex(0, math:sqrt(-x));
+    } else {
+        return math:sqrt(x);
+    }
+}

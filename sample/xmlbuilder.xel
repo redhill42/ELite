@@ -1,0 +1,80 @@
+class Builder {
+    private buf = new StringBuilder();
+    private level = 0;
+
+    private void ident_plus() => level += 2;
+    private void ident_minus() => level -= 2;
+
+    private void ident() {
+        for (i in [1..level]) {
+            buf << ' ';
+        }
+    }
+
+    public void invoke(name, keys, args) {
+        ident();
+        buf << "<${name}";
+
+        define body = null;
+        for (i in [0..args.length-1]) {
+            if (keys[i] != null) {
+                // named attribute
+                buf << " ${keys[i]}='${args[i]}'";
+            } else {
+                // the body
+                body = args[i];
+            }
+        }
+
+        if (body != null) {
+            buf << ">";
+            if (body is Closure) {
+                buf << "\n";
+                ident_plus();
+                body.call_with(this);
+                ident_minus();
+                ident();
+            } else {
+                buf << body;
+            }
+            buf << "</${name}>\n";
+        } else {
+            buf << "/>\n";
+        }
+    }
+
+    public toString() {
+        return buf.toString();
+    }
+}
+
+// --------------------------
+
+define builder = new Builder();
+
+builder.book(isbn="999-99999-9-X") {
+    title("Mary's XML Primer")
+
+    author {
+        firstName("Mary")
+        lastName("White")
+    }
+
+    chapters {
+        frontMatter {
+            preface(pages="2")
+            contents(pages="5")
+            illustrations(pages="4")
+        }
+
+        chapter(number="1", pages="28", "XML Fundamentals")
+        chapter(number="2", pages="35", "Intermediate XML")
+        chapter(number="3", pages="44", "Advanced XML")
+        appendix(number="A", pages="7", "Entities")
+        appendix(number="B", pages="26", "Parsers and Tools")
+    }
+
+    media(type="CD")
+}
+
+print(builder)

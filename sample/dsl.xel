@@ -1,0 +1,134 @@
+require "measure";
+import javax.measure.unit.BaseUnit;
+import javax.measure.unit.UnitFormat;
+
+/*
+利用ELite的动态属性、动态方法、运算符重载、闭包以及灵活的语法结构可以
+方便地实现一些领域特定语言（DSL）。下面是一个用于温度表示的DSL，温度
+包括摄氏和华氏两种单位，我们可以用DSL的风格实现两种温度单位的互相转换
+和运算。
+
+表示温度的数据结构是一个三元组。unit是温度单位的字符串标识，同时也是一个
+标记，用于区分不同的温度单位。conv是一个转换函数，用于将其他温度单位转换
+成自己认识的温度单位。value是实际的温度值。温度对象重载了加和减运算符，
+在运算时首先将其他温度对象转换成自己的温度单位，然后对温度值进行加减运算。
+
+转换函数包括C和F。C将一个输入值转换成摄氏单位，如果输入值是一个数值，则使
+用该值构造出摄氏温度对象。如果输入值本身就是一个摄氏温度对象，则无须转换。
+如果输入值是一个华氏温度，则将华氏温度值转换成摄氏温度值，并构造摄氏温度对
+象。F函数与此类似。
+
+本示例还演示了ELite其他一些特性，包括比较运算符重载（即只需要定义==和<运
+算符就可以定义出所有比较运算符，包括==, !=, <, <=, >, >=），以及构造子
+模式匹配。
+*/
+
+class Temperature(final unit, final conv, final value) {
+    +(t)         => Temperature(unit, conv, value + conv(t).value);
+    -(t)         => Temperature(unit, conv, value - conv(t).value);
+    ==(t)        => value == conv(t).value;
+    <(t)         => value < conv(t).value;
+    toString()   => "${value}.${unit}"
+}
+
+define C(t) {
+    | Number() => Temperature('C', C, t)
+    | Temperature('C',_,_) => t
+    | Temperature('F',_,x) => Temperature('C', C, (5*x-160)/9)
+}
+
+define F(t) {
+    | Number() => Temperature('F', F, t)
+    | Temperature('F',_,_) => t
+    | Temperature('C',_,x) => Temperature('F', F, 9*x/5+32)
+}
+
+print(25.C()->F);           // 将25摄氏度转换成华氏度
+print(212.F()->C);          // 将212华氏度转换成摄氏度
+print(25.C() + 212.F());    // 将25摄氏度与212华氏度相加
+
+
+// 实际上，上述示例是ELite早期版本的示例，在最新的版本中实现了对JSR-275
+// (Measures and Unit Specification)的完全支持，可以在语言级别上以
+// 一种自然的方式完成单位的换算与运算，因此我们来改写这个示例。
+
+// CELSIUS(摄氏)和FAHRENHEIT(华氏)是JSR-275预定义的温度单位，可以直接用于换算
+print(25[CELSIUS]->FAHRENHEIT);
+print(212[FAHRENHEIT]->CELSIUS);
+print(25[CELSIUS] + 212[FAHRENHEIT]);
+
+
+// 下面是用于欧元汇率转换的DSL，首先定义基本单位ECU即欧洲货币单位，其他会员国
+// 货币与ECU之间有一个固定的汇率，可以完成任意会员国之间的汇率转换。
+
+define ECU = new BaseUnit("ECU");
+
+// 定义会员国货币单位
+define make_euro(symbol, rate) {
+    // 会员国货币单位与ECU之间存在固定汇率
+    define c = ECU / rate;
+
+    // 登记货币单位符号，此货币符号即可用于输出格式化，也可用于分析输入的字符串。
+    // 例如: 100 ECU
+    UnitFormat.getInstance().label(c, symbol);
+
+    return c;
+}
+
+// 为简单起见本示例采用了固定汇率，而在实际应用中可以继承Unit类实现变动汇率
+
+define ATS = make_euro("ATS", 13.7603);  // 奥地利先令
+define BEF = make_euro("BEF", 40.3399);  // 比利时法郎
+define DEM = make_euro("DEM", 1.95583);  // 德国马克
+define ESP = make_euro("ESP", 166.386);  // 西班牙比赛塔
+define FIM = make_euro("FIM", 5.94573);  // 芬兰马克
+define FRF = make_euro("FRF", 6.55957);  // 法国法郎
+define IEP = make_euro("IEP", .787564);  // 爱尔兰镑
+define ITL = make_euro("ITL", 1936.27);  // 意大利里拉
+define LUF = make_euro("LUF", 40.3399);  // 卢森堡法郎
+define NLG = make_euro("NLG", 2.20371);  // 荷兰基尔温
+define PTE = make_euro("PTE", 200.482);  // 葡萄牙货币
+
+print("400 FRF = ${400.FRF -> ECU}"); // 400法郎换算成欧元
+print("100 ECU = ${100.ECU -> BEF}"); // 100欧元换算成比利时法郎
+print("100 DEM = ${100.DEM -> PTE}"); // 100德国马克换算成葡萄牙货币
+print("400 FRF + 100 DEM = ${(400.FRF + 100.DEM) -> ECU}"); // 不同单位的运算
+
+
+// JSR-275综合示例:
+
+// 在ELite中使用语法格式value.unit或value[unit]构造具有值和单位的度量。其中value
+// 是一个数值，度量单位可以使用javax.measure.unit.SI和javax.measure.unit.NonSI
+// 中定义的全局变量，也可以使用单位符号。某些单位符号不是合法的ELite标识符，而且单位
+// 符号通常是较短的标识符，容易和其他变量名冲突，在这些情况下应当使用引号字符串来表示
+// 单位符号。度量单位可以使用乘法、除法、乘方等运算符以构造复合单位。
+
+// 油耗，每加仑汽油可行驶25英里
+define mileage = 25[mi/gal];
+
+// 油价，每加仑2.75马克
+define gas_price = 2.75[DEM/gal];
+
+// 里程，400英里
+define trip_distance = 400.mi;
+
+// 油费
+define trip_cost = trip_distance / mileage * gas_price;
+
+print("Trip cost = ${trip_cost} (${trip_cost->ECU})");
+
+
+// ELite的语法规则是可以扩充的，利用这一特性甚至可以构造出接近自然语言的DSL。
+
+grammar
+{
+goal
+    : 'send' #message 'to' #someone
+      -> print("Hello, $someone! $message.")
+
+    | 'convert' #amount #from_unit 'into' #to_unit
+      -> amount[from_unit] -> to_unit
+}
+
+send 'Welcome to earth' to 'Uncle Martin';
+print(convert 25 DEM into ECU);

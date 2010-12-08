@@ -1,0 +1,43 @@
+import javax.swing.JFrame;
+import javax.swing.JTextField;
+import javax.swing.JLabel;
+import javax.swing.JButton;
+import java.awt.event.ActionListener;
+import java.awt.GridLayout;
+import static elite.ast.Expression.*
+
+/*
+ * This script is identical to 'swing.xel' but it uses
+ * meta-programming to build the syntax tree.
+ */
+
+@infix    '##' = MEMBER;
+@infix(0) ':=' = ASSIGN;
+
+define tree = LAMBDA(:celsius_fahrenheit_converter, (),
+    COMPOUND(
+	DEFINE(:celsius, NEW(:JTextField)),
+        DEFINE(:fahrenheit, NEW(:JLabel, 'Fahrenheit')),
+        DEFINE(:convert, NEW(:JButton, 'Convert')),
+
+        APPLY(:convert##'addActionListener',
+              LAMBDA(:e, COMPOUND(
+                            DEFINE(:c, APPLY(:double, :celsius##'text')),
+                            :fahrenheit##'text' := (CONST(1.8)*:c+32) ~ " Fahrenheit"))),
+
+        APPLY(NEW(:JFrame)##'do',
+          LAMBDA((), COMPOUND(
+            :title := 'Celsius Converter',
+            :layout := NEW(:GridLayout, 2,2,3,3),
+            :defaultCloseOperation := JFrame.EXIT_ON_CLOSE,
+
+            APPLY(:add, :celsius),
+            APPLY(:add, NEW(:JLabel, 'Celsius')),
+            APPLY(:add, :convert),
+            APPLY(:add, :fahrenheit),
+
+            APPLY(:setSize, 300, 80),
+            :visible := true)))))
+
+tree.eval()
+celsius_fahrenheit_converter()

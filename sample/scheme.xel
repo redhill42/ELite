@@ -1,0 +1,138 @@
+require 'math'
+
+// This example illustrates meta-programming in ELite. We will create a small
+// subset of Scheme programming language from scratch.
+
+grammar {
+
+// Start a Scheme sub language block. A Scheme program is composed with
+// one or more S-expressions.
+program : 'scheme' '{' sequence '}'     { sequence }
+
+sequence: sequence expression           { sequence.append(expression) }
+        | expression
+
+expression
+        : atom
+        | procedure_call
+        | definition
+        | assignment
+        | lambda_expression
+	| let_expression
+        | conditional
+        | '(' 'begin' sequence ')'      { sequence }
+
+atom    : IDENT     { ID(IDENT) }   // variable
+        | ~num      -> num          // number literal
+        | ^str      -> str          // string literal
+        | '#t'      -> true         // boolean literal
+        | '#f'      -> false
+        // special symbols, mapped to operator procedures
+        | '+'       -> (+)
+        | '-'       -> (-)
+        | '*'       -> (*)
+        | '/'       -> (/)
+        | '='       -> (==)
+        | '<>'      -> (!=)
+        | '<'       -> (<)
+        | '<='      -> (<=)
+        | '>'       -> (>)
+        | '>='      -> (>=)
+
+procedure_call
+        : '(' operator=expression operands=(expression)* ')'
+                { APPLY(operator, operands) }
+
+definition
+        : '(' 'define' variable=IDENT expression ')'
+                { DEFINE(variable, expression) }
+
+        | '(' 'define' '(' variable=IDENT formals=(IDENT)* ')' sequence ')'
+                { LAMBDA(variable, formals, sequence) }
+
+assignment
+        : '(' 'set' variable=IDENT expression ')'
+                { ASSIGN(variable, expression) }
+
+lambda_expression
+        : '(' 'lambda' '(' formals=(IDENT)* ')' sequence ')'
+                { LAMBDA(formals, sequence) }
+
+let_expression
+        : '(' 'let' '(' bindings=(binding)+ ')' sequence ')'
+                {
+                    define vars = [], inits = [];
+                    for ((var,init) in bindings) {
+                        vars << var; inits << init;
+                    }
+                    APPLY(LAMBDA(vars, sequence), inits);
+                }
+
+binding	: '(' name=IDENT expression ')'  { (name, expression) }
+
+conditional
+        : '(' 'if' test=expression consequent=expression alternate=(expression)? ')'
+                { CONDITION(test, consequent, alternate) }
+
+        | '(' 'cond' test_clause_list else_clause ')'
+                {
+                    define e = else_clause;
+                    for ((test,expr) in test_clause_list) {
+                        e = CONDITION(test, expr, e);
+                    }
+                    e;
+                }
+
+        | '(' 'and' ')'                 -> true
+        | '(' 'and' and_list ')'        { and_list }
+        | '(' 'or' ')'                  -> false
+        | '(' 'or' or_list ')'          { or_list }
+        | '(' 'not' expression ')'      { NOT(expression) }
+
+test_clause_list
+        : test_clause_list test_clause              { [test_clause : test_clause_list] }
+        | test_clause                               { [test_clause] }
+test_clause
+        : '(' test=expression sequence ')'          { (test, sequence) }
+        | '(' test=expression '=>' expression ')'   { (test, expression) }
+else_clause
+        : '(' 'else' sequence ')'                   { sequence }
+        | /* epsilon */
+
+and_list: expression                                { expression }
+        | and_list expression                       { AND(and_list, expression) }
+
+or_list : expression                                { expression }
+        | or_list expression                        { OR(or_list, expression) }
+
+IDENT   : /[a-zA-Z!$%&*\/:<=>?^_~][a-zA-Z0-9!$%&*+\-.\/:<=>?@^_~]*/
+}
+
+// Example:
+scheme {
+    (define (fib n)
+        (if (<= n 2)
+            1
+            (+ (fib (- n 1)) (fib (- n 2)))))
+    (print (fib 10))
+
+    (define (average x y)
+        (/ (+ x y) 2))
+
+    (define (square x)
+        (* x x))
+
+    // From SICP 1.1.8
+    (define (sqrt x)
+        (define (good-enough? guess)
+            (< (abs (- (square guess) x)) 0.001))
+        (define (improve guess)
+            (average guess (/ x guess)))
+        (define (sqrt-iter guess)
+            (if (good-enough? guess)
+                guess
+                (sqrt-iter (improve guess))))
+        (sqrt-iter 1.0))
+
+    (print (sqrt 2))
+}
