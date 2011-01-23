@@ -319,7 +319,7 @@ public class Parser extends Scanner
             return new ELNode.EMPTY(scan(), parseTerm());
 
         case LET:
-            return parseLetExpression(scan());
+            return parseLetExpression(scan(), scan(MUL));
 
         case CASE:
             return parseMatchExpression(scan());
@@ -497,13 +497,7 @@ public class Parser extends Scanner
           case FIELD: {
             int p = scan();
 
-            if (token == LBRACKET) {
-                // exp1.[exp2] ===> exp1.filter(x=>{=>exp2}.call_with(x))
-                scan();
-                ELNode e2 = parseSyntaxExpression();
-                expect(RBRACKET);
-                return translateShortcut(p, e, e2, "filter");
-            } else if (token == LPAREN) {
+            if (token == LPAREN) {
                 // a.(b) ===> a.curry(b)
                 return new ELNode.ACCESS(p, e, new ELNode.STRINGVAL(p, "curry"));
             }
@@ -670,28 +664,6 @@ public class Parser extends Scanner
           default:
             return null; // mark end of binary expressions
         }
-    }
-
-    private ELNode translateShortcut(int p, ELNode e, ELNode e2, String action) {
-        // translate shortcut syntax sugar:
-        //   exp1.[exp2] ===> exp1.filter(x=>{=>exp2}.call_with(x))
-
-        int p2 = e2.pos;
-        if (e2.op != Token.LAMBDA) {
-            String t = tempvar();
-            e2 = new ELNode.LAMBDA(     // {=>exp2}
-                     p2, filename, EMPTY_DEFS, e2);
-            e2 = new ELNode.APPLY(      // {=>exp2}.call_with(x)
-                     p2,
-                     new ELNode.ACCESS(p2, e2, new ELNode.STRINGVAL(p2, "call_with")),
-                     new ELNode.IDENT(p2, t));
-            e2 = new ELNode.LAMBDA(     // {x=>{=>exp2}.call_with(x)}
-                     p2, filename, new ELNode.DEFINE[]{new ELNode.DEFINE(p2, t)}, e2);
-        }
-        // exp1.filter(x=>{x=>exp2}.call_with(x))
-        e = new ELNode.ACCESS(p, e, new ELNode.STRINGVAL(p, action));
-        e = new ELNode.APPLY(p, e.order(), e2);
-        return e;
     }
 
     /**
@@ -1789,6 +1761,8 @@ public class Parser extends Scanner
                 ELNode exp = parseExpressionStatement();
                 add_pattern_vars(pattern);
                 return new ELNode.LET(p, (ELNode)pattern, exp, true);
+            } else if (scan(MUL)) { // let*
+                return parseLetExpression(p, true);
             } else {
                 // conflict with let expression, do lookahead
                 Scanner mark = save();
@@ -1799,7 +1773,7 @@ public class Parser extends Scanner
                     return new ELNode.LET(p, (ELNode)pattern, exp, false);
                 } else {
                     restore(mark);
-                    return parseLetExpression(p);
+                    return parseLetExpression(p, false);
                 }
             }
 
@@ -2533,14 +2507,14 @@ public class Parser extends Scanner
     /**
      * Parse a let expression.
      */
-    private ELNode parseLetExpression(int p) {
+    private ELNode parseLetExpression(int p, boolean sequential) {
         String name, type;
         List<ELNode.Pattern> pats = new ArrayList<ELNode.Pattern>();
         List<ELNode> exps = new ArrayList<ELNode>();
         ELNode body;
 
         // named let?
-        if (idValue != null) {
+        if (!sequential && idValue != null) {
             name = scanQName();
             expect(IDENT);
             type = parseTypeNameOpt();
@@ -2571,8 +2545,43 @@ public class Parser extends Scanner
         close_scope();
 
         // translate
-        ELNode.LAMBDA lambda = translateLambda(p, name, type, pats, false, body);
-        return new ELNode.APPLY(p, lambda, to_a(exps), null);
+        if (sequential) {
+            // sequential binding:
+            //  translate
+            //    let* (x=a,y=b) body
+            //  into
+            //    (\x=>(\y=>body)(b))(a)
+            for (int i = pats.size(); --i >= 0; ) {
+                ELNode.DEFINE[] vars = new ELNode.DEFINE[1];
+                ELNode.Pattern pat = pats.get(i);
+
+                if (isVariablePattern(pat)) {
+                    // simple case
+                    vars[0] = (ELNode.DEFINE)pat;
+                } else {
+                    // pattern matching
+                    String tvar = tempvar();
+                    vars[0] = new ELNode.DEFINE(p, tvar);
+                    body = new ELNode.MATCH(p,
+                            new ELNode.IDENT(p, tvar),
+                            new ELNode.CASE(p, pat, null, body),
+                            null);
+                }
+
+                body = new ELNode.APPLY(p,
+                        new ELNode.LAMBDA(p, filename, vars, body),
+                        exps.get(i));
+            }
+            return body;
+        } else {
+            // parallel binding:
+            //  translate
+            //    let (x=a,y=b) body
+            //  into
+            //    (\x,y=>body)(a,b)
+            ELNode.LAMBDA lambda = translateLambda(p, name, type, pats, false, body);
+            return new ELNode.APPLY(p, lambda, to_a(exps), null);
+        }
     }
 
     /**
