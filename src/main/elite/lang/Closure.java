@@ -1,8 +1,5 @@
 /*
- * $Id: Closure.java,v 1.14 2009/05/13 13:49:21 danielyuan Exp $
- *
- * Copyright (C) 2006 Operamasks Community.
- * Copyright (C) 2000-2006 Apusic Systems, Inc.
+ * Copyright (c) 2006-2011 Daniel Yuan.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

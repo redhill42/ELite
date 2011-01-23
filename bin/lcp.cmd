@@ -1,5 +1,3 @@
-REM Copyright (c) 2001-2009 The Operamasks Community.  All rights reserved.
-
 set _CLASSPATHCOMPONENT=%1
 if ""%1""=="""" goto gotAllArgs
 shift

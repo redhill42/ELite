@@ -1,5 +1,4 @@
 @ECHO OFF
-REM Copyright (c) 2001-2009 The Operamasks Community.  All rights reserved.
 if "%OS%" == "Windows_NT" setlocal
 
 call ./setenv.cmd

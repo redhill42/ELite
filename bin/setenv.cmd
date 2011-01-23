@@ -1,4 +1,3 @@
-REM Copyright (c) 2001-2009 The Operamasks Community.  All rights reserved.
 @echo off
 
 rem set JAVA_HOME variable here, for example:

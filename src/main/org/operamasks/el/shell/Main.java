@@ -1,8 +1,5 @@
 /*
- * $Id: Main.java,v 1.11 2010/03/18 05:24:06 danielyuan Exp $
- *
- * Copyright (C) 2006 Operamasks Community.
- * Copyright (C) 2000-2006 Apusic Systems, Inc.
+ * Copyright (c) 2006-2011 Daniel Yuan.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,10 +46,9 @@ public class Main
 {
     private static final String[] WELCOME = {
         "Welcome to ELite (Version 0.5.0)",
-        "Copyright (c) 2006-2010 Operamasks Community.",
+        "Copyright (c) 2006-2011 Daniel Yuan.",
         "ELite comes with ABSOLUTELY NO WARRANTY. This is free software,",
         "and you are welcome to redistribute it under certain conditions.",
-        "Please visit http://www.operamasks.org for details.",
         ""
     };
 

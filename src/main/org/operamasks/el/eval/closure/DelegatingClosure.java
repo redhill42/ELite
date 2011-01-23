@@ -1,8 +1,5 @@
 /*
- * $Id: DelegatingClosure.java,v 1.7 2009/05/09 18:51:21 danielyuan Exp $
- *
- * Copyright (C) 2006 Operamasks Community.
- * Copyright (C) 2000-2006 Apusic Systems, Inc.
+ * Copyright (c) 2006-2011 Daniel Yuan.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
