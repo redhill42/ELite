@@ -20,7 +20,7 @@ void test_seq(n) {
 
     define next(N,x)   => (x + N/x) / 2
     define repeat(f,a) => [a : &repeat(f, f(a))]
-    define sqrt(x)     => repeat(next.(x), 1.0)
+    define sqrt(x)     => repeat(next.curry(x), 1.0)
 
     // The Pi algorithm based on Gosper's series from the paper
     // "Unbounded Spigot Algorithm for the Digits of Pi",
@@ -83,7 +83,7 @@ void test_cons(n) {
 
     define next(N,x)    => (x + N/x) / 2
     define repeat(f,a)  => Cons(a, repeat(f, f(a)))
-    define sqrt(x)      => repeat(next.(x), 1.0)
+    define sqrt(x)      => repeat(next.curry(x), 1.0)
 
     // The Pi algorithm based on Gosper's series from the paper
     // "Unbounded Spigot Algorithm for the Digits of Pi",

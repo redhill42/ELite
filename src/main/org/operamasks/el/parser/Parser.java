@@ -494,11 +494,6 @@ public class Parser extends Scanner
           case FIELD: {
             int p = scan();
 
-            if (token == LPAREN) {
-                // a.(b) ===> a.curry(b)
-                return new ELNode.ACCESS(p, e, new ELNode.STRINGVAL(p, "curry"));
-            }
-
             String id;
             switch (token) {
             case CLASSDEF: case NEW: case EMPTY:

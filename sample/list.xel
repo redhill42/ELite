@@ -32,9 +32,10 @@ define safe(q, qs) {
     not check(q, qs, 1);
 }
 
-define count = 0;
-for (x in queens(8)) {
-    print("${++count}: ${x}");
+let (count=0) {
+    for (x in queens(8)) {
+        print("${++count}: ${x}");
+    }
 }
 
 /*
