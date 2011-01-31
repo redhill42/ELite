@@ -4460,11 +4460,12 @@ public abstract class ELNode implements Serializable
             EvaluationContext env = context.pushContext(vm);
 
             for (CASE b : alts) {
-                if (b.matches(env, map, values)) {
+                ELNode body = b.matches(env, map, values);
+                if (body != null) {
                     // Copy matched variables into actual environment.
                     for (Map.Entry<String,ValueExpression> e : map.entrySet())
                         context.setVariable(e.getKey(), e.getValue());
-                    return b.body.pos(f);
+                    return body.pos(f);
                 } else {
                     // Clear the variable mapper to reuse it.
                     map.clear();
@@ -4501,10 +4502,11 @@ public abstract class ELNode implements Serializable
                 values[i] = args[i].pos(f).getValue(context);
             }
 
+            ELNode body;
             for (CASE b : alts) {
                 f.setPos(b.pos);
-                if (b.matches(context, null, values)) {
-                    return b.body.pos(f);
+                if ((body = b.matches(context, null, values)) != null) {
+                    return body.pos(f);
                 }
             }
 
@@ -4522,18 +4524,22 @@ public abstract class ELNode implements Serializable
      */
     public static class CASE extends ELNode {
         public final Pattern[] patterns;
-        public final ELNode guard;
-        public final ELNode body;
+        public final ELNode[] guards;
+        public final ELNode[] bodies;
 
         public CASE(int pos, Pattern pattern, ELNode guard, ELNode body) {
-            this(pos, new Pattern[]{pattern}, guard, body);
+            this(pos, new Pattern[]{pattern}, new ELNode[]{guard}, new ELNode[]{body});
         }
 
         public CASE(int pos, Pattern[] elems, ELNode guard, ELNode body) {
+            this(pos, elems, new ELNode[]{guard}, new ELNode[]{body});
+        }
+
+        public CASE(int pos, Pattern[] elems, ELNode[] guards, ELNode[] bodies) {
             super(Token.CASE, pos);
             this.patterns = elems;
-            this.guard = guard;
-            this.body = body;
+            this.guards = guards;
+            this.bodies = bodies;
         }
 
         public Object getValue(EvaluationContext context) {
@@ -4544,7 +4550,7 @@ public abstract class ELNode implements Serializable
             throw new AssertionError();
         }
 
-        boolean matches(EvaluationContext env, Map<String,ValueExpression> map, Object[] args) {
+        ELNode matches(EvaluationContext env, Map<String,ValueExpression> map, Object[] args) {
             boolean ok = true;
 
             // Matches for patterns.
@@ -4560,7 +4566,21 @@ public abstract class ELNode implements Serializable
             }
 
             // Evaluate guard.
-            return ok && ((guard == null) || guard.getBoolean(env));
+            if (ok) {
+                if (guards == null) {
+                    assert bodies.length == 1;
+                    return bodies[0];
+                }
+
+                assert guards.length == bodies.length;
+                for (int i = 0; i < guards.length; i++) {
+                    if (guards[i] == null || guards[i].getBoolean(env)) {
+                        return bodies[i];
+                    }
+                }
+            }
+
+            return null;
         }
 
         public void accept(Visitor v) {

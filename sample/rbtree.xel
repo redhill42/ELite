@@ -19,9 +19,10 @@ class TreeSet {
 
     private insert(t, x) {
         | Empty, x => Node(R(), t, x, t)
-        | Node(_,_,x,_), x => t
-        | Node(color,a,y,b), x => x < y ? balance(color, insert(a,x), y, b)
-                                        : balance(color, a, y, insert(b,x))
+        | Node(color,a,y,b), x
+                if x == y => t
+               	if x <  y => balance(color, insert(a,x), y, b)
+               	else      => balance(color, a, y, insert(b,x))
     }
 
     private balance(color, lhs, elt, rhs) {
@@ -38,8 +39,10 @@ class TreeSet {
 
     private member(t, x) {
         | Empty, _ => false
-        | Node(_,_,x,_), x => true
-        | Node(_,a,y,b), x => x < y ? member(a,x) : member(b,x)
+        | Node(_,a,y,b), x
+             if x == y  => true;
+             if x <  y  => member(a,x); 
+             else       => member(b,x);
     }
 
     private card(t) {

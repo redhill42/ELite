@@ -156,8 +156,8 @@ public class DefaultVisitor extends ELNode.Visitor
             for (ELNode.Pattern p : e.patterns)
                 scan((ELNode)p);
         }
-        scan(e.guard);
-        scan(e.body);
+        scan(e.guards);
+        scan(e.bodies);
     }
 
     public void visit(ELNode.LET e) {

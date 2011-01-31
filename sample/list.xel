@@ -25,8 +25,7 @@ define safe(q, qs) {
     define check(x, xs, n) {
         case (xs) {
         | [] => false
-	| [#x|#(x+n)|#(x-n) : _] => true
-	| [_ : ys] => check(x,ys,n+1)
+        | [y : ys] => y==x || y==x+n || y==x-n || check(x,ys,n+1)
         }
     }
     not check(q, qs, 1);

@@ -341,7 +341,7 @@ public class TreeTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.CASE e) {
-        result = new ELNode.CASE(e.pos, transform(e.patterns), transform(e.guard), transform(e.body));
+        result = new ELNode.CASE(e.pos, transform(e.patterns), transform(e.guards), transform(e.bodies));
     }
 
     public void visit(ELNode.LET e) {

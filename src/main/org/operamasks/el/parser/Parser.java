@@ -2831,58 +2831,56 @@ public class Parser extends Scanner
         int nargs = args != null ? args.length : -1;
         List<ELNode.Pattern> pats = new ArrayList<ELNode.Pattern>();
         List<ELNode.CASE> cases = new ArrayList<ELNode.CASE>();
+        List<ELNode> guards = new ArrayList<ELNode>();
+        List<ELNode> bodies = new ArrayList<ELNode>();
         List<ELNode> stmts = new ArrayList<ELNode>();
         ELNode deflt = null;
 
         while (token == BAR) {
-            ELNode guard = null, body;
             boolean isdeflt = false;
             int p2 = scan();
 
             if (token == ELSE) {
                 scan();
                 isdeflt = true;
-            } else {
-                if (token != IF) {
-                    pats.clear();
-                    do {
-                        pats.add(parsePattern());
-                    } while (scan(COMMA));
-                    if (nargs == -1) {
-                        nargs = pats.size();
-                    } else if (pats.size() != nargs) {
-                        throw parseError("argument pattern doesn't match.");
-                    }
-                }
-                if (scan(IF)) {
-                    guard = parseExpression();
+            } else if (token != IF) {
+                pats.clear();
+                do {
+                    pats.add(parsePattern());
+                } while (scan(COMMA));
+                if (nargs == -1) {
+                    nargs = pats.size();
+                } else if (pats.size() != nargs) {
+                    throw parseError("argument pattern doesn't match.");
                 }
             }
 
-            expect(ARROW);
-
-            int p3 = pos;
-            open_scope();
-            add_pattern_vars(pats);
-            stmts.clear();
-            while (token != BAR && token != RBRACE) {
-                parseStatementList(stmts);
-            }
-            close_scope();
-
-            if (stmts.size() == 0) {
-                body = new ELNode.NULL(p3);
-            } else if (stmts.size() == 1) {
-                body = stmts.get(0);
+            if (!isdeflt && token == IF) {
+                open_scope();
+                add_pattern_vars(pats);
+                guards.clear();
+                bodies.clear();
+                parseGuards(pos, guards, bodies, stmts);
+                close_scope();
+                cases.add(new ELNode.CASE(p2, to_a(pats), to_a(guards), to_a(bodies)));
             } else {
-                body = new ELNode.COMPOUND(p3, to_a(stmts));
-            }
+                expect(ARROW);
 
-            if (isdeflt) {
-                deflt = body;
-                break; // the else must be a last clause
-            } else {
-                cases.add(new ELNode.CASE(p2, to_a(pats), guard, body));
+                int p3 = pos;
+                open_scope();
+                add_pattern_vars(pats);
+                stmts.clear();
+                while (token != BAR && token != RBRACE)
+                    parseStatementList(stmts);
+                close_scope();
+
+                ELNode body = compound(p3, stmts);
+                if (isdeflt) {
+                    deflt = body;
+                    break; // the else must be a last clause
+                } else {
+                    cases.add(new ELNode.CASE(p2, to_a(pats), null, body));
+                }
             }
         }
 
@@ -2899,6 +2897,60 @@ public class Parser extends Scanner
             return new ELNode.CONST_MATCH(p, args, alts, deflt);
         } else {
             return new ELNode.MATCH(p, args, alts, deflt);
+        }
+    }
+
+    private void parseGuards(int p, List<ELNode> guards, List<ELNode> bodies, List<ELNode> stmts) {
+        ELNode guard = null;
+
+        while (token != BAR && token != RBRACE) {
+            if (token == IF) {
+                Scanner mark = save();
+                scan();
+                ELNode new_guard = parseExpression();
+                if (token == ARROW) {
+                    scan();
+                    if (guard != null) {
+                        guards.add(guard);
+                        bodies.add(compound(p, stmts));
+                    }
+                    guard = new_guard;
+                    stmts.clear();
+                    continue;
+                }
+                restore(mark); // restore if not a guard but an 'if' statement
+            } else if (scan(ELSE)) {
+                expect(ARROW);
+                if (guard != null) {
+                    guards.add(guard);
+                    bodies.add(compound(p, stmts));
+                }
+
+                // the 'else' clause may be the last guard
+                stmts.clear();
+                while (token != BAR && token != RBRACE)
+                    parseStatementList(stmts);
+
+                guards.add(null);
+                bodies.add(compound(p, stmts));
+                return;
+            }
+
+            parseStatementList(stmts);
+        }
+
+        assert guard != null; // at lease one guard should exist
+        guards.add(guard);
+        bodies.add(compound(p, stmts));
+    }
+
+    private ELNode compound(int p, List<ELNode> stmts) {
+        if (stmts.size() == 0) {
+            return new ELNode.NULL(p);
+        } else if (stmts.size() == 1) {
+            return stmts.get(0);
+        } else {
+            return new ELNode.COMPOUND(p, to_a(stmts));
         }
     }
 
