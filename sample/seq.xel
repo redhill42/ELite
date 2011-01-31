@@ -48,12 +48,12 @@ void test_cons(n) {
         case (lst) {
         | Nil() => Nil()
         | Cons(x,xs) => Cons(proc(x), map_cons(xs, proc))
-	}
+        }
     }
 
     define map2_cons(s1, s2, proc) {
         | Cons(x,xs), Cons(y,ys), _ => Cons(proc(x,y), map2_cons(xs,ys,proc))
-        | else => Nil()
+        | default => Nil()
     }
 
     define filter_cons(lst, pred) {
@@ -61,7 +61,7 @@ void test_cons(n) {
         | Nil() => Nil()
         | Cons(x,xs) => pred(x) ? Cons(x, filter_cons(xs, pred))
                                 : filter_cons(xs, pred)
-	}
+        }
     }
 
     define from(n) => Cons(n, from(n+1))

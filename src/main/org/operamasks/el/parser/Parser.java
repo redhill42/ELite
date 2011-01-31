@@ -2840,7 +2840,7 @@ public class Parser extends Scanner
             boolean isdeflt = false;
             int p2 = scan();
 
-            if (token == ELSE) {
+            if (token == DEFAULT) {
                 scan();
                 isdeflt = true;
             } else if (token != IF) {
@@ -2877,7 +2877,7 @@ public class Parser extends Scanner
                 ELNode body = compound(p3, stmts);
                 if (isdeflt) {
                     deflt = body;
-                    break; // the else must be a last clause
+                    break; // the 'default' must be a last clause
                 } else {
                     cases.add(new ELNode.CASE(p2, to_a(pats), null, body));
                 }
@@ -2919,14 +2919,14 @@ public class Parser extends Scanner
                     continue;
                 }
                 restore(mark); // restore if not a guard but an 'if' statement
-            } else if (scan(ELSE)) {
+            } else if (scan(DEFAULT)) {
                 expect(ARROW);
                 if (guard != null) {
                     guards.add(guard);
                     bodies.add(compound(p, stmts));
                 }
 
-                // the 'else' clause may be the last guard
+                // the 'default' clause must be the last guard
                 stmts.clear();
                 while (token != BAR && token != RBRACE)
                     parseStatementList(stmts);

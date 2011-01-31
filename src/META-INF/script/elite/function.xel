@@ -317,7 +317,7 @@ abstract class Function
         | ::Function => x
         | ::Variable => Polynomial(1, x)
         | ::Symbol   => Polynomial(1, Variable(x))
-        | else       => Constant(x)
+        | default    => Constant(x)
     }
 
     /**
