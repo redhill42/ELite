@@ -2,8 +2,8 @@ require 'syntax'
 require 'math'
 
 /* 快速排序算法 */
-define qsort(ls) {
-    | [] => []
+define qsort {
+    | []     => []
     | [x:xs] => qsort([y | y <- xs, y < x]) ~ x ~ qsort([y | y <- xs, y >= x])
 }
 
@@ -16,19 +16,13 @@ print(qsort(lst));
 define queens(n) {
     define scan(i) {
         | 0 => [[]]
-        | _ => [[q:qs] | qs <- scan(i-1), q <- [1..n], safe(q, qs)];
+        | _ => [[q:qs] | qs <- scan(i-1), q <- [1..n], safe(q, qs, 1)]
+    }
+    define safe {
+        | _, [],      _ => true
+        | x, [y:ys] , n => y!=x && y!=x+n && y!=x-n && safe(x, ys, n+1)
     }
     scan(n);
-}
-
-define safe(q, qs) {
-    define check(x, xs, n) {
-        case (xs) {
-        | [] => false
-        | [y : ys] => y==x || y==x+n || y==x-n || check(x,ys,n+1)
-        }
-    }
-    not check(q, qs, 1);
 }
 
 let (count=0) {

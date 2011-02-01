@@ -1522,47 +1522,70 @@ public class Parser extends Scanner
 
         open_scope();
 
-        // parse parameter list, may be curried
-        expect(LPAREN);
-        do {
-            List<ELNode.DEFINE> vars = new ArrayList<ELNode.DEFINE>();
-            boolean varargs = false;
-            if (token != RPAREN) {
-                do {
-                    vars.add(parseParameter());
-                    if (token == ELLIPSIS) {
-                        scan();
-                        varargs = true;
-                        break;
-                    }
-                } while (scan(COMMA));
-            }
-            expect(RPAREN);
-            vararg_flags.set(vars_list.size(), varargs);
-            vars_list.add(checkVars(p, vars, varargs));
-        } while (scan(LPAREN));
-
-        // parse procedure body
-        if (token == ARROW) {
-            // foo(x) => exp; syntax sugar, translate to: foo = {x=>exp}
-            scan();
-            body = parseExpressionStatement();
-        } else if (token == LBRACE) {
-            scan();
-            if (token == BAR) {
-                // translate into a match expression
-                ELNode.DEFINE[] vars = vars_list.get(0);
-                ELNode[] args = new ELNode[vars.length];
-                for (int i = 0; i < args.length; i++) {
-                    args[i] = new ELNode.IDENT(vars[i].pos, vars[i].id);
+        if (scan(LPAREN)) {
+            // parse parameter list, may be curried
+            do {
+                List<ELNode.DEFINE> vars = new ArrayList<ELNode.DEFINE>();
+                boolean varargs = false;
+                if (token != RPAREN) {
+                    do {
+                        vars.add(parseParameter());
+                        varargs = scan(ELLIPSIS);
+                    } while (!varargs && scan(COMMA));
                 }
-                body = parseMatchPatterns(pos, args);
+                expect(RPAREN);
+                vararg_flags.set(vars_list.size(), varargs);
+                vars_list.add(checkVars(p, vars, varargs));
+            } while (scan(LPAREN));
+
+            // parse procedure body
+            if (scan(ARROW)) {
+                // foo(x) => exp; syntax sugar, translate to: foo = {x=>exp}
+                body = parseExpressionStatement();
+            } else if (scan(LBRACE)) {
+                if (token == BAR) {
+                    // translate into a match expression
+                    ELNode.DEFINE[] vars = vars_list.get(0);
+                    ELNode[] args = new ELNode[vars.length];
+                    for (int i = 0; i < args.length; i++) {
+                        args[i] = new ELNode.IDENT(vars[i].pos, vars[i].id);
+                    }
+                    body = parseMatchPatterns(pos, args);
+                } else {
+                    body = parseCompoundExpression(pos);
+                }
+                expect(RBRACE);
             } else {
-                body = parseCompoundExpression(pos);
+                body = null;
             }
-            expect(RBRACE);
         } else {
-            body = null;
+            /* The procedure doesn't have a parameter list. In this case we build
+             * anonymous parameters if the procedure have a match expression in the body,
+             * or the parameter list is empty if no such match expression.
+             */
+            if (scan(ARROW)) {
+                vars_list.add(EMPTY_DEFS);
+                body = parseExpressionStatement();
+            } else if (scan(LBRACE)) {
+                if (token == BAR) {
+                    // Translate into a match expression. The anonymous parameters
+                    // is determined by the match patterns.
+                    ELNode.MATCH match = parseMatchPatterns(pos, null);
+                    ELNode.DEFINE[] vars = new ELNode.DEFINE[match.args.length];
+                    for (int i = 0; i < vars.length; i++) {
+                        String id = ((ELNode.IDENT)match.args[i]).id;
+                        vars[i] = new ELNode.DEFINE(match.args[i].pos, id);
+                    }
+                    vars_list.add(vars);
+                    body = match;
+                } else {
+                    vars_list.add(EMPTY_DEFS);
+                    body = parseCompoundExpression(pos);
+                }
+                expect(RBRACE);
+            } else {
+                body = null;
+            }
         }
 
         boolean isAbstract = (meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0;
@@ -1878,6 +1901,8 @@ public class Parser extends Scanner
             break;
 
         case LPAREN:
+        case ARROW:
+        case LBRACE:
             // define foo(x,y) {exp}
             // syntax sugar for foo={x,y=>exp}
             var.expr = parseProcedureDefinition(var.id, type, meta);
@@ -1956,12 +1981,15 @@ public class Parser extends Scanner
     private ELNode parseVoidExpression() {
         mark();
 
-        // void foo(...)  ===> a declaration
+        // void foo(...)
+        // void foo => ...
+        // void foo {...}
+        //                    ===> a declaration
         int p = scan();
         if (token == IDENT) {
             String id = scanQName();
             scan();
-            if (token == LPAREN) {
+            if (token == LPAREN || token == ARROW || token == LBRACE) {
                 ELNode.DEFINE var = new_symbol(p, id, null, null);
                 var.expr = parseProcedureDefinition(id, "void", null);
                 return var;
