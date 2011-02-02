@@ -5590,15 +5590,6 @@ public abstract class ELNode implements Serializable
         }
     }
 
-    /**
-     * A specialized tuple used by pattern matching.
-     */
-    public static class PATTERN_TUPLE extends TUPLE {
-        public PATTERN_TUPLE(int pos, ELNode[] elems) {
-            super(pos, elems);
-        }
-    }
-
     public static class MAP extends ELNode implements Pattern {
         public final ELNode[] keys;
         public final ELNode[] values;
