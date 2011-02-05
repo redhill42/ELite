@@ -333,6 +333,28 @@ class Grammar implements Serializable
         return do_parse();
     }
 
+    /**
+     * Parse a standalone input text.
+     */
+    public Object parse(String input) {
+        Parser parser;
+        Object result;
+
+        parser = new Parser(input);
+        yy_init_stack();
+        yy_init_occs(parser);
+        yy_save();
+
+        parser.nextchar();
+        parser.scan();
+
+        yy_lookahead = yy_nexttoken();
+        result = do_parse();
+        parser.expect(Token.EOI);
+
+        return result;
+    }
+
     public Object parse_infix(Parser parser, ELNode expr) {
         yy_init_stack();
         yy_init_occs(parser);

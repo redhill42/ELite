@@ -36,15 +36,7 @@ public final class ParserCombinator implements Serializable
     }
 
     public Object parse(String text) {
-        Parser parser;
-        Object result;
-
-        parser = new Parser(text);
-        parser.nextchar();
-        parser.scan();
-        result = grammar.parse(parser);
-        parser.expect(Token.EOI);
-
+        Object result = grammar.parse(text);
         if (result instanceof ELNode)
             result = Expression.valueOf((ELNode)result);
         return result;
