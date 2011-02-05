@@ -2231,7 +2231,7 @@ public class Parser extends Scanner
             cdef = new_symbol(p, id, null, cmeta);
 
             ELNode.DEFINE[] body;
-            if (token == LBRACE) {
+            if (scan(LBRACE)) {
                 open_scope();
                 for (ELNode.DEFINE var : vars)
                     add_symbol(var);
