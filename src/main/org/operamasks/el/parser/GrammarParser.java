@@ -192,6 +192,8 @@ public class GrammarParser
         l.addOperator(")?",         OPTIONAL,       -1);
         l.addOperator(")*",         STAR_CLOSE,     -1);
         l.addOperator(")+",         PLUS_CLOSE,     -1);
+        l.addOperator(")<",         LT,             -1);
+        l.addOperator(">",          GT,             -1);
         l.addOperator("{",          LBRACE,         -1);
         l.addOperator("}",          RBRACE,         -1);
         l.addOperator("%{",         CODE_BLOCK,     -1);
@@ -476,13 +478,31 @@ public class GrammarParser
 
         switch (S.token) {
           case RPAREN: case OPTIONAL: case STAR_CLOSE: case PLUS_CLOSE:
-            end_opt(id, S.token);
+            end_opt(id, null, S.token);
             S.scan();
             break;
+
+          case LT:
+            S.scan();
+            end_opt(id, sep(), PLUS_CLOSE);
+            S.expect(GT);
+            break;
+
           default:
             S.expect(RPAREN);
             break;
         }
+    }
+
+    /* Parse a separator subexpression. */
+    private String sep() {
+        String sep;
+
+        start_opt();            // start embeded subexpression
+        nonterm_rhs();          // parse the body of subexpression
+        sep = _sp.lhs_name;     // retrieve nonterm from stack
+        _sp = _sp.next;         // discard top-of-stack element
+        return sep;
     }
 
     private void action(String id) {
@@ -777,6 +797,9 @@ public class GrammarParser
      * S: A (B)+ C;         S   -> A 001 C
      *                      001 -> 001 B | B
      *
+     * S : A (B)<t> C;      S   -> A 001 C
+     *                      001 -> 001 t B | B
+     *
      * In all situations, the right hand side that we've collected so far is
      * pushed and a new right-hand side is started for the subexpression. Note that
      * the first character of the created rhs name (001 in the previous examples)
@@ -797,7 +820,7 @@ public class GrammarParser
     }
 
     /* End optional subexpression. */
-    private void end_opt(String id, int lex) {
+    private void end_opt(String id, String sep, int lex) {
         if (_sp.rhs.next != null && (lex == STAR_CLOSE || lex == PLUS_CLOSE)) {
             String lhs_name = _sp.lhs_name;
 
@@ -838,7 +861,7 @@ public class GrammarParser
 
             // Make copy of right-hand side
             new_rhs();
-            _sp.rhs.rhs = new PROD_SYM[n+2];
+            _sp.rhs.rhs = new PROD_SYM[n+3];
             _sp.rhs.rhs_len = n;
             System.arraycopy(rhs.rhs, 0, _sp.rhs.rhs, 0, n);
             rhs = _sp.rhs;
@@ -851,8 +874,16 @@ public class GrammarParser
             System.arraycopy(rhs.rhs, 0, rhs.rhs, 1, n);
             rhs.rhs[0] = p;
 
+            // Add separator symbol
+            if (sep != null) {
+                add_nonterm(null, sep);
+                p = rhs.rhs[n+1];
+                System.arraycopy(rhs.rhs, 1, rhs.rhs, 2, n);
+                rhs.rhs[1] = p;
+            }
+
             // Add action for list construction
-            add_action(null, action, trans, OPT_LIST_CONS);
+            add_action(null, action, trans, (sep == null) ? OPT_LIST_CONS : OPT_SEP_CONS);
         }
 
         if (lex == OPTIONAL) {

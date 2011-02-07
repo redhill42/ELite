@@ -41,7 +41,7 @@ goal
 
 grammar
 {
-goal: 'select' #subject 'from' from_list where_clause=('where' #exp)?
+goal: 'select' #subject 'from' from_list where_clause
         {
             define e = LIST(subject);
 
@@ -62,4 +62,8 @@ from_list
 
 from_clause
         : $var 'in' #exp            { (var, exp) }
+
+where_clause
+        : 'where' #exp              { exp }
+        | /* empty */
 }

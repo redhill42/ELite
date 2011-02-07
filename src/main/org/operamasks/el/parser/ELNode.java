@@ -818,16 +818,6 @@ public abstract class ELNode implements Serializable
             return closure;
         }
 
-        public Closure defineClosure(EvaluationContext context, Object value) {
-            Closure closure = TypedClosure.make(context, type, value, false);
-
-            if (meta != null) {
-                closure.setMetaData(meta.getMetaData(context));
-            }
-
-            return closure;
-        }
-
         public Class getType(EvaluationContext context) {
             return null;
         }
@@ -5460,16 +5450,19 @@ public abstract class ELNode implements Serializable
         }
 
         public boolean matches(EvaluationContext context, Object arg) {
-            if (!(arg instanceof List)) {
+            if (arg instanceof CharSequence) {
+                CharSequence s = (CharSequence)arg;
+                return s.length() != 0 &&
+                       ((Pattern)head).matches(context, s.charAt(0)) &&
+                       ((Pattern)tail).matches(context, s.subSequence(1, s.length()));
+            } else if (arg instanceof List) {
+                Seq xs = coerceToSeq(arg);
+                return !xs.isEmpty() &&
+                       ((Pattern)head).matches(context, xs.get()) &&
+                       ((Pattern)tail).matches(context, xs.tail());
+            } else {
                 return false;
             }
-
-            Seq xs = coerceToSeq(arg);
-            if (xs.isEmpty()) return false;
-
-            Object x = xs.get(); xs = xs.tail();
-            return ((Pattern)head).matches(context, x) &&
-                   ((Pattern)tail).matches(context, xs);
         }
 
         public void accept(Visitor v) {
@@ -5500,7 +5493,8 @@ public abstract class ELNode implements Serializable
         }
 
         public boolean matches(EvaluationContext context, Object arg) {
-            return (arg instanceof List) && ((List)arg).isEmpty();
+            return (arg instanceof List) && ((List)arg).isEmpty() ||
+                   (arg instanceof CharSequence) && ((CharSequence)arg).length() == 0;
         }
 
         public void accept(Visitor v) {

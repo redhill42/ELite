@@ -76,6 +76,7 @@ class Grammar implements Serializable
 
     static final short OPT_LIST_HEAD = 1;
     static final short OPT_LIST_CONS = 2;
+    static final short OPT_SEP_CONS  = 3;
 
     /* 词法元素 */
     static class YYSTOK implements Serializable
@@ -391,7 +392,7 @@ class Grammar implements Serializable
             } else {
                 act_num = -act_num;
                 rhs_len = yy_reduce[act_num];
-                yy_val  = rhs_len != 0 ? yy_vstack[yy_sp] : null;
+                yy_val  = rhs_len != 0 ? yy_vstack[yy_sp + rhs_len - 1] : null;
 
                 yy_act(act_num);
 
@@ -570,33 +571,34 @@ class Grammar implements Serializable
          * S : A (B)+ C;       s  : A Bs C
          *                     Bs : Bs B          { Bs ++ B }
          *                        | B             { [B] }
+         *
+         * S : A (B)<t> C;     s   : A Bs C
+         *                     Bs  : Bs t B       { Bs ++ B }
+         *                         | B            { [B] }
          */
 
-        if (act.optflg == OPT_LIST_HEAD)
-        {
-            List list = new ArrayList();
-            if (yy_val != null) {
-                list.add(yy_val.getValue(elctx));           // action in B
-            } else if (rhs_len != 0) {
-                Closure e = yy_vstack[yy_sp];               // B
-                list.add((e != null) ? e.getValue(elctx) : null);
-            }
-            return new LiteralClosure(list);
-        }
-        else if (act.optflg == OPT_LIST_CONS)
-        {
-            Closure lhs = yy_vstack[yy_sp+rhs_len-1];       // Bs
-            List list = (List)lhs.getValue(elctx);
-            if (yy_val != null) {
-                list.add(yy_val.getValue(elctx));           // action in B
-            } else {
-                Closure e = yy_vstack[yy_sp];               // B
-                list.add((e != null) ? e.getValue(elctx) : null);
-            }
-            return lhs;
+        List    lst;
+        Closure lhs;
+
+        if (act.optflg == OPT_LIST_HEAD) {
+            lst = new ArrayList();
+            lhs = new LiteralClosure(lst);
+        } else {
+            lhs = yy_vstack[yy_sp + rhs_len - 1];
+            lst = (List)lhs.getValue(elctx);
         }
 
-        return null;
+        if (yy_val != null) {
+            // evaluate action in B
+            lst.add(yy_val.getValue(elctx));
+        } else if (rhs_len != 0) {
+            // find leftmost value in B, the `optflg' is used as the index
+            // to find B in the value stack
+            Closure e = yy_vstack[yy_sp + rhs_len - act.optflg];
+            lst.add((e != null) ? e.getValue(elctx) : null);
+        }
+
+        return lhs;
     }
 
     static class GrammarTransformer extends TreeTransformer {
