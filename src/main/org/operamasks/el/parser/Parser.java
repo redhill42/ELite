@@ -123,12 +123,6 @@ public class Parser extends Scanner
         switch (e.op) {
         case IDENT: case ACCESS: case ASSIGN:
             break; // Ok
-        case CONS:
-            expect_lvalue(((ELNode.CONS)e).head);
-            expect_lvalue(((ELNode.CONS)e).tail);
-            break;
-        case NIL:
-            break;
         case TUPLE:
             for (ELNode a : ((ELNode.TUPLE)e).elems)
                 expect_lvalue(a);

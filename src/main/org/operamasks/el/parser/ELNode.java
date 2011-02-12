@@ -40,7 +40,6 @@ import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.LinkedHashMap;
-import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.io.Serializable;
@@ -2235,6 +2234,15 @@ public abstract class ELNode implements Serializable
             return matched;
         }
 
+        boolean invokeTail(EvaluationContext context, TailCall call, Closure[] args) {
+            if (left.getBoolean(context)) {
+                call.result = Boolean.TRUE;
+                return false;
+            } else {
+                return right.invokeTail(context, call, args);
+            }
+        }
+
         public void accept(Visitor v) {
             v.visit(this);
         }
@@ -2258,6 +2266,15 @@ public abstract class ELNode implements Serializable
 
         public Class getType(EvaluationContext context) {
             return Boolean.class;
+        }
+
+        boolean invokeTail(EvaluationContext context, TailCall call, Closure[] args) {
+            if (left.getBoolean(context)) {
+                return right.invokeTail(context, call, args);
+            } else {
+                call.result = Boolean.FALSE;
+                return false;
+            }
         }
 
         public void accept(Visitor v) {
@@ -5415,33 +5432,13 @@ public abstract class ELNode implements Serializable
 
         public Object getValue(EvaluationContext context) {
             if (delay) {
-                return new DelayCons(head.getValue(context), tail.closure(context));
+                return new DelayCons(head.closure(context), tail.closure(context));
             } else if (tail instanceof NIL) {
                 return Cons.make(head.getValue(context));
             } else if (tail instanceof CONS) {
                 return new Cons(head.getValue(context), (Seq)tail.getValue(context));
             } else {
                 return new Cons(head.getValue(context), coerceToSeq(tail.getValue(context)));
-            }
-        }
-
-        public void setValue(EvaluationContext context, Object value) {
-            if (value instanceof Seq) {
-                Seq xs = (Seq)value;
-                if (xs.isEmpty())
-                    throw runtimeError(context.getELContext(), _T(EL_LIST_PATTERN_NOT_MATCH));
-                Object x = xs.get(); xs = xs.tail();
-                head.setValue(context, x);
-                tail.setValue(context, xs);
-            } else if (value instanceof Iterable) {
-                Iterator it = ((Iterable)value).iterator();
-                if (!it.hasNext())
-                    throw runtimeError(context.getELContext(), _T(EL_LIST_PATTERN_NOT_MATCH));
-                Object x = it.next();
-                head.setValue(context, x);
-                tail.setValue(context, IteratorSeq.make(it));
-            } else {
-                throw runtimeError(context.getELContext(), _T(EL_LIST_PATTERN_NOT_MATCH));
             }
         }
 
@@ -5480,12 +5477,6 @@ public abstract class ELNode implements Serializable
 
         public Object getValue(EvaluationContext context) {
             return Cons.nil();
-        }
-
-        public void setValue(EvaluationContext context, Object value) {
-            if (!(value instanceof Collection) || !((Collection)value).isEmpty()) {
-                throw runtimeError(context.getELContext(), _T(EL_LIST_PATTERN_NOT_MATCH));
-            }
         }
 
         public Class getType(EvaluationContext context) {

@@ -23,17 +23,23 @@ import org.operamasks.el.eval.TypeCoercion;
 
 public class DelayCons extends DelaySeq
 {
-    private Closure promise;
+    private Closure head_promise;
+    private Closure tail_promise;
 
-    public DelayCons(Object head, Closure tail) {
-        this.head = head;
-        this.promise = tail;
+    public DelayCons(Closure head_promise, Closure tail_promise) {
+        this.head_promise = head_promise;
+        this.tail_promise = tail_promise;
     }
 
     protected void force(ELContext elctx) {
-        if (promise != null) {
-            tail = TypeCoercion.coerceToSeq(promise.getValue(elctx));
-            promise = null;
+        if (head_promise != null) {
+            head = head_promise.getValue(elctx);
+            head_promise = null;
+        }
+
+        if (tail_promise != null) {
+            tail = TypeCoercion.coerceToSeq(tail_promise.getValue(elctx));
+            tail_promise = null;
         }
     }
 }

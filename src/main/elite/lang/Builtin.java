@@ -457,7 +457,7 @@ public final class Builtin
     /**
      * 以给定的头部和尾部创建一个新序列.
      */
-    public static Seq cons(Object head, Closure tail) {
+    public static Seq cons(Closure head, Closure tail) {
         return new DelayCons(head, tail);
     }
 
@@ -1587,21 +1587,14 @@ public final class Builtin
 
     @Expando(name={"foldr", "foldRight"}, scope={EXPANDO,GLOBAL})
     public static Object foldr(ELContext elctx, Object lst, Object end, Closure proc) {
-        if ((lst instanceof List) && (lst instanceof RandomAccess)) {
+        if ((lst instanceof List) && (lst instanceof RandomAccess) &&
+                !((lst instanceof Range) && ((Range)lst).isUnbound())) {
             ListIterator i = ((List)lst).listIterator(((List)lst).size());
             while (i.hasPrevious()) {
                 end = proc.call(elctx, i.previous(), end);
             }
         } else if (lst instanceof Collection) {
-            Seq s = coerceToSeq(lst);
-            if (s.isEmpty()) {
-                return end;
-            } else {
-                Closure[] args = new Closure[2];
-                args[0] = new LiteralClosure(s.get());
-                args[1] = new FoldRightRec(s, end, proc);
-                return proc.invoke(elctx, args);
-            }
+            return seq_foldr(elctx, coerceToSeq(lst), end, proc);
         } else if (lst instanceof CharSequence) {
             CharSequence cs = (CharSequence)lst;
             for (int i = cs.length(); --i >= 0; ) {
@@ -1620,6 +1613,35 @@ public final class Builtin
         return end;
     }
 
+    private static Object seq_foldr(ELContext elctx, Seq seq, Object end, Closure proc) {
+        if (seq.isEmpty()) {
+            return end;
+        } else {
+            Closure[] args = new Closure[2];
+            args[0] = new DelayHead(seq);
+            args[1] = new FoldRightRec(seq, end, proc);
+            return proc.invoke(elctx, args);
+        }
+    }
+
+    private static class DelayHead extends DelayClosure {
+        private Seq seq;
+
+        DelayHead(Seq seq) {
+            this.seq = seq;
+        }
+
+        protected Object force(ELContext elctx) {
+            Seq s = seq;
+            seq = null;
+            return s.get();
+        }
+
+        protected void forget() {
+            seq = null;
+        }
+    }
+
     private static class FoldRightRec extends DelayClosure {
         private Seq seq;
         private Object end;
@@ -1630,7 +1652,7 @@ public final class Builtin
         }
 
         protected Object force(ELContext elctx) {
-            Object result = foldr(elctx, seq.tail(), end, proc);
+            Object result = seq_foldr(elctx, seq.tail(), end, proc);
             seq = null; end = null; proc = null;
             return result;
         }
