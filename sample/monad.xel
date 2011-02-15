@@ -1,0 +1,98 @@
+/* This example implements Monad in ELite. This example may confuse you if 
+ * you don't know anything about monad. If that is the case please close 
+ * the file and leave it alone.
+ *
+ * Although ELite supports Monad, it still has a long way to go.
+ */
+
+@infix "=>>", "<<="     // bind operators
+@infix ">=>", "<=<"     // monad composition operators
+
+// The Monad base class
+abstract class Monad
+{
+    abstract bind(k);
+
+    define  =>>(f) => bind(f);
+    define ?<<=(f) => bind(f);
+    define  >> (m) => bind(\_ => m);
+    define ?<< (m) => bind(\_ => m);
+}
+
+define >=>(f, g)(x) => f(x) =>> g;
+define <=<(g, f)(x) => f(x) =>> g;
+
+
+// The Maybe Monad
+@data Maybe = Nothing  { bind(k) => Nothing() }
+            | Just(x)  { bind(k) => k(x)      }
+extends Monad
+{
+    static yield(x) => Just(x)
+}
+
+
+// Maybe Monad examples
+define mdiv(x, y) => y == 0 ? Nothing() : Just(x / y);
+
+define foo() => mdiv(2, 4) =>> \a =>
+                mdiv(2, 0) =>> \b =>
+                mdiv(a, b);
+print(foo());
+
+
+// The State Monad
+class State(run) extends Monad
+{
+    bind(k) => State(\s => let ((a, s') = run(s))
+                               run_state(k(a), s'))
+
+    static yield(a) => State(\s => (a, s))
+}
+
+define run_state(m, s)  => m.run(s);
+define eval_state(m, s) => m.run(s)[0];
+define exec_state(m, s) => m.run(s)[1];
+
+define get    =  State(\s => (s, s))
+define put(s) => State(\_ => ((), s))
+
+
+// State Monad examples
+define fib(n) {
+    define fib_s = get =>> \(n, a, b) =>
+                   n == 1 ? State.yield(a)
+                          : put((n-1, b, a+b)) >> fib_s;
+    eval_state(fib_s, (n,1,1));
+}
+
+print(fib(12))
+
+
+// The Continuation Monad
+class Cont(run) extends Monad
+{
+    bind(k) => Cont(\c => run(\a => run_cont(k(a), c)));
+    static yield(a) => Cont(\f => f(a));
+}
+
+define run_cont(m, c) => m.run(c);
+define call_cc(f) => Cont(\c => run_cont(f(\a => Cont(\_ => c(a))), c));
+
+
+// Continuation Monad examples
+define calculate_length(l) => Cont.yield(l.length());
+define double(n) => Cont.yield(n*2);
+
+run_cont(calculate_length("123") =>> double, print);
+
+define whats_your_name(name) =>
+    run_cont(call_cc(\exit => validate_name(name, exit) >>
+                              Cont.yield("Welcome, ${name}!"))
+             =>> \response => Cont.yield(response), identity);
+
+define validate_name(name, exit) =>
+    empty name ? exit("You forget to tell me your name!") : Cont.yield(null);
+
+print(whats_your_name("bob"));
+print(whats_your_name(""));
