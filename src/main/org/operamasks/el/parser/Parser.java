@@ -2199,11 +2199,6 @@ public class Parser extends Scanner
         expect(IDENT);
         expect(ASSIGN);
 
-        // The base abstract algebraic data type
-        cdef = new_symbol(p, base, null, adjoin(meta, Modifier.ABSTRACT));
-        cdef.expr = new ELNode.CLASSDEF(p, filename, base, null, null, null, EMPTY_DEFS);
-        defs.add(cdef);
-
         do {
             ELNode.METASET cmeta = adjoin(meta, parseMetaData());
             String id = scanQName();
@@ -2238,6 +2233,35 @@ public class Parser extends Scanner
             cdef.expr = new ELNode.CLASSDEF(p, filename, id, base, null, to_a(vars), body);
             defs.add(cdef);
         } while (scan(BAR));
+
+        // The base abstract algebraic data type
+        String basecls = null;
+        String[] baseifs = null;
+        ELNode.DEFINE[] basebody = EMPTY_DEFS;
+
+        if (token == EXTENDS || token == IMPLEMENTS) {
+            if (scan(EXTENDS)) {
+                basecls = parseClassLiteral(false);
+            }
+
+            if (scan(IMPLEMENTS)) {
+                List<String> iflist = new ArrayList<String>();
+                do {
+                    iflist.add(parseClassLiteral(false));
+                } while (scan(COMMA));
+                baseifs = to_a(iflist);
+            }
+
+            if (scan(LBRACE)) {
+                open_scope();
+                basebody = parseClassBody();
+                close_scope();
+            }
+        }
+
+        cdef = new_symbol(p, base, null, adjoin(meta, Modifier.ABSTRACT));
+        cdef.expr = new ELNode.CLASSDEF(p, filename, base, basecls, baseifs, null, basebody);
+        defs.add(0, cdef);
 
         return defs;
     }
