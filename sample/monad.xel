@@ -76,7 +76,7 @@ print(fib(12))
 class Cont(run) extends Monad
 {
     bind(k) => Cont(\c => run(\a => run_cont(k(a), c)));
-    static yield(a) => Cont(\f => f(a));
+    static yield(&a) => Cont(\f => f(a));
 }
 
 define run_cont(m, c) => m.run(c);
@@ -90,12 +90,12 @@ define double(n) => Cont.yield(n*2);
 run_cont(calculate_length("123") =>> double, print);
 
 define whats_your_name(name) =>
-    run_cont(call_cc(\exit => validate_name(name, exit) >>
-                              Cont.yield("Welcome, ${name}!"))
-             =>> \response => Cont.yield(response), identity);
+    call_cc(\exit => validate_name(name, exit) >>
+                     Cont.yield("Welcome, ${name}!"))
+    =>> \response => Cont.yield(response);
 
 define validate_name(name, exit) =>
     empty name ? exit("You forget to tell me your name!") : Cont.yield(null);
 
-print(whats_your_name("bob"));
-print(whats_your_name(""));
+run_cont(whats_your_name("bob"), print);
+run_cont(whats_your_name(""), print);

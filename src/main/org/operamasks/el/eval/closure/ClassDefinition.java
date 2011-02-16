@@ -944,16 +944,6 @@ public class ClassDefinition extends AnnotatedClosure
             // no private accessibility for expando closures
             return proc.invoke(elctx, args);
         } else {
-            // force to evaluate arguments before enter current scope.
-            for (Closure c : args) {
-                if (c instanceof DelayClosure) {
-                    Object value = c.getValue(elctx);
-                    if (value instanceof ELNode.VarArgList) {
-                        ((ELNode.VarArgList)value).force(elctx);
-                    }
-                }
-            }
-            
             ClassDefinition[] scope = invoke_scope.get();
             ClassDefinition prev = scope[0]; scope[0] = this;
             try {
@@ -969,13 +959,7 @@ public class ClassDefinition extends AnnotatedClosure
      */
     public boolean inScope(ELContext elctx) {
         ClassDefinition scope = invoke_scope.get()[0];
-        if (scope == null) {
-            return false;
-        } else if (scope == this) {
-            return true;
-        } else {
-            return scope.isAssignableFrom(elctx, this);
-        }
+        return scope != null && (scope == this || scope.isAssignableFrom(elctx, this));
     }
 
     // Others -----------------------------
