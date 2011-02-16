@@ -76,26 +76,26 @@ public abstract class ELNode implements Serializable
 
     // Operator precedence
     public static final int
-        ASSIGN_PREC = 0,
-        ASSIGNOP_PREC = 1,
-        COND_PREC = 2,
-        COALESCE_PREC = 3,
-        OR_PREC = 4,
-        AND_PREC = 5,
-        BITOR_PREC = 6,
-        XOR_PREC = 7,
-        BITAND_PREC = 8,
-        EQ_PREC = 9,
-        ORD_PREC = 10,
-        SHIFT_PREC = 11,
-        ADD_PREC = 12,
-        MUL_PREC = 13,
-        PREFIX_PREC = 14,
-        XFORM_PREC = 15,
-        POW_PREC = 16,
-        POSTFIX_PREC = 17,
-        DEFAULT_PREC = 16,
-        NO_PREC = 100;
+        ASSIGN_PREC     = 10,
+        ASSIGNOP_PREC   = 20,
+        COND_PREC       = 30,
+        COALESCE_PREC   = 40,
+        OR_PREC         = 50,
+        AND_PREC        = 60,
+        BITOR_PREC      = 70,
+        XOR_PREC        = 80,
+        BITAND_PREC     = 90,
+        EQ_PREC         = 100,
+        ORD_PREC        = 110,
+        SHIFT_PREC      = 120,
+        ADD_PREC        = 130,
+        MUL_PREC        = 140,
+        PREFIX_PREC     = 150,
+        XFORM_PREC      = 160,
+        POW_PREC        = 170,
+        POSTFIX_PREC    = 180,
+        DEFAULT_PREC    = 190,
+        NO_PREC         = 200;
 
     // Operator overriden identifiers
     public static final String opIdentifiers[] = new String[Token.MAX_TOKEN];
