@@ -5,8 +5,11 @@
  * Although ELite supports Monad, it still has a long way to go.
  */
 
-@infix "=>>", "<<="     // bind operators
-@infix ">=>", "<=<"     // monad composition operators
+// Operators
+@infix(1)  "=>>"
+@infix(-1) "<<="
+@infix(-1) ">=>"
+@infix(-1) "<=<"
 
 // The Monad base class
 abstract class Monad
