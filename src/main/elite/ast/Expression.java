@@ -820,6 +820,23 @@ public abstract class Expression
     }
 
     /**
+     * Create a sequence expression.
+     * @param exps expressions in the sequence
+     * @return the sequence expression
+     */
+    public static Expression SEQUENCE(Object... exps) {
+        if (exps.length < 1) {
+            throw new IllegalArgumentException("The number of expressions must be >= 1");
+        }
+
+        Expression e = arg(exps[exps.length-1]);
+        for (int i = exps.length - 2; i >= 0; i--) {
+            e = new BinaryExpression(ExpressionType.THEN, arg(exps[i]), e);
+        }
+        return e;
+    }
+
+    /**
      * Creates a BinaryExpression that represents an arithmetic subtraction
      * operation.
      * @param left the left operand

@@ -1222,6 +1222,14 @@ public final class Builtin
     }
 
     /**
+     * List Monad支持函数，与mappend定义相同。
+     */
+    @Expando
+    public static Seq bind(Seq seq, Closure proc) {
+        return MappendSeq.make(seq, proc);
+    }
+
+    /**
      * 使用指定的谓词将一个列表分成两部分, 第一部分包含所有满足谓词
      * 的元素, 第二部分包含所有不满足谓词的元素.
      */
@@ -1460,54 +1468,6 @@ public final class Builtin
                 }
             }
         }
-    }
-
-    @Expando
-    public static Object bind(ELContext elctx, Object arg, Closure proc) {
-        if (arg == null) {
-            return null;
-        }
-
-        if (arg instanceof Iterable) {
-            for (Object e : (Iterable)arg) {
-                try {
-                    proc.call(elctx, e);
-                } catch (Control.Continue c) {
-                    continue;
-                } catch (Control.Break b) {
-                    break;
-                }
-            }
-            return null;
-        }
-
-        if (arg instanceof Object[]) {
-            for (Object e : (Object[])arg) {
-                try {
-                    proc.call(elctx, e);
-                } catch (Control.Continue c) {
-                    continue;
-                } catch (Control.Break b) {
-                    break;
-                }
-            }
-            return null;
-        }
-
-        if (arg.getClass().isArray()) {
-            for (int i = 0, len = Array.getLength(arg); i < len; i++) {
-                try {
-                    proc.call(elctx, Array.get(arg, i));
-                } catch (Control.Continue c) {
-                    continue;
-                } catch (Control.Break b) {
-                    break;
-                }
-            }
-            return null;
-        }
-
-        return proc.call(elctx, arg);
     }
 
     @Expando(name="do")
@@ -2373,6 +2333,11 @@ public final class Builtin
     private static final ELNode.IDEQ __IDEQ__ = new ELNode.IDEQ(-1, null, null);
     private static final ELNode.IDNE __IDNE__ = new ELNode.IDNE(-1, null, null);
     private static final ELNode.EMPTY __EMPTY__ = new ELNode.EMPTY(-1, null);
+
+    @Expando(name="then", scope=GLOBAL)
+    public static Object __then__(ELContext elctx, Object x, Object y) {
+        return y;
+    }
 
     @Expando(name="~", scope=GLOBAL)
     public static Object __cat__(ELContext elctx, Object x, Object y) {

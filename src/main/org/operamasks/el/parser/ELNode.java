@@ -76,6 +76,7 @@ public abstract class ELNode implements Serializable
 
     // Operator precedence
     public static final int
+        THEN_PREC       = 0,
         ASSIGN_PREC     = 10,
         ASSIGNOP_PREC   = 20,
         COND_PREC       = 30,
@@ -1933,6 +1934,52 @@ public abstract class ELNode implements Serializable
 
         public Class getType(EvaluationContext context) {
             return null;
+        }
+
+        public void accept(Visitor v) {
+            v.visit(this);
+        }
+    }
+
+    /**
+     * The expression sequential operator.
+     */
+    public static class THEN extends Binary {
+        public THEN(int pos, ELNode left, ELNode right) {
+            super(Token.THEN, pos, left, right);
+        }
+
+        public int precedence() {
+            return THEN_PREC;
+        }
+
+        public ELNode order() {
+            return right_order();
+        }
+
+        public Object getValue(EvaluationContext context) {
+            left.getValue(context);
+            return right.getValue(context);
+        }
+
+        public Class getType(EvaluationContext context) {
+            return right.getType(context);
+        }
+
+        public MethodInfo getMethodInfo(EvaluationContext context) {
+            return right.getMethodInfo(context);
+        }
+
+        public Object invoke(EvaluationContext context, Closure[] args) {
+            Frame f = context.getFrame();
+            left.getValue(context);
+            return right.pos(f).invoke(context, args);
+        }
+
+        boolean invokeTail(EvaluationContext context, TailCall call, Closure[] params) {
+            Frame f = context.getFrame();
+            left.getValue(context);
+            return right.pos(f).invokeTail(context, call, params);
         }
 
         public void accept(Visitor v) {
@@ -4534,12 +4581,12 @@ public abstract class ELNode implements Serializable
         public final ELNode[] guards;
         public final ELNode[] bodies;
 
-        public CASE(int pos, Pattern pattern, ELNode guard, ELNode body) {
-            this(pos, new Pattern[]{pattern}, new ELNode[]{guard}, new ELNode[]{body});
+        public CASE(int pos, Pattern pattern, ELNode body) {
+            this(pos, new Pattern[] {pattern}, null, new ELNode[] {body});
         }
 
-        public CASE(int pos, Pattern[] elems, ELNode guard, ELNode body) {
-            this(pos, elems, new ELNode[]{guard}, new ELNode[]{body});
+        public CASE(int pos, Pattern[] elems, ELNode body) {
+            this(pos, elems, null, new ELNode[] {body});
         }
 
         public CASE(int pos, Pattern[] elems, ELNode[] guards, ELNode[] bodies) {
@@ -5778,7 +5825,7 @@ public abstract class ELNode implements Serializable
         }
 
         public ELNode[] transform(ELNode[] args) {
-            if (args != null && args.length == 1 && args[0].op == Token.IDENT) {
+            if (args != null && args.length == 1 && args[0] != null && args[0].op == Token.IDENT) {
                 String id = ((ELNode.IDENT)args[0]).id;
                 if (id.startsWith("@")) {
                     ValueExpression ve = env.resolveVariable(id.substring(1));
@@ -6218,6 +6265,7 @@ public abstract class ELNode implements Serializable
         public void visit(XFORM e)      { visitNode(e); }
         public void visit(PREFIX e)     { visitNode(e); }
         public void visit(INFIX e)      { visitNode(e); }
+        public void visit(THEN e)       { visitNode(e); }
         public void visit(ASSIGN e)     { visitNode(e); }
         public void visit(COND e)       { visitNode(e); }
         public void visit(COALESCE e)   { visitNode(e); }

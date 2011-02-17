@@ -108,6 +108,8 @@ public class BinaryExpression extends Expression
             return new ELNode.SAFEREF(pos, lhs, rhs);
         case SUBTRACT:
             return new ELNode.SUB(pos, lhs, rhs);
+        case THEN:
+            return new ELNode.THEN(pos, lhs, rhs);
         case UNSIGNED_RIGHT_SHIFT:
             return new ELNode.USHR(pos, lhs, rhs);
         case XOR:
@@ -128,7 +130,13 @@ public class BinaryExpression extends Expression
         } else {
             buf.append(left);
         }
-        buf.append(nodeType.op());
+
+        if (Character.isLetter(nodeType.op().charAt(0))) {
+            buf.append(' ').append(nodeType.op()).append(' ');
+        } else {
+            buf.append(nodeType.op());
+        }
+
         if (right.nodeType.prec() < nodeType.prec()) {
             buf.append("(").append(right).append(")");
         } else {

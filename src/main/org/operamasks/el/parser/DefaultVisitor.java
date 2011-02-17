@@ -85,6 +85,7 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.XFORM e)    { visitBinary(e); }
     public void visit(ELNode.PREFIX e)   { visitUnary(e);  }
     public void visit(ELNode.INFIX e)    { visitBinary(e); }
+    public void visit(ELNode.THEN e)     { visitBinary(e); }
     public void visit(ELNode.ASSIGN e)   { visitBinary(e); }
     public void visit(ELNode.COALESCE e) { visitBinary(e); }
     public void visit(ELNode.SAFEREF e)  { visitBinary(e); }

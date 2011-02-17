@@ -190,14 +190,32 @@ public class Parser extends Scanner
         case VOID: // void is an identifier in an expression, e.g. void(0)
             return new ELNode.IDENT(scan(), "void");
 
-        case IDENT: case ATSIGN: {
-            if (token == IDENT) {
-                Operator op = getOperator(idValue);
-                if (op != null && op.token == PREFIX) {
+        case IDENT: {
+            Operator op = getOperator(idValue);
+            if (op != null) {
+                if (op.token == PREFIX) {
                     return new ELNode.PREFIX(scan(), op.name, op.token2, parseTerm());
+                } else if (op.token == DO) { // 'do' is a psuedo keyword
+                    mark(); scan();
+                    if (token == LBRACE) {
+                        scan();
+                        return parseDoExpression();
+                    } else {
+                        reset();
+                    }
                 }
             }
 
+            int p = pos;
+            ELNode e = new ELNode.IDENT(p, scanQName());
+            scan();
+            if (token == LBRACE) {
+                e = new ELNode.APPLY(p, e, parseBlock(scan()));
+            }
+            return e;
+        }
+
+        case ATSIGN: {
             int p = pos;
             ELNode e = new ELNode.IDENT(p, scanQAName());
             expect(IDENT);
@@ -553,6 +571,9 @@ public class Parser extends Scanner
                   throw parseError(_T(EL_TOKEN_EXPECTED, "in, instanceof", token_value()));
               }
           }
+
+          case THEN:
+            return new ELNode.THEN(scan(), e, parseTerm());
 
           case ASSIGN:
             expect_lvalue(e);
@@ -1154,7 +1175,7 @@ public class Parser extends Scanner
                     e = new ELNode.MATCH(
                         P.pos,
                         new ELNode.IDENT(P.pos, t),
-                        new ELNode.CASE(P.pos, (ELNode.Pattern)P, null, e),
+                        new ELNode.CASE(P.pos, (ELNode.Pattern)P, e),
                         new ELNode.NULL(P.pos));
                 }
 
@@ -1501,7 +1522,7 @@ public class Parser extends Scanner
                 pats[i] = patterns.get(i);
                 args[i] = new ELNode.IDENT(vars[i].pos, vars[i].id);
             }
-            body = new ELNode.MATCH(body.pos, args, new ELNode.CASE(p, pats, null, body), null);
+            body = new ELNode.MATCH(body.pos, args, new ELNode.CASE(p, pats, body), null);
         }
 
         checkVars(p, vars, varargs);
@@ -2602,7 +2623,7 @@ public class Parser extends Scanner
                     vars[0] = new ELNode.DEFINE(p, tvar);
                     body = new ELNode.MATCH(p,
                             new ELNode.IDENT(p, tvar),
-                            new ELNode.CASE(p, pat, null, body),
+                            new ELNode.CASE(p, pat, body),
                             null);
                 }
 
@@ -2620,6 +2641,105 @@ public class Parser extends Scanner
             ELNode.LAMBDA lambda = translateLambda(p, name, type, pats, false, body);
             return new ELNode.APPLY(p, lambda, to_a(exps), null);
         }
+    }
+
+    private static final class DoList {
+        ELNode.Pattern pat;
+        ELNode         exp;
+        boolean        let;
+        DoList         next;
+
+        DoList(ELNode.Pattern pat, ELNode exp, boolean let, DoList next) {
+            this.pat  = pat;
+            this.exp  = exp;
+            this.let  = let;
+            this.next = next;
+        }
+    }
+
+    private ELNode parseDoExpression() {
+        DoList head = null;
+
+        while (!scan(RBRACE)) {
+            ELNode.Pattern pat;
+            ELNode         exp = null;
+            boolean        let = false;
+
+            if (scan(SEMI))
+                continue;
+
+            Scanner mark = save();
+            if (token == LET) {
+                scan();
+                pat = parsePatternOpt();
+                if (pat != null && token == ASSIGN) {
+                    let = true;
+                    scan();
+                    exp = parseExpressionStatement();
+                    expect(SEMI);
+                }
+            } else {
+                pat = parsePatternOpt();
+                if (pat != null && token == IN && idValue == null) {
+                    scan();
+                    exp = parseExpressionStatement();
+                    expect(SEMI);
+                }
+            }
+
+            if (exp == null) {
+                restore(mark);
+                pat = null;
+                exp = parseExpressionStatement();
+                expect(SEMI);
+            }
+
+            // add variable and expression into list in reversed order
+            head = new DoList(pat, exp, let, head);
+        }
+
+        if (head == null) {
+            throw parseError(pos, "Empty 'do' construct"); // i18n
+        } else if (head.pat != null) {
+            throw parseError(head.exp.pos, "The last statement in a 'do' construct must be an expression"); // i18n
+        }
+
+        // translate expressions
+        ELNode exp = head.exp;
+        for (head = head.next; head != null; head = head.next) {
+            ELNode e = head.exp;
+            ELNode.DEFINE v;
+
+            if (head.pat == null) {
+                v = new ELNode.DEFINE(e.pos, "_"); // wildcard
+            } else if (head.pat instanceof ELNode.DEFINE) {
+                v = (ELNode.DEFINE)head.pat;       // simple case
+            } else {
+                v = new ELNode.DEFINE(e.pos, tempvar());
+                exp = new ELNode.MATCH(e.pos,
+                          new ELNode.IDENT(e.pos, v.id),
+                          new ELNode.CASE(e.pos, head.pat, exp),
+                          null);
+            }
+
+            if (head.let) {
+                // let v = e1; e2  ==> (\v => e2)(e1)
+                exp = new ELNode.APPLY(e.pos,
+                          new ELNode.LAMBDA(e.pos, filename,
+                                            new ELNode.DEFINE[] {v},
+                                            exp),
+                          e);
+            } else {
+                // v <- e1; e2  ==> e1.bind(\v => e2)
+                exp = new ELNode.APPLY(e.pos,
+                          new ELNode.ACCESS(e.pos, e, new ELNode.STRINGVAL(e.pos, "bind")),
+                          new ELNode.LAMBDA(e.pos, filename,
+                                            new ELNode.DEFINE[] {v},
+                                            exp));
+            }
+        }
+
+        return exp;
     }
 
     /**
@@ -2729,7 +2849,7 @@ public class Parser extends Scanner
                     body = new ELNode.MATCH(
                                p,
                                new ELNode.IDENT(p, var_t),
-                               new ELNode.CASE(p, (ELNode.Pattern)var_pat, null, body),
+                               new ELNode.CASE(p, (ELNode.Pattern)var_pat, body),
                                new ELNode.NULL(p));
                 }
             } else {
@@ -2753,7 +2873,6 @@ public class Parser extends Scanner
                                        (ELNode.Pattern)idx_pat,
                                        (ELNode.Pattern)var_pat
                                    },
-                                   null,
                                    body),
                                new ELNode.NULL(p));
                 }
@@ -2835,7 +2954,7 @@ public class Parser extends Scanner
             }
 
             if (pattern != null)
-                cases.add(new ELNode.CASE(p2, (ELNode.Pattern)pattern, null, body));
+                cases.add(new ELNode.CASE(p2, (ELNode.Pattern)pattern, body));
             if (isdeflt)
                 deflt = body;
         }
@@ -2925,7 +3044,7 @@ public class Parser extends Scanner
                     deflt = body;
                     break; // the 'default' must be a last clause
                 } else {
-                    cases.add(new ELNode.CASE(p2, to_a(pats), null, body));
+                    cases.add(new ELNode.CASE(p2, to_a(pats), body));
                 }
             }
         }
