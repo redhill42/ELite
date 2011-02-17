@@ -56,8 +56,8 @@ public class UnaryExpression extends Expression
 
     public String toString() {
         StringBuilder buf = new StringBuilder();
-        if (nodeType == ExpressionType.PARENTHESIS || operand.nodeType.prec() < nodeType.prec()) {
-            buf.append("(").append(operand).append(")");
+        if (nodeType == ExpressionType.PARENTHESIS || operand.getPrecedence() < getPrecedence()) {
+            buf.append('(').append(operand).append(')');
         } else {
             buf.append(operand);
         }

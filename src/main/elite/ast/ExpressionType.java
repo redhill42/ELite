@@ -87,6 +87,9 @@ public enum ExpressionType
     /** A node that represents an IN expression. */
     IN("in", ORD_PREC),
 
+    /** A node that represents an infix expression. */
+    INFIX,
+
     /** A ndde that represents a type test. */
     INSTANCEOF("instanceof", ORD_PREC),
 
@@ -152,6 +155,9 @@ public enum ExpressionType
 
     /** A node that represents a pre-increment operation. */
     PRE_INCREMENT("++", PREFIX_PREC),
+
+    /** A node that represents a prefix operation. */
+    PREFIX,
 
     /** A node that represents range expression. */
     RANGE,

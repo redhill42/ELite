@@ -125,8 +125,8 @@ public class BinaryExpression extends Expression
      */
     public String toString() {
         StringBuilder buf = new StringBuilder();
-        if (left.nodeType.prec() < nodeType.prec()) {
-            buf.append("(").append(left).append(")");
+        if (left.getPrecedence() < getPrecedence()) {
+            buf.append('(').append(left).append(')');
         } else {
             buf.append(left);
         }
@@ -137,11 +137,12 @@ public class BinaryExpression extends Expression
             buf.append(nodeType.op());
         }
 
-        if (right.nodeType.prec() < nodeType.prec()) {
-            buf.append("(").append(right).append(")");
+        if (right.getPrecedence() < getPrecedence()) {
+            buf.append('(').append(right).append(')');
         } else {
             buf.append(right);
         }
+
         return buf.toString();
     }
 }

@@ -77,6 +77,14 @@ final class ExpressionTransformer extends ELNode.Visitor
         result = new CompoundExpression(transform(e.exps));
     }
 
+    public void visit(ELNode.PREFIX e) {
+        result = new PrefixExpression(e.name, e.prec, transform(e.right));
+    }
+
+    public void visit(ELNode.INFIX e) {
+        result = new InfixExpression(e.name, e.prec, transform(e.left), transform(e.right));
+    }
+
     public void visit(ELNode.THEN e) {
         result = new BinaryExpression(ExpressionType.THEN,
                                       transform(e.left),

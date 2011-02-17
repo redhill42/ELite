@@ -71,6 +71,14 @@ public abstract class Expression
     }
 
     /**
+     * Returns the precedence of this expression.
+     * @return the precedence
+     */
+    public int getPrecedence() {
+        return nodeType.prec();
+    }
+
+    /**
      * Convert this expression into an internal node representation.
      * @return the internal node representation.
      */
