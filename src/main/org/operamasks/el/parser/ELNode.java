@@ -95,8 +95,8 @@ public abstract class ELNode implements Serializable
         XFORM_PREC      = 160,
         POW_PREC        = 170,
         POSTFIX_PREC    = 180,
-        DEFAULT_PREC    = 190,
-        NO_PREC         = 200;
+        DEFAULT_PREC    = 180,
+        NO_PREC         = 500;
 
     // Operator overriden identifiers
     public static final String opIdentifiers[] = new String[Token.MAX_TOKEN];
