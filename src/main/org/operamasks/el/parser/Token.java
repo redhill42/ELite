@@ -38,9 +38,9 @@ public final class Token
     public static final int SAFEREF         = 1 + COALESCE;     // x!?y
     public static final int OR              = 1 + SAFEREF;      // x||y
     public static final int AND             = 1 + OR;           // x&&y
-    public static final int BITOR           = 1 + AND;          // x^|y
-    public static final int XOR             = 1 + BITOR;        // x^^y
-    public static final int BITAND          = 1 + XOR;          // x^&y
+    public static final int BITOR           = 1 + AND;          // x:|:y
+    public static final int XOR             = 1 + BITOR;        // x:^:y
+    public static final int BITAND          = 1 + XOR;          // x:&:y
     public static final int EQ              = 1 + BITAND;       // x==y
     public static final int NE              = 1 + EQ;           // x!=y
     public static final int IDEQ            = 1 + NE;           // x===y
@@ -63,7 +63,7 @@ public final class Token
     public static final int INSTANCEOF      = 1 + POW;          // x instanceof y
     public static final int IN              = 1 + INSTANCEOF;   // x in y
     public static final int NOT             = 1 + IN;           // !x
-    public static final int BITNOT          = 1 + NOT;          // ^!x
+    public static final int BITNOT          = 1 + NOT;          // :!:x
     public static final int POS             = 1 + BITNOT;       // +x
     public static final int NEG             = 1 + POS;          // -x
     public static final int INC             = 1 + NEG;          // ++x
@@ -168,9 +168,9 @@ public final class Token
     // Operator names
     public static final String opNames[] = {
         "unknown", "=", "?=", "prefix", "infix", "keyword", "?:", "??", "!?", "||", "&&",
-        "^|", "^^", "^&", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "<<", ">>", ">>>",
+        ":|:", ":^:", ":&:", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "<<", ">>", ">>>",
         "~", "+", "-", "*", "/", "div", "%", "^", "instanceof", "in", "not",
-        "^!", "+", "-", "++", "--", "empty", "->", "()", ".", "[]", "apply", "new",
+        ":!:", "+", "-", "++", "--", "empty", "->", "()", ".", "[]", "apply", "new",
         "literal", "ident", "const", "boolean", "char", "number", "symbol", "string",
         "class", "array", "cons", "nil", "tuple", "map", "..", "ast", "xml fragment", "lambda",
         "metadata", "metaset", "public", "protected", "private", "static", "final",

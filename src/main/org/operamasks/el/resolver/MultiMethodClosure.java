@@ -23,11 +23,13 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Arrays;
 import javax.el.ELContext;
+import javax.el.ELException;
 import javax.el.MethodNotFoundException;
 import javax.el.MethodInfo;
 
 import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.closure.NamedClosure;
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -85,22 +87,12 @@ class MultiMethodClosure extends JavaMethodClosure
     }
 
     public Object invoke(ELContext elctx, Object base, Closure[] args) {
-        Method method = ELEngine.resolveMethod(elctx, methods, name, args);
-        if (method == null) {
-            String clsname = methods[0].getDeclaringClass().getName();
-            throw new MethodNotFoundException(_T(EL_FN_NO_SUCH_METHOD, name, name, clsname));
-        }
-
+        Method method = checkMethod(elctx, args);
         return ELEngine.invokeMethod(elctx, base, method, args);
     }
 
     public Object invokeSuper(ELContext elctx, Object base, Closure[] args) {
-        Method method = ELEngine.resolveMethod(elctx, methods, name, args);
-        if (method == null) {
-            String clsname = methods[0].getDeclaringClass().getName();
-            throw new MethodNotFoundException(_T(EL_FN_NO_SUCH_METHOD, name, name, clsname));
-        }
-
+        Method method = checkMethod(elctx, args);
         return invokeSuper(elctx, method, base, args);
     }
 
@@ -159,5 +151,31 @@ class MultiMethodClosure extends JavaMethodClosure
             methods[i] = readMethod(in);
             methods[i].setAccessible(true);
         }
+    }
+
+    private Method checkMethod(ELContext elctx, Closure[] args) {
+        Method method = ELEngine.resolveMethod(elctx, methods, name, args);
+        if (method == null) {
+            String clsname = methods[0].getDeclaringClass().getName();
+            throw new MethodNotFoundException(_T(EL_FN_NO_SUCH_METHOD, name, name, clsname));
+        }
+
+        StringBuilder named_args = null;
+        for (Closure a : args) {
+            if (a instanceof NamedClosure) {
+                if (named_args == null) {
+                    named_args = new StringBuilder();
+                } else {
+                    named_args.append(",");
+                }
+                named_args.append(((NamedClosure)a).name());
+            }
+        }
+
+        if (named_args != null) {
+            throw new ELException(_T(EL_UNKNOWN_ARG_NAME, named_args.toString()));
+        }
+
+        return method;
     }
 }

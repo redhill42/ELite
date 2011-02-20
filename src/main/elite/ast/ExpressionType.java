@@ -40,13 +40,13 @@ public enum ExpressionType
     ASSIGN("=", ASSIGN_PREC),
 
     /** A node that represents a bitwise AND operation. */
-    BITWISE_AND("^&", BITAND_PREC),
+    BITWISE_AND(":&:", BITAND_PREC),
 
     /** A node that represents a bitwise OR operation. */
-    BITWISE_OR("^|", BITOR_PREC),
+    BITWISE_OR(":|:", BITOR_PREC),
 
     /** A node that represents a bitwise NOT operation. */
-    BITWISE_NOT("^!", PREFIX_PREC),
+    BITWISE_NOT(":!:", PREFIX_PREC),
 
     /** A node that represents a concatenation operation. */
     CAT("~", SHIFT_PREC),
@@ -181,7 +181,7 @@ public enum ExpressionType
     UNSIGNED_RIGHT_SHIFT(">>>", SHIFT_PREC),
 
     /** A node that represents a bitwise XOR operation. */
-    XOR("^^", XOR_PREC),
+    XOR(":^:", XOR_PREC),
 
     /** A generic expression tree node. */
     GENERIC;

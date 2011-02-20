@@ -831,6 +831,7 @@ public class DefaultLexer extends Lexer
         shared.addOperator("-=", ASSIGNOP, SUB);
         shared.addOperator("--", DEC, -1);
         shared.addOperator("->", XFORM, -1);
+        shared.addOperator("->>", INFIX, 1);
         shared.addOperator("+", ADD, -1);
         shared.addOperator("+=", ASSIGNOP, ADD);
         shared.addOperator("++", INC, -1);
@@ -860,13 +861,13 @@ public class DefaultLexer extends Lexer
         shared.addOperator("&&", AND, -1);
         shared.addOperator("^", POW, -1);
         shared.addOperator("^=", ASSIGNOP, POW);
-        shared.addOperator("^!", BITNOT, -1);
-        shared.addOperator("^|", BITOR, -1);
-        shared.addOperator("^|=", ASSIGNOP, BITOR);
-        shared.addOperator("^&", BITAND, -1);
-        shared.addOperator("^&=", ASSIGNOP, BITAND);
-        shared.addOperator("^^", XOR, -1);
-        shared.addOperator("^^=", ASSIGNOP, XOR);
+        shared.addOperator(":!:", BITNOT, -1);
+        shared.addOperator(":|:", BITOR, -1);
+        shared.addOperator(":|:=", ASSIGNOP, BITOR);
+        shared.addOperator(":&:", BITAND, -1);
+        shared.addOperator(":&:=", ASSIGNOP, BITAND);
+        shared.addOperator(":^:", XOR, -1);
+        shared.addOperator(":^:=", ASSIGNOP, XOR);
         shared.addOperator("~", CAT, -1);
         shared.addOperator("~=", ASSIGNOP, CAT);
         shared.addOperator("/", DIV, -1);
@@ -889,7 +890,7 @@ public class DefaultLexer extends Lexer
         shared.addOperator("ge", ">=", GE, -1);
         shared.addOperator("div", "div", IDIV, -1);
         shared.addOperator("mod", "%", REM, -1);
-        shared.addOperator("xor", "^^", XOR, -1);
+        shared.addOperator("xor", ":^:", XOR, -1);
         shared.addOperator("shl", "<<", SHL, -1);
         shared.addOperator("shr", ">>", SHR, -1);
         shared.addOperator("ushr", ">>>", USHR, -1);
@@ -908,7 +909,7 @@ public class DefaultLexer extends Lexer
         shared.addOperator("¬", "!", NOT, -1);
         shared.addOperator("∧", "&&", AND, -1);
         shared.addOperator("∨", "||", OR, -1);
-        shared.addOperator("⊕", "^^", XOR, -1);
-        shared.addOperator("⊻", "^^", XOR, -1);
+        shared.addOperator("⊕", ":^:", XOR, -1);
+        shared.addOperator("⊻", ":^:", XOR, -1);
     }
 }

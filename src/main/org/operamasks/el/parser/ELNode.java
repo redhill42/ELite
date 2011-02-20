@@ -104,12 +104,12 @@ public abstract class ELNode implements Serializable
         opIdentifiers[Token.POS]    = "__pos__";
         opIdentifiers[Token.NEG]    = "__neg__";
         opIdentifiers[Token.NOT]    = "!";
-        opIdentifiers[Token.BITNOT] = "^!";
+        opIdentifiers[Token.BITNOT] = ":!:";
         opIdentifiers[Token.INC]    = "++";
         opIdentifiers[Token.DEC]    = "--";
-        opIdentifiers[Token.BITOR]  = "^|";
-        opIdentifiers[Token.BITAND] = "^&";
-        opIdentifiers[Token.XOR]    = "^^";
+        opIdentifiers[Token.BITOR]  = ":|:";
+        opIdentifiers[Token.BITAND] = ":&:";
+        opIdentifiers[Token.XOR]    = ":^:";
         opIdentifiers[Token.SHL]    = "<<";
         opIdentifiers[Token.SHR]    = ">>";
         opIdentifiers[Token.USHR]   = ">>>";

@@ -27,6 +27,8 @@ import javax.el.ELException;
 
 import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.closure.NamedClosure;
+
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -131,6 +133,22 @@ class SingleMethodClosure extends JavaMethodClosure
     private void checkArgs(Closure[] args) {
         if (nargs != args.length && (!vargs || args.length < nargs-1)) {
             throw new ELException(_T(EL_FN_BAD_ARG_COUNT, getName(), nargs, args.length));
+        }
+
+        StringBuilder named_args = null;
+        for (Closure a : args) {
+            if (a instanceof NamedClosure) {
+                if (named_args == null) {
+                    named_args = new StringBuilder();
+                } else {
+                    named_args.append(",");
+                }
+                named_args.append(((NamedClosure)a).name());
+            }
+        }
+
+        if (named_args != null) {
+            throw new ELException(_T(EL_UNKNOWN_ARG_NAME, named_args.toString()));
         }
     }
 }

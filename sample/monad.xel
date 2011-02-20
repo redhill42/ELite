@@ -1,32 +1,22 @@
-/* This example implements Monad in ELite. This example may confuse you if 
- * you don't know anything about monad. If that is the case please close 
- * the file and leave it alone.
- *
- * Although ELite supports Monad, it still has a long way to go.
+require 'syntax'
+
+/* ELite supports "duck typed monad", that is, any class that implements
+ * "bind" operation is a monad type.
  */
 
-// Operators
-@infix(1)  "=>>"
-@infix(-1) "<<="
-@infix(-1) ">=>"
-@infix(-1) "<=<"
-
-// The Monad base class
 abstract class Monad
 {
     abstract bind(k);
 
-    define  =>>(f) => bind(f);
-    define ?<<=(f) => bind(f);
-    define  >> (m) => bind(\_ => m);
-    define ?<< (m) => bind(\_ => m);
+    define ->>(f) => bind(f);
+    define >> (m) => bind(\_ => m);
 }
 
-define >=>(f, g)(x) => f(x) =>> g;
-define <=<(g, f)(x) => f(x) =>> g;
 
-
+//-----------------
 // The Maybe Monad
+//-----------------
+
 @data Maybe = Nothing  { bind(k) => Nothing() }
             | Just(x)  { bind(k) => k(x)      }
 extends Monad
@@ -38,13 +28,16 @@ extends Monad
 // Maybe Monad examples
 define mdiv(x, y) => y == 0 ? Nothing() : Just(x / y);
 
-define foo() => mdiv(2, 4) =>> \a =>
-                mdiv(2, 0) =>> \b =>
+define foo() => mdiv(2, 4) ->> \a =>
+                mdiv(2, 0) ->> \b =>
                 mdiv(a, b);
 print(foo());
 
 
+//-----------------
 // The State Monad
+//-----------------
+
 class State(run) extends Monad
 {
     bind(k) => State(\s => let ((a, s') = run(s)) run_state(k(a), s'))
@@ -72,31 +65,54 @@ define fib(n) {
 print(fib(12))
 
 
-// The Continuation Monad
-class Cont(run) extends Monad
-{
-    bind(k) => Cont(\c => run(\a => run_cont(k(a), c)));
-    static yield(&a) => Cont(\f => f(a));
+//------------------
+// Lists are monads
+//------------------
+
+define pyth(n) => do {
+    a <- [1..n];
+    b <- [a..n];
+    c <- [b..n];
+    [(a,b,c)] if a^2+b^2==c^2;
 }
 
-define run_cont(m, c) => m.run(c);
-define call_cc(f) => Cont(\c => run_cont(f(\a => Cont(\_ => c(a))), c));
+print(pyth(10))
 
 
-// Continuation Monad examples
-define calculate_length(l) => Cont.yield(l.length());
-define double(n) => Cont.yield(n*2);
+//--------------
+// Continuation
+//--------------
+// ELite has builtin support for continuation monad.
 
-run_cont(calculate_length("123") =>> double, print);
+define calculate_length(l) => yield(l.length());
+define double(n) => yield(n*2);
+run_cont(calculate_length("123") ->> double, print);
 
 define whats_your_name(name) =>
     call_cc(\exit => do {
         validate_name(name, exit)
-        Cont.yield("Welcome, ${name}!")
+        yield("Welcome, ${name}!")
     })
 
 define validate_name(name, exit) =>
-    empty name ? exit("You forget to tell me your name!") : Cont.yield(null);
+    empty name ? exit("You forget to tell me your name!") : yield(null);
 
 run_cont(whats_your_name("bob"), print);
 run_cont(whats_your_name(""), print);
+
+define generator(next)() {
+    define c = call_cc(\k => c = k(0)) >> next()
+    c.run()
+}
+
+define fib_generator() {
+    let (a = 0, b = 1) {
+        generator() {
+            (a, b) = (b, a+b)
+            yield(a)
+        }
+    }
+}
+
+// try next_fib() multiple times to generate fibonacci sequence
+define next_fib = fib_generator()

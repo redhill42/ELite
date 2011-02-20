@@ -64,7 +64,7 @@ public class UnaryExpression extends Expression
 
         switch (nodeType) {
         case NOT:            buf.insert(0, "!"); break;
-        case BITWISE_NOT:    buf.insert(0, "^!"); break;
+        case BITWISE_NOT:    buf.insert(0, ":!:"); break;
         case NEGATE:         buf.insert(0, "-"); break;
         case UNARY_PLUS:     buf.insert(0, "+"); break;
         case PARENTHESIS:    break;

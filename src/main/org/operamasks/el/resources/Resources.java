@@ -98,7 +98,6 @@ public final class Resources
     public static final String EL_PROPERTY_WRITE_ERROR = "EL_PROPERTY_WRITE_ERROR";
     public static final String EL_RESOLVER_NOT_WRITABLE = "EL_RESOLVER_NOT_WRITABLE";
     public static final String EL_READONLY_EXPRESSION = "EL_READONLY_EXPRESSION";
-    public static final String EL_LIST_PATTERN_NOT_MATCH = "EL_LIST_PATTERN_NOT_MATCH";
     public static final String EL_TUPLE_PATTERN_NOT_MATCH = "EL_TUPLE_PATTERN_NOT_MATCH";
     public static final String EL_CIRCULAR_CLASS_DEFINITION = "EL_CIRCULAR_CLASS_DEFINITION";
     public static final String EL_ABSTRACT_CLASS = "EL_ABSTRACT_CLASS";
@@ -110,7 +109,10 @@ public final class Resources
     public static final String EL_INVALID_METHOD_BODY = "EL_INVALID_METHOD_BODY";
     public static final String EL_NO_METHOD_BODY = "EL_NO_METHOD_BODY";
     public static final String EL_INVOKE_ABSTRACT_METHOD = "EL_INVOKE_ABSTRACT_METHOD";
-    
+    public static final String EL_EMPTY_DO_CONSTRUCT = "EL_EMPTY_DO_CONSTRUCT";
+    public static final String EL_LAST_DO_STATEMENT = "EL_LAST_DO_STATEMENT";
+    public static final String EL_RETURN_CONTINUATION = "EL_RETURN_CONTINUATION";
+
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";
     public static final String JSPRT_UNSUPPORTED_EVAL_TYPE = "JSPRT_UNSUPPORTED_EVAL_TYPE";
 

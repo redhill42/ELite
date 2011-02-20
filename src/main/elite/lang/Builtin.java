@@ -104,7 +104,7 @@ public final class Builtin
         for (int i = 0; i < n; i++) {
             exps[i].getValue(elctx);
         }
-        return yield(elctx, exps[n]);
+        return run_block(elctx, exps[n]);
     }
 
     /**
@@ -1942,47 +1942,47 @@ public final class Builtin
         }
     }
 
-    @Expando(name="^!")
+    @Expando(name=":!:")
     public static BitSet __bitset_flip__(BitSet s) {
         s = (BitSet)s.clone();
         s.flip(0, s.length());
         return s;
     }
 
-    @Expando(name="^&")
+    @Expando(name=":&:")
     public static BitSet __bitset_and__(BitSet s1, BitSet s2) {
         BitSet s = (BitSet)s1.clone();
         s.and(s2);
         return s;
     }
 
-    @Expando(name="^&=")
+    @Expando(name=":&:=")
     public static BitSet __bitset_iand__(BitSet s1, BitSet s2) {
         s1.and(s2);
         return s1;
     }
 
-    @Expando(name="^|")
+    @Expando(name=":|:")
     public static BitSet __bitset_or__(BitSet s1, BitSet s2) {
         BitSet s = (BitSet)s1.clone();
         s.or(s2);
         return s;
     }
 
-    @Expando(name="^|=")
+    @Expando(name=":|:=")
     public static BitSet __bitset_ior__(BitSet s1, BitSet s2) {
         s1.or(s2);
         return s1;
     }
 
-    @Expando(name="^^")
+    @Expando(name=":^:")
     public static BitSet __bitset_xor__(BitSet s1, BitSet s2) {
         BitSet s = (BitSet)s1.clone();
         s.xor(s2);
         return s;
     }
 
-    @Expando(name="^^=")
+    @Expando(name=":^:=")
     public static BitSet __bitset_ixor__(BitSet s1, BitSet s2) {
         s1.xor(s2);
         return s1;
@@ -2121,6 +2121,24 @@ public final class Builtin
     @Expando
     public static char toUpper(Character c) {
         return Character.toUpperCase(c);
+    }
+
+    // Continuation
+
+    public static Object run_cont(ELContext ctx, Continuation m, Closure f) {
+        return m.run(ctx, f);
+    }
+
+    public static Object run_cont(ELContext ctx, Continuation m) {
+        return m.run(ctx);
+    }
+
+    public static Continuation yield(Closure val) {
+        return new Continuation.Yield(val);
+    }
+
+    public static Continuation call_cc(Closure f) {
+        return new Continuation.CallCC(f);
     }
 
     // Other functions
@@ -2379,22 +2397,22 @@ public final class Builtin
         return __POW__.getValue(elctx, x, y);
     }
 
-    @Expando(name="^!", scope=GLOBAL)
+    @Expando(name=":!:", scope=GLOBAL)
     public static Object __bitnot__(ELContext elctx, Object x) {
         return __BITNOT__.getValue(elctx, x);
     }
 
-    @Expando(name="^|", scope=GLOBAL)
+    @Expando(name=":|:", scope=GLOBAL)
     public static Object __bitor__(ELContext elctx, Object x, Object y) {
         return __BITOR__.getValue(elctx, x, y);
     }
 
-    @Expando(name="^&", scope=GLOBAL)
+    @Expando(name=":&:", scope=GLOBAL)
     public static Object __bitand__(ELContext elctx, Object x, Object y) {
         return __BITAND__.getValue(elctx, x, y);
     }
 
-    @Expando(name="^^", scope=GLOBAL)
+    @Expando(name=":^:", scope=GLOBAL)
     public static Object __xor__(ELContext elctx, Object x, Object y) {
         return __XOR__.getValue(elctx, x, y);
     }
@@ -2604,7 +2622,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name="^|")
+    @Expando(name=":|:")
     public static Collection __union__(Collection lhs, Collection rhs) {
         if (lhs instanceof SortedSet) {
             lhs = new TreeSet(lhs);
@@ -2620,7 +2638,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name="^|=")
+    @Expando(name=":|:=")
     public static Collection __iunion__(Collection lhs, Collection rhs) {
         if (lhs instanceof Set) {
             lhs.addAll(rhs);
@@ -2631,7 +2649,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name="^&")
+    @Expando(name=":&:")
     public static Collection __intersect__(Collection lhs, Collection rhs) {
         if (lhs instanceof SortedSet) {
             lhs = new TreeSet(lhs);
@@ -2646,7 +2664,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name="^&=")
+    @Expando(name=":&:=")
     public static Collection __iintersect__(Collection lhs, Collection rhs) {
         lhs.retainAll(rhs);
         return lhs;
@@ -2654,9 +2672,9 @@ public final class Builtin
 
     // Implementation ----------------------------
 
-    /** Yield a block. */
-    private static Object yield(ELContext elctx, Closure proc) {
-        Object result = proc.getValue(elctx);
+    /** Run a block. */
+    private static Object run_block(ELContext elctx, Closure block) {
+        Object result = block.getValue(elctx);
         if (result instanceof Closure) {
             result = ((Closure)result).invoke(elctx, NO_PARAMS);
         }

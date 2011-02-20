@@ -21,17 +21,20 @@ grammar
 {
 goal
     : #exp 'if' #pred       -> pred ? exp : null
-
     | #exp 'unless' #pred   -> pred ? null : exp
+}
 
-    | 'do' @stmt 'while' '(' #pred ')' -> {
+grammar
+{
+goal
+    : 'loop' @stmt 'while' '(' #pred ')' -> {
         while (true) {
             stmt;
             if (!pred) break;
         }
       }
 
-    | 'do' @stmt 'until' '(' #pred ')' -> {
+    | 'loop' @stmt 'until' '(' #pred ')' -> {
         while (true) {
             stmt;
             if (pred) break;

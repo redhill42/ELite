@@ -117,6 +117,6 @@ public abstract class DelayClosure extends AnnotatedClosure
     }
 
     public String toString() {
-        return getClass().getName() + "@" + Integer.toHexString(hashCode());
+        return value == NO_VALUE ? "#<delay>" : String.valueOf(value);
     }
 }

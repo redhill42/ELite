@@ -2699,9 +2699,9 @@ public class Parser extends Scanner
         }
 
         if (head == null) {
-            throw parseError(pos, "Empty 'do' construct"); // i18n
+            throw parseError(pos, _T(EL_EMPTY_DO_CONSTRUCT));
         } else if (head.pat != null) {
-            throw parseError(head.exp.pos, "The last statement in a 'do' construct must be an expression"); // i18n
+            throw parseError(head.exp.pos, _T(EL_LAST_DO_STATEMENT));
         }
 
         // translate expressions
