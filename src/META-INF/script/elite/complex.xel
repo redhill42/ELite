@@ -351,6 +351,8 @@ class Complex(final real, final imag=0) extends Number
     public floatValue() => real;
 }
 
+@infix(130) '<+>' = Complex
+
 define sqrt(x::Number) {
     if (x is Complex) {
         return x.sqrt();

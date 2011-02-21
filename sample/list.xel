@@ -2,10 +2,10 @@ require 'syntax'
 require 'math'
 
 /* 快速排序算法 */
-define qsort {
-    | []     => []
-    | [x:xs] => qsort([y | y <- xs, y < x]) ~ x ~ qsort([y | y <- xs, y >= x])
-}
+define qsort([])     => []
+     | qsort([x:xs]) => qsort([y | y <- xs, y < x])
+                      ~ [x]
+                      ~ qsort([y | y <- xs, y >= x])
 
 define lst = shuffle([1..10]);
 print(lst);
@@ -14,20 +14,16 @@ print(qsort(lst));
 
 /* 利用列表聚合解决8皇后问题 */
 define queens(n) {
-    define scan(i) {
-        | 0 => [[]]
-        | _ => [[q:qs] | qs <- scan(i-1), q <- [1..n], safe(q, qs, 1)]
-    }
-    define safe {
-        | _, [],      _ => true
-        | x, [y:ys] , n => y!=x && y!=x+n && y!=x-n && safe(x, ys, n+1)
-    }
+    define scan(0) => [[]]
+         | scan(i) => [[q:qs] | qs <- scan(i-1), q <- [1..n], safe(qs, q, 1)]
+    define safe([],     _, _) => true
+         | safe([x:xs], y, n) => x != y && x != y+n && x != y-n && safe(xs, y, n+1)
     scan(n);
 }
 
 let (count=0) {
-    for (x in queens(8)) {
-        print("${++count}: ${x}");
+    for (q in queens(8)) {
+        print("${++count}: ${q}");
     }
 }
 
@@ -61,10 +57,8 @@ define multiple_dwelling =
       and abs(fletcher - cooper) != 1;
 
 /* distinct确定一个表里的各个元素是否互不相同 */
-define distinct(items) {
-    | []     => true
-    | [x:xs] => x not in xs and distinct(xs)
-}
+define distinct([])     => true
+     | distinct([x:xs]) => x not in xs and distinct(xs)
 
 print(multiple_dwelling);
 
@@ -72,8 +66,8 @@ print(multiple_dwelling);
 /*
 S先生与P先生问题
 
-设有两个自然数X, Y, 2<=X<=Y<=99，S先生知道这两个数的和S，
-P先生知道这两个数的积P，他们二人进行了如下对话：
+设有两个自然数x, y, 2<=x<=y<=99，S先生知道这两个数的和，
+P先生知道这两个数的积，他们二人进行了如下对话：
 
 S：我不知道这两个数是什么，但我相信你也不知道。
 P：我知道这两个数是什么了。

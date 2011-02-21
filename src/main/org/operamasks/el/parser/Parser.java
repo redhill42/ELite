@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.BitSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Modifier;
@@ -1514,6 +1513,21 @@ public class Parser extends Scanner
             }
         }
 
+        // check for duplicate variable name
+        for (int i = 0; i < vars.length; i++) {
+            String id = vars[i].id;
+            if ("_".equals(id)) {
+                ELNode.DEFINE v = vars[i];
+                vars[i] = new ELNode.DEFINE(v.pos, tempvar(), v.type, v.meta, v.expr, v.immediate);
+            } else {
+                for (int j = 0; j < i; j++) {
+                    if (id.equals(vars[j].id)) {
+                        throw parseError(p, _T(EL_DUPLICATE_VAR_NAME, id));
+                    }
+                }
+            }
+        }
+
         if (!simple) {
             // generate pattern matching
             ELNode.Pattern pats[] = new ELNode.Pattern[npats];
@@ -1525,88 +1539,156 @@ public class Parser extends Scanner
             body = new ELNode.MATCH(body.pos, args, new ELNode.CASE(p, pats, body), null);
         }
 
-        checkVars(p, vars, varargs);
         return new ELNode.LAMBDA(p, filename, name, type, vars, varargs, body);
     }
 
     private ELNode parseProcedureDefinition(String name, String rtype, ELNode.METASET meta) {
         int p = pos;
-        List<ELNode.DEFINE[]> vars_list = new ArrayList<ELNode.DEFINE[]>();
-        BitSet vararg_flags = new BitSet();
+        ParamList plist;
         ELNode body;
 
         open_scope();
-
-        if (scan(LPAREN)) {
-            // parse parameter list, may be curried
-            do {
-                List<ELNode.DEFINE> vars = new ArrayList<ELNode.DEFINE>();
-                boolean varargs = false;
-                if (token != RPAREN) {
-                    do {
-                        vars.add(parseParameter());
-                        varargs = scan(ELLIPSIS);
-                    } while (!varargs && scan(COMMA));
-                }
-                expect(RPAREN);
-                vararg_flags.set(vars_list.size(), varargs);
-                vars_list.add(checkVars(p, vars, varargs));
-            } while (scan(LPAREN));
-
-            // parse procedure body
-            if (scan(ARROW)) {
-                // foo(x) => exp; syntax sugar, translate to: foo = {x=>exp}
-                body = parseExpressionStatement();
-            } else if (scan(LBRACE)) {
-                if (token == BAR) {
-                    // translate into a match expression
-                    ELNode.DEFINE[] vars = vars_list.get(0);
-                    ELNode[] args = new ELNode[vars.length];
-                    for (int i = 0; i < args.length; i++) {
-                        args[i] = new ELNode.IDENT(vars[i].pos, vars[i].id);
-                    }
-                    body = parseMatchPatterns(pos, args);
-                } else {
-                    body = parseCompoundExpression(pos);
-                }
-                expect(RBRACE);
-            } else {
-                body = null;
-            }
+        expect(LPAREN);
+        if (token != RPAREN) {
+            plist = parseParameterList(p);
         } else {
-            /* The procedure doesn't have a parameter list. In this case we build
-             * anonymous parameters if the procedure have a match expression in the body,
-             * or the parameter list is empty if no such match expression.
-             */
-            if (scan(ARROW)) {
-                vars_list.add(EMPTY_DEFS);
-                body = parseExpressionStatement();
-            } else if (scan(LBRACE)) {
-                if (token == BAR) {
-                    // Translate into a match expression. The anonymous parameters
-                    // is determined by the match patterns.
-                    ELNode.MATCH match = parseMatchPatterns(pos, null);
-                    ELNode.DEFINE[] vars = new ELNode.DEFINE[match.args.length];
-                    for (int i = 0; i < vars.length; i++) {
-                        String id = ((ELNode.IDENT)match.args[i]).id;
-                        vars[i] = new ELNode.DEFINE(match.args[i].pos, id);
-                    }
-                    vars_list.add(vars);
-                    body = match;
-                } else {
-                    vars_list.add(EMPTY_DEFS);
-                    body = parseCompoundExpression(pos);
-                }
-                expect(RBRACE);
+            plist = ParamList.empty();
+        }
+        expect(RPAREN);
+
+        if (token == LPAREN) {
+            body = parseCurriedProcedureDefinition(p, name, rtype, meta, plist);
+            close_scope();
+        } else {
+            // look ahead for '{|', disable alternate equation if found
+            boolean allow_alts = true;
+            if (plist.classic) {
+                mark(); allow_alts = !(scan(LBRACE) && token == BAR); reset();
+            }
+
+            body = parseProcedureBody(plist);
+            close_scope();
+
+            boolean isAbstract = (meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0;
+            if (isAbstract && body != null) {
+                throw parseError(p, _T(EL_INVALID_METHOD_BODY));
+            } else if (!isAbstract && body == null) {
+                throw parseError(p, _T(EL_NO_METHOD_BODY));
+            } else if (isAbstract && !plist.classic) {
+                throw parseError(p, "Abstract procedure cannot have pattern parameters");
+            }
+
+            if (!isAbstract && allow_alts && token == BAR) {
+                body = parseBranchedProcedureDefinition(name, rtype, plist, body);
             } else {
-                body = null;
+                body = translateParameters(p, name, rtype, plist, body);
             }
         }
 
-        boolean isAbstract = (meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0;
-        if (isAbstract && body != null) {
-            throw parseError(p, _T(EL_INVALID_METHOD_BODY));
-        } else if (!isAbstract && body == null) {
+        return body;
+    }
+
+    private ELNode parseBranchedProcedureDefinition(String    name,
+                                                    String    rtype,
+                                                    ParamList first_plist,
+                                                    ELNode    first_body)
+    {
+        List<ParamList> branch_plists = new ArrayList<ParamList>();
+        List<ELNode>    branch_bodies = new ArrayList<ELNode>();
+
+        first_plist.classic = false;
+        branch_plists.add(first_plist);
+        branch_bodies.add(first_body);
+
+        int p = pos;
+        ParamList plist;
+        ELNode body;
+
+        // parse alternate equations
+        while (token == BAR) {
+            int p2 = pos;
+            String id;
+
+            open_scope();
+            scan(); // skip BAR
+            id = scanQName();
+            expect(IDENT);
+            expect(LPAREN);
+            plist = token == RPAREN ? ParamList.empty() : parseParameterList(p2);
+            plist.classic = false;
+            expect(RPAREN);
+            body = parseProcedureBody(plist);
+            close_scope();
+
+            if (!id.equals(name) || plist.params.length != first_plist.params.length) {
+                throw parseError(p2, "Procedure head mismatch");
+            }
+            if (body == null) {
+                throw parseError(p2, _T(EL_NO_METHOD_BODY));
+            }
+
+            branch_plists.add(plist);
+            branch_bodies.add(body);
+        }
+
+        // translate equations
+        int             npats = first_plist.params.length;
+        int             nalts = branch_plists.size();
+        ELNode.DEFINE[] vars  = new ELNode.DEFINE[npats];
+        ELNode.IDENT[]  args  = new ELNode.IDENT[npats];
+        ELNode.CASE[]   alts  = new ELNode.CASE[nalts];
+
+        assignParameterNames(first_plist);
+        for (int i = 0; i < npats; i++) {
+            Param param = first_plist.params[i];
+            vars[i] = new ELNode.DEFINE(param.pos, param.name, null, param.meta);
+            args[i] = new ELNode.IDENT(param.pos, param.name);
+        }
+
+        for (int i = 0; i < nalts; i++) {
+            ELNode.Pattern[] pats = new ELNode.Pattern[npats];
+            plist = branch_plists.get(i);
+            body = branch_bodies.get(i);
+            for (int j = 0; j < npats; j++) {
+                pats[j] = plist.params[j].pattern;
+            }
+            alts[i] = new ELNode.CASE(body.pos, pats, body);
+        }
+
+        if (canOptimizeMatchExpression(alts)) {
+            body = new ELNode.CONST_MATCH(p, args, alts, null);
+        } else {
+            body = new ELNode.MATCH(p, args, alts, null);
+        }
+        return new ELNode.LAMBDA(p, filename, name, rtype, vars, false, body);
+    }
+
+    private ELNode parseCurriedProcedureDefinition(int              p,
+                                                   String           name,
+                                                   String           rtype,
+                                                   ELNode.METASET   meta,
+                                                   ParamList        plist)
+    {
+        if ((meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0) {
+            throw parseError(p, "Abstract procedure doesn't support curried parameters");
+        }
+
+        List<ParamList> curried_plist = new ArrayList<ParamList>();
+        ELNode body;
+
+        curried_plist.add(plist);
+        expect(LPAREN);
+        do {
+            if (token != RPAREN) {
+                curried_plist.add(parseParameterList(pos));
+            } else {
+                curried_plist.add(ParamList.empty());
+            }
+            expect(RPAREN);
+        } while (scan(LPAREN));
+
+        body = parseProcedureBody(plist);
+        if (body == null) {
             throw parseError(p, _T(EL_NO_METHOD_BODY));
         }
 
@@ -1614,21 +1696,169 @@ public class Parser extends Scanner
         //      define f(a)(b)(c) => body
         // translated to:
         //      define f = {a=>{b=>{c=>body}}}
-        for (int i = vars_list.size(); --i >= 0; ) {
-            ELNode.DEFINE[] vars = vars_list.get(i);
-            boolean vararg = vararg_flags.get(i);
+        for (int i = curried_plist.size(); --i >= 0; ) {
             if (i == 0) {
-                body = new ELNode.LAMBDA(p, filename, name, rtype, vars, vararg, body);
+                body = translateParameters(p, name, rtype, curried_plist.get(i), body);
             } else {
-                body = new ELNode.LAMBDA(p, filename, null, null, vars, vararg, body);
+                body = translateParameters(p, null, null, curried_plist.get(i), body);
             }
         }
 
-        close_scope();
         return body;
     }
 
-    private ELNode.DEFINE parseParameter() {
+    private ELNode parseProcedureBody(ParamList plist) {
+        ELNode body;
+
+        if (scan(ARROW)) {
+            body = parseExpressionStatement();
+        } else if (scan(LBRACE)) {
+            if (plist.classic && token == BAR) {
+                // translate into a match expression
+                ELNode[] args = new ELNode[plist.params.length];
+                assignParameterNames(plist);
+                for (int i = 0; i < args.length; i++) {
+                    args[i] = new ELNode.IDENT(plist.params[i].pos, plist.params[i].name);
+                }
+                body = parseMatchPatterns(pos, args);
+            } else {
+                body = parseCompoundExpression(pos);
+            }
+            expect(RBRACE);
+        } else {
+            body = null;
+        }
+        return body;
+    }
+
+    private static class Param {
+        int            pos;         // the position of parameter
+        String         name;        // the parameter name
+        ELNode.Pattern pattern;     // the parameter pattern
+        ELNode.METASET meta;        // the parameter's metadata
+        ELNode         deflt;       // the default value
+    }
+
+    private static class ParamList {
+        Param[] params;
+        boolean classic;
+        boolean varargs;
+
+        ParamList(Param[] params, boolean classic, boolean varargs) {
+            this.params  = params;
+            this.classic = classic;
+            this.varargs = varargs;
+        }
+
+        static ParamList empty() {
+            return new ParamList(new Param[0], true, false);
+        }
+    }
+
+    private ParamList parseParameterList(int pos) {
+        List<Param> params = new ArrayList<Param>();
+        boolean classic = true;
+        boolean varargs = false;
+        boolean has_deflt = false;
+
+        do {
+            Param param = new Param();
+            param.pos = pos;
+            param.meta = parseMetaData();
+            param.pattern = parsePattern();
+
+            if (isVariablePattern(param.pattern)) {
+                param.deflt = scan(ASSIGN) ? parseExpression() : null;
+                varargs = scan(ELLIPSIS);
+
+                if (param.deflt != null) {
+                    has_deflt = true;
+                }
+                if (has_deflt && (param.deflt == null || varargs)) {
+                    throw parseError(pos, _T(EL_NON_DFLT_ARG_FOLLOWS_DFLT_ARG));
+                }
+                if (!classic && (param.deflt != null || varargs)) {
+                    throw parseError(pos, "Mixed use of pattern and classic parameters");
+                }
+            } else {
+                classic = false;
+                if (has_deflt) {
+                    throw parseError(pos, "Mixed use of pattern and classic parameters");
+                }
+            }
+
+            params.add(param);
+        } while (!varargs && scan(COMMA));
+
+        return new ParamList(params.toArray(new Param[params.size()]), classic, varargs);
+    }
+
+    private void assignParameterNames(ParamList plist) {
+        // assign parameters name and check for duplicate names
+        for (int i = 0; i < plist.params.length; i++) {
+            Param p = plist.params[i];
+            String id;
+
+            if (p.pattern instanceof ELNode.DEFINE) {
+                id = ((ELNode.DEFINE)p.pattern).id;
+                if ("_".equals(id)) {
+                    id = tempvar();
+                } else {
+                    boolean dups = false;
+                    for (int j = 0; j < i; j++) {
+                        if (id.equals(plist.params[j].name)) {
+                            dups = true;
+                            if (plist.classic) {
+                                throw parseError(p.pos, _T(EL_DUPLICATE_VAR_NAME, id));
+                            } else {
+                                id = tempvar();
+                            }
+                        }
+                    }
+                    if (!dups) {
+                        add_symbol((ELNode.DEFINE)p.pattern);
+                    }
+                }
+            } else {
+                id = tempvar();
+            }
+
+            p.name = id;
+        }
+    }
+
+    private ELNode.LAMBDA translateParameters(int pos, String  name, String type, ParamList plist, ELNode body) {
+        int npats = plist.params.length;
+        ELNode.DEFINE[] vars = new ELNode.DEFINE[npats];
+
+        // build variable list
+        assignParameterNames(plist);
+        for (int i = 0; i < npats; i++) {
+            Param p = plist.params[i];
+            if (plist.classic) {
+                vars[i] = (ELNode.DEFINE)p.pattern;
+                vars[i].meta = p.meta;
+                vars[i].expr = p.deflt;
+            } else {
+                vars[i] = new ELNode.DEFINE(p.pos, p.name, null, p.meta);
+            }
+        }
+
+        if (!plist.classic) {
+            // generate pattern matching
+            ELNode.Pattern pats[] = new ELNode.Pattern[npats];
+            ELNode.IDENT   args[] = new ELNode.IDENT[npats];
+            for (int i = 0; i < npats; i++) {
+                pats[i] = plist.params[i].pattern;
+                args[i] = new ELNode.IDENT(vars[i].pos, vars[i].id);
+            }
+            body = new ELNode.MATCH(body.pos, args, new ELNode.CASE(body.pos, pats, body), null);
+        }
+
+        return new ELNode.LAMBDA(pos, filename, name, type, vars, plist.varargs, body);
+    }
+
+    private ELNode.DEFINE parseClassicParameter() {
         int p = pos;
         ELNode.METASET meta = parseMetaData();
         boolean lazy = scan(LAZY);
@@ -1638,64 +1868,15 @@ public class Parser extends Scanner
         return new ELNode.DEFINE(p, var, type, meta, exp, !lazy);
     }
 
-    private ELNode.DEFINE[] checkVars(int p, List<ELNode.DEFINE> varlist, boolean varargs) {
-        ELNode.DEFINE[] vars = to_a(varlist);
-        checkVars(p, vars, varargs);
-        return vars;
-    }
-
-    private void checkVars(int p, ELNode.DEFINE[] vars, boolean varargs) {
-        // check for duplicate argument name
-        for (int i = 0; i < vars.length; i++) {
-            String id = vars[i].id;
-            if ("_".equals(id)) {
-                ELNode.DEFINE var = vars[i];
-                vars[i] = new ELNode.DEFINE(var.pos, tempvar(), var.type,
-                                            var.meta, var.expr, var.immediate);
-            } else {
-                for (int j = 0; j < i; j++) {
-                    if (id.equals(vars[j].id)) {
-                        throw parseError(p, _T(EL_DUPLICATE_VAR_NAME, id));
-                    }
-                }
-                add_symbol(vars[i]);
-            }
-        }
-
-        // check for default argument value
-        boolean found_dval = false;
-        for (ELNode.DEFINE var : vars) {
-            if (var.expr != null) {
-                found_dval = true;
-            } else if (found_dval) {
-                throw parseError(p, _T(EL_NON_DFLT_ARG_FOLLOWS_DFLT_ARG));
-            }
-        }
-
-        if (found_dval && varargs) {
-            throw parseError(p, _T(EL_NON_DFLT_ARG_FOLLOWS_DFLT_ARG));
-        }
-    }
-
     /**
      * Parse a compound expression.
      */
     ELNode parseCompoundExpression(int p) {
-        return parseCompoundExpression(p, false);
-    }
-
-    private ELNode parseCompoundExpression(int p, boolean atexp) {
         List<ELNode> exps = new ArrayList<ELNode>();
 
         open_scope();
         while (token != RBRACE) {
-            if (token == ATSIGN && atexp) {
-                // @ is conflict with annotations and @-identifiers. The
-                // @-identifier is allowed only in a .{} construction.
-                exps.add(parseExpressionStatement());
-            } else {
-                parseStatementList(exps);
-            }
+            parseStatementList(exps);
         }
         close_scope();
 
@@ -2032,7 +2213,7 @@ public class Parser extends Scanner
             List<ELNode.DEFINE> vlist = new ArrayList<ELNode.DEFINE>();
             if (token != RPAREN) {
                 do {
-                    vlist.add(checkMember(parseParameter(), vlist));
+                    vlist.add(checkMember(parseClassicParameter(), vlist));
                 } while (scan(COMMA));
             }
             expect(RPAREN);
@@ -2229,7 +2410,7 @@ public class Parser extends Scanner
             if (scan(LPAREN)) {
                 if (token != RPAREN) {
                     do {
-                        vars.add(checkMember(parseParameter(), vars));
+                        vars.add(checkMember(parseClassicParameter(), vars));
                     } while (scan(COMMA));
                 }
                 expect(RPAREN);
@@ -2711,9 +2892,12 @@ public class Parser extends Scanner
             ELNode.DEFINE v;
 
             if (head.pat == null) {
-                v = new ELNode.DEFINE(e.pos, "_"); // wildcard
+                v = new ELNode.DEFINE(e.pos, tempvar()); // wildcard
             } else if (head.pat instanceof ELNode.DEFINE) {
-                v = (ELNode.DEFINE)head.pat;       // simple case
+                v = (ELNode.DEFINE)head.pat; // simple case
+                if ("_".equals(v.id)) {
+                    v.id = tempvar();
+                }
             } else {
                 v = new ELNode.DEFINE(e.pos, tempvar());
                 exp = new ELNode.MATCH(e.pos,
@@ -3197,11 +3381,7 @@ public class Parser extends Scanner
             } else {
                 String type = parseTypeNameOpt();
                 ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern() : null;
-                if (Character.isUpperCase(id.charAt(0)) && type == null && apat == null) {
-                    return new ELNode.NEW(p, id, EMPTY_EXPS, null, null); // constructor
-                } else {
-                    return new ELNode.DEFINE(p, id, type, null, apat, true); // variable
-                }
+                return new ELNode.DEFINE(p, id, type, null, apat, true); // variable
             }
         }
 
