@@ -55,7 +55,7 @@ public class MappendSeq extends DelaySeq
                 Object e;
 
                 // evaluate the mappend procedure
-                e = t.get(); t = t.tail();
+                e = t.head(); t = t.tail();
                 try {
                     e = p.call(elctx, e);
                 } catch (Control.Break b) {
@@ -74,7 +74,7 @@ public class MappendSeq extends DelaySeq
 
         if (v != null) {
             // generate next element
-            head = v.get();
+            head = v.head();
             v = v.tail();
             if (v.isEmpty())
                 v = null;

@@ -1581,7 +1581,7 @@ public class Parser extends Scanner
             if (!isAbstract && allow_alts && token == BAR) {
                 body = parseBranchedProcedureDefinition(name, rtype, plist, body);
             } else {
-                body = translateParameters(p, name, rtype, plist, body);
+                body = translateEquation(p, name, rtype, plist, body);
             }
         }
 
@@ -1698,9 +1698,9 @@ public class Parser extends Scanner
         //      define f = {a=>{b=>{c=>body}}}
         for (int i = curried_plist.size(); --i >= 0; ) {
             if (i == 0) {
-                body = translateParameters(p, name, rtype, curried_plist.get(i), body);
+                body = translateEquation(p, name, rtype, curried_plist.get(i), body);
             } else {
-                body = translateParameters(p, null, null, curried_plist.get(i), body);
+                body = translateEquation(p, null, null, curried_plist.get(i), body);
             }
         }
 
@@ -1827,7 +1827,7 @@ public class Parser extends Scanner
         }
     }
 
-    private ELNode.LAMBDA translateParameters(int pos, String  name, String type, ParamList plist, ELNode body) {
+    private ELNode.LAMBDA translateEquation(int pos, String name, String type, ParamList plist, ELNode body) {
         int npats = plist.params.length;
         ELNode.DEFINE[] vars = new ELNode.DEFINE[npats];
 

@@ -87,7 +87,7 @@ public class CharRanges
     private static abstract class AbstractCharRange extends AbstractSeq
         implements CharRange, RandomAccess, Serializable
     {
-        public Object get() {
+        public Object head() {
             return getBegin();
         }
 

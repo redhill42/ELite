@@ -38,7 +38,7 @@ public abstract class AbstractSeq extends AbstractList
         return isEmpty() ? 0 : 1 + tail().size();
     }
 
-    public Object set(Object x) {
+    public Object set_head(Object x) {
         throw new UnsupportedOperationException();
     }
 
@@ -68,7 +68,7 @@ public abstract class AbstractSeq extends AbstractList
     public Seq reverse() {
         Seq rev = new Cons();
         for (Seq l = this; !l.isEmpty(); l = l.tail()) {
-            rev = new Cons(l.get(), rev);
+            rev = new Cons(l.head(), rev);
         }
         return rev;
     }
@@ -99,7 +99,7 @@ public abstract class AbstractSeq extends AbstractList
         
         protected void force(ELContext elctx) {
             if (xs != null) {
-                head = xs.get();
+                head = xs.head();
                 tail = make(xs.tail(), ys);
                 xs = ys = null;
             }
@@ -128,7 +128,7 @@ public abstract class AbstractSeq extends AbstractList
             if (t != this && t instanceof RandomAccess) {
                 return t.get(i);
             } else if (i == 0) {
-                return t.get();
+                return t.head();
             } else {
                 t = t.tail();
             }
@@ -148,7 +148,7 @@ public abstract class AbstractSeq extends AbstractList
             if (t != this && t instanceof RandomAccess) {
                 return t.set(i, x);
             } else if (i == 0) {
-                return t.set(x);
+                return t.set_head(x);
             } else {
                 t = t.tail();
             }
@@ -201,7 +201,7 @@ public abstract class AbstractSeq extends AbstractList
             }
             lastRet = next;
             next = next.tail();
-            return lastRet.get();
+            return lastRet.head();
         }
 
         public void remove() {

@@ -48,11 +48,11 @@ public class PArraySeq extends AbstractSeq implements RandomAccess
         }
     }
 
-    public Object get() {
+    public Object head() {
         return Array.get(value, offset);
     }
 
-    public Object set(Object x) {
+    public Object set_head(Object x) {
         Object old = Array.get(value, offset);
         Array.set(value, offset, TypeCoercion.coerce(x, type));
         return old;

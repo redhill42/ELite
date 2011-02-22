@@ -40,7 +40,7 @@ public class EmptySeq extends AbstractSeq
         return 0;
     }
 
-    public Object get() {
+    public Object head() {
         return null;
     }
 

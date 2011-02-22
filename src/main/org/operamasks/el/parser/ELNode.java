@@ -2971,7 +2971,7 @@ public abstract class ELNode implements Serializable
                 } else if (y instanceof Seq) {
                     Seq seq = (Seq)y;
                     while (!seq.isEmpty()) {
-                        if (EQ.equals(elctx, x, seq.get()))
+                        if (EQ.equals(elctx, x, seq.head()))
                             return true;
                         seq = seq.tail();
                     }
@@ -5502,7 +5502,7 @@ public abstract class ELNode implements Serializable
             } else if (arg instanceof List) {
                 Seq xs = coerceToSeq(arg);
                 return !xs.isEmpty() &&
-                       ((Pattern)head).matches(context, xs.get()) &&
+                       ((Pattern)head).matches(context, xs.head()) &&
                        ((Pattern)tail).matches(context, xs.tail());
             } else {
                 return false;

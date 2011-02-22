@@ -27,12 +27,12 @@ public interface Seq extends List
     /**
      * Get the data element.
      */
-    public Object get();
+    public Object head();
 
     /**
      * Set the data element.
      */
-    public Object set(Object x);
+    public Object set_head(Object x);
 
     /**
      * Remove the data element.

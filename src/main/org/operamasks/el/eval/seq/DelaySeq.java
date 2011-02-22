@@ -26,13 +26,13 @@ public abstract class DelaySeq extends AbstractSeq
     protected Object head;
     protected Seq tail;
 
-    public Object get() {
+    public Object head() {
         force(getCurrentELContext());
         return head;
     }
 
-    public Object set(Object x) {
-        Object old = get();
+    public Object set_head(Object x) {
+        Object old = head();
         head = x;
         return old;
     }

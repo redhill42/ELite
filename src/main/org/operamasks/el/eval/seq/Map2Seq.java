@@ -48,8 +48,8 @@ public class Map2Seq extends DelaySeq
         proc = null;
 
         while (!(t1.isEmpty() || t2.isEmpty())) {
-            Object x = t1.get();
-            Object y = t2.get();
+            Object x = t1.head();
+            Object y = t2.head();
             t1 = t1.tail();
             t2 = t2.tail();
             try {

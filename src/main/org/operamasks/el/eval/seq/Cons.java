@@ -59,11 +59,11 @@ public class Cons extends AbstractSeq implements Cloneable
         return ret;
     }
 
-    public Object get() {
+    public Object head() {
         return head;
     }
 
-    public Object set(Object x) {
+    public Object set_head(Object x) {
         Object old = head;
         head = x;
         return old;
@@ -141,7 +141,7 @@ public class Cons extends AbstractSeq implements Cloneable
         
         if (tail == null) {
             Seq s = TypeCoercion.coerceToSeq(c);
-            head = s.get();
+            head = s.head();
             tail = s.tail();
             return true;
         }
@@ -162,7 +162,7 @@ public class Cons extends AbstractSeq implements Cloneable
     public Object remove() {
         Object old = head;
         if (tail != null) {
-            head = tail.get();
+            head = tail.head();
             tail = tail.tail();
         }
         return old;

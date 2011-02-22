@@ -52,11 +52,11 @@ public class ListSeq extends AbstractSeq
         }
     }
 
-    public Object get() {
+    public Object head() {
         return list.get(offset);
     }
 
-    public Object set(Object x) {
+    public Object set_head(Object x) {
         return list.set(offset, x);
     }
 

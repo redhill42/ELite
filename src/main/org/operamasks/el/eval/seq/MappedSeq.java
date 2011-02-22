@@ -48,7 +48,7 @@ public class MappedSeq extends DelaySeq
 
         while (!t.isEmpty()) {
             Object x;
-            x = t.get(); 
+            x = t.head();
             t = t.tail();
             try {
                 head = p.call(elctx, x);

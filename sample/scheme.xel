@@ -61,10 +61,8 @@ lambda_expression
 let_expression
         : '(' 'let' '(' bindings=(binding)+ ')' sequence ')'
                 {
-                    define vars = [], inits = [];
-                    for ((var,init) in bindings) {
-                        vars << var; inits << init;
-                    }
+                    define vars  = bindings.map(\(var,_) => var)
+                    define inits = bindings.map(\(_,init) => init)
                     APPLY(LAMBDA(vars, sequence), inits);
                 }
 
@@ -76,11 +74,8 @@ conditional
 
         | '(' 'cond' test_clause_list else_clause ')'
                 {
-                    define e = else_clause;
-                    for ((test,expr) in test_clause_list) {
-                        e = CONDITION(test, expr, e);
-                    }
-                    e;
+                    foldl(test_clause_list, else_clause,
+                        \acc, (test,expr) => CONDITION(test, expr, acc))
                 }
 
         | '(' 'and' ')'                 -> true

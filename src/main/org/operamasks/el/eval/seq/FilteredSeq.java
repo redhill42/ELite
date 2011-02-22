@@ -48,7 +48,7 @@ public class FilteredSeq extends DelaySeq
 
         while (!t.isEmpty()) {
             Object x;
-            x = t.get();
+            x = t.head();
             t = t.tail();
             try {
                 if (p.test(elctx, x)) {

@@ -73,10 +73,10 @@ public class SeqELResolver extends ELResolver
                 result = seq.size();
                 context.setPropertyResolved(true);
             } else if ("first".equals(property) || "head".equals(property)) {
-                result = seq.get();
+                result = seq.head();
                 context.setPropertyResolved(true);
             } else if ("last".equals(property)) {
-                result = seq.last().get();
+                result = seq.last().head();
                 context.setPropertyResolved(true);
             } else if ("rest".equals(property) || "tail".equals(property)) {
                 result = seq.isEmpty() ? seq : seq.tail();
@@ -119,7 +119,7 @@ public class SeqELResolver extends ELResolver
                 if (seq.isEmpty()) {
                     seq.add(value);
                 } else {
-                    seq.set(value);
+                    seq.set_head(value);
                 }
                 context.setPropertyResolved(true);
             } else if ("last".equals(property)) {
@@ -127,7 +127,7 @@ public class SeqELResolver extends ELResolver
                 if (l.isEmpty()) {
                     l.add(value);
                 } else {
-                    l.set(value);
+                    l.set_head(value);
                 }
                 context.setPropertyResolved(true);
             } else if ("rest".equals(property) || "tail".equals(property)) {
@@ -184,7 +184,7 @@ public class SeqELResolver extends ELResolver
         }
 
         if (!seq.isEmpty()) {
-            seq.set(value);
+            seq.set_head(value);
         } else {
             while (index > 0) {
                 seq.add(null);
@@ -230,7 +230,7 @@ public class SeqELResolver extends ELResolver
             // make reverse list
             Seq rev = Cons.nil();
             while (begin >= 0 && !base.isEmpty()) {
-                rev = new Cons(base.get(), rev);
+                rev = new Cons(base.head(), rev);
                 for (long i = step; !base.isEmpty() && --i >= 0; ) {
                     base = base.tail();
                     --begin;
@@ -270,7 +270,7 @@ public class SeqELResolver extends ELResolver
 
         protected void force(ELContext elctx) {
             if (seq != null) {
-                head = seq.get();
+                head = seq.head();
 
                 Seq t = seq;
                 for (int i = step; !t.isEmpty() && --i >= 0; ) {
@@ -328,7 +328,7 @@ public class SeqELResolver extends ELResolver
             if (base.isEmpty()) {
                 base.add(value);
             } else {
-                base.set(value);
+                base.set_head(value);
             }
 
             if (step == 1) {
@@ -380,7 +380,7 @@ public class SeqELResolver extends ELResolver
             if (base.isEmpty()) {
                 base.add(value[xi]);
             } else {
-                base.set(value[xi]);
+                base.set_head(value[xi]);
             }
 
             if (++xi >= xl) {
@@ -431,7 +431,7 @@ public class SeqELResolver extends ELResolver
             if (base.isEmpty()) {
                 base.add(value[xi]);
             } else {
-                base.set(value[xi]);
+                base.set_head(value[xi]);
             }
 
             if (--xi < 0) {
@@ -488,7 +488,7 @@ public class SeqELResolver extends ELResolver
             if (base.isEmpty()) {
                 base.add(x);
             } else {
-                base.set(x);
+                base.set_head(x);
             }
 
             if (++xi >= xl) {
@@ -541,7 +541,7 @@ public class SeqELResolver extends ELResolver
             if (base.isEmpty()) {
                 base.add(x);
             } else {
-                base.set(x);
+                base.set_head(x);
             }
 
             if (--xi < 0) {
@@ -601,7 +601,7 @@ public class SeqELResolver extends ELResolver
             if (base.isEmpty()) {
                 base.add(it.next());
             } else {
-                base.set(it.next());
+                base.set_head(it.next());
             }
 
             if (!it.hasNext()) {

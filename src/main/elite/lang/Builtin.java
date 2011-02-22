@@ -541,7 +541,7 @@ public final class Builtin
             return false;
         }
 
-        public Object get() {
+        public Object head() {
             return head;
         }
 
@@ -581,7 +581,7 @@ public final class Builtin
             return false;
         }
 
-        public Object get() {
+        public Object head() {
             return value;
         }
 
@@ -620,7 +620,7 @@ public final class Builtin
             if (current != null) {
                 Seq beg = begin, cur = current;
                 begin = current = null;
-                head = cur.get(); cur = cur.tail();
+                head = cur.head(); cur = cur.tail();
                 tail = cur.isEmpty() ? beg : new CycleSeq(beg, cur);
             }
         }
@@ -756,7 +756,7 @@ public final class Builtin
         protected void force(ELContext elctx) {
             if (xs != null) {
                 Seq s = xs; xs = null;
-                head = s.get();
+                head = s.head();
                 tail = make(s.tail(), n-1);
             }
         }
@@ -783,7 +783,7 @@ public final class Builtin
                 seq = null;
                 pred = null;
                 if (!s.isEmpty()) {
-                    Object x = s.get(); s = s.tail();
+                    Object x = s.head(); s = s.tail();
                     if (p.test(elctx, x)) {
                         head = x;
                         tail = new TakeWhileSeq(s, p);
@@ -839,7 +839,7 @@ public final class Builtin
                         ls = null;
                         return;
                     } else {
-                        z[i] = ls[i].get();
+                        z[i] = ls[i].head();
                         ls[i] = ls[i].tail();
                     }
                 }
@@ -873,7 +873,7 @@ public final class Builtin
                         proc = null;
                         return;
                     } else {
-                        args[i] = ls[i].get();
+                        args[i] = ls[i].head();
                         ls[i] = ls[i].tail();
                     }
                 }
@@ -903,7 +903,7 @@ public final class Builtin
         for (Map.Entry<?,?> e : map.entrySet()) {
             Object[] x = { e.getKey(), e.getValue() };
             Seq t = new Cons();
-            tail.set(x);
+            tail.set_head(x);
             tail.set_tail(t);
             tail = t;
         }
@@ -1274,7 +1274,7 @@ public final class Builtin
 
         protected void force(ELContext elctx) {
             if (xs != null) {
-                Object x = xs.get();
+                Object x = xs.head();
                 xs = xs.tail();
 
                 SubSeq t = new SubSeq();
@@ -1302,7 +1302,7 @@ public final class Builtin
     public static Seq[] splitAt(Seq seq, int index) {
         Seq head = new Cons();
         for (int i = 0; i < index && !seq.isEmpty(); i++) {
-            head = new Cons(seq.get(), head);
+            head = new Cons(seq.head(), head);
             seq = seq.tail();
         }
         return new Seq[] { head.reverse(), seq };
@@ -1594,7 +1594,7 @@ public final class Builtin
         protected Object force(ELContext elctx) {
             Seq s = seq;
             seq = null;
-            return s.get();
+            return s.head();
         }
 
         protected void forget() {
@@ -2240,7 +2240,7 @@ public final class Builtin
             boolean sep = false;
             out.print("[");
             for (Seq xs = (Seq)obj; !xs.isEmpty(); xs = xs.tail()) {
-                Object x = xs.get();
+                Object x = xs.head();
                 if (sep) out.print(", ");
                 sep = true;
                 if (x instanceof String) {
@@ -2574,7 +2574,7 @@ public final class Builtin
             if (ys.isEmpty() || xs.isEmpty()) {
                 return xs;
             } else {
-                Object y = ys.get(); ys = ys.tail();
+                Object y = ys.head(); ys = ys.tail();
                 return make(new MinusSeq(xs, y), ys);
             }
         }
@@ -2582,7 +2582,7 @@ public final class Builtin
         protected void force(ELContext elctx) {
             if (xs != null) {
                 while (true) {
-                    Object x = xs.get(); xs = xs.tail();
+                    Object x = xs.head(); xs = xs.tail();
                     if (ELNode.EQ.equals(elctx, x, el)) {
                         if (xs.isEmpty()) {
                             head = null;

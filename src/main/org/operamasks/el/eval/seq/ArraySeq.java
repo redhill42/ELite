@@ -47,11 +47,11 @@ public class ArraySeq extends AbstractSeq implements RandomAccess
         }
     }
 
-    public Object get() {
+    public Object head() {
         return value[offset];
     }
 
-    public Object set(Object x) {
+    public Object set_head(Object x) {
         Object old = value[offset];
         value[offset] = TypeCoercion.coerce(x, type);
         return old;

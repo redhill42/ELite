@@ -87,7 +87,7 @@ public class Ranges
     private static abstract class AbstractRange extends AbstractSeq
         implements Range, RandomAccess, Serializable
     {
-        public Object get() {
+        public Object head() {
             return getBegin();
         }
 
