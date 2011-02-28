@@ -29,7 +29,7 @@
  */
 class Variable
 {
-    private _symbol, _value;
+    private _symbol;
 
     /**
      * Create a new variable with a unique symbol.
@@ -65,20 +65,6 @@ class Variable
      * @return this variable's symbol.
      */
     public getSymbol() => _symbol;
-
-    /**
-     * Returns the variable value.
-     *
-     * @return the value of this variable hold.
-     */
-    public getValue() => _value;
-
-    /**
-     * Set value for this variable.
-     *
-     * @param value the new variable value.
-     */
-    public void setValue(value) => _value = value;
 
     /**
      * Returns the String representation of this variable.
@@ -211,14 +197,6 @@ abstract class Function
     public abstract getVariables();
 
     /**
-     * Evaluates this function using its variables current values.
-     *
-     * @return the evaluation of this function.
-     * @throws IllegalStateException if any of this function's variable is not set.
-     */
-    public abstract evaluate();
-
-    /**
      * Retrieves the variable from this function having the specified
      * symbol (convenience method).
      *
@@ -229,6 +207,14 @@ abstract class Function
     }
 
     /**
+     * Evaluates this function using its variables current values.
+     *
+     * @return the evaluation of this function.
+     * @throws IllegalStateException if any of this function's variable is not set.
+     */
+    public abstract evaluate(env);
+
+    /**
      * Evaluates this function for the specified argument value.
      *
      * @param args the variables values used for the evaluation.
@@ -237,36 +223,22 @@ abstract class Function
      */
     public __call__(args...) {
         define vars = getVariables();
-        if (args.length != vars.length) {
-            throw new IllegalArgumentException(
-                "Found ${args.length} arguments, but ${vars.length} required");
-        }
-
-        if (vars.length == 0) {
-            return evaluate();
-        } else if (vars.length == 1) {
-            define var = vars[0];
-            define prev = var.value;
-            var.value = args[0];
-            try {
-                return evaluate();
-            } finally {
-                var.value = prev;
-            }
-        } else {
-            define save = new Object[vars.length];
-            for (define i in [0..*vars.length]) {
-                save[i] = vars[i].value;
-                vars[i].value = args[i];
-            }
-            try {
-                return evaluate();
-            } finally {
-                for (define i in [0..*vars.length]) {
-                    vars[i].value = save[i];
+        define env = {};
+        for (i in [0..*args.length]) {
+            define key = args.keys[i];
+            if (key != null) {
+                env[key] = args[i];
+            } else {
+                for (j in [0..*vars.length]) {
+                    define var = vars[j].symbol.name;
+                    if (!env.containsKey(var)) {
+                        env[var] = args[i];
+                        break;
+                    }
                 }
             }
         }
+        return evaluate(env);
     }
 
     /**
@@ -485,8 +457,8 @@ abstract class Function
             return g.getVariables();
         }
 
-        public evaluate() {
-            return f(g.evaluate());
+        public evaluate(env) {
+            return f(g.evaluate(env));
         }
 
         public differentiate(v::Variable) {
@@ -519,7 +491,7 @@ abstract class Function
             return f.getVariables();
         }
 
-        public evaluate() {
+        public evaluate(env) {
             throw "Derivative of $f undefined";
         }
 
@@ -548,7 +520,7 @@ abstract class Function
             return f.variables;
         }
 
-        public evaluate() {
+        public evaluate(env) {
             throw "Integral of $f undefined";
         }
 
@@ -585,8 +557,8 @@ abstract class Function
             return f.integrate(v) + g.integrate(v);
         }
 
-        public evaluate() {
-            return f.evaluate() + g.evaluate();
+        public evaluate(env) {
+            return f.evaluate(env) + g.evaluate(env);
         }
 
         public toString() {
@@ -622,8 +594,8 @@ abstract class Function
             return f.integrate(v) - g.integrate(v);
         }
 
-        public evaluate() {
-            return f.evaluate() - g.evaluate();
+        public evaluate(env) {
+            return f.evaluate(env) - g.evaluate(env);
         }
 
         public toString() {
@@ -655,8 +627,8 @@ abstract class Function
             return f.differentiate(v)*g + f*g.differentiate(v);
         }
 
-        public evaluate() {
-            return f.evaluate() * g.evaluate();
+        public evaluate(env) {
+            return f.evaluate(env) * g.evaluate(env);
         }
 
         public toString() {
@@ -688,8 +660,8 @@ abstract class Function
             return (f.differentiate(v) - f/g*g.differentiate(v)) / g;
         }
 
-        public evaluate() {
-            return f.evaluate() / g.evaluate();
+        public evaluate(env) {
+            return f.evaluate(env) / g.evaluate(env);
         }
 
         public toString() {
@@ -966,12 +938,13 @@ class Polynomial extends Function
          * @return the evaluation of this term or <code>null</code> if ONE.
          * @throws IllegalStateException if any of this term's variable is not set.
          */
-        public evaluate() {
+        public evaluate(env) {
             define result = null;
             for (define i in [0..*_size]) {
+                define v = _variables[i];
                 define n = _powers[i];
                 if (n > 0) {
-                    define pow2 = _variables[i].value ?? global[_variables[i].symbol.name];
+                    define pow2 = env[v.symbol.name] ?? v;
                     result = (result == null) ? pow2 : result * pow2;
                     while (--n != 0) {
                         while (n % 2 == 0) {
@@ -1433,10 +1406,10 @@ class Polynomial extends Function
         return _variables;
     }
 
-    public evaluate() {
+    public evaluate(env) {
         define sum = null;
         for (define term,coef in _term2coef) {
-            define termValue = term.evaluate();
+            define termValue = term.evaluate(env);
             define value = (termValue != null) ? termValue * coef : coef;
             sum = (sum == null) ? value : sum + value;
         }
@@ -1675,8 +1648,8 @@ class RationalFunction extends Function
         return Function.merge(_dividend.variables, _divisor.variables);
     }
 
-    public evaluate() {
-        return _dividend.evaluate() / _divisor.evaluate();
+    public evaluate(env) {
+        return _dividend.evaluate(env) / _divisor.evaluate(env);
     }
 
     public toString() {

@@ -2,24 +2,24 @@ class Builder {
     private buf = new StringBuilder();
     private level = 0;
 
-    private void ident_plus() => level += 2;
-    private void ident_minus() => level -= 2;
+    private void indent_plus() => level += 2;
+    private void indent_minus() => level -= 2;
 
-    private void ident() {
+    private void indent() {
         for (i in [1..level]) {
             buf << ' ';
         }
     }
 
-    public void invoke(name, keys, args) {
-        ident();
+    public void invoke(name, args...) {
+        indent();
         buf << "<${name}";
 
         define body = null;
         for (i in [0..args.length-1]) {
-            if (keys[i] != null) {
+            if (args.keys[i] != null) {
                 // named attribute
-                buf << " ${keys[i]}='${args[i]}'";
+                buf << " ${args.keys[i]}='${args[i]}'";
             } else {
                 // the body
                 body = args[i];
@@ -30,10 +30,10 @@ class Builder {
             buf << ">";
             if (body is Closure) {
                 buf << "\n";
-                ident_plus();
+                indent_plus();
                 body.call_with(this);
-                ident_minus();
-                ident();
+                indent_minus();
+                indent();
             } else {
                 buf << body;
             }

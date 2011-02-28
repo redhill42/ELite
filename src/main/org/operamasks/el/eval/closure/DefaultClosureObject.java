@@ -183,23 +183,10 @@ class DefaultClosureObject extends AbstractClosure
         // invoke dynamic closure procedure
         Closure proc = get_closure(elctx, "invoke");
         if (proc != null) {
-            if (proc.arity(elctx) == 3) {
-                // accept named arguments
-                String[] keys = new String[args.length];
-                for (int i = 0; i < args.length; i++) {
-                    if (args[i] instanceof NamedClosure) {
-                        NamedClosure c = (NamedClosure)args[i];
-                        keys[i] = c.name();
-                        args[i] = c.getDelegate();
-                    }
-                }
-                List vlist = new ELNode.VarArgList(elctx, args, 0);
-                return checkResult(proc.call(elctx, name, keys, vlist));
-            } else {
-                // accpet variable arguments only
-                List vlist = new ELNode.VarArgList(elctx, args, 0);
-                return checkResult(proc.call(elctx, name, vlist));
-            }
+            Closure[] xargs = new Closure[args.length+1];
+            xargs[0] = new LiteralClosure(name);
+            System.arraycopy(args, 0, xargs, 1, args.length);
+            return proc.invoke(elctx, xargs);
         }
 
         return NO_RESULT;

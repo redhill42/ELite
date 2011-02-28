@@ -595,15 +595,22 @@ public abstract class ELNode implements Serializable
             }
 
             // rearrange named arguments
+            int k = nvars-1; // index to vararg list
             for (int i = 0; i < argc; i++) {
                 if (args[i] instanceof NamedClosure) {
                     NamedClosure c = (NamedClosure)args[i];
                     int j = indexOfVar(c.name());
-                    if (j == -1)
-                        throw runtimeError(elctx, _T(EL_UNKNOWN_ARG_NAME, c.name()));
-                    if (xargs == null)
-                        xargs = new Closure[argc];
-                    xargs[j] = c.getDelegate();
+                    if (j == -1) {
+                        if (!varargs || k >= argc)
+                            throw runtimeError(elctx, _T(EL_UNKNOWN_ARG_NAME, c.name()));
+                        if (xargs == null)
+                            xargs = new Closure[argc];
+                        xargs[k++] = c;
+                    } else {
+                        if (xargs == null)
+                            xargs = new Closure[argc];
+                        xargs[j] = c.getDelegate();
+                    }
                 }
             }
 
@@ -617,6 +624,7 @@ public abstract class ELNode implements Serializable
                         xargs[j++] = args[i];
                     }
                 }
+
                 // assign default values
                 args = xargs;
                 argc = xargs.length;
@@ -717,6 +725,8 @@ public abstract class ELNode implements Serializable
         private Closure[] args;
         private int begin;
 
+        private transient VarArgKeys keys;
+
         public VarArgList(ELContext context, Closure[] args, int begin) {
             this.context = context;
             this.args = args;
@@ -757,6 +767,58 @@ public abstract class ELNode implements Serializable
                         return i;
                     }
                 }
+            }
+            return -1;
+        }
+
+        public boolean contains(Object o) {
+            return indexOf(o) != -1;
+        }
+
+        public List<String> getKeys() {
+            if (keys == null)
+                keys = new VarArgKeys(args, begin);
+            return keys;
+        }
+
+        public Object get(String key) {
+            if (key == null)
+                return null;
+            for (int i = begin; i < args.length; i++) {
+                Closure c = args[i];
+                if (c instanceof NamedClosure && key.equals(((NamedClosure)c).name())) {
+                    return c.getValue(context);
+                }
+            }
+            return null;
+        }
+    }
+
+    private static class VarArgKeys extends AbstractList<String> {
+        private Closure[] args;
+        private int begin;
+
+        VarArgKeys(Closure[] args, int begin) {
+            this.args = args;
+            this.begin = begin;
+        }
+
+        public int size() {
+            return args.length - begin;
+        }
+
+        public String get(int index) {
+            Closure c = args[index+begin];
+            return c instanceof NamedClosure ? ((NamedClosure)c).name() : null;
+        }
+
+        public int indexOf(Object key) {
+            if (key == null)
+                return -1;
+            for (int i = begin; i < args.length; i++) {
+                Closure c = args[i];
+                if (c instanceof NamedClosure && key.equals(((NamedClosure)c).name()))
+                    return i;
             }
             return -1;
         }
