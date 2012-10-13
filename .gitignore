@@ -1,0 +1,7 @@
+.idea
+*.iml
+
+build
+release
+
+.DS_Store
