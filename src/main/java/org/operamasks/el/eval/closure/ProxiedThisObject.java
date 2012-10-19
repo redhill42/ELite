@@ -25,9 +25,9 @@ import java.lang.reflect.Constructor;
 import javax.el.ELContext;
 import javax.el.ValueExpression;
 
-import org.operamasks.net.sf.cglib.proxy.MethodInterceptor;
-import org.operamasks.net.sf.cglib.proxy.MethodProxy;
-import org.operamasks.net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.MethodInterceptor;
+import net.sf.cglib.proxy.MethodProxy;
+import net.sf.cglib.proxy.Enhancer;
 
 import elite.lang.Closure;
 import org.operamasks.el.resolver.MethodResolver;

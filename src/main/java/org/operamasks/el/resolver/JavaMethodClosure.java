@@ -26,8 +26,8 @@ import javax.el.ELContext;
 import javax.el.MethodNotFoundException;
 import javax.el.ELException;
 
-import org.operamasks.net.sf.cglib.proxy.MethodProxy;
-import org.operamasks.net.sf.cglib.core.Signature;
+import net.sf.cglib.proxy.MethodProxy;
+import net.sf.cglib.core.Signature;
 import elite.lang.Closure;
 import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.eval.TypeCoercion;

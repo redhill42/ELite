@@ -1,7 +1,6 @@
+target
 .idea
+*.ipr
 *.iml
-
-build
-release
-
+*.iws
 .DS_Store

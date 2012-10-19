@@ -10,13 +10,13 @@ ELite
 
     $ git clone https://github.com/hongun/ELite.git
     $ cd ELite
-    $ ant
+    $ mvn package
 
 ## Running
 
-Navigate to the build release directory and run the elite.sh shell script.
+Navigate to the target directory and run the `elite.sh' shell script.
 
-    $ cd release/elite-5.0
+    $ cd target/elite-0.5.0-bin/elite-0.5.0
     $ bin/elite.sh
 
 ELite will display the welcome message:
