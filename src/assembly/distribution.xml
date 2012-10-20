@@ -15,12 +15,11 @@
   <dependencySets>
     <dependencySet>
       <outputDirectory>/lib</outputDirectory>
-      <directoryMode>0755</directoryMode>
     </dependencySet>
   </dependencySets>
   <fileSets>
     <fileSet>
-      <directory>${basedir}/src/commands</directory>
+      <directory>${project.build.scriptSourceDirectory}</directory>
       <outputDirectory>/bin</outputDirectory>
       <directoryMode>0755</directoryMode>
       <fileMode>0755</fileMode>
