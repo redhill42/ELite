@@ -4,11 +4,26 @@
 
   <groupId>elite</groupId>
   <artifactId>elite</artifactId>
-  <version>0.5.0</version>
+  <name>ELite</name>
+  <version>0.5.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <name>ELite</name>
   <url>http://github.com/hongun/ELite</url>
+  <description>The ELite Programming Language</description>
+
+  <developers>
+    <developer>
+      <name>Hongun Yuan</name>
+      <email>daniel.yuan@me.com</email>
+      <timezone>+8</timezone>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:git@github.com:hongun/ELite.git</connection>
+    <developerConnection>scm:git:git@github.com:hongun/ELite.git</developerConnection>
+    <url>git@github.com:ELite/ELite.git</url>
+  </scm>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -41,6 +56,26 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <!-- do not push SCM changes to upstream repository;
+             prevents pushing tags/commits for failed releases; -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-release-plugin</artifactId>
+        <version>2.1</version>
+        <configuration>
+          <pushChanges>false</pushChanges>
+          <localCheckout>true</localCheckout>
+        </configuration>
+      </plugin>
+      <plugin>
+        <!-- disable the Surefie testing plugin -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>2.6</version>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
       </plugin>
     </plugins>
   </build>
