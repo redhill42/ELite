@@ -35,6 +35,7 @@ import org.operamasks.el.shell.command.CommandProvider;
 import org.operamasks.el.parser.IncompleteException;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.eval.StackTrace;
+import static org.operamasks.el.resources.Resources.*;
 import elite.lang.Builtin;
 
 import jline.ConsoleReader;
@@ -44,23 +45,6 @@ import jline.ANSIBuffer;
 // Experimental
 public class Main
 {
-    private static final String[] WELCOME = {
-        "Welcome to ELite (Version 0.5.0)",
-        "Copyright (c) 2006-2011 Daniel Yuan.",
-        "ELite comes with ABSOLUTELY NO WARRANTY. This is free software,",
-        "and you are welcome to redistribute it under certain conditions.",
-        ""
-    };
-
-    private static final String USAGE[] = {
-        "usage: elite [options] [args]",
-        "options:",
-        "  -e <script>        specify a command line script",
-        "  -c <encoding>      specify the encoding of files",
-        "  -i                 interactive mode",
-        "  -h                 print this usage information"
-    };
-
     private ShellContext shellContext;
     private String script;
     private String filename;
@@ -83,9 +67,7 @@ public class Main
         }
 
         if (shellContext.isInteractive()) {
-            for (String s : WELCOME) {
-                System.out.println(s);
-            }
+            System.out.println(_T(ELITE_WELCOME));
         }
 
         try {
@@ -153,9 +135,7 @@ public class Main
     }
 
     private void printUsage() {
-        for (String s : USAGE) {
-            System.err.println(s);
-        }
+        System.err.println(_T(ELITE_USAGE));
     }
 
     private void repl(ScriptEngine engine) throws IOException {

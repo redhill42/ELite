@@ -64,6 +64,9 @@ public final class Resources
 
     // Message keys
 
+    public static final String ELITE_WELCOME = "ELITE_WELCOME";
+    public static final String ELITE_USAGE = "ELITE_USAGE";
+
     public static final String EL_ILLEGAL_CHARACTER = "EL_ILLEGAL_CHARACTER";
     public static final String EL_ILLEGAL_ESCAPE_CHAR = "EL_ILLEGAL_ESCAPE_CHAR";
     public static final String EL_INTEGER_LITERAL_OVERFLOW = "EL_INTEGER_LITERAL_OVERFLOW";
