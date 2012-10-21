@@ -46,6 +46,37 @@
         </configuration>
       </plugin>
       <plugin>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>2.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <artifactSet>
+                <includes>
+                  <include>cglib:cglib</include>
+                  <include>asm:asm</include>
+                </includes>
+              </artifactSet>
+              <relocations>
+                <relocation>
+                  <pattern>net.sf.cglib</pattern>
+                  <shadedPattern>org.operamasks.cglib</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.objectweb.asm</pattern>
+                  <shadedPattern>org.operamasks.asm</shadedPattern>
+                </relocation>
+              </relocations>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <artifactId>maven-assembly-plugin</artifactId>
         <version>2.3</version>
         <configuration>

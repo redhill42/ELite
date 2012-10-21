@@ -15,6 +15,11 @@
   <dependencySets>
     <dependencySet>
       <outputDirectory>/lib</outputDirectory>
+      <excludes>
+        <exclude>cglib:cglib</exclude>
+        <exclude>asm:asm</exclude>
+        <exclude>org.javolution:javolution</exclude> <!-- duplicated with jscience -->
+      </excludes>
     </dependencySet>
   </dependencySets>
   <fileSets>
