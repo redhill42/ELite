@@ -4,7 +4,7 @@
   <groupId>elite</groupId>
   <artifactId>elite</artifactId>
   <name>ELite</name>
-  <version>0.5.0</version>
+  <version>0.5.1-SNAPSHOT</version>
   <packaging>jar</packaging>
 
   <url>http://github.com/hongun/ELite</url>
