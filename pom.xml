@@ -21,7 +21,7 @@
   <scm>
     <connection>scm:git:git@github.com:hongun/ELite.git</connection>
     <developerConnection>scm:git:git@github.com:hongun/ELite.git</developerConnection>
-    <url>git@github.com:ELite/ELite.git</url>
+    <url>git@github.com:hongun/ELite.git</url>
   </scm>
 
   <properties>
@@ -54,7 +54,7 @@
               <goal>shade</goal>
             </goals>
             <configuration>
-              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <createDependencyReducedPom>true</createDependencyReducedPom>
               <artifactSet>
                 <includes>
                   <include>cglib:cglib</include>
@@ -102,6 +102,8 @@
         <configuration>
           <pushChanges>false</pushChanges>
           <localCheckout>true</localCheckout>
+          <tagNameFormat>v@{project.version}</tagNameFormat>
+          <pomFileName>dependency-reduced-pom.xml</pomFileName>
         </configuration>
       </plugin>
       <plugin>
@@ -156,4 +158,17 @@
       <version>0.9.94</version>
     </dependency>
   </dependencies>
+
+  <distributionManagement>
+    <repository>
+      <id>nexus-release</id>
+      <name>Nexus Release Repository</name>
+      <url>http://nexus.hongun.me/nexus/content/repositories/releases/</url>
+    </repository>
+    <snapshotRepository>
+      <id>nexus-snapshot</id>
+      <name>Nexus Snapshot Repository</name>
+      <url>http://nexus.hongun.me/nexus/content/repositories/snapshots/</url>
+    </snapshotRepository>
+  </distributionManagement>
 </project>
