@@ -4,4 +4,3 @@ target
 *.iml
 *.iws
 .DS_Store
-dependency-reduced-pom.xml
