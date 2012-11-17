@@ -7,7 +7,7 @@
   <version>0.5.1-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <url>http://github.com/hongun/ELite</url>
+  <url>http://hongun.github.com/ELite</url>
   <description>The ELite Programming Language</description>
 
   <developers>

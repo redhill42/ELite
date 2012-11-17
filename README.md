@@ -16,13 +16,13 @@ ELite
 
 Navigate to the target directory and run the `elite.sh' shell script.
 
-    $ cd target/elite-0.5.0-bin/elite-0.5.0
+    $ cd target/elite-1.0-bin/elite-1.0
     $ bin/elite.sh
 
 ELite will display the welcome message:
 
-    Welcome to ELite (Version 0.5.0)
-    Copyright (c) 2006-2011 Daniel Yuan.
+    Welcome to ELite (Version 1.0)
+    Copyright (c) 2006-2012 Daniel Yuan.
     ELite comes with ABSOLUTELY NO WARRANTY. This is free software,
     and you are welcome to redistribute it under certain conditions.
     
