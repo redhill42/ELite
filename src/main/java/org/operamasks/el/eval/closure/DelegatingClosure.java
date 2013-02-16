@@ -19,6 +19,7 @@ package org.operamasks.el.eval.closure;
 
 import javax.el.ELContext;
 import javax.el.MethodInfo;
+import javax.el.ValueReference;
 import javax.el.VariableMapper;
 import elite.lang.Closure;
 import elite.lang.Annotation;
@@ -130,6 +131,10 @@ public abstract class DelegatingClosure extends Closure
 
     public Object getValue(ELContext elctx) {
         return delegate.getValue(elctx);
+    }
+
+    public ValueReference getValueReference(ELContext elctx) {
+        return delegate.getValueReference(elctx);
     }
 
     public void setValue(ELContext elctx, Object value) {

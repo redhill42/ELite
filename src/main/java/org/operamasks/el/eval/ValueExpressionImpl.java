@@ -20,6 +20,7 @@ package org.operamasks.el.eval;
 import javax.el.ELContext;
 import javax.el.ValueExpression;
 import javax.el.FunctionMapper;
+import javax.el.ValueReference;
 import javax.el.VariableMapper;
 import java.io.Serializable;
 import java.io.ObjectOutputStream;
@@ -63,6 +64,20 @@ public class ValueExpressionImpl extends ValueExpression
             } else {
                 return TypeCoercion.coerce(elctx, value, expectedType);
             }
+        } catch (EvaluationException ex) {
+            throw wrap(elctx, ex);
+        } catch (RuntimeException ex) {
+            throw wrap(elctx, ex);
+        } finally {
+            StackTrace.removeFrame(elctx);
+        }
+    }
+
+    public ValueReference getValueReference(ELContext elctx) {
+        try {
+            StackTrace.addFrame(elctx, "__expression__", null, 0);
+            EvaluationContext ctx = new EvaluationContext(elctx, fnMapper, varMapper);
+            return node.getValueReference(ctx);
         } catch (EvaluationException ex) {
             throw wrap(elctx, ex);
         } catch (RuntimeException ex) {

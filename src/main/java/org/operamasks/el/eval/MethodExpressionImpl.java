@@ -95,6 +95,10 @@ public class MethodExpressionImpl extends MethodExpression
         }
     }
 
+    public boolean isParmetersProvided() {
+        return node instanceof ELNode.APPLY;
+    }
+
     private EvaluationException wrap(ELContext elctx, EvaluationException ex) {
         String message = ex.getRawMessage() + "\n>>> " + expression;
         EvaluationException ex2 = new EvaluationException(elctx, message);
