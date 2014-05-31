@@ -143,15 +143,15 @@ public class Parser extends Scanner
         return exps.toArray(new ELNode[exps.size()]);
     }
 
-    private static ELNode.DEFINE[] to_a(List<ELNode.DEFINE> defs) {
+    private static ELNode.DEFINE[] to_def_a(List<ELNode.DEFINE> defs) {
         return defs.toArray(new ELNode.DEFINE[defs.size()]);
     }
 
-    private static ELNode.Pattern[] to_a(List<ELNode.Pattern> pats) {
+    private static ELNode.Pattern[] to_pat_a(List<ELNode.Pattern> pats) {
         return pats.toArray(new ELNode.Pattern[pats.size()]);
     }
 
-    private static String[] to_a(List<String> ids) {
+    private static String[] to_sa(List<String> ids) {
         return ids.toArray(new String[ids.size()]);
     }
 
@@ -896,7 +896,7 @@ public class Parser extends Scanner
     private static String[] check_keys(List<String> keys) {
         for (int i = 0; i < keys.size(); i++) {
             if (keys.get(i) != null) {
-                return to_a(keys);
+                return to_sa(keys);
             }
         }
         return null;
@@ -2217,7 +2217,7 @@ public class Parser extends Scanner
                 } while (scan(COMMA));
             }
             expect(RPAREN);
-            vars = to_a(vlist);
+            vars = to_def_a(vlist);
         }
 
         // parse base class and interfaces
@@ -2236,7 +2236,7 @@ public class Parser extends Scanner
                 do {
                     iflist.add(parseClassLiteral(false));
                 } while (scan(COMMA));
-                ifaces = to_a(iflist);
+                ifaces = to_sa(iflist);
             }
         }
 
@@ -2329,7 +2329,7 @@ public class Parser extends Scanner
             body.add(new ELNode.DEFINE(p, ClassDefinition.CLINIT_PROC, null, meta, proc, true));
         }
 
-        return to_a(body);
+        return to_def_a(body);
     }
 
     private ELNode.DEFINE parseOperatorProcedure(ELNode.METASET meta) {
@@ -2432,7 +2432,7 @@ public class Parser extends Scanner
                 body = EMPTY_DEFS;
             }
 
-            cdef.expr = new ELNode.CLASSDEF(p, filename, id, base, null, to_a(vars), body);
+            cdef.expr = new ELNode.CLASSDEF(p, filename, id, base, null, to_def_a(vars), body);
             defs.add(cdef);
         } while (scan(BAR));
 
@@ -2451,7 +2451,7 @@ public class Parser extends Scanner
                 do {
                     iflist.add(parseClassLiteral(false));
                 } while (scan(COMMA));
-                baseifs = to_a(iflist);
+                baseifs = to_sa(iflist);
             }
 
             if (scan(LBRACE)) {
@@ -2614,7 +2614,7 @@ public class Parser extends Scanner
             }
 
             expect(RPAREN);
-            return new ELNode.METADATA(p, type, to_a(keys), to_a(exps));
+            return new ELNode.METADATA(p, type, to_sa(keys), to_a(exps));
 
         } else if (token == LBRACKET || token == LBRACE) {
             mark();
@@ -2982,7 +2982,7 @@ public class Parser extends Scanner
 
             if (token != SEMI) {
                 if (local) {
-                    init = to_a(parseDefinitions(null));
+                    init = to_def_a(parseDefinitions(null));
                 } else {
                     List<ELNode> exps = new ArrayList<ELNode>();
                     do {
@@ -3211,7 +3211,7 @@ public class Parser extends Scanner
                 bodies.clear();
                 parseGuards(pos, guards, bodies, stmts);
                 close_scope();
-                cases.add(new ELNode.CASE(p2, to_a(pats), to_a(guards), to_a(bodies)));
+                cases.add(new ELNode.CASE(p2, to_pat_a(pats), to_a(guards), to_a(bodies)));
             } else {
                 expect(ARROW);
 
@@ -3228,7 +3228,7 @@ public class Parser extends Scanner
                     deflt = body;
                     break; // the 'default' must be a last clause
                 } else {
-                    cases.add(new ELNode.CASE(p2, to_a(pats), body));
+                    cases.add(new ELNode.CASE(p2, to_pat_a(pats), body));
                 }
             }
         }
@@ -3587,7 +3587,7 @@ public class Parser extends Scanner
         }
 
         expect(RPAREN);
-        return new ELNode.NEW(p, id, to_a(args), (keys.isEmpty() ? null : to_a(keys)), null);
+        return new ELNode.NEW(p, id, to_a(args), (keys.isEmpty() ? null : to_sa(keys)), null);
     }
 
     /**
@@ -3618,7 +3618,7 @@ public class Parser extends Scanner
                 close_scope();
                 hlist.add(h);
             }
-            handlers = to_a(hlist);
+            handlers = to_def_a(hlist);
         }
 
         if (token == FINALLY) {
@@ -3790,7 +3790,7 @@ public class Parser extends Scanner
                             } while (scan(COMMA));
                         }
                         expect(RPAREN);
-                        slots = to_a(lst);
+                        slots = to_sa(lst);
                     }
                     ELNode.CLASS c = new ELNode.CLASS(p, name, slots);
                     prog.addExpression(new ELNode.DEFINE(p, id, null, null, c, true));
