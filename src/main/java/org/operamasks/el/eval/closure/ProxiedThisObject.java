@@ -36,6 +36,7 @@ import org.operamasks.el.eval.PropertyResolvable;
 import org.operamasks.el.eval.TypeCoercion;
 import org.operamasks.el.eval.EvaluationException;
 import org.operamasks.el.eval.DelegatingELContext;
+import org.operamasks.util.Utils;
 import static org.operamasks.el.eval.ELUtils.*;
 import static org.operamasks.el.resources.Resources.*;
 
@@ -72,8 +73,7 @@ class ProxiedThisObject extends BasicThisObject
      * 创建代理对象
      */
     protected Object createProxy(ELContext elctx, Closure[] args) {
-        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-        if (loader == null) loader = getClass().getClassLoader();
+        ClassLoader loader = Utils.getClassLoader(elctx);
 
         Enhancer enhancer = new Enhancer();
         enhancer.setClassLoader(loader);

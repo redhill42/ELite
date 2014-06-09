@@ -221,13 +221,13 @@ public class SystemClassELResolver extends ELResolver
         }
     }
 
-    private static final String APUSIC_LOADER = "com.apusic.web.container.ServletClassLoader";
-    private static final String APUSIC_JSP_LOADER = "getJspClassLoader";
+    private static final String CLOUDWAY_LOADER = "com.cloudway.internal.web.container.ServletClassLoader";
+    private static final String CLOUDWAY_JSP_LOADER = "getJspClassLoader";
 
     private static ClassLoader getActualClassLoader(ClassLoader cl) {
         try {
-            if (cl.getClass().getName().equals(APUSIC_LOADER)) {
-                Method method = cl.getClass().getMethod(APUSIC_JSP_LOADER);
+            if (cl.getClass().getName().equals(CLOUDWAY_LOADER)) {
+                Method method = cl.getClass().getMethod(CLOUDWAY_JSP_LOADER);
                 return (ClassLoader)method.invoke(cl);
             } else {
                 return cl;

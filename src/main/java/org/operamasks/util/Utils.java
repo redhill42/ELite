@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
+import javax.el.ELContext;
 import org.operamasks.el.eval.TypeCoercion;
 
 public class Utils
@@ -55,6 +56,17 @@ public class Utils
 	} else {
 	    return c;
 	}
+    }
+
+    public static ClassLoader getClassLoader(ELContext elctx) {
+        ClassLoader cl = (ClassLoader)elctx.getContext(ClassLoader.class);
+        if (cl == null) {
+            cl = Thread.currentThread().getContextClassLoader();
+            if (cl == null) {
+                cl = Utils.class.getClassLoader();
+            }
+        }
+        return cl;
     }
 
     public static Class findClass(String name)

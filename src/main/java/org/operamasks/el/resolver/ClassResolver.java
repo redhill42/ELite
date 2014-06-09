@@ -28,8 +28,10 @@ public class ClassResolver
 {
     public static ClassResolver getInstance(ELContext context) {
         ClassResolver cr = (ClassResolver)context.getContext(ClassResolver.class);
-        if (cr == null)
-            context.putContext(ClassResolver.class, cr = new ClassResolver());
+        if (cr == null) {
+            cr = new ClassResolver(Utils.getClassLoader(context));
+            context.putContext(ClassResolver.class, cr);
+        }
         return cr;
     }
     
@@ -37,10 +39,6 @@ public class ClassResolver
     private List<String>         packages = new ArrayList<String>();
     private Map<String,String>   aliases  = new HashMap<String,String>();
     private Map<String,Class<?>> cache    = new HashMap<String,Class<?>>();
-
-    public ClassResolver() {
-        this(Thread.currentThread().getContextClassLoader());
-    }
 
     public ClassResolver(ClassLoader loader) {
         this.loader = loader;

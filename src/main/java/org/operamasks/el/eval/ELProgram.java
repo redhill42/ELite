@@ -163,7 +163,7 @@ public class ELProgram implements Serializable
         if (!mods.isEmpty()) {
             MethodResolver resolver = MethodResolver.getInstance(elctx);
             for (Module mod : mods) {
-                Class cls = findClass(mod.name);
+                Class cls = findClass(elctx, mod.name);
                 resolver.addModule(elctx, cls, mod.prefix);
                 for (Field field : cls.getFields()) {
                     importField(elctx, field, mod.prefix);
@@ -184,7 +184,7 @@ public class ELProgram implements Serializable
 
                 String clsname = name.substring(0, sep);
                 name = name.substring(sep+1);
-                Class cls = findClass(clsname);
+                Class cls = findClass(elctx, clsname);
 
                 if (name.equals("*")) {
                     resolver.addGlobalMethods(cls);
@@ -237,9 +237,10 @@ public class ELProgram implements Serializable
         }
     }
 
-    private static Class findClass(String name) {
+    private static Class findClass(ELContext elctx, String name) {
         try {
-            return Utils.findClass(name);
+            ClassLoader loader = Utils.getClassLoader(elctx);
+            return Utils.findClass(name, loader);
         } catch (ClassNotFoundException ex) {
             throw new ELException(ex);
         }

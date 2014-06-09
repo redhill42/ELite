@@ -38,6 +38,7 @@ import org.operamasks.el.eval.EvaluationException;
 import org.operamasks.el.eval.PropertyResolvable;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.DelegatingELContext;
+import org.operamasks.util.Utils;
 import static org.operamasks.el.eval.ELUtils.*;
 import static org.operamasks.el.resources.Resources.*;
 
@@ -121,8 +122,7 @@ class BasicThisObject extends ThisObject
             proxy = owner;
         } else {
             ClosureProxyHandler handler = new ClosureProxyHandler(elctx, owner);
-            ClassLoader loader = Thread.currentThread().getContextClassLoader();
-            if (loader == null) loader = getClass().getClassLoader();
+            ClassLoader loader = Utils.getClassLoader(elctx);
             proxy = Proxy.newProxyInstance(loader, getInterfaces(), handler);
         }
         return proxy;
