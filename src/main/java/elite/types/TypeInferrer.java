@@ -16,12 +16,17 @@ public class TypeInferrer {
     private final ELContext elctx;
     private final Map<String, Type> env;
     private final Deque<Map<String, Type>> scopeStack;
+    private final List<String> errors;
 
     public TypeInferrer(ELContext elctx) {
         this.elctx = elctx;
         this.env = new LinkedHashMap<>();
         this.scopeStack = new ArrayDeque<>();
+        this.errors = new ArrayList<>();
     }
+
+    public List<String> getErrors() { return Collections.unmodifiableList(errors); }
+    public boolean hasErrors() { return !errors.isEmpty(); }
 
     public Type infer(ELNode node) {
         if (node == null) return Type.DYNAMIC;
@@ -259,8 +264,6 @@ public class TypeInferrer {
 
     // ---- Assign ----
 
-    // ---- Assign ----
-
     private Type inferAssign(ELNode.ASSIGN node) {
         ELNode.ASSIGN assign = (ELNode.ASSIGN) node;
         Type rhsType = infer(assign.right);
@@ -339,8 +342,8 @@ public class TypeInferrer {
             String baseName = typeName.substring(0, lt);
             String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
             Type base = resolveSimpleType(baseName);
-            if (base instanceof PrimitiveType) {
-                // For built-in types like List, Map — currently just return dynamic
+            if (base == null) {
+                errors.add("Undefined type: '" + baseName + "'");
                 return Type.DYNAMIC;
             }
             // Parse type arguments
@@ -348,17 +351,27 @@ public class TypeInferrer {
             Type[] argTypes = new Type[argNames.length];
             for (int i = 0; i < argNames.length; i++) {
                 Type argType = resolveSimpleType(argNames[i].trim());
-                argTypes[i] = (argType != null) ? argType : Type.DYNAMIC;
+                if (argType == null) {
+                    errors.add("Undefined type: '" + argNames[i].trim() + "'");
+                    argType = Type.DYNAMIC;
+                }
+                argTypes[i] = argType;
             }
             try {
                 Class<?> cls = ELEngine.resolveJavaClass(elctx, baseName);
                 return new ClassType(cls, argTypes);
             } catch (Exception e) {
+                errors.add("Undefined type: '" + baseName + "'");
                 return Type.DYNAMIC;
             }
         }
 
-        return resolveSimpleType(typeName);
+        Type resolved = resolveSimpleType(typeName);
+        if (resolved == null) {
+            errors.add("Undefined type: '" + typeName + "'");
+            return Type.DYNAMIC;
+        }
+        return resolved;
     }
 
     private Type resolveSimpleType(String name) {
@@ -375,12 +388,11 @@ public class TypeInferrer {
             case "Object": return Type.OBJECT;
             case "Void": case "void": return new PrimitiveType("Void", Void.TYPE);
             default:
-                // Try to resolve as a Java class (handles dotted names too)
                 try {
                     Class<?> cls = ELEngine.resolveJavaClass(elctx, name);
                     return new ClassType(cls);
                 } catch (Exception e) {
-                    return Type.DYNAMIC;
+                    return null; // Unknown type — caller should report error
                 }
         }
     }

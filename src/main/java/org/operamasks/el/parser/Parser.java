@@ -1327,10 +1327,7 @@ public class Parser extends Scanner
 
     private String parseTypeNameOpt() {
         if (token == COLONCOLON) {
-            scan();
-            return parseClassLiteral(false);
-        } else if (token == COLON) {
-            // Type annotation: `: TypeName` or `: TypeName<...>`
+            // Type annotation: `:: TypeName` e.g., define x::Integer = 42
             return parseTypeAnnotation();
         } else {
             return null;
@@ -1338,12 +1335,10 @@ public class Parser extends Scanner
     }
 
     /**
-     * Parse a type annotation after ':'.
-     * Supports simple names (Integer, String), qualified names (java.util.List),
-     * and parameterized types (List&lt;Integer&gt;).
+     * Parse a type annotation after '::'.
      */
     private String parseTypeAnnotation() {
-        expect(COLON);
+        expect(COLONCOLON);
         return parseTypeName();
     }
 

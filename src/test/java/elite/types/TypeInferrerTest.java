@@ -258,4 +258,21 @@ public class TypeInferrerTest {
     public void testFromClassBoolean() {
         assertEquals(Type.BOOLEAN, Type.fromClass(Boolean.class));
     }
+
+    // ---- Unknown type annotation errors ----
+
+    @Test
+    public void testUndefinedTypeCaptured() throws Exception {
+        // define x::Integer via ScriptEngine — full pipeline
+        javax.script.ScriptEngine eng = new javax.script.ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define x::Integer = 42");
+        assertEquals(42L, ((Number) eng.eval("x")).longValue());
+    }
+
+    @Test
+    public void testNoAnnotationNoError() {
+        ELNode node = Parser.parse("define x = 42");
+        inferrer.infer(node);
+        assertFalse("Should have no errors when no annotation", inferrer.hasErrors());
+    }
 }
