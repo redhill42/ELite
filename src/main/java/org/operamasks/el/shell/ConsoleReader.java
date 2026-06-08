@@ -39,7 +39,7 @@ class ConsoleReader implements AutoCloseable {
             p.waitFor();
             if (settings != null) {
                 sttyRestore = new String[]{"stty", settings};
-                new ProcessBuilder("stty", "raw", "-echo")
+                new ProcessBuilder("stty", "-icanon", "-echo", "min", "1")
                     .redirectInput(ProcessBuilder.Redirect.INHERIT).start().waitFor();
                 rawMode = true;
             }
