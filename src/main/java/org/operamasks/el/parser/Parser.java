@@ -1329,9 +1329,50 @@ public class Parser extends Scanner
         if (token == COLONCOLON) {
             scan();
             return parseClassLiteral(false);
+        } else if (token == COLON) {
+            // Type annotation: `: TypeName` or `: TypeName<...>`
+            return parseTypeAnnotation();
         } else {
             return null;
         }
+    }
+
+    /**
+     * Parse a type annotation after ':'.
+     * Supports simple names (Integer, String), qualified names (java.util.List),
+     * and parameterized types (List&lt;Integer&gt;).
+     */
+    private String parseTypeAnnotation() {
+        expect(COLON);
+        return parseTypeName();
+    }
+
+    /**
+     * Parse a type name which may be simple (Integer), dotted (java.util.Date),
+     * or parameterized (List&lt;Integer&gt;).
+     */
+    private String parseTypeName() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(scanQName());
+        expect(IDENT);
+        // Handle dotted names: java.util.Date
+        while (token == FIELD) {
+            sb.append('.');
+            scan(); // skip dot
+            sb.append(scanQName());
+            expect(IDENT);
+        }
+        // Parse generic type arguments: List<Integer, String>
+        if (token == LT) {
+            sb.append('<');
+            scan();
+            do {
+                sb.append(parseTypeName());
+            } while (scan(COMMA));
+            expect(GT);
+            sb.append('>');
+        }
+        return sb.toString();
     }
 
     /**
@@ -1556,6 +1597,11 @@ public class Parser extends Scanner
         }
         expect(RPAREN);
 
+        // Parse optional return type annotation: `: TypeName`
+        if (rtype == null) {
+            rtype = parseTypeNameOpt();
+        }
+
         if (token == LPAREN) {
             body = parseCurriedProcedureDefinition(p, name, rtype, meta, plist);
             close_scope();
@@ -1734,6 +1780,7 @@ public class Parser extends Scanner
     private static class Param {
         int            pos;         // the position of parameter
         String         name;        // the parameter name
+        String         type;        // the type annotation (e.g., "Integer", "List<String>")
         ELNode.Pattern pattern;     // the parameter pattern
         ELNode.METASET meta;        // the parameter's metadata
         ELNode         deflt;       // the default value
@@ -1766,6 +1813,7 @@ public class Parser extends Scanner
             param.pos = pos;
             param.meta = parseMetaData();
             param.pattern = parsePattern();
+            param.type = parseTypeNameOpt();
 
             if (isVariablePattern(param.pattern)) {
                 param.deflt = scan(ASSIGN) ? parseExpression() : null;
@@ -1839,8 +1887,9 @@ public class Parser extends Scanner
                 vars[i] = (ELNode.DEFINE)p.pattern;
                 vars[i].meta = p.meta;
                 vars[i].expr = p.deflt;
+                vars[i].type = p.type;
             } else {
-                vars[i] = new ELNode.DEFINE(p.pos, p.name, null, p.meta);
+                vars[i] = new ELNode.DEFINE(p.pos, p.name, p.type, p.meta);
             }
         }
 

@@ -357,6 +357,29 @@ public class ELIntegrationTest {
         engine.eval("System.out.println(\"test from ELite\")");
     }
 
+    // ---- Type annotations ----
+
+    @Test
+    public void testTypeAnnotationOnVariable() throws ScriptException {
+        // define with type annotation should parse and evaluate
+        engine.eval("define x: Integer = 42");
+        assertEquals(42L, evalL("x"));
+    }
+
+    @Test
+    public void testTypeAnnotationOnFunction() throws ScriptException {
+        // Function with parameter and return type annotations
+        engine.eval("define add(a: Integer, b: Integer): Integer => a + b");
+        assertEquals(30L, evalL("add(10, 20)"));
+    }
+
+    @Test
+    public void testTypeAnnotationJavaClass() throws ScriptException {
+        engine.eval("define d: java.util.Date = new Date(0)");
+        Object result = engine.eval("d");
+        assertTrue(result instanceof java.util.Date);
+    }
+
     // ---- Hello World styles ----
 
     @Test

@@ -165,12 +165,22 @@ public class TypeInferrer {
         pushScope();
         List<Type> paramTypes = new ArrayList<>();
         for (ELNode.DEFINE param : node.vars) {
-            Type pt = Type.fresh("p");
+            Type pt = resolveTypeAnnotation(param.type);
+            if (pt == null) {
+                pt = Type.fresh("p");
+            }
             env.put(param.id, pt);
             paramTypes.add(pt);
         }
         Type bodyType = infer(node.body);
         popScope();
+
+        // Use annotated return type if available
+        Type returnType = resolveTypeAnnotation(node.rtype);
+        if (returnType != null) {
+            bodyType.unify(returnType);
+        }
+
         return new FunctionType(paramTypes, bodyType);
     }
 
@@ -235,10 +245,19 @@ public class TypeInferrer {
     // ---- Define ----
 
     private Type inferDefine(ELNode.DEFINE node) {
-        Type t = infer(node.expr);
+        Type annotatedType = resolveTypeAnnotation(node.type);
+        Type t;
+        if (annotatedType != null) {
+            // Use the annotation as the expected type for inference
+            t = annotatedType;
+        } else {
+            t = infer(node.expr);
+        }
         env.put(node.id, t);
         return t;
     }
+
+    // ---- Assign ----
 
     // ---- Assign ----
 
@@ -300,5 +319,69 @@ public class TypeInferrer {
 
     public Map<String, Type> getEnvironment() {
         return Collections.unmodifiableMap(env);
+    }
+
+    // ---- Type annotation resolution ----
+
+    /**
+     * Resolve a type annotation string to a Type.
+     * e.g., "Integer" → PrimitiveType.INTEGER
+     *       "String" → PrimitiveType.STRING
+     *       "List<Integer>" → ClassType(List, INTEGER)
+     * Returns null if the annotation is null or cannot be resolved.
+     */
+    private Type resolveTypeAnnotation(String typeName) {
+        if (typeName == null || typeName.isEmpty()) return null;
+
+        // Handle parameterized types: List<Integer>
+        int lt = typeName.indexOf('<');
+        if (lt > 0) {
+            String baseName = typeName.substring(0, lt);
+            String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
+            Type base = resolveSimpleType(baseName);
+            if (base instanceof PrimitiveType) {
+                // For built-in types like List, Map — currently just return dynamic
+                return Type.DYNAMIC;
+            }
+            // Parse type arguments
+            String[] argNames = argsStr.split(",");
+            Type[] argTypes = new Type[argNames.length];
+            for (int i = 0; i < argNames.length; i++) {
+                Type argType = resolveSimpleType(argNames[i].trim());
+                argTypes[i] = (argType != null) ? argType : Type.DYNAMIC;
+            }
+            try {
+                Class<?> cls = ELEngine.resolveJavaClass(elctx, baseName);
+                return new ClassType(cls, argTypes);
+            } catch (Exception e) {
+                return Type.DYNAMIC;
+            }
+        }
+
+        return resolveSimpleType(typeName);
+    }
+
+    private Type resolveSimpleType(String name) {
+        if (name == null) return null;
+        switch (name) {
+            case "Integer": case "int": return Type.INTEGER;
+            case "Long": case "long": return Type.LONG;
+            case "Double": case "double": return Type.DOUBLE;
+            case "Float": case "float": return Type.FLOAT;
+            case "Boolean": case "boolean": return Type.BOOLEAN;
+            case "String": return Type.STRING;
+            case "Char": case "char": return Type.CHAR;
+            case "Number": return Type.NUMBER;
+            case "Object": return Type.OBJECT;
+            case "Void": case "void": return new PrimitiveType("Void", Void.TYPE);
+            default:
+                // Try to resolve as a Java class (handles dotted names too)
+                try {
+                    Class<?> cls = ELEngine.resolveJavaClass(elctx, name);
+                    return new ClassType(cls);
+                } catch (Exception e) {
+                    return Type.DYNAMIC;
+                }
+        }
     }
 }
