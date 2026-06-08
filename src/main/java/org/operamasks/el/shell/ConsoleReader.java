@@ -64,7 +64,7 @@ class ConsoleReader implements AutoCloseable {
             if (ch == 4 && buf.length() == 0) { out.println(); return null; }
 
             if (ch == 9 && completor != null) {  // TAB
-                doComplete(prompt, buf, cur);
+                cur = doComplete(prompt, buf, cur);
                 continue;
             }
 
@@ -95,12 +95,12 @@ class ConsoleReader implements AutoCloseable {
         return line;
     }
 
-    private void doComplete(String prompt, StringBuilder buf, int cur) {
+    private int doComplete(String prompt, StringBuilder buf, int cur) {
         String prefix = wordBeforeCursor(buf, cur);
-        if (prefix.isEmpty()) return;
+        if (prefix.isEmpty()) return cur;
 
         List<String> matches = completor.complete(buf.toString(), cur);
-        if (matches == null || matches.isEmpty()) return;
+        if (matches == null || matches.isEmpty()) return cur;
 
         if (matches.size() == 1) {
             String completion = matches.get(0).substring(prefix.length());
@@ -112,6 +112,7 @@ class ConsoleReader implements AutoCloseable {
             out.println();
             redraw(prompt, buf, cur);
         }
+        return cur;
     }
 
     private static String wordBeforeCursor(StringBuilder buf, int cur) {
