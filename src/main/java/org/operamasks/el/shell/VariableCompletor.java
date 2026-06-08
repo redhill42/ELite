@@ -18,6 +18,7 @@
 package org.operamasks.el.shell;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.lang.reflect.Method;
@@ -28,7 +29,10 @@ import javax.el.ELContext;
 import javax.el.VariableMapper;
 import javax.script.ScriptEngine;
 
-import jline.Completor;
+import org.jline.reader.Candidate;
+import org.jline.reader.Completer;
+import org.jline.reader.LineReader;
+import org.jline.reader.ParsedLine;
 import org.operamasks.el.eval.closure.ClosureObject;
 import org.operamasks.el.eval.VariableMapperImpl;
 import org.operamasks.el.resolver.MethodResolver;
@@ -36,7 +40,7 @@ import org.operamasks.util.BeanUtils;
 import org.operamasks.util.BeanProperty;
 
 @SuppressWarnings("unchecked")
-public class VariableCompletor implements Completor
+public class VariableCompletor implements Completer
 {
     private ELContext elctx;
     private ScriptEngine engine;
@@ -46,7 +50,10 @@ public class VariableCompletor implements Completor
         this.engine = engine;
     }
 
-    public int complete(String buffer, int cursor, List candidates) {
+    public void complete(LineReader reader, ParsedLine line, List<Candidate> candidates) {
+        String buffer = line.line();
+        int cursor = line.cursor();
+
         int dot = buffer.lastIndexOf('.', cursor);
         if (dot == -1) {
             String prefix = scanIdentifier(buffer, cursor, 0);
@@ -54,21 +61,17 @@ public class VariableCompletor implements Completor
                 prefix = "";
             if (prefix != null) {
                 completeGlobals(prefix, candidates);
-                return cursor - prefix.length();
             }
         } else {
             String base = scanBase(buffer, dot, 0);
             String prefix = buffer.substring(dot+1, cursor);
             if (base != null && (prefix.length() == 0 || isIdentifier(prefix))) {
-                if (completeMembers(base, prefix, candidates)) {
-                    return dot+1;
-                }
+                completeMembers(base, prefix, candidates);
             }
         }
-        return cursor;
     }
 
-    private void completeGlobals(String prefix, List candidates) {
+    private void completeGlobals(String prefix, List<Candidate> candidates) {
         VariableMapper vm = elctx.getVariableMapper();
         if (vm instanceof VariableMapperImpl) {
             addCandidates(((VariableMapperImpl)vm).getVariableMap().keySet(), prefix, candidates);
@@ -78,31 +81,40 @@ public class VariableCompletor implements Completor
         addCandidates(resolver.listGlobalMethods(), prefix, candidates);
         addCandidates(resolver.listSystemMethods(), prefix, candidates);
 
-        Collections.sort(candidates);
+        Collections.sort(candidates, (a, b) -> a.value().compareTo(b.value()));
     }
 
-    private void addCandidates(Collection<String> from, String prefix, List candidates) {
+    private void addCandidates(Collection<String> from, String prefix, List<Candidate> candidates) {
         for (String name : from) {
-            if (name.startsWith(prefix) && !candidates.contains(name)) {
-                candidates.add(name);
+            if (name.startsWith(prefix) && !contains(candidates, name)) {
+                candidates.add(new Candidate(name));
             }
         }
     }
 
-    private boolean completeMembers(String base, String prefix, List candidates) {
+    private static boolean contains(List<Candidate> candidates, String value) {
+        for (Candidate c : candidates) {
+            if (c.value().equals(value)) return true;
+        }
+        return false;
+    }
+
+    private void completeMembers(String base, String prefix, List<Candidate> candidates) {
         Object value;
         try {
             value = engine.eval(base);
-            if (value == null) return false;
+            if (value == null) return;
         } catch (Throwable ex) {
-            return false;
+            return;
         }
+
+        List<String> names = new ArrayList<String>();
 
         if (value instanceof ClosureObject) {
             ClosureObject clo = (ClosureObject)value;
             for (String name : clo.get_closures(elctx).keySet()) {
-                if (name.startsWith(prefix) && !candidates.contains(name)) {
-                    candidates.add(name);
+                if (name.startsWith(prefix) && !names.contains(name)) {
+                    names.add(name);
                 }
             }
         } else if (value instanceof Class) {
@@ -111,8 +123,8 @@ public class VariableCompletor implements Completor
             for (Method method : clazz.getMethods()) {
                 if (Modifier.isStatic(method.getModifiers())) {
                     String name = method.getName() + "()";
-                    if (name.startsWith(prefix) && !candidates.contains(name)) {
-                        candidates.add(name);
+                    if (name.startsWith(prefix) && !names.contains(name)) {
+                        names.add(name);
                     }
                 }
             }
@@ -120,8 +132,8 @@ public class VariableCompletor implements Completor
             for (Field field : clazz.getFields()) {
                 if (Modifier.isStatic(field.getModifiers())) {
                     String name = field.getName();
-                    if (name.startsWith(prefix) && !candidates.contains(name)) {
-                        candidates.add(name);
+                    if (name.startsWith(prefix) && !names.contains(name)) {
+                        names.add(name);
                     }
                 }
             }
@@ -131,8 +143,8 @@ public class VariableCompletor implements Completor
             for (Method method : clazz.getMethods()) {
                 if (!Modifier.isStatic(method.getModifiers())) {
                     String name = method.getName() + "()";
-                    if (name.startsWith(prefix) && !candidates.contains(name)) {
-                        candidates.add(name);
+                    if (name.startsWith(prefix) && !names.contains(name)) {
+                        names.add(name);
                     }
                 }
             }
@@ -140,8 +152,8 @@ public class VariableCompletor implements Completor
             for (Field field : clazz.getFields()) {
                 if (!Modifier.isStatic(field.getModifiers())) {
                     String name = field.getName();
-                    if (name.startsWith(prefix) && !candidates.contains(name)) {
-                        candidates.add(name);
+                    if (name.startsWith(prefix) && !names.contains(name)) {
+                        names.add(name);
                     }
                 }
             }
@@ -150,8 +162,8 @@ public class VariableCompletor implements Completor
                 try {
                     for (BeanProperty p : BeanUtils.getProperties(clazz)) {
                         String name = p.getName();
-                        if (name.startsWith(prefix) && !candidates.contains(name)) {
-                            candidates.add(name);
+                        if (name.startsWith(prefix) && !names.contains(name)) {
+                            names.add(name);
                         }
                     }
                 } catch (IntrospectionException ex) {
@@ -160,8 +172,10 @@ public class VariableCompletor implements Completor
             }
         }
 
-        Collections.sort(candidates);
-        return true;
+        Collections.sort(names);
+        for (String name : names) {
+            candidates.add(new Candidate(name));
+        }
     }
 
     private static boolean isIdentifier(String str) {

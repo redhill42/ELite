@@ -18,8 +18,8 @@
 package org.operamasks.el.shell;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.StringWriter;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
@@ -38,9 +38,12 @@ import org.operamasks.el.eval.StackTrace;
 import static org.operamasks.el.resources.Resources.*;
 import elite.lang.Builtin;
 
-import jline.ConsoleReader;
-import jline.Terminal;
-import jline.ANSIBuffer;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
+import org.jline.utils.AttributedStringBuilder;
+import org.jline.utils.AttributedStyle;
 
 // Experimental
 public class Main
@@ -141,8 +144,12 @@ public class Main
     private void repl(ScriptEngine engine) throws IOException {
         ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
 
-        ConsoleReader console = new ConsoleReader(System.in, new PrintWriter(System.out));
-        console.addCompletor(new VariableCompletor(elctx, engine));
+        Terminal terminal = TerminalBuilder.builder().build();
+        LineReader console = LineReaderBuilder.builder()
+            .terminal(terminal)
+            .completer(new VariableCompletor(elctx, engine))
+            .build();
+
         String buffer = null;
         int lineno = 1;
 
@@ -210,26 +217,21 @@ public class Main
             buffer = null;
             lineno = 1;
         }
+
+        terminal.close();
     }
 
     private static String hilight(String text) {
-        if (Terminal.getTerminal().isANSISupported()) {
-            ANSIBuffer ansi = new ANSIBuffer();
-            ansi.red(text);
-            return ansi.toString(true);
-        } else {
-            return text;
-        }
+        return new AttributedStringBuilder()
+            .style(AttributedStyle.DEFAULT.foreground(AttributedStyle.RED))
+            .append(text)
+            .toAnsi();
     }
 
     private void printStackTrace(Throwable except) {
-        if (Terminal.getTerminal().isANSISupported()) {
-            StringWriter writer = new StringWriter();
-            except.printStackTrace(new PrintWriter(writer));
-            System.err.println(hilight(writer.toString()));
-        } else {
-            except.printStackTrace(System.err);
-        }
+        StringWriter writer = new StringWriter();
+        except.printStackTrace(new java.io.PrintWriter(writer));
+        System.err.println(hilight(writer.toString()));
     }
 
     private int exec_script(ScriptEngine engine, String script) {

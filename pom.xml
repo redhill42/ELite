@@ -26,6 +26,8 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
   </properties>
 
   <build>
@@ -38,17 +40,18 @@
 
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>2.3.2</version>
+        <version>3.11.0</version>
         <configuration>
-          <source>1.5</source>
-          <target>1.5</target>
+          <release>17</release>
         </configuration>
       </plugin>
 
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>2.0</version>
+        <version>3.5.1</version>
         <executions>
           <execution>
             <phase>package</phase>
@@ -60,8 +63,14 @@
               <artifactSet>
                 <includes>
                   <include>cglib:cglib</include>
-                  <include>asm:asm</include>
-                  <include>jline:jline</include>
+                  <include>org.ow2.asm:asm</include>
+                  <include>org.ow2.asm:asm-commons</include>
+                  <include>org.jline:jline</include>
+                  <include>org.jline:jline-terminal</include>
+                  <include>org.jline:jline-reader</include>
+                  <include>org.jline:jline-builtins</include>
+                  <include>org.jline:jline-terminal-jna</include>
+                  <include>net.java.dev.jna:jna</include>
                 </includes>
               </artifactSet>
               <relocations>
@@ -74,8 +83,12 @@
                   <shadedPattern>org.operamasks.asm</shadedPattern>
                 </relocation>
                 <relocation>
-                  <pattern>jline</pattern>
+                  <pattern>org.jline</pattern>
                   <shadedPattern>org.operamasks.jline</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.sun.jna</pattern>
+                  <shadedPattern>org.operamasks.jna</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
@@ -84,8 +97,9 @@
       </plugin>
 
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-assembly-plugin</artifactId>
-        <version>2.3</version>
+        <version>3.6.0</version>
         <configuration>
           <descriptors>
             <descriptor>src/assembly/distribution.xml</descriptor>
@@ -107,7 +121,7 @@
              prevents pushing tags/commits for failed releases; -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-release-plugin</artifactId>
-        <version>2.1</version>
+        <version>3.0.1</version>
         <configuration>
           <pushChanges>false</pushChanges>
           <localCheckout>true</localCheckout>
@@ -118,7 +132,7 @@
         <!-- disable the Surefie testing plugin -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.6</version>
+        <version>3.2.5</version>
         <configuration>
           <skip>true</skip>
         </configuration>
@@ -130,30 +144,30 @@
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>3.8.1</version>
+      <version>4.13.2</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>javax.el</groupId>
-      <artifactId>el-api</artifactId>
-      <version>2.2</version>
+      <artifactId>javax.el-api</artifactId>
+      <version>3.0.0</version>
     </dependency>
     <dependency>
       <groupId>javax.servlet.jsp</groupId>
       <artifactId>javax.servlet.jsp-api</artifactId>
-      <version>2.2.1</version>
+      <version>2.3.3</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>javax.faces</groupId>
-      <artifactId>jsf-api</artifactId>
-      <version>2.1</version>
+      <artifactId>javax.faces-api</artifactId>
+      <version>2.3</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>cglib</groupId>
       <artifactId>cglib</artifactId>
-      <version>2.2.2</version>
+      <version>3.3.0</version>
       <optional>true</optional>
     </dependency>
     <dependency>
@@ -168,9 +182,9 @@
       </exclusions>
     </dependency>
     <dependency>
-      <groupId>jline</groupId>
+      <groupId>org.jline</groupId>
       <artifactId>jline</artifactId>
-      <version>0.9.94</version>
+      <version>3.25.0</version>
       <optional>true</optional>
     </dependency>
   </dependencies>
