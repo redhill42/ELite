@@ -38,6 +38,7 @@ import org.operamasks.el.eval.StackTrace;
 import static org.operamasks.el.resources.Resources.*;
 import elite.lang.Builtin;
 
+import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
@@ -144,7 +145,12 @@ public class Main
     private void repl(ScriptEngine engine) throws IOException {
         ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
 
-        Terminal terminal = TerminalBuilder.builder().build();
+        Terminal terminal;
+        try {
+            terminal = TerminalBuilder.builder().jna(true).system(true).build();
+        } catch (IOException e) {
+            terminal = TerminalBuilder.builder().jna(false).build();
+        }
         LineReader console = LineReaderBuilder.builder()
             .terminal(terminal)
             .completer(new VariableCompletor(elctx, engine))
@@ -159,7 +165,12 @@ public class Main
             }
 
             String prompt = (lineno == 1) ? "> " : (lineno+") ");
-            String line = console.readLine(prompt);
+            String line;
+            try {
+                line = console.readLine(prompt);
+            } catch (EndOfFileException e) {
+                break;
+            }
             if (line == null) {
                 break;
             }
