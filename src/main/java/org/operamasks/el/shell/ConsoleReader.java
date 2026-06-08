@@ -5,10 +5,12 @@ import java.util.*;
 
 /**
  * Minimal line reader for the ELite REPL.
- * Provides basic line editing (backspace), multi-line input,
- * tab completion, and history — without any native library dependency.
+ * Provides line editing (backspace, arrow keys), history,
+ * and multi-line input — zero native dependencies.
+ *
+ * Uses 'stty' on Unix to enable raw (character-at-a-time) terminal mode.
  */
-class ConsoleReader {
+class ConsoleReader implements AutoCloseable {
 
     private final InputStream in;
     private final PrintStream out;
@@ -16,23 +18,48 @@ class ConsoleReader {
     private int historyIndex = -1;
     private String currentLine = "";
     private int cursor = 0;
-
-    // ANSI escape codes
-    private static final String CLEAR_LINE = "\033[2K\r";
-    private static final String CURSOR_UP = "\033[1A";
-    private static final String RESET = "\033[0m";
-
+    private boolean rawMode;
+    private String[] sttyRestore;
     private boolean ansiSupported;
 
     public ConsoleReader(InputStream in, PrintStream out) {
         this.in = in;
         this.out = out;
         this.ansiSupported = !System.getProperty("os.name", "").toLowerCase().contains("win");
+        enableRawMode();
     }
 
-    /**
-     * Read a line with the given prompt. Returns null on EOF (Ctrl+D).
-     */
+    private void enableRawMode() {
+        if (!ansiSupported) return;
+        try {
+            Process p = new ProcessBuilder("stty", "-g")
+                .redirectInput(ProcessBuilder.Redirect.INHERIT).start();
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String settings = r.readLine();
+            p.waitFor();
+            if (settings != null) {
+                sttyRestore = new String[]{"stty", settings};
+                new ProcessBuilder("stty", "raw", "-echo")
+                    .redirectInput(ProcessBuilder.Redirect.INHERIT).start().waitFor();
+                rawMode = true;
+            }
+        } catch (Exception e) { /* fall back to line-buffered */ }
+    }
+
+    private void disableRawMode() {
+        if (!rawMode || sttyRestore == null) return;
+        try {
+            new ProcessBuilder(sttyRestore)
+                .redirectInput(ProcessBuilder.Redirect.INHERIT).start().waitFor();
+        } catch (Exception e) { /* ignore */ }
+        rawMode = false;
+    }
+
+    @Override
+    public void close() {
+        disableRawMode();
+    }
+
     public String readLine(String prompt) throws IOException {
         out.print(prompt);
         out.flush();
@@ -43,66 +70,42 @@ class ConsoleReader {
 
         while (true) {
             int ch = in.read();
-            if (ch == -1) return null; // EOF
+            if (ch == -1) return null;
 
             if (ch == '\n' || ch == '\r') {
-                // Handle \r\n
                 if (ch == '\r') {
                     int next = tryPeek();
-                    if (next == '\n') in.read(); // consume \n
+                    if (next == '\n') in.read();
                 }
                 out.println();
                 String line = buf.toString();
-                if (!line.isEmpty()) {
-                    // Don't add consecutive duplicates
-                    if (history.isEmpty() || !history.get(history.size()-1).equals(line)) {
-                        history.add(line);
-                    }
+                if (!line.isEmpty() && (history.isEmpty()
+                        || !history.get(history.size()-1).equals(line))) {
+                    history.add(line);
                 }
                 return line;
             }
 
-            if (ch == 4 && buf.length() == 0) { // Ctrl+D on empty line
-                out.println();
-                return null;
-            }
+            if (ch == 4 && buf.length() == 0) { out.println(); return null; }
 
-            if (ch == 127 || ch == 8) { // Backspace
-                if (cursor > 0) {
-                    buf.deleteCharAt(--cursor);
-                    redrawLine(prompt, buf.toString());
-                }
+            if (ch == 127 || ch == 8) {
+                if (cursor > 0) { buf.deleteCharAt(--cursor); redrawLine(prompt, buf.toString()); }
                 continue;
             }
 
-            if (ch == 9) { // Tab — handled externally by Completor
-                // We can't handle tab here; it's handled by the caller
-                // Just ignore it in raw input mode
-                continue;
-            }
-
-            // Arrow keys (escape sequences)
-            if (ch == 27) { // ESC
+            if (ch == 27) {
                 int next = tryPeek();
                 if (next == '[') {
-                    in.read(); // consume [
+                    in.read();
                     int dir = in.read();
-                    if (dir == 'A') { // Up
-                        navigateHistory(-1, buf);
-                    } else if (dir == 'B') { // Down
-                        navigateHistory(1, buf);
-                    } else if (dir == 'C') { // Right
-                        if (cursor < buf.length()) cursor++;
-                        redrawLine(prompt, buf.toString());
-                    } else if (dir == 'D') { // Left
-                        if (cursor > 0) cursor--;
-                        redrawLine(prompt, buf.toString());
-                    }
+                    if (dir == 'A') navigateHistory(-1, buf, prompt);
+                    else if (dir == 'B') navigateHistory(1, buf, prompt);
+                    else if (dir == 'C') { if (cursor < buf.length()) cursor++; redrawLine(prompt, buf.toString()); }
+                    else if (dir == 'D') { if (cursor > 0) cursor--; redrawLine(prompt, buf.toString()); }
                 }
                 continue;
             }
 
-            // Printable character
             if (ch >= 32 && ch < 127) {
                 buf.insert(cursor++, (char) ch);
                 redrawLine(prompt, buf.toString());
@@ -117,9 +120,8 @@ class ConsoleReader {
         return ch;
     }
 
-    private void navigateHistory(int direction, StringBuilder buf) {
+    private void navigateHistory(int direction, StringBuilder buf, String prompt) {
         if (history.isEmpty()) return;
-
         if (direction < 0 && historyIndex == -1) {
             currentLine = buf.toString();
             historyIndex = history.size() - 1;
@@ -131,13 +133,14 @@ class ConsoleReader {
             historyIndex = -1;
             buf.replace(0, buf.length(), currentLine);
             cursor = buf.length();
+            redrawLine(prompt, buf.toString());
             return;
         } else {
             return;
         }
-
         buf.replace(0, buf.length(), history.get(historyIndex));
         cursor = buf.length();
+        redrawLine(prompt, buf.toString());
     }
 
     private void redrawLine(String prompt, String content) {
@@ -145,15 +148,11 @@ class ConsoleReader {
             out.print('\r');
             out.print(prompt);
             out.print(content);
-            out.print(' '); // clear trailing char
-            // Move cursor to correct position
-            int targetCol = prompt.length() + cursor;
+            out.print(' ');
             out.print('\r');
-            if (targetCol > 0) {
-                out.print("\033[" + targetCol + "C");
-            }
+            int targetCol = prompt.length() + cursor;
+            if (targetCol > 0) out.print("\033[" + targetCol + "C");
         } else {
-            // Fallback: just print the line (no cursor positioning)
             out.print('\r');
             out.print(prompt);
             out.print(content);

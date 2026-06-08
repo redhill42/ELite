@@ -179,6 +179,7 @@ public class Main
             buffer = null;
             lineno = 1;
         }
+        console.close();
     }
 
     private static String hilight(String text) {
