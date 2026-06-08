@@ -404,6 +404,12 @@ public class ELIntegrationTest {
         assertEquals(3L, ((Number) eng.eval("add(1, 2)")).longValue());
     }
 
+    @Test(expected = ScriptException.class)
+    public void testArgTypeMismatchThrowsError() throws ScriptException {
+        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define add(a::Integer, b::Integer)::Integer => a + b; print(add(\"1\", 2))");
+    }
+
     // ---- Hello World styles ----
 
     @Test

@@ -223,8 +223,20 @@ public class TypeInferrer {
 
         if (fnType instanceof FunctionType) {
             FunctionType ft = (FunctionType) fnType;
+            // Check argument types against declared parameter types
             for (int i = 0; i < Math.min(argTypes.size(), ft.paramTypes.size()); i++) {
-                argTypes.get(i).unify(ft.paramTypes.get(i));
+                Type argType = argTypes.get(i);
+                Type paramType = ft.paramTypes.get(i);
+                // Only strict-check if param was declared (not inferred)
+                if (!(paramType instanceof VarType) && paramType != Type.DYNAMIC) {
+                    Type resolved = argType instanceof VarType ? ((VarType)argType).resolve() : argType;
+                    if (resolved != Type.DYNAMIC && !resolved.isSubtypeOf(paramType)) {
+                        addErrorAt(currentNode,
+                            "argument " + (i+1) + ": expected '" + paramType.toTypeString() +
+                            "' but got '" + resolved.toTypeString() + "'");
+                    }
+                }
+                argTypes.get(i).unify(paramType);
             }
             return ft.returnType;
         }
