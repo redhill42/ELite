@@ -130,5 +130,8 @@ public final class Resources
     public static final String XML_UNQUOTED_VALUE = "XML_UNQUOTED_VALUE";
     public static final String XML_UNEXPECTED_EOI = "XML_UNEXPECTED_EOI";
 
+    // Type system
+    public static final String EL_UNDEFINED_TYPE = "EL_UNDEFINED_TYPE";
+
     private Resources() {}
 }

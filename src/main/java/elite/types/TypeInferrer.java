@@ -7,6 +7,7 @@ import javax.el.ELContext;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Token;
 import org.operamasks.el.eval.ELEngine;
+import static org.operamasks.el.resources.Resources.*;
 
 /**
  * Bidirectional type inference engine for ELite.
@@ -369,7 +370,7 @@ public class TypeInferrer {
             String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
             Type base = resolveSimpleType(baseName);
             if (base == null) {
-                addErrorAt(currentNode, "Undefined type: '" + baseName + "'");
+                addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
             // Parse type arguments
@@ -378,7 +379,7 @@ public class TypeInferrer {
             for (int i = 0; i < argNames.length; i++) {
                 Type argType = resolveSimpleType(argNames[i].trim());
                 if (argType == null) {
-                    addErrorAt(currentNode, "Undefined type: '" + argNames[i].trim() + "'");
+                    addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, argNames[i].trim()));
                     argType = Type.DYNAMIC;
                 }
                 argTypes[i] = argType;
@@ -387,14 +388,14 @@ public class TypeInferrer {
                 Class<?> cls = ELEngine.resolveJavaClass(elctx, baseName);
                 return new ClassType(cls, argTypes);
             } catch (Exception e) {
-                addErrorAt(currentNode, "Undefined type: '" + baseName + "'");
+                addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
         }
 
         Type resolved = resolveSimpleType(typeName);
         if (resolved == null) {
-            addErrorAt(currentNode, "Undefined type: '" + typeName + "'");
+            addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, typeName));
             return Type.DYNAMIC;
         }
         return resolved;
