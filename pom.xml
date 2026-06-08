@@ -65,12 +65,6 @@
                   <include>cglib:cglib</include>
                   <include>org.ow2.asm:asm</include>
                   <include>org.ow2.asm:asm-commons</include>
-                  <include>org.jline:jline</include>
-                  <include>org.jline:jline-terminal</include>
-                  <include>org.jline:jline-reader</include>
-                  <include>org.jline:jline-builtins</include>
-                  <include>org.jline:jline-terminal-jna</include>
-                  <include>net.java.dev.jna:jna</include>
                 </includes>
               </artifactSet>
               <relocations>
@@ -81,14 +75,6 @@
                 <relocation>
                   <pattern>org.objectweb.asm</pattern>
                   <shadedPattern>org.operamasks.asm</shadedPattern>
-                </relocation>
-                <relocation>
-                  <pattern>org.jline</pattern>
-                  <shadedPattern>org.operamasks.jline</shadedPattern>
-                </relocation>
-                <relocation>
-                  <pattern>com.sun.jna</pattern>
-                  <shadedPattern>org.operamasks.jna</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
@@ -176,12 +162,6 @@
           <artifactId>javolution</artifactId>
         </exclusion>
       </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jline</groupId>
-      <artifactId>jline</artifactId>
-      <version>3.25.0</version>
-      <optional>true</optional>
     </dependency>
   </dependencies>
 

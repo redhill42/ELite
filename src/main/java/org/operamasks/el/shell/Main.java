@@ -18,12 +18,9 @@
 package org.operamasks.el.shell;
 
 import java.io.IOException;
-import java.io.StringWriter;
-
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 import javax.el.ELContext;
 import javax.script.ScriptEngine;
@@ -37,14 +34,6 @@ import org.operamasks.el.parser.Position;
 import org.operamasks.el.eval.StackTrace;
 import static org.operamasks.el.resources.Resources.*;
 import elite.lang.Builtin;
-
-import org.jline.reader.EndOfFileException;
-import org.jline.reader.LineReader;
-import org.jline.reader.LineReaderBuilder;
-import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
-import org.jline.utils.AttributedStringBuilder;
-import org.jline.utils.AttributedStyle;
 
 // Experimental
 public class Main
@@ -145,57 +134,29 @@ public class Main
     private void repl(ScriptEngine engine) throws IOException {
         ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
 
-        Terminal terminal;
-        try {
-            terminal = TerminalBuilder.builder().jna(true).system(true).build();
-        } catch (IOException e) {
-            terminal = TerminalBuilder.builder().jna(false).build();
-        }
-        LineReader console = LineReaderBuilder.builder()
-            .terminal(terminal)
-            .completer(new VariableCompletor(elctx, engine))
-            .build();
+        ConsoleReader console = new ConsoleReader(System.in, System.out);
 
         String buffer = null;
         int lineno = 1;
 
         while (true) {
-            if (shellContext.isCompleted()) {
-                break;
-            }
+            if (shellContext.isCompleted()) break;
 
             String prompt = (lineno == 1) ? "> " : (lineno+") ");
-            String line;
-            try {
-                line = console.readLine(prompt);
-            } catch (EndOfFileException e) {
-                break;
-            }
-            if (line == null) {
-                break;
-            }
+            String line = console.readLine(prompt);
+            if (line == null) break;
 
             if (lineno == 1) {
-                // the first line
                 line = line.trim();
-                if (line.length() == 0)
-                    continue;
-                if (exec_cmd(shellContext, line))
-                    continue;
+                if (line.length() == 0) continue;
+                if (exec_cmd(shellContext, line)) continue;
                 buffer = line;
             } else {
-                // the continuation line
-                if (line.length() == 0) {
-                    buffer = null;
-                    lineno = 1;
-                    continue;
-                } else {
-                    buffer += "\n" + line;
-                }
+                if (line.length() == 0) { buffer = null; lineno = 1; continue; }
+                else buffer += "\n" + line;
             }
 
             if (buffer.endsWith("\\")) {
-                // continuation line
                 buffer = buffer.substring(0, buffer.length()-1);
                 lineno++;
                 continue;
@@ -206,43 +167,27 @@ public class Main
                 engine.put("_", value);
                 if (value != null) {
                     StackTrace.addFrame(elctx, "__toplevel__", null, Position.make(1,1));
-                    try {
-                        Builtin.print(elctx, value);
-                    } finally {
-                        StackTrace.removeFrame(elctx);
-                    }
+                    try { Builtin.print(elctx, value); }
+                    finally { StackTrace.removeFrame(elctx); }
                 }
             } catch (ScriptException ex) {
-                if (ex.getCause() instanceof IncompleteException) {
-                    lineno++;
-                    continue;
-                } else {
-                    System.err.println(hilight(ex.getMessage()));
-                }
-            } catch (Exception ex) {
-                printStackTrace(ex);
-            } catch (Error ex) {
-                printStackTrace(ex);
-            }
+                if (ex.getCause() instanceof IncompleteException) { lineno++; continue; }
+                else System.err.println(hilight(ex.getMessage()));
+            } catch (Exception ex) { printStackTrace(ex); }
+            catch (Error ex) { printStackTrace(ex); }
 
             buffer = null;
             lineno = 1;
         }
-
-        terminal.close();
     }
 
     private static String hilight(String text) {
-        return new AttributedStringBuilder()
-            .style(AttributedStyle.DEFAULT.foreground(AttributedStyle.RED))
-            .append(text)
-            .toAnsi();
+        // Use ANSI red color codes directly
+        return "\033[31m" + text + "\033[0m";
     }
 
     private void printStackTrace(Throwable except) {
-        StringWriter writer = new StringWriter();
-        except.printStackTrace(new java.io.PrintWriter(writer));
-        System.err.println(hilight(writer.toString()));
+        except.printStackTrace(System.err);
     }
 
     private int exec_script(ScriptEngine engine, String script) {
