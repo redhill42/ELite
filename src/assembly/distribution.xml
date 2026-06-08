@@ -17,8 +17,14 @@
       <outputDirectory>/lib</outputDirectory>
       <excludes>
         <exclude>cglib:cglib</exclude>
-        <exclude>asm:asm</exclude>
-        <exclude>jline:jline</exclude>
+        <exclude>org.ow2.asm:asm</exclude>
+        <exclude>org.ow2.asm:asm-commons</exclude>
+        <exclude>org.jline:jline</exclude>
+        <exclude>org.jline:jline-terminal</exclude>
+        <exclude>org.jline:jline-reader</exclude>
+        <exclude>org.jline:jline-builtins</exclude>
+        <exclude>org.jline:jline-terminal-jna</exclude>
+        <exclude>net.java.dev.jna:jna</exclude>
       </excludes>
     </dependencySet>
   </dependencySets>
