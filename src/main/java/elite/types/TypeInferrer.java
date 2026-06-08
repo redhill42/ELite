@@ -17,6 +17,7 @@ public class TypeInferrer {
     private final Map<String, Type> env;
     private final Deque<Map<String, Type>> scopeStack;
     private final List<String> errors;
+    private ELNode currentNode; // track current node for position reporting
 
     public TypeInferrer(ELContext elctx) {
         this.elctx = elctx;
@@ -28,8 +29,28 @@ public class TypeInferrer {
     public List<String> getErrors() { return Collections.unmodifiableList(errors); }
     public boolean hasErrors() { return !errors.isEmpty(); }
 
+    public List<String> getPositionErrors() {
+        // errors already have position info embedded
+        return Collections.unmodifiableList(errors);
+    }
+
+    private void addError(String message) {
+        errors.add(message);
+    }
+
+    private void addErrorAt(ELNode node, String message) {
+        int line = org.operamasks.el.parser.Position.line(node.pos);
+        int col  = org.operamasks.el.parser.Position.column(node.pos);
+        String err = line + ":" + col + ": " + message;
+        if (!errors.contains(err)) {
+            errors.add(err);
+        }
+    }
+
     public Type infer(ELNode node) {
         if (node == null) return Type.DYNAMIC;
+        ELNode prev = currentNode;
+        currentNode = node;
 
         switch (node.op) {
             case Token.TRUE:
@@ -348,7 +369,7 @@ public class TypeInferrer {
             String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
             Type base = resolveSimpleType(baseName);
             if (base == null) {
-                errors.add("Undefined type: '" + baseName + "'");
+                addErrorAt(currentNode, "Undefined type: '" + baseName + "'");
                 return Type.DYNAMIC;
             }
             // Parse type arguments
@@ -357,7 +378,7 @@ public class TypeInferrer {
             for (int i = 0; i < argNames.length; i++) {
                 Type argType = resolveSimpleType(argNames[i].trim());
                 if (argType == null) {
-                    errors.add("Undefined type: '" + argNames[i].trim() + "'");
+                    addErrorAt(currentNode, "Undefined type: '" + argNames[i].trim() + "'");
                     argType = Type.DYNAMIC;
                 }
                 argTypes[i] = argType;
@@ -366,14 +387,14 @@ public class TypeInferrer {
                 Class<?> cls = ELEngine.resolveJavaClass(elctx, baseName);
                 return new ClassType(cls, argTypes);
             } catch (Exception e) {
-                errors.add("Undefined type: '" + baseName + "'");
+                addErrorAt(currentNode, "Undefined type: '" + baseName + "'");
                 return Type.DYNAMIC;
             }
         }
 
         Type resolved = resolveSimpleType(typeName);
         if (resolved == null) {
-            errors.add("Undefined type: '" + typeName + "'");
+            addErrorAt(currentNode, "Undefined type: '" + typeName + "'");
             return Type.DYNAMIC;
         }
         return resolved;

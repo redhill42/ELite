@@ -6,82 +6,69 @@ import javax.el.ELContext;
 
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.parser.ELNode;
+import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
+import static org.operamasks.el.resources.Resources.*;
 
 /**
  * Type checker pass that runs after parsing and before execution.
- * Walks the ELProgram AST and checks type consistency:
- * - Verifies annotated types exist (are resolvable)
- * - Checks that expression types match annotations
- * - Reports all errors collected during inference
  */
 public class TypeChecker {
 
     private final ELContext elctx;
+    private final String filename;
     private final List<String> errors;
-    private boolean strict; // if true, errors are fatal
+    private boolean strict;
 
     public TypeChecker(ELContext elctx) {
+        this(elctx, null);
+    }
+
+    public TypeChecker(ELContext elctx, String filename) {
         this.elctx = elctx;
+        this.filename = filename;
         this.errors = new ArrayList<>();
         this.strict = true;
     }
 
-    /**
-     * Run type checking on a parsed ELNode (expression or statement).
-     * @return true if no fatal errors were found
-     */
-    public boolean check(ELNode node) {
-        TypeInferrer inferrer = new TypeInferrer(elctx);
-        checkNode(node, inferrer);
-        errors.addAll(inferrer.getErrors());
-        return !hasFatalErrors();
-    }
-
-    /**
-     * Run type checking on a list of ELNodes (e.g., program statements).
-     */
-    public boolean checkAll(List<ELNode> nodes) {
-        TypeInferrer inferrer = new TypeInferrer(elctx);
-        for (ELNode node : nodes) {
-            checkNode(node, inferrer);
-        }
-        errors.addAll(inferrer.getErrors());
-        return !hasFatalErrors();
-    }
-
-    /**
-     * Run type checking on an ELProgram (definitions + expressions).
-     */
     public boolean checkProgram(Iterable<ELNode> defs, Iterable<ELNode> exps) {
         TypeInferrer inferrer = new TypeInferrer(elctx);
 
-        // First pass: register all definitions with their types
         for (ELNode def : defs) {
             registerDefinition(def, inferrer);
         }
 
-        // Second pass: check all expressions
         for (ELNode exp : exps) {
             checkNode(exp, inferrer);
         }
 
-        errors.addAll(inferrer.getErrors());
+        // Format errors with position info
+        for (String err : inferrer.getErrors()) {
+            errors.add(formatError(err));
+        }
+
         return !hasFatalErrors();
     }
 
     public List<String> getErrors() { return Collections.unmodifiableList(errors); }
     public boolean hasErrors() { return !errors.isEmpty(); }
     public boolean hasFatalErrors() { return strict && !errors.isEmpty(); }
-
     public void setStrict(boolean strict) { this.strict = strict; }
 
     // ---- Internal ----
 
+    private String formatError(String message) {
+        if (filename != null) {
+            return filename + ":" + message;
+        }
+        return message;
+    }
+
     private void registerDefinition(ELNode node, TypeInferrer inferrer) {
         if (node instanceof ELNode.DEFINE) {
             ELNode.DEFINE def = (ELNode.DEFINE) node;
-            inferrer.infer(def.expr);
+            // inferDefine validates the define's own type annotation
+            // and recursively validates the expression (LAMBDA params etc.)
             inferrer.infer(node);
         }
     }
@@ -89,29 +76,15 @@ public class TypeChecker {
     private void checkNode(ELNode node, TypeInferrer inferrer) {
         if (node == null) return;
 
-        // Run inference regardless — collects errors for type annotations
         Type inferred = inferrer.infer(node);
         node.inferredType = inferred;
 
-        // For DEFINE nodes, check type consistency
-        if (node instanceof ELNode.DEFINE) {
-            checkDefine((ELNode.DEFINE) node, inferred);
-        }
-
-        // Recursively check children
         if (node instanceof ELNode.LAMBDA) {
             ELNode.LAMBDA lambda = (ELNode.LAMBDA) node;
-            // Validate parameter type annotations
             for (ELNode.DEFINE var : lambda.vars) {
                 if (var.type != null && !var.type.isEmpty()) {
-                    // Run inference on the param to trigger annotation validation
                     inferrer.infer(var);
                 }
-            }
-            // Validate return type annotation
-            if (lambda.rtype != null && !lambda.rtype.isEmpty()) {
-                // Trigger validation via inference
-                inferrer.infer(lambda.body);
             }
             checkNode(lambda.body, inferrer);
         }
@@ -125,51 +98,17 @@ public class TypeChecker {
         }
         if (node instanceof ELNode.APPLY) {
             ELNode.APPLY app = (ELNode.APPLY) node;
-            for (ELNode arg : app.args) {
-                checkNode(arg, inferrer);
-            }
+            for (ELNode arg : app.args) checkNode(arg, inferrer);
         }
         if (node instanceof ELNode.MATCH) {
             ELNode.MATCH match = (ELNode.MATCH) node;
             for (ELNode.CASE caseNode : match.alts) {
-                for (ELNode body : caseNode.bodies) {
-                    checkNode(body, inferrer);
-                }
+                for (ELNode body : caseNode.bodies) checkNode(body, inferrer);
             }
             if (match.deflt != null) checkNode(match.deflt, inferrer);
         }
         if (node instanceof ELNode.BLOCK) {
             checkNode(((ELNode.BLOCK) node).body, inferrer);
-        }
-    }
-
-    private void checkDefine(ELNode.DEFINE def, Type inferred) {
-        // If the definition has a type annotation and we inferred something
-        // incompatible, report it
-        if (def.type != null && !def.type.isEmpty() && inferred != Type.DYNAMIC) {
-            // The actual annotation validation is done by TypeInferrer
-            // (via resolveTypeAnnotation). Here we just check type consistency.
-
-            // Check if the annotated return type for a lambda matches the body
-            if (def.expr instanceof ELNode.LAMBDA) {
-                ELNode.LAMBDA lambda = (ELNode.LAMBDA) def.expr;
-                if (lambda.rtype != null && !lambda.rtype.isEmpty()) {
-                    Type bodyType = lambda.body.inferredType;
-                    if (bodyType != null && bodyType != Type.DYNAMIC) {
-                        // Try to resolve the return type
-                        try {
-                            Class<?> cls = ELEngine.resolveJavaClass(elctx, lambda.rtype);
-                            Type expectedType = Type.fromClass(cls);
-                            if (bodyType != expectedType && !bodyType.isSubtypeOf(expectedType)) {
-                                errors.add("Type mismatch: expected '" + lambda.rtype +
-                                    "' but body has type '" + bodyType.toTypeString() + "'");
-                            }
-                        } catch (Exception e) {
-                            // rtype resolution failed — already reported by TypeInferrer
-                        }
-                    }
-                }
-            }
         }
     }
 }

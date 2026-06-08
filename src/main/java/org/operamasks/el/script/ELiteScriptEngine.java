@@ -84,16 +84,16 @@ class ELiteScriptEngine extends AbstractScriptEngine
             ELContext elctx = getELContext(ctx);
 
             // ---- Type checking pass ----
-            elite.types.TypeChecker checker = new elite.types.TypeChecker(elctx);
+            String filename = (String)get(ScriptEngine.FILENAME);
+            elite.types.TypeChecker checker = new elite.types.TypeChecker(elctx, filename);
             if (!checker.checkProgram(program.getDefinitions(), program.getExpressions())) {
                 StringBuilder sb = new StringBuilder("Type errors:\n");
                 for (String err : checker.getErrors()) {
-                    sb.append("  - ").append(err).append('\n');
+                    sb.append("  ").append(err).append('\n');
                 }
                 throw new ScriptException(sb.toString());
             }
 
-            String filename = (String)get(ScriptEngine.FILENAME);
             return program.execute(elctx, filename, 1);
         } catch (ParseException ex) {
             ScriptException ex2 = new ScriptException(ex.getMessage(),
