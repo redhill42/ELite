@@ -380,6 +380,15 @@ public class ELIntegrationTest {
         assertTrue(result instanceof java.util.Date);
     }
 
+    // ---- Type checker errors ----
+
+    @Test(expected = ScriptException.class)
+    public void testUndefinedTypeAnnotationThrowsError() throws ScriptException {
+        // Fresh engine — define with an undefined type should throw
+        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define x::NonExistentType = 42");
+    }
+
     // ---- Hello World styles ----
 
     @Test

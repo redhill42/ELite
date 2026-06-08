@@ -45,6 +45,11 @@ public class ELProgram implements Serializable
     private List<ELNode> defs;
     private List<ELNode> exps;
 
+    /** @return the list of definition statements */
+    public List<ELNode> getDefinitions() { return defs; }
+    /** @return the list of expression/statement nodes */
+    public List<ELNode> getExpressions() { return exps; }
+
     private static final long serialVersionUID = 3112245719728771823L;
 
     public ELProgram() {
