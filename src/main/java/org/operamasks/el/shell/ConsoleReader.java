@@ -5,160 +5,118 @@ import java.util.*;
 
 /**
  * Minimal line reader for the ELite REPL.
- * Provides line editing (backspace, arrow keys), history,
- * and multi-line input — zero native dependencies.
- *
- * Uses 'stty' on Unix to enable raw (character-at-a-time) terminal mode.
+ * Uses stty cbreak mode on Unix — terminal echo is ON,
+ * we only handle special keys (backspace, arrows, history).
  */
 class ConsoleReader implements AutoCloseable {
 
     private final InputStream in;
     private final PrintStream out;
     private final List<String> history = new ArrayList<>();
-    private int historyIndex = -1;
-    private String currentLine = "";
-    private int cursor = 0;
-    private boolean rawMode;
+    private int histIdx = -1;
+    private String savedLine = "";
+    private boolean cbreak;
     private String[] sttyRestore;
-    private boolean ansiSupported;
 
     public ConsoleReader(InputStream in, PrintStream out) {
-        this.in = in;
-        this.out = out;
-        this.ansiSupported = !System.getProperty("os.name", "").toLowerCase().contains("win");
-        enableRawMode();
+        this.in = in; this.out = out;
+        enableCbreak();
     }
 
-    private void enableRawMode() {
-        if (!ansiSupported) return;
+    private void enableCbreak() {
         try {
             Process p = new ProcessBuilder("stty", "-g")
                 .redirectInput(ProcessBuilder.Redirect.INHERIT).start();
-            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String settings = r.readLine();
+            String s = new BufferedReader(new InputStreamReader(p.getInputStream())).readLine();
             p.waitFor();
-            if (settings != null) {
-                sttyRestore = new String[]{"stty", settings};
-                new ProcessBuilder("stty", "-icanon", "-echo", "min", "1")
+            if (s != null) {
+                sttyRestore = new String[]{"stty", s};
+                new ProcessBuilder("stty", "-icanon", "min", "1")
                     .redirectInput(ProcessBuilder.Redirect.INHERIT).start().waitFor();
-                rawMode = true;
+                cbreak = true;
             }
-        } catch (Exception e) { /* fall back to line-buffered */ }
+        } catch (Exception e) { /* fallback */ }
     }
 
-    private void disableRawMode() {
-        if (!rawMode || sttyRestore == null) return;
-        try {
+    @Override public void close() {
+        if (cbreak && sttyRestore != null) try {
             new ProcessBuilder(sttyRestore)
                 .redirectInput(ProcessBuilder.Redirect.INHERIT).start().waitFor();
-        } catch (Exception e) { /* ignore */ }
-        rawMode = false;
-    }
-
-    @Override
-    public void close() {
-        disableRawMode();
+        } catch (Exception e) {}
     }
 
     public String readLine(String prompt) throws IOException {
-        out.print(prompt);
-        out.flush();
-
+        out.print(prompt); out.flush();
         StringBuilder buf = new StringBuilder();
-        cursor = 0;
-        historyIndex = -1;
+        int cur = 0;
+        histIdx = -1;
 
-        while (true) {
+        for (;;) {
             int ch = in.read();
-            if (ch == -1) return null;
+            if (ch < 0) return null;
 
-            if (ch == '\n' || ch == '\r') {
-                if (ch == '\r') {
-                    int next = tryPeek();
-                    if (next == '\n') in.read();
-                }
+            if (ch == '\r' || ch == '\n') {
+                if (ch == '\r' && look() == '\n') in.read();
                 out.println();
-                String line = buf.toString();
-                if (!line.isEmpty() && (history.isEmpty()
-                        || !history.get(history.size()-1).equals(line))) {
-                    history.add(line);
-                }
-                return line;
+                break;
             }
-
             if (ch == 4 && buf.length() == 0) { out.println(); return null; }
+            if (ch == 9) continue;                        // TAB — ignored for now
 
-            if (ch == 127 || ch == 8) {
-                if (cursor > 0) { buf.deleteCharAt(--cursor); redrawLine(prompt, buf.toString()); }
+            if (ch == 127 || ch == 8) {                    // Backspace
+                if (cur > 0) {
+                    buf.deleteCharAt(--cur);
+                    if (cur < buf.length()) redraw(prompt, buf, cur);
+                    else { out.print("\b \b"); out.flush(); }
+                }
                 continue;
             }
 
-            if (ch == 27) {
-                int next = tryPeek();
-                if (next == '[') {
-                    in.read();
-                    int dir = in.read();
-                    if (dir == 'A') navigateHistory(-1, buf, prompt);
-                    else if (dir == 'B') navigateHistory(1, buf, prompt);
-                    else if (dir == 'C') { if (cursor < buf.length()) cursor++; redrawLine(prompt, buf.toString()); }
-                    else if (dir == 'D') { if (cursor > 0) cursor--; redrawLine(prompt, buf.toString()); }
-                }
+            if (ch == 27 && look() == '[') {               // Arrow keys
+                in.read(); int d = in.read();
+                if (d == 'A' || d == 'B') histNav(d == 'A' ? -1 : 1, buf);
+                else if (d == 'C' && cur < buf.length()) cur++;
+                else if (d == 'D' && cur > 0) cur--;
+                if (d == 'A' || d == 'B' || d == 'C' || d == 'D')
+                    redraw(prompt, buf, cur);
                 continue;
             }
 
             if (ch >= 32 && ch < 127) {
-                buf.insert(cursor++, (char) ch);
-                redrawLine(prompt, buf.toString());
+                if (cur == buf.length()) { buf.append((char)ch); cur++; }
+                else { buf.insert(cur++, (char)ch); redraw(prompt, buf, cur); }
             }
         }
+
+        String line = buf.toString();
+        if (!line.isEmpty() && (history.isEmpty()
+                || !history.get(history.size()-1).equals(line)))
+            history.add(line);
+        return line;
     }
 
-    private int tryPeek() throws IOException {
-        in.mark(1);
-        int ch = in.read();
-        if (ch != -1) in.reset();
-        return ch;
-    }
-
-    private void navigateHistory(int direction, StringBuilder buf, String prompt) {
-        if (history.isEmpty()) return;
-        if (direction < 0 && historyIndex == -1) {
-            currentLine = buf.toString();
-            historyIndex = history.size() - 1;
-        } else if (direction < 0 && historyIndex > 0) {
-            historyIndex--;
-        } else if (direction > 0 && historyIndex < history.size() - 1) {
-            historyIndex++;
-        } else if (direction > 0 && historyIndex == history.size() - 1) {
-            historyIndex = -1;
-            buf.replace(0, buf.length(), currentLine);
-            cursor = buf.length();
-            redrawLine(prompt, buf.toString());
-            return;
-        } else {
-            return;
-        }
-        buf.replace(0, buf.length(), history.get(historyIndex));
-        cursor = buf.length();
-        redrawLine(prompt, buf.toString());
-    }
-
-    private void redrawLine(String prompt, String content) {
-        if (ansiSupported) {
-            out.print('\r');
-            out.print(prompt);
-            out.print(content);
-            out.print(' ');
-            out.print('\r');
-            int targetCol = prompt.length() + cursor;
-            if (targetCol > 0) out.print("\033[" + targetCol + "C");
-        } else {
-            out.print('\r');
-            out.print(prompt);
-            out.print(content);
+    /** Clear line, redraw prompt+content, position cursor. */
+    private void redraw(String prompt, StringBuilder buf, int cur) {
+        out.print('\r');                                        // go to col 0
+        out.print("\033[K");                                    // clear to end of line
+        out.print(prompt);                                      // prompt
+        out.print(buf);                                         // content
+        if (cur < buf.length()) {
+            out.print("\033[" + buf.length() + "D");            // back to start of content
+            if (cur > 0) out.print("\033[" + cur + "C");       // forward to cursor pos
         }
         out.flush();
     }
 
-    public List<String> getHistory() { return Collections.unmodifiableList(history); }
+    private void histNav(int dir, StringBuilder buf) {
+        if (history.isEmpty()) return;
+        if (dir < 0 && histIdx == -1) { savedLine = buf.toString(); histIdx = history.size()-1; }
+        else if (dir < 0 && histIdx > 0) histIdx--;
+        else if (dir > 0 && histIdx < history.size()-1) histIdx++;
+        else if (dir > 0) { histIdx = -1; buf.replace(0, buf.length(), savedLine); return; }
+        else return;
+        buf.replace(0, buf.length(), history.get(histIdx));
+    }
+
+    private int look() throws IOException { in.mark(1); int c = in.read(); if (c>=0) in.reset(); return c; }
 }
