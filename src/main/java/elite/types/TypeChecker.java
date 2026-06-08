@@ -42,6 +42,9 @@ public class TypeChecker {
             checkNode(exp, inferrer);
         }
 
+        // Persist type bindings so subsequent evals can see them
+        inferrer.persistTypes();
+
         // Format errors with position info
         for (String err : inferrer.getErrors()) {
             errors.add(formatError(err));

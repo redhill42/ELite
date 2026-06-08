@@ -405,9 +405,11 @@ public class ELIntegrationTest {
     }
 
     @Test(expected = ScriptException.class)
-    public void testArgTypeMismatchThrowsError() throws ScriptException {
+    public void testArgTypeMismatchCrossEval() throws ScriptException {
+        // Define in one eval, call in another — should still type-check
         ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
-        eng.eval("define add(a::Integer, b::Integer)::Integer => a + b; print(add(\"1\", 2))");
+        eng.eval("define add(a::Integer, b::Integer)::Integer => a + b");
+        eng.eval("print(add(\"1\", 2))");  // ← should be caught across evals
     }
 
     @Test(expected = ScriptException.class)

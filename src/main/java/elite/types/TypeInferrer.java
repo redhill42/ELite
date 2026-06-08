@@ -14,6 +14,9 @@ import static org.operamasks.el.resources.Resources.*;
  */
 public class TypeInferrer {
 
+    /** Key for storing type environment in ELContext across evals. */
+    private static final class TypeEnvKey {}
+
     private final ELContext elctx;
     private final Map<String, Type> env;
     private final Deque<Map<String, Type>> scopeStack;
@@ -25,6 +28,22 @@ public class TypeInferrer {
         this.env = new LinkedHashMap<>();
         this.scopeStack = new ArrayDeque<>();
         this.errors = new ArrayList<>();
+        restorePersistedTypes();
+    }
+
+    /** Restore type bindings from previous eval runs. */
+    @SuppressWarnings("unchecked")
+    private void restorePersistedTypes() {
+        Object obj = elctx.getContext(TypeEnvKey.class);
+        if (obj instanceof Map) {
+            env.putAll((Map<String, Type>) obj);
+        }
+    }
+
+    /** Persist current type bindings for future eval runs. */
+    public void persistTypes() {
+        Map<String, Type> snapshot = new LinkedHashMap<>(env);
+        elctx.putContext(TypeEnvKey.class, snapshot);
     }
 
     public List<String> getErrors() { return Collections.unmodifiableList(errors); }
