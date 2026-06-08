@@ -15,7 +15,7 @@
  * along with this program. If not, see http://www.gnu.org/licenses.
  */
 
-package elite.types;
+package org.operamasks.el.types;
 
 import java.util.List;
 import java.util.Map;

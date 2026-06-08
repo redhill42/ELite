@@ -1,4 +1,4 @@
-package elite.types;
+package org.operamasks.el.types;
 
 /**
  * The bottom type — subtype of all types. No value inhabits this type.

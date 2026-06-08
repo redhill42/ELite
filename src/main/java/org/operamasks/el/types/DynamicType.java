@@ -1,4 +1,4 @@
-package elite.types;
+package org.operamasks.el.types;
 
 /**
  * The dynamic type — compatible with everything.

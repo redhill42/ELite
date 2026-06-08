@@ -76,7 +76,7 @@ public abstract class ELNode implements Serializable
     public final int pos;
 
     /** Inferred type populated by the type checker (null if not yet inferred). */
-    public transient elite.types.Type inferredType;
+    public transient org.operamasks.el.types.Type inferredType;
 
     // Operator precedence
     public static final int

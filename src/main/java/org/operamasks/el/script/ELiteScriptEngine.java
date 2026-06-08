@@ -85,7 +85,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
 
             // ---- Type checking pass ----
             String filename = (String)get(ScriptEngine.FILENAME);
-            elite.types.TypeChecker checker = new elite.types.TypeChecker(elctx, filename);
+            org.operamasks.el.types.TypeChecker checker = new org.operamasks.el.types.TypeChecker(elctx, filename);
             if (!checker.checkProgram(program.getDefinitions(), program.getExpressions())) {
                 StringBuilder sb = new StringBuilder("Type errors:\n");
                 for (String err : checker.getErrors()) {

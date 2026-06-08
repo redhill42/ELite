@@ -1,4 +1,4 @@
-package elite.types;
+package org.operamasks.el.types;
 
 import java.util.Map;
 
