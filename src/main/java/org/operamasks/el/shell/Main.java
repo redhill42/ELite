@@ -135,6 +135,7 @@ public class Main
         ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
 
         ConsoleReader console = new ConsoleReader(System.in, System.out);
+        console.setCompletor(new ELiteCompletor(elctx, engine));
 
         String buffer = null;
         int lineno = 1;

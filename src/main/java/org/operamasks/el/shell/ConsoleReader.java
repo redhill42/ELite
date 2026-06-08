@@ -5,8 +5,7 @@ import java.util.*;
 
 /**
  * Minimal line reader for the ELite REPL.
- * Uses stty cbreak mode on Unix — terminal echo is ON,
- * we only handle special keys (backspace, arrows, history).
+ * Uses stty -icanon -echo min 1 onlcr for raw input with clean output.
  */
 class ConsoleReader implements AutoCloseable {
 
@@ -17,11 +16,14 @@ class ConsoleReader implements AutoCloseable {
     private String savedLine = "";
     private boolean cbreak;
     private String[] sttyRestore;
+    private Completor completor;
 
     public ConsoleReader(InputStream in, PrintStream out) {
         this.in = in; this.out = out;
         enableCbreak();
     }
+
+    public void setCompletor(Completor c) { this.completor = c; }
 
     private void enableCbreak() {
         try {
@@ -57,27 +59,26 @@ class ConsoleReader implements AutoCloseable {
 
             if (ch == '\r' || ch == '\n') {
                 if (ch == '\r' && look() == '\n') in.read();
-                out.println();
-                break;
+                out.println(); break;
             }
             if (ch == 4 && buf.length() == 0) { out.println(); return null; }
-            if (ch == 9) continue;                        // TAB — ignored for now
 
-            if (ch == 127 || ch == 8) {                    // Backspace
-                if (cur > 0) {
-                    buf.deleteCharAt(--cur);
-                    redraw(prompt, buf, cur);
-                }
+            if (ch == 9 && completor != null) {  // TAB
+                doComplete(prompt, buf, cur);
                 continue;
             }
 
-            if (ch == 27 && look() == '[') {               // Arrow keys
+            if (ch == 127 || ch == 8) {           // Backspace
+                if (cur > 0) { buf.deleteCharAt(--cur); redraw(prompt, buf, cur); }
+                continue;
+            }
+
+            if (ch == 27 && look() == '[') {      // Arrow keys
                 in.read(); int d = in.read();
                 if (d == 'A' || d == 'B') histNav(d == 'A' ? -1 : 1, buf);
                 else if (d == 'C' && cur < buf.length()) cur++;
                 else if (d == 'D' && cur > 0) cur--;
-                if (d == 'A' || d == 'B' || d == 'C' || d == 'D')
-                    redraw(prompt, buf, cur);
+                if (d >= 'A' && d <= 'D') redraw(prompt, buf, cur);
                 continue;
             }
 
@@ -94,16 +95,39 @@ class ConsoleReader implements AutoCloseable {
         return line;
     }
 
-    /** Clear line, redraw prompt+content, position cursor. */
-    private void redraw(String prompt, StringBuilder buf, int cur) {
-        out.print('\r');                                        // go to col 0
-        out.print("\033[K");                                    // clear to end of line
-        out.print(prompt);                                      // prompt
-        out.print(buf);                                         // content
-        if (cur < buf.length()) {
-            out.print("\033[" + buf.length() + "D");            // back to start of content
-            if (cur > 0) out.print("\033[" + cur + "C");       // forward to cursor pos
+    private void doComplete(String prompt, StringBuilder buf, int cur) {
+        String prefix = wordBeforeCursor(buf, cur);
+        if (prefix.isEmpty()) return;
+
+        List<String> matches = completor.complete(buf.toString(), cur);
+        if (matches == null || matches.isEmpty()) return;
+
+        if (matches.size() == 1) {
+            String completion = matches.get(0).substring(prefix.length());
+            for (char c : completion.toCharArray()) buf.insert(cur++, c);
+            redraw(prompt, buf, cur);
+        } else {
+            out.println();
+            for (String m : matches) { out.print(m); out.print("  "); }
+            out.println();
+            redraw(prompt, buf, cur);
         }
+    }
+
+    private static String wordBeforeCursor(StringBuilder buf, int cur) {
+        int start = cur;
+        while (start > 0 && Character.isJavaIdentifierPart(buf.charAt(start-1)))
+            start--;
+        return buf.substring(start, cur);
+    }
+
+    private void redraw(String prompt, StringBuilder buf, int cur) {
+        out.print('\r');
+        out.print("\033[K");
+        out.print(prompt);
+        out.print(buf);
+        if (cur < buf.length())
+            out.print("\033[" + (buf.length() - cur) + "D");
         out.flush();
     }
 
@@ -118,4 +142,9 @@ class ConsoleReader implements AutoCloseable {
     }
 
     private int look() throws IOException { in.mark(1); int c = in.read(); if (c>=0) in.reset(); return c; }
+
+    @FunctionalInterface
+    interface Completor {
+        List<String> complete(String line, int cursor);
+    }
 }
