@@ -389,6 +389,21 @@ public class ELIntegrationTest {
         eng.eval("define x::NonExistentType = 42");
     }
 
+    @Test(expected = ScriptException.class)
+    public void testUndefinedParamTypeThrowsError() throws ScriptException {
+        // Fresh engine — undefined parameter type should throw
+        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define add(a::Unknown, b::Integer)::Integer => a + b");
+    }
+
+    @Test
+    public void testValidParamTypesPass() throws ScriptException {
+        // All parameter types valid — should execute normally
+        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define add(a::Integer, b::Integer)::Integer => a + b");
+        assertEquals(3L, ((Number) eng.eval("add(1, 2)")).longValue());
+    }
+
     // ---- Hello World styles ----
 
     @Test

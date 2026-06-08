@@ -86,7 +86,6 @@ class ELiteScriptEngine extends AbstractScriptEngine
             // ---- Type checking pass ----
             elite.types.TypeChecker checker = new elite.types.TypeChecker(elctx);
             if (!checker.checkProgram(program.getDefinitions(), program.getExpressions())) {
-                // Type errors occurred — throw as ScriptException
                 StringBuilder sb = new StringBuilder("Type errors:\n");
                 for (String err : checker.getErrors()) {
                     sb.append("  - ").append(err).append('\n');

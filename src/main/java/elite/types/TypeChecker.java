@@ -81,14 +81,8 @@ public class TypeChecker {
     private void registerDefinition(ELNode node, TypeInferrer inferrer) {
         if (node instanceof ELNode.DEFINE) {
             ELNode.DEFINE def = (ELNode.DEFINE) node;
-            // If there's a type annotation, validate it exists
-            if (def.type != null && !def.type.isEmpty()) {
-                // Just run the inferrer on the expression — it will
-                // resolve the annotation and record errors if invalid
-                inferrer.infer(def.expr);
-                // Re-register with the annotated type in the environment
-                inferrer.infer(node);
-            }
+            inferrer.infer(def.expr);
+            inferrer.infer(node);
         }
     }
 
@@ -106,7 +100,20 @@ public class TypeChecker {
 
         // Recursively check children
         if (node instanceof ELNode.LAMBDA) {
-            checkNode(((ELNode.LAMBDA) node).body, inferrer);
+            ELNode.LAMBDA lambda = (ELNode.LAMBDA) node;
+            // Validate parameter type annotations
+            for (ELNode.DEFINE var : lambda.vars) {
+                if (var.type != null && !var.type.isEmpty()) {
+                    // Run inference on the param to trigger annotation validation
+                    inferrer.infer(var);
+                }
+            }
+            // Validate return type annotation
+            if (lambda.rtype != null && !lambda.rtype.isEmpty()) {
+                // Trigger validation via inference
+                inferrer.infer(lambda.body);
+            }
+            checkNode(lambda.body, inferrer);
         }
         if (node instanceof ELNode.Unary) {
             checkNode(((ELNode.Unary) node).right, inferrer);

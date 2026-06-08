@@ -250,13 +250,18 @@ public class TypeInferrer {
     // ---- Define ----
 
     private Type inferDefine(ELNode.DEFINE node) {
+        // Always infer the expression to validate parameter types etc.
+        Type inferredType = infer(node.expr);
         Type annotatedType = resolveTypeAnnotation(node.type);
         Type t;
         if (annotatedType != null) {
-            // Use the annotation as the expected type for inference
             t = annotatedType;
+            // Unify to check consistency
+            if (inferredType != Type.DYNAMIC) {
+                inferredType.unify(annotatedType);
+            }
         } else {
-            t = infer(node.expr);
+            t = inferredType;
         }
         env.put(node.id, t);
         return t;

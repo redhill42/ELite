@@ -1882,7 +1882,9 @@ public class Parser extends Scanner
                 vars[i] = (ELNode.DEFINE)p.pattern;
                 vars[i].meta = p.meta;
                 vars[i].expr = p.deflt;
-                vars[i].type = p.type;
+                // p.type may be null if parsePattern already consumed ::Type
+                // (pattern parser calls parseTypeNameOpt before parameter list parser)
+                if (p.type != null) vars[i].type = p.type;
             } else {
                 vars[i] = new ELNode.DEFINE(p.pos, p.name, p.type, p.meta);
             }
