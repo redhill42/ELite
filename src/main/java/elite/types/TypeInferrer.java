@@ -232,8 +232,7 @@ public class TypeInferrer {
                     Type resolved = argType instanceof VarType ? ((VarType)argType).resolve() : argType;
                     if (resolved != Type.DYNAMIC && !resolved.isSubtypeOf(paramType)) {
                         addErrorAt(currentNode,
-                            "argument " + (i+1) + ": expected '" + paramType.toTypeString() +
-                            "' but got '" + resolved.toTypeString() + "'");
+                            _T(EL_ARG_TYPE_MISMATCH, i+1, paramType.toTypeString(), resolved.toTypeString()));
                     }
                 }
                 argTypes.get(i).unify(paramType);

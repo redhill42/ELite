@@ -132,6 +132,7 @@ public final class Resources
 
     // Type system
     public static final String EL_UNDEFINED_TYPE = "EL_UNDEFINED_TYPE";
+    public static final String EL_ARG_TYPE_MISMATCH = "EL_ARG_TYPE_MISMATCH";
 
     private Resources() {}
 }
