@@ -31,7 +31,7 @@ class ConsoleReader implements AutoCloseable {
             p.waitFor();
             if (s != null) {
                 sttyRestore = new String[]{"stty", s};
-                new ProcessBuilder("stty", "-icanon", "min", "1")
+                new ProcessBuilder("stty", "-icanon", "-echo", "min", "1", "onlcr")
                     .redirectInput(ProcessBuilder.Redirect.INHERIT).start().waitFor();
                 cbreak = true;
             }
@@ -66,8 +66,7 @@ class ConsoleReader implements AutoCloseable {
             if (ch == 127 || ch == 8) {                    // Backspace
                 if (cur > 0) {
                     buf.deleteCharAt(--cur);
-                    if (cur < buf.length()) redraw(prompt, buf, cur);
-                    else { out.print("\b \b"); out.flush(); }
+                    redraw(prompt, buf, cur);
                 }
                 continue;
             }
@@ -83,8 +82,8 @@ class ConsoleReader implements AutoCloseable {
             }
 
             if (ch >= 32 && ch < 127) {
-                if (cur == buf.length()) { buf.append((char)ch); cur++; }
-                else { buf.insert(cur++, (char)ch); redraw(prompt, buf, cur); }
+                buf.insert(cur++, (char)ch);
+                redraw(prompt, buf, cur);
             }
         }
 
