@@ -205,7 +205,11 @@ public class TypeInferrer {
         // Use annotated return type if available
         Type returnType = resolveTypeAnnotation(node.rtype);
         if (returnType != null) {
-            bodyType.unify(returnType);
+            Type unified = bodyType.unify(returnType);
+            if (unified == null && bodyType != Type.DYNAMIC && bodyType != Type.BOTTOM) {
+                addErrorAt(currentNode,
+                    _T(EL_RETURN_TYPE_MISMATCH, returnType.toTypeString(), bodyType.toTypeString()));
+            }
         }
 
         return new FunctionType(paramTypes, bodyType);

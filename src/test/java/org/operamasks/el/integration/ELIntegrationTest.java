@@ -410,6 +410,13 @@ public class ELIntegrationTest {
         eng.eval("define add(a::Integer, b::Integer)::Integer => a + b; print(add(\"1\", 2))");
     }
 
+    @Test(expected = ScriptException.class)
+    public void testReturnTypeMismatchThrowsError() throws ScriptException {
+        // Returning String where Integer is declared
+        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define hello()::Integer => \"hello, world\"");
+    }
+
     // ---- Hello World styles ----
 
     @Test
