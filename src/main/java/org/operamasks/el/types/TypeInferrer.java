@@ -340,12 +340,18 @@ public class TypeInferrer {
         ELNode.Binary bin = (ELNode.Binary) node;
         Type left = infer(bin.left);
         Type right = infer(bin.right);
+        if (left == Type.STRING || right == Type.STRING) {
+            if (node.op == Token.ADD) {
+                addErrorAt(currentNode,
+                    _T(JSPRT_UNSUPPORTED_EVAL_TYPE, "String in arithmetic: use ~ for concatenation"));
+            }
+            return Type.DYNAMIC;
+        }
         if (left instanceof PrimitiveType && right instanceof PrimitiveType) {
             if (left == right) return left;
             if (left.isSubtypeOf(Type.NUMBER) && right.isSubtypeOf(Type.NUMBER))
                 return widerNumeric((PrimitiveType) left, (PrimitiveType) right);
         }
-        if (left == Type.STRING || right == Type.STRING) return Type.STRING;
         return Type.DYNAMIC;
     }
 

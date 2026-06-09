@@ -3273,13 +3273,12 @@ public abstract class ELNode implements Serializable
         }
 
         protected Object evaluate(ELContext elctx, Object x, Object y) {
+            // + is strictly arithmetic; use ~ for string concatenation
             if ((x instanceof CharSequence) || (y instanceof CharSequence)) {
-                if (looksLikeNumber(x) && looksLikeNumber(y)) {
-                    return super.evaluate(elctx, x, y);
-                } else {
-                    return new StringBuilder().append(x).append(y).toString();
-                }
-            } else if ((x instanceof Character) && (y instanceof Integer)) {
+                throw runtimeError(elctx,
+                    _T(JSPRT_UNSUPPORTED_EVAL_TYPE, "String in arithmetic: use ~ for concatenation"));
+            }
+            if ((x instanceof Character) && (y instanceof Integer)) {
                 int z = (Character)x + (Integer)y;
                 if (z >= Character.MIN_VALUE && z <= Character.MAX_VALUE) {
                     return (char)z;

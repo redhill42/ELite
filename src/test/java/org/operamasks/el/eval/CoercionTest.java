@@ -13,9 +13,9 @@ class CoercionTest extends EliteTestBase {
     // ---- String to number ----
 
     @Test
-    void implicitStringToIntInArithmetic() {
-        // When a string looks like a number, it should be coerced
-        assertEquals(6L, evalL("\"3\" + \"3\""));
+    void stringInAdditionThrowsTypeError() {
+        // + is strictly arithmetic; string concatenation must use ~
+        assertEvalThrows("\"3\" + \"3\"");
     }
 
     // ---- Number to string ----
