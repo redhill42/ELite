@@ -4,7 +4,7 @@
 
 ## 一、项目概览
 
-ELite 是一个运行在 JVM 上的**动态、多范式编程语言**，以 `javax.script.ScriptEngine`（JSR 223）的形式实现。整个项目约 **2 万行 Java 代码**，由单个作者（Daniel Yuan / Hongun Yuan）维护，采用 GPL v3 许可证。
+ELite 是一个运行在 JVM 上的**动态、多范式编程语言**，以 `javax.script.ScriptEngine`（JSR 223）的形式实现。整个项目约 **2 万行 Java 代码**，由单个作者（Daniel Yuan / Hongun Yuan）维护，采用 Apache License 2.0。
 
 **核心定位**：兼具函数式、面向对象、逻辑编程和 DSL 构造能力的通用 JVM 语言，类似 Scala + Clojure + JavaScript 的融合体。
 

@@ -1819,4 +1819,4 @@ pi[0..*20]  // first 20 digits of π
 
 *ELite Language Specification, Version 2.0*
 
-*© 2006-2026 Daniel Yuan. Licensed under GPL v3.*
+*© 2006-2026 Daniel Yuan. Licensed under the Apache License, Version 2.0.*
