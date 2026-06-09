@@ -11,6 +11,9 @@ import static org.operamasks.el.resources.Resources.*;
 
 /**
  * Bidirectional type inference engine for ELite.
+ *
+ * Supports gradual typing: fully inferred types when possible,
+ * falling back to DynamicType when static analysis cannot determine the type.
  */
 public class TypeInferrer {
 
@@ -21,7 +24,7 @@ public class TypeInferrer {
     private final Map<String, Type> env;
     private final Deque<Map<String, Type>> scopeStack;
     private final List<String> errors;
-    private ELNode currentNode; // track current node for position reporting
+    private ELNode currentNode;
 
     public TypeInferrer(ELContext elctx) {
         this.elctx = elctx;
@@ -50,7 +53,6 @@ public class TypeInferrer {
     public boolean hasErrors() { return !errors.isEmpty(); }
 
     public List<String> getPositionErrors() {
-        // errors already have position info embedded
         return Collections.unmodifiableList(errors);
     }
 
@@ -67,75 +69,142 @@ public class TypeInferrer {
         }
     }
 
+    /**
+     * Main entry point: infer the type of an ELNode expression tree.
+     */
     public Type infer(ELNode node) {
         if (node == null) return Type.DYNAMIC;
         ELNode prev = currentNode;
         currentNode = node;
 
+        Type result;
         switch (node.op) {
+            // Literals
             case Token.TRUE:
             case Token.FALSE:
-                return Type.BOOLEAN;
+                result = Type.BOOLEAN; break;
             case Token.NUMBER:
-                return inferNumber(((ELNode.NUMBER) node).value);
+                result = inferNumber(((ELNode.NUMBER) node).value); break;
             case Token.STRINGVAL:
-                return Type.STRING;
+                result = Type.STRING; break;
             case Token.CHARVAL:
-                return Type.CHAR;
+                result = Type.CHAR; break;
             case Token.NULL:
-                return Type.DYNAMIC;
+                result = Type.DYNAMIC; break;
+            case Token.SYMBOL:
+                result = Type.STRING; break;
 
+            // Identifiers & access
             case Token.IDENT:
-                return inferIdent((ELNode.IDENT) node);
+                result = inferIdent((ELNode.IDENT) node); break;
             case Token.ACCESS:
-                return Type.DYNAMIC; // dynamic dispatch
+            case Token.FIELD:
+                result = inferAccess((ELNode.ACCESS) node); break;
 
+            // Arithmetic
             case Token.ADD: case Token.SUB:
             case Token.MUL: case Token.DIV:
             case Token.REM:
-                return inferArithmetic(node);
+                result = inferArithmetic(node); break;
             case Token.POW:
-                return inferPower(node);
+                result = inferPower(node); break;
             case Token.NEG: case Token.POS:
-                return inferUnary(node);
+                result = inferUnary(node); break;
 
+            // Bitwise operators
+            case Token.BITOR: case Token.BITAND: case Token.XOR:
+            case Token.SHL: case Token.SHR: case Token.USHR:
+                result = inferBitwise(node); break;
+
+            // Comparison & logical
             case Token.EQ: case Token.NE:
             case Token.LT: case Token.LE:
             case Token.GT: case Token.GE:
-                return Type.BOOLEAN;
             case Token.AND: case Token.OR: case Token.NOT:
-                return Type.BOOLEAN;
+                result = Type.BOOLEAN; break;
 
+            // Other expression types
             case Token.COND:
-                return inferConditional((ELNode.COND) node);
+                result = inferConditional((ELNode.COND) node); break;
+            case Token.COALESCE:
+                result = inferCoalesce(node); break;
             case Token.CAT:
-                return Type.STRING;
+                result = Type.STRING; break;
+            case Token.INSTANCEOF:
+                result = Type.BOOLEAN; break;
+            case Token.IN:
+                result = Type.BOOLEAN; break;
 
+            // Lambda and application
             case Token.LAMBDA:
-                return inferLambda((ELNode.LAMBDA) node);
+                result = inferLambda((ELNode.LAMBDA) node); break;
             case Token.APPLY:
-                return inferApply((ELNode.APPLY) node);
+                result = inferApply((ELNode.APPLY) node); break;
+            case Token.XFORM:
+                result = inferXForm((ELNode.XFORM) node); break;
 
+            // Data structures
             case Token.LBRACKET:
-                return inferBracket(node);
+                result = inferBracket(node); break;
+            case Token.LBRACE:
+                result = inferMapLiteral(node); break;
+            case Token.NIL:
+                result = new ClassType(java.util.List.class, Type.fresh()); break;
+            case Token.TUPLE:
+                result = inferTuple((ELNode.TUPLE) node); break;
 
+            // Definitions & assignment
             case Token.DEFINE:
-                return inferDefine((ELNode.DEFINE) node);
+                result = inferDefine((ELNode.DEFINE) node); break;
             case Token.ASSIGN:
-                return inferAssign((ELNode.ASSIGN) node);
+                result = inferAssign((ELNode.ASSIGN) node); break;
+            case Token.UNDEF:
+                result = null; break;
 
+            // Control flow
             case Token.MATCH:
-                return inferMatch((ELNode.MATCH) node);
+                result = inferMatch((ELNode.MATCH) node); break;
+            case Token.THEN:
+                result = inferThen(node); break;
 
+            // OOP
             case Token.NEW:
-                return inferNew((ELNode.NEW) node);
+                result = inferNew((ELNode.NEW) node); break;
+
+            // XML literals
+            case Token.XML:
+                result = inferXml(node); break;
+
+            // User-defined operators
+            case Token.PREFIX:
+                result = inferUserPrefix((ELNode.PREFIX) node); break;
+            case Token.INFIX:
+                result = inferUserInfix((ELNode.INFIX) node); break;
+
+            // Parenthesized / embedded expression
+            case Token.EXPR:
+                if (node instanceof ELNode.EXPR) {
+                    result = infer(((ELNode.EXPR) node).right);
+                } else {
+                    result = Type.DYNAMIC;
+                }
+                break;
+
+            // Metadata annotation node
+            case Token.METADATA:
+                result = Type.DYNAMIC; break;
 
             default:
-                return Type.DYNAMIC;
+                result = Type.DYNAMIC; break;
         }
+
+        // Cache inferred type on the node for downstream use
+        node.inferredType = result;
+        currentNode = prev;
+        return result;
     }
 
-    // ---- Literals ----
+    // =========== Literals ===========
 
     private Type inferNumber(Number n) {
         if (n instanceof Integer || n instanceof Short || n instanceof Byte)
@@ -146,7 +215,7 @@ public class TypeInferrer {
         return Type.NUMBER;
     }
 
-    // ---- Identifier ----
+    // =========== Identifier ===========
 
     private Type inferIdent(ELNode.IDENT node) {
         Type t = env.get(node.id);
@@ -154,11 +223,100 @@ public class TypeInferrer {
         try {
             Class<?> cls = ELEngine.resolveJavaClass(elctx, node.id);
             return Type.fromClass(cls);
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            // not a known class — may be an unbound variable or DSL construct
+        }
         return Type.DYNAMIC;
     }
 
-    // ---- Arithmetic ----
+    // =========== Access (a[b] and a.b) ===========
+
+    private Type inferAccess(ELNode.ACCESS node) {
+        Type base = infer(node.right);
+
+        // Field access: a.b → ACCESS(base, STRINGVAL("b"))
+        if (node.index instanceof ELNode.STRINGVAL) {
+            String fieldName = ((ELNode.STRINGVAL) node.index).value;
+            Type resolved = resolveFieldType(base, fieldName);
+            if (resolved != null) return resolved;
+        }
+
+        // Index access: a[i]
+        Type index = infer(node.index);
+        if (base instanceof ClassType) {
+            ClassType ct = (ClassType) base;
+            if (!ct.typeArgs.isEmpty()) {
+                // List<T>[i] → T
+                return ct.typeArgs.get(0);
+            }
+            if (ct.javaClass == java.util.Map.class && !ct.typeArgs.isEmpty()) {
+                // Map<K,V>[k] → V
+                if (ct.typeArgs.size() > 1)
+                    return ct.typeArgs.get(1);
+            }
+        }
+        // Try Java array component type
+        if (base instanceof PrimitiveType) {
+            return base;
+        }
+        return Type.DYNAMIC;
+    }
+
+    private Type resolveFieldType(Type baseType, String fieldName) {
+        // Known standard Java class fields
+        if (baseType == Type.STRING) {
+            switch (fieldName) {
+                case "length": return Type.INTEGER;
+                case "class": return new ClassType(Class.class);
+                case "empty": return Type.BOOLEAN;
+                default: return Type.DYNAMIC; // string methods return various types
+            }
+        }
+        if (baseType == Type.INTEGER || baseType == Type.LONG
+            || baseType == Type.DOUBLE || baseType == Type.FLOAT
+            || baseType instanceof PrimitiveType) {
+            switch (fieldName) {
+                case "class": return new ClassType(Class.class);
+                default: return Type.DYNAMIC;
+            }
+        }
+        if (baseType instanceof ClassType) {
+            ClassType ct = (ClassType) baseType;
+            // Collection/List fields
+            if (java.util.Collection.class.isAssignableFrom(ct.javaClass)
+                || java.util.List.class.isAssignableFrom(ct.javaClass)) {
+                switch (fieldName) {
+                    case "length": case "size": return Type.INTEGER;
+                    case "first": case "last":
+                        return ct.typeArgs.isEmpty() ? Type.DYNAMIC : ct.typeArgs.get(0);
+                    case "tail": case "init": return baseType;
+                    case "class": return new ClassType(Class.class);
+                    case "empty": return Type.BOOLEAN;
+                    default: return Type.DYNAMIC;
+                }
+            }
+            // Try to look up actual Java field type
+            try {
+                java.lang.reflect.Field field = ct.javaClass.getField(fieldName);
+                return Type.fromClass(field.getType());
+            } catch (NoSuchFieldException e) {
+                // not a public field — could be a method or property
+            }
+            // For general classes (like Date, Point, etc.)
+            // try to find a getter method for the field name
+            try {
+                String getter = "get" + Character.toUpperCase(fieldName.charAt(0))
+                    + fieldName.substring(1);
+                java.lang.reflect.Method m = ct.javaClass.getMethod(getter);
+                return Type.fromClass(m.getReturnType());
+            } catch (NoSuchMethodException e) {
+                // not a getter
+            }
+        }
+        return null;
+    }
+
+    // =========== Arithmetic ===========
 
     private Type inferArithmetic(ELNode node) {
         ELNode.Binary bin = (ELNode.Binary) node;
@@ -195,17 +353,43 @@ public class TypeInferrer {
         return Type.DYNAMIC;
     }
 
-    // ---- Conditional ----
+    // =========== Bitwise ===========
+
+    private Type inferBitwise(ELNode node) {
+        ELNode.Binary bin = (ELNode.Binary) node;
+        Type left = infer(bin.left);
+        Type right = infer(bin.right);
+        if (left == Type.INTEGER || left == Type.LONG) return left;
+        if (right == Type.INTEGER || right == Type.LONG) return right;
+        return Type.INTEGER;
+    }
+
+    // =========== Conditional / Coalesce ===========
 
     private Type inferConditional(ELNode.COND node) {
-        ELNode.COND cond = (ELNode.COND) node;
-        Type thenType = infer(cond.left);   // left = then branch
-        Type elseType = infer(cond.right); // right = else branch
+        Type thenType = infer(node.left);
+        Type elseType = infer(node.right);
         Type unified = thenType.unify(elseType);
         return unified != null ? unified : Type.DYNAMIC;
     }
 
-    // ---- Lambda ----
+    private Type inferCoalesce(ELNode node) {
+        ELNode.Binary bin = (ELNode.Binary) node;
+        Type left = infer(bin.left);
+        Type right = infer(bin.right);
+        Type unified = left.unify(right);
+        return unified != null ? unified : left;
+    }
+
+    // =========== Sequential (THEN) ===========
+
+    private Type inferThen(ELNode node) {
+        ELNode.THEN then = (ELNode.THEN) node;
+        infer(then.left); // side-effecting expression
+        return infer(then.right);
+    }
+
+    // =========== Lambda ===========
 
     private Type inferLambda(ELNode.LAMBDA node) {
         pushScope();
@@ -229,58 +413,109 @@ public class TypeInferrer {
                 addErrorAt(currentNode,
                     _T(EL_RETURN_TYPE_MISMATCH, returnType.toTypeString(), bodyType.toTypeString()));
             }
+            bodyType = returnType;
         }
 
         return new FunctionType(paramTypes, bodyType);
     }
 
-    // ---- Application ----
+    // =========== Application (function call) ===========
 
     private Type inferApply(ELNode.APPLY node) {
-        ELNode.APPLY app = (ELNode.APPLY) node;
-        Type fnType = infer(app.right); // right = function
+        Type fnType = infer(node.right);
         List<Type> argTypes = new ArrayList<>();
-        for (ELNode arg : app.args) {
+        for (ELNode arg : node.args) {
             argTypes.add(infer(arg));
         }
 
+        // Case 1: Known function type
+        if (fnType instanceof FunctionType) {
+            return inferKnownFunctionCall((FunctionType) fnType, argTypes);
+        }
+
+        // Case 2: Unresolved type variable — try to constrain it
+        if (fnType instanceof VarType) {
+            return inferVarTypeFunctionCall((VarType) fnType, argTypes);
+        }
+
+        // Case 3: ClassType with constructor call semantics
+        if (fnType instanceof ClassType) {
+            ClassType ct = (ClassType) fnType;
+            return ct; // e.g., Point(3,4) returns Point
+        }
+
+        // Case 4: Dynamic or unknown — just return DYNAMIC
+        return Type.DYNAMIC;
+    }
+
+    private Type inferKnownFunctionCall(FunctionType ft, List<Type> argTypes) {
+        // Check argument types against declared parameter types
+        for (int i = 0; i < Math.min(argTypes.size(), ft.paramTypes.size()); i++) {
+            Type argType = argTypes.get(i);
+            Type paramType = ft.paramTypes.get(i);
+            if (!(paramType instanceof VarType) && paramType != Type.DYNAMIC) {
+                Type resolved = argType instanceof VarType ? ((VarType)argType).resolve() : argType;
+                if (resolved != Type.DYNAMIC && !resolved.isSubtypeOf(paramType)) {
+                    addErrorAt(currentNode,
+                        _T(EL_ARG_TYPE_MISMATCH, i+1, paramType.toTypeString(), resolved.toTypeString()));
+                }
+            }
+            argTypes.get(i).unify(paramType);
+        }
+        return ft.returnType;
+    }
+
+    private Type inferVarTypeFunctionCall(VarType fnVar, List<Type> argTypes) {
+        Type freshRet = Type.fresh("r");
+        List<Type> freshParams = new ArrayList<>();
+        for (int i = 0; i < argTypes.size(); i++) {
+            freshParams.add(Type.fresh("a"));
+        }
+        FunctionType freshFn = new FunctionType(freshParams, freshRet);
+        fnVar.unify(freshFn);
+        for (int i = 0; i < argTypes.size(); i++) {
+            argTypes.get(i).unify(freshParams.get(i));
+        }
+        return freshRet instanceof VarType ? ((VarType) freshRet).resolve() : freshRet;
+    }
+
+    // =========== Pipe / Transform (x -> f) ===========
+
+    private Type inferXForm(ELNode.XFORM node) {
+        Type argType = node.left instanceof ELNode.TUPLE
+            ? inferTupleArgs(node.left)
+            : infer(node.left);
+        Type fnType = infer(node.right);
+
         if (fnType instanceof FunctionType) {
             FunctionType ft = (FunctionType) fnType;
-            // Check argument types against declared parameter types
-            for (int i = 0; i < Math.min(argTypes.size(), ft.paramTypes.size()); i++) {
-                Type argType = argTypes.get(i);
-                Type paramType = ft.paramTypes.get(i);
-                // Only strict-check if param was declared (not inferred)
-                if (!(paramType instanceof VarType) && paramType != Type.DYNAMIC) {
-                    Type resolved = argType instanceof VarType ? ((VarType)argType).resolve() : argType;
-                    if (resolved != Type.DYNAMIC && !resolved.isSubtypeOf(paramType)) {
-                        addErrorAt(currentNode,
-                            _T(EL_ARG_TYPE_MISMATCH, i+1, paramType.toTypeString(), resolved.toTypeString()));
-                    }
-                }
-                argTypes.get(i).unify(paramType);
+            // The first argument type should unify with the left-hand value
+            if (!ft.paramTypes.isEmpty() && argType != Type.DYNAMIC) {
+                argType.unify(ft.paramTypes.get(0));
             }
             return ft.returnType;
         }
 
         if (fnType instanceof VarType) {
-            Type freshRet = Type.fresh("r");
-            List<Type> freshParams = new ArrayList<>();
-            for (int i = 0; i < argTypes.size(); i++) {
-                freshParams.add(Type.fresh("a"));
-            }
-            FunctionType freshFn = new FunctionType(freshParams, freshRet);
-            fnType.unify(freshFn);
-            for (int i = 0; i < argTypes.size(); i++) {
-                argTypes.get(i).unify(freshParams.get(i));
-            }
-            return freshRet instanceof VarType ? ((VarType) freshRet).resolve() : freshRet;
+            return inferVarTypeFunctionCall((VarType) fnType, Collections.singletonList(argType));
         }
 
         return Type.DYNAMIC;
     }
 
-    // ---- Bracket (list literal) ----
+    private Type inferTupleArgs(ELNode node) {
+        if (node instanceof ELNode.TUPLE) {
+            ELNode.TUPLE tup = (ELNode.TUPLE) node;
+            List<Type> types = new ArrayList<>();
+            for (ELNode e : tup.elems) {
+                types.add(infer(e));
+            }
+            return new FunctionType(types, Type.DYNAMIC);
+        }
+        return infer(node);
+    }
+
+    // =========== Data structures ===========
 
     private Type inferBracket(ELNode node) {
         if (node instanceof ELNode.CONS) {
@@ -303,18 +538,92 @@ public class TypeInferrer {
         return new ClassType(java.util.List.class, headType);
     }
 
-    // ---- Define ----
+    /** Infer type for Map/Record literal: { key: value, ... } */
+    private Type inferMapLiteral(ELNode node) {
+        if (node instanceof ELNode.MAP) {
+            ELNode.MAP map = (ELNode.MAP) node;
+            if (map.keys != null && map.keys.length > 0) {
+                Type keyType = infer(map.keys[0]);
+                Type valType = infer(map.values[0]);
+                // Unify all key/value pairs
+                for (int i = 1; i < map.keys.length; i++) {
+                    infer(map.keys[i]).unify(keyType);
+                    infer(map.values[i]).unify(valType);
+                }
+                return new ClassType(java.util.Map.class, keyType, valType);
+            }
+            return new ClassType(java.util.Map.class, Type.DYNAMIC, Type.DYNAMIC);
+        }
+        return Type.DYNAMIC;
+    }
+
+    /** Infer type for Tuple literal: (a, b, c) */
+    private Type inferTuple(ELNode.TUPLE node) {
+        // Tuples are lightweight; we return a simple Object[] type representation
+        return Type.OBJECT;
+    }
+
+    // =========== XML ===========
+
+    private Type inferXml(ELNode node) {
+        // XML literals produce XmlNode / org.w3c.dom.Document nodes
+        try {
+            Class<?> xmlNodeClass = Class.forName("elite.xml.XmlNode");
+            return new ClassType(xmlNodeClass);
+        } catch (ClassNotFoundException e) {
+            // Try W3C DOM
+            return new ClassType(org.w3c.dom.Node.class);
+        }
+    }
+
+    // =========== User-defined operators ===========
+
+    private Type inferUserPrefix(ELNode.PREFIX node) {
+        // Resolve the operator as a function and infer as application
+        Type fnType = inferIdent(new ELNode.IDENT(node.pos, node.name));
+        Type argType = infer(node.right);
+        if (fnType instanceof FunctionType) {
+            return ((FunctionType) fnType).returnType;
+        }
+        // Try VarType resolution
+        if (fnType instanceof VarType) {
+            Type ret = Type.fresh("r");
+            fnType.unify(new FunctionType(Collections.singletonList(argType), ret));
+            return ret instanceof VarType ? ((VarType) ret).resolve() : ret;
+        }
+        return Type.DYNAMIC;
+    }
+
+    private Type inferUserInfix(ELNode.INFIX node) {
+        Type fnType = inferIdent(new ELNode.IDENT(node.pos, node.name));
+        Type arg1 = infer(node.left);
+        Type arg2 = infer(node.right);
+        if (fnType instanceof FunctionType) {
+            return ((FunctionType) fnType).returnType;
+        }
+        if (fnType instanceof VarType) {
+            Type ret = Type.fresh("r");
+            fnType.unify(new FunctionType(Arrays.asList(arg1, arg2), ret));
+            return ret instanceof VarType ? ((VarType) ret).resolve() : ret;
+        }
+        return Type.DYNAMIC;
+    }
+
+    // =========== Define / Assign ===========
 
     private Type inferDefine(ELNode.DEFINE node) {
-        // Always infer the expression to validate parameter types etc.
-        Type inferredType = infer(node.expr);
+        Type inferredType = node.expr != null ? infer(node.expr) : Type.DYNAMIC;
         Type annotatedType = resolveTypeAnnotation(node.type);
         Type t;
         if (annotatedType != null) {
             t = annotatedType;
-            // Unify to check consistency
             if (inferredType != Type.DYNAMIC) {
-                inferredType.unify(annotatedType);
+                Type unified = inferredType.unify(annotatedType);
+                if (unified == null && !inferredType.isSubtypeOf(annotatedType)) {
+                    addErrorAt(currentNode,
+                        _T(EL_RETURN_TYPE_MISMATCH,
+                            annotatedType.toTypeString(), inferredType.toTypeString()));
+                }
             }
         } else {
             t = inferredType;
@@ -323,51 +632,56 @@ public class TypeInferrer {
         return t;
     }
 
-    // ---- Assign ----
-
     private Type inferAssign(ELNode.ASSIGN node) {
-        ELNode.ASSIGN assign = (ELNode.ASSIGN) node;
-        Type rhsType = infer(assign.right);
-        if (assign.left instanceof ELNode.IDENT) {
-            String name = ((ELNode.IDENT) assign.left).id;
+        Type rhsType = infer(node.right);
+        if (node.left instanceof ELNode.IDENT) {
+            String name = ((ELNode.IDENT) node.left).id;
             Type existing = env.get(name);
-            if (existing != null) rhsType.unify(existing);
+            if (existing != null) {
+                Type unified = rhsType.unify(existing);
+                if (unified == null && !rhsType.isSubtypeOf(existing)) {
+                    addErrorAt(currentNode,
+                        _T(EL_RETURN_TYPE_MISMATCH,
+                            existing.toTypeString(), rhsType.toTypeString()));
+                }
+            }
             env.put(name, rhsType);
         }
         return rhsType;
     }
 
-    // ---- Match / case ----
+    // =========== Match ===========
 
     private Type inferMatch(ELNode.MATCH node) {
         Type result = Type.BOTTOM;
         for (ELNode.CASE caseNode : node.alts) {
             pushScope();
             Type branchType = infer(caseNode.bodies[0]);
-            result = result.unify(branchType);
-            if (result == null) result = Type.DYNAMIC;
+            Type unified = result.unify(branchType);
+            result = (unified != null) ? unified : Type.DYNAMIC;
             popScope();
         }
         if (node.deflt != null) {
             Type defType = infer(node.deflt);
-            result = result.unify(defType);
-            if (result == null) result = Type.DYNAMIC;
+            Type unified = result.unify(defType);
+            result = (unified != null) ? unified : Type.DYNAMIC;
         }
         return result;
     }
 
-    // ---- New ----
+    // =========== New ===========
 
     private Type inferNew(ELNode.NEW node) {
         try {
             Class<?> cls = ELEngine.resolveJavaClass(elctx, node.base);
             return new ClassType(cls);
         } catch (Exception e) {
+            addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, node.base));
             return Type.DYNAMIC;
         }
     }
 
-    // ---- Scope ----
+    // =========== Scope management ===========
 
     private void pushScope() {
         scopeStack.push(new LinkedHashMap<>(env));
@@ -385,21 +699,24 @@ public class TypeInferrer {
         return Collections.unmodifiableMap(env);
     }
 
-    // ---- Type annotation resolution ----
+    // =========== Type annotation resolution ===========
 
     /**
      * Resolve a type annotation string to a Type.
-     * e.g., "Integer" → PrimitiveType.INTEGER
-     *       "String" → PrimitiveType.STRING
-     *       "List<Integer>" → ClassType(List, INTEGER)
-     * Returns null if the annotation is null or cannot be resolved.
+     * Examples:
+     *   "Integer" → PrimitiveType.INTEGER
+     *   "String" → PrimitiveType.STRING
+     *   "List<Integer>" → ClassType(List, INTEGER)
+     *   "Map<String,Integer>" → ClassType(Map, STRING, INTEGER)
+     *   "void" → PrimitiveType("Void")
+     * Returns null if the annotation is null or empty.
      */
-    private Type resolveTypeAnnotation(String typeName) {
+    Type resolveTypeAnnotation(String typeName) {
         if (typeName == null || typeName.isEmpty()) return null;
 
-        // Handle parameterized types: List<Integer>
+        // Handle parameterized types: Foo<A, B>
         int lt = typeName.indexOf('<');
-        if (lt > 0) {
+        if (lt > 0 && typeName.endsWith(">")) {
             String baseName = typeName.substring(0, lt);
             String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
             Type base = resolveSimpleType(baseName);
@@ -407,15 +724,12 @@ public class TypeInferrer {
                 addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
-            // Parse type arguments
-            String[] argNames = argsStr.split(",");
-            Type[] argTypes = new Type[argNames.length];
-            for (int i = 0; i < argNames.length; i++) {
-                Type argType = resolveSimpleType(argNames[i].trim());
-                if (argType == null) {
-                    addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, argNames[i].trim()));
-                    argType = Type.DYNAMIC;
-                }
+            // Parse type arguments (handle nested generics with balanced brackets)
+            List<String> argNames = splitTypeArgs(argsStr);
+            Type[] argTypes = new Type[argNames.size()];
+            for (int i = 0; i < argNames.size(); i++) {
+                Type argType = resolveTypeAnnotation(argNames.get(i).trim());
+                if (argType == null) argType = Type.DYNAMIC;
                 argTypes[i] = argType;
             }
             try {
@@ -430,9 +744,27 @@ public class TypeInferrer {
         Type resolved = resolveSimpleType(typeName);
         if (resolved == null) {
             addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, typeName));
-            return Type.DYNAMIC;
+            return Type.DYNAMIC; // Return DYNAMIC even on error for gradual typing
         }
         return resolved;
+    }
+
+    /** Split "A, B<C, D>, E" into ["A", "B<C,D>", "E"]. */
+    private static List<String> splitTypeArgs(String argsStr) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < argsStr.length(); i++) {
+            char c = argsStr.charAt(i);
+            if (c == '<') depth++;
+            else if (c == '>') depth--;
+            else if (c == ',' && depth == 0) {
+                parts.add(argsStr.substring(start, i));
+                start = i + 1;
+            }
+        }
+        parts.add(argsStr.substring(start));
+        return parts;
     }
 
     private Type resolveSimpleType(String name) {
@@ -453,7 +785,7 @@ public class TypeInferrer {
                     Class<?> cls = ELEngine.resolveJavaClass(elctx, name);
                     return new ClassType(cls);
                 } catch (Exception e) {
-                    return null; // Unknown type — caller should report error
+                    return null;
                 }
         }
     }
