@@ -113,12 +113,13 @@ public abstract class Type {
      * Returns a fresh type variable.
      */
     public static VarType fresh(String prefix) {
-        return new VarType(prefix + "_" + freshCounter++);
+        return new VarType(prefix + "_" + freshCounter.getAndIncrement());
     }
 
     public static VarType fresh() {
         return fresh("t");
     }
 
-    private static long freshCounter = 0;
+    private static final java.util.concurrent.atomic.AtomicLong freshCounter
+        = new java.util.concurrent.atomic.AtomicLong();
 }

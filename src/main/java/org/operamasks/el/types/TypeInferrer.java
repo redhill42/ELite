@@ -57,7 +57,9 @@ public class TypeInferrer {
     }
 
     private void addError(String message) {
-        errors.add(message);
+        if (!errors.contains(message)) {
+            errors.add(message);
+        }
     }
 
     private void addErrorAt(ELNode node, String message) {
@@ -307,16 +309,27 @@ public class TypeInferrer {
             } catch (NoSuchFieldException e) {
                 // not a public field — could be a method or property
             }
-            // For general classes (like Date, Point, etc.)
-            // try to find a getter method for the field name
+            // Try getXxx() getter
+            String capName = Character.toUpperCase(fieldName.charAt(0))
+                + fieldName.substring(1);
             try {
-                String getter = "get" + Character.toUpperCase(fieldName.charAt(0))
-                    + fieldName.substring(1);
-                java.lang.reflect.Method m = ct.javaClass.getMethod(getter);
+                java.lang.reflect.Method m = ct.javaClass.getMethod("get" + capName);
                 return Type.fromClass(m.getReturnType());
-            } catch (NoSuchMethodException e) {
-                // not a getter
-            }
+            } catch (NoSuchMethodException e) { /* not a getter */ }
+            // Try isXxx() boolean getter
+            try {
+                java.lang.reflect.Method m = ct.javaClass.getMethod("is" + capName);
+                return Type.fromClass(m.getReturnType());
+            } catch (NoSuchMethodException e) { /* not a boolean getter */ }
+            // Try JavaBeans Introspector as last resort
+            try {
+                java.beans.BeanInfo info = java.beans.Introspector.getBeanInfo(ct.javaClass);
+                for (java.beans.PropertyDescriptor pd : info.getPropertyDescriptors()) {
+                    if (pd.getName().equals(fieldName) && pd.getReadMethod() != null) {
+                        return Type.fromClass(pd.getReadMethod().getReturnType());
+                    }
+                }
+            } catch (Exception e) { /* Introspector failed */ }
         }
         return null;
     }
@@ -558,6 +571,10 @@ public class TypeInferrer {
             ClassType ct = (ClassType) tailType;
             if (!ct.typeArgs.isEmpty())
                 headType.unify(ct.typeArgs.get(0));
+        } else if (tailType instanceof VarType) {
+            // Constrain VarType to be List<X> where X = headType
+            ClassType listT = new ClassType(java.util.List.class, headType);
+            tailType.unify(listT);
         }
         return new ClassType(java.util.List.class, headType);
     }
@@ -583,7 +600,14 @@ public class TypeInferrer {
 
     /** Infer type for Tuple literal: (a, b, c) */
     private Type inferTuple(ELNode.TUPLE node) {
-        // Tuples are lightweight; we return a simple Object[] type representation
+        // Infer element types and construct a composite type
+        if (node.elems != null && node.elems.length > 0) {
+            Type[] elemTypes = new Type[node.elems.length];
+            for (int i = 0; i < node.elems.length; i++) {
+                elemTypes[i] = infer(node.elems[i]);
+            }
+            return new ClassType(Object[].class, elemTypes);
+        }
         return Type.OBJECT;
     }
 
@@ -636,12 +660,18 @@ public class TypeInferrer {
     // =========== Define / Assign ===========
 
     private Type inferDefine(ELNode.DEFINE node) {
-        Type inferredType = node.expr != null ? infer(node.expr) : Type.DYNAMIC;
         Type annotatedType = resolveTypeAnnotation(node.type);
+        Type inferredType = Type.DYNAMIC;
+
+        if (node.expr != null) {
+            inferredType = infer(node.expr);
+        }
+
         Type t;
         if (annotatedType != null) {
             t = annotatedType;
-            if (inferredType != Type.DYNAMIC) {
+            // If no expression (e.g., function parameter), annotated type is definitive
+            if (node.expr != null && inferredType != Type.DYNAMIC) {
                 Type unified = inferredType.unify(annotatedType);
                 if (unified == null && !inferredType.isSubtypeOf(annotatedType)) {
                     addErrorAt(currentNode,
@@ -752,6 +782,10 @@ public class TypeInferrer {
      * Returns null if the annotation is null or empty.
      */
     Type resolveTypeAnnotation(String typeName) {
+        return resolveTypeAnnotation(typeName, currentNode);
+    }
+
+    private Type resolveTypeAnnotation(String typeName, ELNode errorNode) {
         if (typeName == null || typeName.isEmpty()) return null;
 
         // Handle parameterized types: Foo<A, B>
@@ -761,14 +795,15 @@ public class TypeInferrer {
             String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
             Type base = resolveSimpleType(baseName);
             if (base == null) {
-                addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, baseName));
+                addErrorAt(errorNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
             // Parse type arguments (handle nested generics with balanced brackets)
             List<String> argNames = splitTypeArgs(argsStr);
             Type[] argTypes = new Type[argNames.size()];
             for (int i = 0; i < argNames.size(); i++) {
-                Type argType = resolveTypeAnnotation(argNames.get(i).trim());
+                // Recursively resolve with correct error node
+                Type argType = resolveTypeAnnotation(argNames.get(i).trim(), errorNode);
                 if (argType == null) argType = Type.DYNAMIC;
                 argTypes[i] = argType;
             }
@@ -776,14 +811,14 @@ public class TypeInferrer {
                 Class<?> cls = ELEngine.resolveJavaClass(elctx, baseName);
                 return new ClassType(cls, argTypes);
             } catch (Exception e) {
-                addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, baseName));
+                addErrorAt(errorNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
         }
 
         Type resolved = resolveSimpleType(typeName);
         if (resolved == null) {
-            addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, typeName));
+            addErrorAt(errorNode, _T(EL_UNDEFINED_TYPE, typeName));
             return Type.DYNAMIC; // Return DYNAMIC even on error for gradual typing
         }
         return resolved;
