@@ -2433,7 +2433,7 @@ public abstract class ELNode implements Serializable
 
         protected Object evaluate(ELContext elctx, Object x, Object y) {
             if (x == null || y == null) {
-                return 0;
+                throw new NullPointerException();
             }
 
             if ((x instanceof BigInteger) || (x instanceof BigDecimal) ||
@@ -2546,7 +2546,7 @@ public abstract class ELNode implements Serializable
 
         protected Object evaluate(ELContext elctx, Object z, Object n) {
             if (z == null || n == null) {
-                return 0;
+                throw new NullPointerException();
             }
 
             if (z instanceof BigInteger) {
@@ -3102,7 +3102,7 @@ public abstract class ELNode implements Serializable
 
         protected Object evaluate(ELContext elctx, Object x, Object y) {
             if (x == null || y == null) {
-                return 0;
+                throw new NullPointerException();
             }
 
             if (x.getClass() == y.getClass()) {
@@ -3172,6 +3172,10 @@ public abstract class ELNode implements Serializable
         }
 
         protected Object evaluate(ELContext elctx, Object x, Object y) {
+            // Java-compatible null handling: null → "null" for string operations
+            if (x == null) x = "null";
+            if (y == null) y = "null";
+
             if (x instanceof Closure && y instanceof Closure) {
                 return ((Closure)x).compose((Closure)y);
             }
@@ -3723,7 +3727,7 @@ public abstract class ELNode implements Serializable
 
         protected Object evaluate(ELContext elctx, Object x) {
             if (x == null) {
-                return 0;
+                throw new NullPointerException();
             } else if (x instanceof Long) {
                 return ~(Long)x;
             } else if (x instanceof Integer) {
@@ -3764,7 +3768,7 @@ public abstract class ELNode implements Serializable
 
         protected Object evaluate(ELContext elctx, Object x) {
             if (x == null) {
-                return 0;
+                throw new NullPointerException();
             }
 
             if (x instanceof String) {
@@ -3803,7 +3807,7 @@ public abstract class ELNode implements Serializable
 
         protected Object evaluate(ELContext elctx, Object x) {
             if (x == null) {
-                return 0;
+                throw new NullPointerException();
             } else if (x instanceof Long) {
                 return -((Long)x);
             } else if (x instanceof Integer) {

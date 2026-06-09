@@ -56,9 +56,47 @@ class CoercionTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("null ~ string causes NPE; null not auto-coerced to 'null' string")
     void nullStringConcat() {
+        // null ~ "World" → "nullWorld" (Java-compatible: null → "null")
         assertEquals("nullWorld", eval("null ~ \"World\""));
+    }
+
+    @Test
+    void nullStringConcatRight() {
+        // "Hello" ~ null → "Hellonull"
+        assertEquals("Hellonull", eval("\"Hello\" ~ null"));
+    }
+
+    @Test
+    void nullStringConcatBoth() {
+        assertEquals("nullnull", eval("null ~ null"));
+    }
+
+    // ---- Null arithmetic (NPE per Java convention) ----
+
+    @Test
+    void nullAdditionThrowsNPE() {
+        assertEvalThrows("null + 5");
+    }
+
+    @Test
+    void nullSubtractionThrowsNPE() {
+        assertEvalThrows("null - 5");
+    }
+
+    @Test
+    void nullMultiplicationThrowsNPE() {
+        assertEvalThrows("null * 5");
+    }
+
+    @Test
+    void nullDivisionThrowsNPE() {
+        assertEvalThrows("null / 5");
+    }
+
+    @Test
+    void nullNegationThrowsNPE() {
+        assertEvalThrows("-null");
     }
 
     // ---- BigDecimal / BigInteger ----

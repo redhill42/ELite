@@ -202,6 +202,38 @@ class ELEngineTest extends EliteTestBase {
         assertEvalThrows(eng, "undefinedVar");
     }
 
+    // ---- Null handling: arithmetic NPE, string null→"null" (Java convention) ----
+
+    @Test
+    void nullAdditionThrowsNPE() {
+        assertEvalThrows("null + 5");
+    }
+
+    @Test
+    void nullSubtractionThrowsNPE() {
+        assertEvalThrows("10 - null");
+    }
+
+    @Test
+    void nullMultiplicationThrowsNPE() {
+        assertEvalThrows("null * 3");
+    }
+
+    @Test
+    void nullDivisionThrowsNPE() {
+        assertEvalThrows("100 / null");
+    }
+
+    @Test
+    void nullStringConcat() {
+        assertEquals("nullWorld", eval("null ~ \"World\""));
+    }
+
+    @Test
+    void stringConcatWithNullRight() {
+        assertEquals("Hellonull", eval("\"Hello\" ~ null"));
+    }
+
     // ---- Engine isolation ----
 
     @Test
