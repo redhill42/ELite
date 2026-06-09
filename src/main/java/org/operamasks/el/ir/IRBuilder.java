@@ -187,11 +187,11 @@ public class IRBuilder {
     private void emitTypedCmp(int op, int t) {
         switch (op) {
             case Token.EQ -> { if(t==T_INT)current.emitIEq(); else if(t==T_LONG)current.emitLEq(); else if(t==T_DOUBLE)current.emitDEq(); else current.emitDynEq(); }
-            case Token.NE -> { if(t==T_INT)current.emitINe(); else current.emitDynEq(); }
+            case Token.NE -> { if(t==T_INT)current.emitINe(); else if(t==T_LONG)current.emitLNe(); else if(t==T_DOUBLE)current.emitDNe(); else current.emitDynEq(); }
             case Token.LT -> { if(t==T_INT)current.emitILt(); else if(t==T_LONG)current.emitLLt(); else if(t==T_DOUBLE)current.emitDLt(); else current.emitDynLt(); }
             case Token.LE -> { if(t==T_INT)current.emitILe(); else if(t==T_LONG)current.emitLLe(); else if(t==T_DOUBLE)current.emitDLe(); else current.emitDynLe(); }
-            case Token.GT -> { if(t==T_INT)current.emitIGt(); else current.emitDynLt(); }
-            case Token.GE -> { if(t==T_INT)current.emitIGe(); else current.emitDynLe(); }
+            case Token.GT -> { if(t==T_INT)current.emitIGt(); else if(t==T_LONG)current.emitLGt(); else if(t==T_DOUBLE)current.emitDGt(); else current.emitDynLt(); }
+            case Token.GE -> { if(t==T_INT)current.emitIGe(); else if(t==T_LONG)current.emitLGe(); else if(t==T_DOUBLE)current.emitDGe(); else current.emitDynLe(); }
             default -> current.emitDynEq();
         }
     }
@@ -423,6 +423,9 @@ public class IRBuilder {
     private void emitPushNull()  { current.emitPushNull(); }
 
     // ── Static API ──
+
+    private static final ConstantFolder FOLDER = new ConstantFolder();
+
     public static IRFunction compile(ELNode node) {
         IRBuilder b = new IRBuilder();
         b.build(node);
@@ -430,13 +433,20 @@ public class IRBuilder {
             int typeId = b.typeIdFromNode(node);
             b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
         }
-        return b.finish("<expr>", 0);
+        return FOLDER.transform(b.finish("<expr>", 0));
     }
 
     public static IRFunction compile(List<ELNode> expressions) {
         IRBuilder b = new IRBuilder();
         for (int i = 0; i < expressions.size() - 1; i++) { b.build(expressions.get(i)); b.current.emitPop(); }
-        if (!expressions.isEmpty()) b.build(expressions.get(expressions.size() - 1));
-        return b.finish("<program>", 0);
+        if (!expressions.isEmpty()) {
+            ELNode last = expressions.get(expressions.size() - 1);
+            b.build(last);
+            if (!endsWithReturn(b)) {
+                int t = b.typeIdFromNode(last);
+                b.current.emitReturn(t >= 0 ? t : T_INT);
+            }
+        }
+        return FOLDER.transform(b.finish("<program>", 0));
     }
 }

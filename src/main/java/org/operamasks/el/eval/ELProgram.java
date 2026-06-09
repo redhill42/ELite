@@ -34,6 +34,9 @@ import org.operamasks.el.resolver.ClassResolver;
 import org.operamasks.el.resolver.MethodResolver;
 import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.FieldClosure;
+import org.operamasks.el.ir.IRBuilder;
+import org.operamasks.el.ir.IRFunction;
+import org.operamasks.el.ir.IRInterpreter;
 import org.operamasks.util.Utils;
 
 public class ELProgram implements Serializable
@@ -44,10 +47,18 @@ public class ELProgram implements Serializable
     private List<ELNode> defs;
     private List<ELNode> exps;
 
+    /** Enable IR-based evaluation for this program. Default: false (AST). */
+    private boolean useIREvaluation = false;
+
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
     /** @return the list of expression/statement nodes */
     public List<ELNode> getExpressions() { return exps; }
+
+    /** Enable or disable IR-based evaluation. */
+    public void setIREvaluation(boolean enabled) { this.useIREvaluation = enabled; }
+    /** @return whether IR-based evaluation is enabled. */
+    public boolean isIREvaluation() { return useIREvaluation; }
 
     private static final long serialVersionUID = 3112245719728771823L;
 
@@ -129,6 +140,21 @@ public class ELProgram implements Serializable
 
             // 3) execute statements
             Object result = null;
+
+            // Try IR execution if enabled (via system property or program flag)
+            boolean tryIR = Boolean.getBoolean("elite.ir.enabled") || useIREvaluation;
+            if (tryIR && !exps.isEmpty()) {
+                try {
+                    IRFunction irFn = IRBuilder.compile(exps);
+                    IRInterpreter interp = new IRInterpreter(elctx, irFn);
+                    result = interp.execute(null);
+                    return result;
+                } catch (Exception e) {
+                    // IR path failed — fall back to AST
+                }
+            }
+
+            // AST tree-walking evaluation (default)
             for (ELNode node : exps) {
                 frame.setPos(node.pos);
                 result = node.getValue(env);

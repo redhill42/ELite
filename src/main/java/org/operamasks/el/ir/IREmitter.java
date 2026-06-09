@@ -128,12 +128,18 @@ public class IREmitter {
     public IREmitter emitIGe() { return emit1(IGE, K_BOOL, 0); }
 
     public IREmitter emitLEq() { return emit1(LEQ, K_BOOL, 0); }
+    public IREmitter emitLNe() { return emit1(LNE, K_BOOL, 0); }
     public IREmitter emitLLt() { return emit1(LLT, K_BOOL, 0); }
     public IREmitter emitLLe() { return emit1(LLE, K_BOOL, 0); }
 
     public IREmitter emitDEq() { return emit1(DEQ, K_BOOL, 0); }
+    public IREmitter emitDNe() { return emit1(DNE, K_BOOL, 0); }
     public IREmitter emitDLt() { return emit1(DLT, K_BOOL, 0); }
     public IREmitter emitDLe() { return emit1(DLE, K_BOOL, 0); }
+    public IREmitter emitDGt() { return emit1(DGT, K_BOOL, 0); }
+    public IREmitter emitDGe() { return emit1(DGE, K_BOOL, 0); }
+    public IREmitter emitLGt() { return emit1(LGT, K_BOOL, 0); }
+    public IREmitter emitLGe() { return emit1(LGE, K_BOOL, 0); }
 
     // ── Dynamic comparisons ──
 

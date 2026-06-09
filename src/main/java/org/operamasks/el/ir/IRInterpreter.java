@@ -162,6 +162,8 @@ public class IRInterpreter {
                 case DNE: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l!=r); ip+=1; break; }
                 case DLT: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l<r);  ip+=1; break; }
                 case DLE: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l<=r); ip+=1; break; }
+                case DGT: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l>r);  ip+=1; break; }
+                case DGE: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l>=r); ip+=1; break; }
 
                 // ============ Boolean constants ============
                 case PUSH_TRUE:  { push(true);  ip+=1; break; }

@@ -69,7 +69,7 @@ public final class Opcode {
     public static final int LUSHR   = 0x3C;
     public static final int LBITNOT = 0x3D;
 
-    // ── Typed comparisons (0x40-0x4F) ──
+    // ── Typed comparisons (0x40-0x5F) ──
     public static final int IEQ = 0x40;  public static final int INE = 0x41;
     public static final int ILT = 0x42;  public static final int ILE = 0x43;
     public static final int IGT = 0x44;  public static final int IGE = 0x45;
@@ -80,6 +80,7 @@ public final class Opcode {
 
     public static final int DEQ = 0x4C;  public static final int DNE = 0x4D;
     public static final int DLT = 0x4E;  public static final int DLE = 0x4F;
+    public static final int DGT = 0xB3;  public static final int DGE = 0xB4;
 
     // ── Dynamic comparisons (0x50-0x53) ──
     public static final int DYNEQ = 0x50;
@@ -142,7 +143,7 @@ public final class Opcode {
     public static boolean isTypedArith(int op) { return op >= 0x10 && op <= 0x24; }
     public static boolean isDynamicArith(int op) { return op >= 0x25 && op <= 0x2B; }
     public static boolean isJump(int op) { return op >= 0x54 && op <= 0x58; }
-    public static boolean isComparison(int op) { return op >= 0x40 && op <= 0x53; }
+    public static boolean isComparison(int op) { return (op >= 0x40 && op <= 0x53) || op == DGT || op == DGE; }
     public static boolean isGuard(int op) { return op >= 0x80 && op <= 0x82; }
 
     /** Human-readable name for debugging. */
@@ -186,6 +187,7 @@ public final class Opcode {
             case LGT: return "LGT"; case LGE: return "LGE";
             case DEQ: return "DEQ"; case DNE: return "DNE";
             case DLT: return "DLT"; case DLE: return "DLE";
+            case DGT: return "DGT"; case DGE: return "DGE";
             case DYNEQ: return "DYNEQ"; case DYNLT: return "DYNLT";
             case DYNLE: return "DYNLE"; case DYNIN: return "DYNIN";
             case JUMP:            return "JUMP";
