@@ -241,8 +241,97 @@ public class IRInterpreter {
                     int idx = pl & 0xFFFF;
                     Object val = pop();
                     locals[idx] = val;
-                    push(val); // assignment expression returns the value
+                    push(val);
                     ip += 1 + oc;
+                    break;
+                }
+                case PUSH_GLOBAL: {
+                    int nameIdx = oc == 0 ? pl : code[ip + 1];
+                    String name = (String) constantPool[nameIdx];
+                    Object val = resolveGlobal(name);
+                    push(val);
+                    ip += 1 + oc;
+                    break;
+                }
+
+                // ============ Property / index access ============
+                case LOAD_PROPERTY: {
+                    Object key = pop();
+                    Object base = pop();
+                    push(loadProperty(base, key));
+                    ip += 1;
+                    break;
+                }
+
+                // ============ Collections ============
+                case NEW_LIST: {
+                    int count = pl;
+                    Object[] elements = new Object[count];
+                    for (int i = count - 1; i >= 0; i--) elements[i] = pop();
+                    push(java.util.Arrays.asList(elements));
+                    ip += 1;
+                    break;
+                }
+                case NEW_MAP: {
+                    int count = pl;
+                    java.util.LinkedHashMap<Object, Object> map = new java.util.LinkedHashMap<>();
+                    for (int i = count - 1; i >= 0; i--) {
+                        Object val = pop();
+                        Object key = pop();
+                        map.put(key, val);
+                    }
+                    push(map);
+                    ip += 1;
+                    break;
+                }
+                case NEW_RANGE: {
+                    Object end = pop();
+                    Object begin = pop();
+                    push(org.operamasks.el.eval.Ranges.createRange(
+                        ((Number) begin).longValue(), ((Number) end).longValue(), 1));
+                    ip += 1;
+                    break;
+                }
+                case NEW_TUPLE: {
+                    int count = pl;
+                    Object[] elems = new Object[count];
+                    for (int i = count - 1; i >= 0; i--) elems[i] = pop();
+                    push(elems);
+                    ip += 1;
+                    break;
+                }
+
+                // ============ Iteration ============
+                case GET_ITER: {
+                    Object coll = pop();
+                    push(getIterator(coll));
+                    ip += 1;
+                    break;
+                }
+                case ITER_NEXT: {
+                    java.util.Iterator<?> it = (java.util.Iterator<?>) pop();
+                    Object next = it.hasNext() ? it.next() : null;
+                    push(next);
+                    push(it);  // push iterator back for next iteration
+                    ip += 1;
+                    break;
+                }
+                case ITER_DONE: {
+                    Object val = pop();
+                    if (val == null) {
+                        ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
+                    } else {
+                        ip += 1 + oc;
+                    }
+                    break;
+                }
+
+                // ============ Contains ============
+                case CONTAINS: {
+                    Object elem = pop();
+                    Object coll = pop();
+                    push(contains(coll, elem));
+                    ip += 1;
                     break;
                 }
 
@@ -439,5 +528,78 @@ public class IRInterpreter {
         if (v instanceof String) return !((String) v).isEmpty();
         if (v instanceof Number) return ((Number) v).doubleValue() != 0;
         return true;
+    }
+
+    // ── Property / index access ──
+
+    private Object loadProperty(Object base, Object key) {
+        if (base == null) return null;
+        javax.el.ELContext elctx = evalContext.getELContext();
+        elctx.setPropertyResolved(false);
+        Object result = elctx.getELResolver().getValue(elctx, base, key);
+        if (!elctx.isPropertyResolved()) {
+            throw new RuntimeException("Property not found: " + key + " on " + base.getClass().getName());
+        }
+        return result;
+    }
+
+    // ── Global variable resolution ──
+
+    private Object resolveGlobal(String name) {
+        javax.el.ELContext elctx = evalContext.getELContext();
+
+        // Try variable mapper first
+        javax.el.VariableMapper vm = elctx.getVariableMapper();
+        if (vm != null) {
+            javax.el.ValueExpression ve = vm.resolveVariable(name);
+            if (ve != null) return ve.getValue(elctx);
+        }
+
+        // Try ELResolver chain
+        elctx.setPropertyResolved(false);
+        Object result = elctx.getELResolver().getValue(elctx, null, name);
+        if (elctx.isPropertyResolved()) return result;
+
+        throw new RuntimeException("Undefined identifier: " + name);
+    }
+
+    // ── Iterator helpers ──
+
+    @SuppressWarnings({"unchecked","rawtypes"})
+    private static java.util.Iterator<?> getIterator(Object coll) {
+        if (coll instanceof Iterable) return ((Iterable) coll).iterator();
+        if (coll instanceof Object[]) return java.util.Arrays.asList((Object[]) coll).iterator();
+        if (coll.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(coll);
+            Object[] arr = new Object[len];
+            for (int i = 0; i < len; i++) arr[i] = java.lang.reflect.Array.get(coll, i);
+            return java.util.Arrays.asList(arr).iterator();
+        }
+        if (coll instanceof elite.lang.Seq seq) {
+            return new java.util.Iterator<>() {
+                elite.lang.Seq s = seq;
+                public boolean hasNext() { return !s.isEmpty(); }
+                public Object next() { Object h = s.head(); s = s.tail(); return h; }
+            };
+        }
+        throw new RuntimeException("Cannot iterate over: " + coll.getClass().getName());
+    }
+
+    // ── Contains helper ──
+
+    private static boolean contains(Object coll, Object elem) {
+        if (coll instanceof java.util.Collection) return ((java.util.Collection<?>) coll).contains(elem);
+        if (coll instanceof Object[]) {
+            for (Object o : (Object[]) coll) if (java.util.Objects.equals(o, elem)) return true;
+            return false;
+        }
+        if (coll instanceof elite.lang.Seq seq) {
+            while (!seq.isEmpty()) {
+                if (java.util.Objects.equals(seq.head(), elem)) return true;
+                seq = seq.tail();
+            }
+            return false;
+        }
+        return false;
     }
 }

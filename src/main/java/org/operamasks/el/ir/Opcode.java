@@ -105,15 +105,22 @@ public final class Opcode {
     public static final int RETURN_VOID  = 0x65;
 
     // ── Memory / allocation (0x70-0x7F) ──
-    public static final int STORE_VAR    = 0x70;
-    public static final int LOAD_FIELD   = 0x71;
-    public static final int STORE_FIELD  = 0x72;
-    public static final int CAPTURE      = 0x73;
-    public static final int NEW_LIST     = 0x74;
-    public static final int NEW_MAP      = 0x75;
-    public static final int NEW_TUPLE    = 0x76;
-    public static final int NEW_RANGE    = 0x77;
-    public static final int NEW_OBJECT   = 0x78;
+    public static final int STORE_VAR      = 0x70;
+    public static final int LOAD_FIELD     = 0x71;
+    public static final int STORE_FIELD    = 0x72;
+    public static final int CAPTURE        = 0x73;
+    public static final int NEW_LIST       = 0x74;
+    public static final int NEW_MAP        = 0x75;
+    public static final int NEW_TUPLE      = 0x76;
+    public static final int NEW_RANGE      = 0x77;
+    public static final int LOAD_PROPERTY  = 0x78;  // pops key, base → base[key]
+    public static final int STORE_PROPERTY = 0x79;  // pops val, key, base → base[key]=val
+    public static final int PUSH_GLOBAL_N  = 0x7A;  // global variable (name in pool)
+    public static final int STORE_GLOBAL   = 0x7B;  // store to global
+    public static final int GET_ITER       = 0x7C;
+    public static final int ITER_NEXT      = 0x7D;
+    public static final int ITER_DONE      = 0x7E;
+    public static final int CONTAINS       = 0x7F;
 
     // ── Type guards (0x80-0x8F) ──
     public static final int GUARD_TYPE      = 0x80;
@@ -203,15 +210,22 @@ public final class Opcode {
             case CLOSURE:      return "CLOSURE";
             case RETURN:       return "RETURN";
             case RETURN_VOID:  return "RETURN_VOID";
-            case STORE_VAR:   return "STORE_VAR";
-            case LOAD_FIELD:  return "LOAD_FIELD";
-            case STORE_FIELD: return "STORE_FIELD";
-            case CAPTURE:     return "CAPTURE";
-            case NEW_LIST:    return "NEW_LIST";
-            case NEW_MAP:     return "NEW_MAP";
-            case NEW_TUPLE:   return "NEW_TUPLE";
-            case NEW_RANGE:   return "NEW_RANGE";
-            case NEW_OBJECT:  return "NEW_OBJECT";
+            case STORE_VAR:      return "STORE_VAR";
+            case LOAD_FIELD:     return "LOAD_FIELD";
+            case STORE_FIELD:    return "STORE_FIELD";
+            case CAPTURE:        return "CAPTURE";
+            case NEW_LIST:       return "NEW_LIST";
+            case NEW_MAP:        return "NEW_MAP";
+            case NEW_TUPLE:      return "NEW_TUPLE";
+            case NEW_RANGE:      return "NEW_RANGE";
+            case LOAD_PROPERTY:  return "LOAD_PROPERTY";
+            case STORE_PROPERTY: return "STORE_PROPERTY";
+            case PUSH_GLOBAL_N:  return "PUSH_GLOBAL";
+            case STORE_GLOBAL:   return "STORE_GLOBAL";
+            case GET_ITER:       return "GET_ITER";
+            case ITER_NEXT:      return "ITER_NEXT";
+            case ITER_DONE:      return "ITER_DONE";
+            case CONTAINS:       return "CONTAINS";
             case GUARD_TYPE:    return "GUARD_TYPE";
             case GUARD_NONNULL: return "GUARD_NONNULL";
             case DEOPT:         return "DEOPT";

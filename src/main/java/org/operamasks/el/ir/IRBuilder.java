@@ -131,13 +131,24 @@ public class IRBuilder {
     }
     private void buildString(ELNode.STRINGVAL node) { emitPushConst(T_STRING, node.value); }
     private void buildConst(Object value) { emitPushConst(K_NONE, value); }
-    private void buildAccess(ELNode.ACCESS node) { buildTrampoline(node); }
+    private void buildAccess(ELNode.ACCESS node) {
+        // Emit: push base, push key, LOAD_PROPERTY
+        build(node.right);   // base object
+        build(node.index);   // key (field name or index)
+        current.emitLoadProperty();
+    }
 
     // ── Identifiers ──
     private void buildIdent(ELNode.IDENT node) {
         Integer idx = varIndex.get(node.id);
-        if (idx != null) { int t = typeIdFromNode(node); current.emitPushVar(idx, t >= 0 ? t : T_INT); }
-        else buildTrampoline(node);
+        if (idx != null) {
+            int t = typeIdFromNode(node);
+            current.emitPushVar(idx, t >= 0 ? t : T_INT);
+        } else {
+            // Global variable — put name in constant pool, emit PUSH_GLOBAL
+            int nameIdx = putConstant(node.id);
+            current.emitPushGlobal(nameIdx);
+        }
     }
 
     // ── Apply ──

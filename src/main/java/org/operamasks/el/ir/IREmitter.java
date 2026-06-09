@@ -224,13 +224,56 @@ public class IREmitter {
         return emit2(STORE_VAR, K_NONE, varIndex & 0xFFFF, 0);
     }
 
-    public IREmitter emitNewList(int capacity) {
-        return emit1(NEW_LIST, K_NONE, capacity);
+    /** Pop `count` values off the stack and create a list. */
+    public IREmitter emitNewList(int count) {
+        return emit1(NEW_LIST, K_NONE, count);
     }
 
-    public IREmitter emitNewMap(int capacity) {
-        return emit1(NEW_MAP, K_NONE, capacity);
+    /** Pop `count*2` values (key,val pairs) off the stack and create a map. */
+    public IREmitter emitNewMap(int count) {
+        return emit1(NEW_MAP, K_NONE, count);
     }
+
+    /** Pop begin, end off the stack and create a Range. */
+    public IREmitter emitNewRange() {
+        return emit1(NEW_RANGE, K_NONE, 0);
+    }
+
+    /** Pop `count` values off the stack and create a tuple. */
+    public IREmitter emitNewTuple(int count) {
+        return emit1(NEW_TUPLE, K_NONE, count);
+    }
+
+    /** Pop key, base → push base[key]. */
+    public IREmitter emitLoadProperty() {
+        return emit1(LOAD_PROPERTY, K_DYN, 0);
+    }
+
+    /** Pop value, key, base → base[key]=value, push value. */
+    public IREmitter emitStoreProperty() {
+        return emit1(STORE_PROPERTY, K_DYN, 0);
+    }
+
+    /** Pop value, store to global variable (name in constant pool). */
+    public IREmitter emitStoreGlobal(int namePoolIndex) {
+        if (fits16(namePoolIndex)) return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);
+        else return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16, namePoolIndex & 0xFFFF);
+    }
+
+    /** Pop collection → push iterator. */
+    public IREmitter emitGetIter() { return emit1(GET_ITER, K_NONE, 0); }
+
+    /** Pop iterator → push next value (or null if done). */
+    public IREmitter emitIterNext() { return emit1(ITER_NEXT, K_NONE, 0); }
+
+    /** Pop value → if null (iteration done), jump to target block. */
+    public IREmitter emitIterDone(int doneBlock) {
+        if (fits16(doneBlock)) return emit1(ITER_DONE, K_NONE, doneBlock);
+        else return emit2(ITER_DONE, K_NONE, doneBlock >>> 16, doneBlock & 0xFFFF);
+    }
+
+    /** Pop container, element → push boolean (element in container). */
+    public IREmitter emitContains() { return emit1(CONTAINS, K_BOOL, 0); }
 
     // ── Type guards ──
 
