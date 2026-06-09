@@ -47,8 +47,8 @@ public class ELProgram implements Serializable
     private List<ELNode> defs;
     private List<ELNode> exps;
 
-    /** Enable IR-based evaluation for this program. Default: false (AST). */
-    private boolean useIREvaluation = false;
+    /** Enable IR-based evaluation for this program. Default: true (IR native). */
+    private boolean useIREvaluation = true;
 
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
@@ -138,23 +138,20 @@ public class ELProgram implements Serializable
                 node.getValue(env);
             }
 
-            // 3) execute statements
+            // 3) execute statements (IR native, with AST fallback)
             Object result = null;
 
-            // Try IR execution if enabled (via system property or program flag)
-            boolean tryIR = Boolean.getBoolean("elite.ir.enabled") || useIREvaluation;
-            if (tryIR && !exps.isEmpty()) {
+            if (useIREvaluation && !exps.isEmpty()) {
                 try {
                     IRFunction irFn = IRBuilder.compile(exps);
-                    IRInterpreter interp = new IRInterpreter(elctx, irFn);
-                    result = interp.execute(null);
-                    return result;
+                    IRInterpreter interp = new IRInterpreter(elctx, irFn, env);
+                    return interp.execute(null);
                 } catch (Exception e) {
-                    // IR path failed — fall back to AST
+                    // IR path unavailable — fall back to AST
                 }
             }
 
-            // AST tree-walking evaluation (default)
+            // AST tree-walking fallback
             for (ELNode node : exps) {
                 frame.setPos(node.pos);
                 result = node.getValue(env);

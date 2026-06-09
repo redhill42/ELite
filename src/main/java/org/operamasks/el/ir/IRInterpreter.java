@@ -45,11 +45,17 @@ public class IRInterpreter {
     private EvaluationContext evalContext;
 
     public IRInterpreter(ELContext elctx, IRFunction function) {
+        this(elctx, function, null);
+    }
+
+    /** Create an interpreter that inherits variable bindings from an existing EvaluationContext. */
+    public IRInterpreter(ELContext elctx, IRFunction function, EvaluationContext parentEnv) {
         this.elctx = elctx;
         this.function = function;
         this.code = function.code();
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
+        this.evalContext = parentEnv != null ? parentEnv : new EvaluationContext(elctx);
     }
 
     // ── Entry point ──
@@ -58,7 +64,8 @@ public class IRInterpreter {
         this.stack = new Object[DEFAULT_STACK_SIZE];
         this.sp = 0;
         this.locals = new Object[DEFAULT_LOCALS_SIZE];
-        this.evalContext = new EvaluationContext(elctx);
+
+        // evalContext is set by constructor
 
         // Bind arguments to locals
         if (args != null) {
@@ -250,6 +257,15 @@ public class IRInterpreter {
                     String name = (String) constantPool[nameIdx];
                     Object val = resolveGlobal(name);
                     push(val);
+                    ip += 1 + oc;
+                    break;
+                }
+                case STORE_GLOBAL: {
+                    int nameIdx = oc == 0 ? pl : code[ip + 1];
+                    String name = (String) constantPool[nameIdx];
+                    Object val = pop();
+                    storeGlobal(name, val);
+                    push(val);  // assignment returns the value
                     ip += 1 + oc;
                     break;
                 }
@@ -530,6 +546,13 @@ public class IRInterpreter {
         return true;
     }
 
+    // ── Global variable storage ──
+
+    private void storeGlobal(String name, Object value) {
+        evalContext.setVariable(name,
+            new org.operamasks.el.eval.closure.LiteralClosure(value));
+    }
+
     // ── Property / index access ──
 
     private Object loadProperty(Object base, Object key) {
@@ -548,11 +571,10 @@ public class IRInterpreter {
     private Object resolveGlobal(String name) {
         javax.el.ELContext elctx = evalContext.getELContext();
 
-        // Try variable mapper first
-        javax.el.VariableMapper vm = elctx.getVariableMapper();
-        if (vm != null) {
-            javax.el.ValueExpression ve = vm.resolveVariable(name);
-            if (ve != null) return ve.getValue(elctx);
+        // First: check the EvaluationContext's own variable resolution chain
+        javax.el.ValueExpression ve = evalContext.resolveVariable(name);
+        if (ve != null) {
+            return ve.getValue(elctx);
         }
 
         // Try ELResolver chain

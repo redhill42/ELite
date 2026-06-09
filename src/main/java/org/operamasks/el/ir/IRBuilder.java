@@ -91,6 +91,7 @@ public class IRBuilder {
             case Token.COALESCE: buildCoalesce(node); break;
 
             case Token.ASSIGN:   buildAssign((ELNode.ASSIGN) node); break;
+            case Token.ASSIGNOP: buildTrampoline(node); break;  // compound assign: trampoline for now
             case Token.DEFINE:   buildDefine((ELNode.DEFINE) node); break;
 
             case Token.THEN: buildThen((ELNode.THEN) node); break;
@@ -110,7 +111,7 @@ public class IRBuilder {
             case Token.RANGE:     buildRange((ELNode.RANGE) node); break;
             case Token.IN:        buildContains(node); break;
             case Token.INSTANCEOF: buildBinaryOp(node); break;  // TODO: INSTANCEOF instruction
-            case Token.NIL:       emitPushNull(); break;
+            case Token.NIL:       current.emitNewList(0); break;  // [] = empty list
             case Token.ARRAY:     buildTrampoline(node); break;  // complex, rare
 
             default: buildTrampoline(node);
@@ -136,10 +137,22 @@ public class IRBuilder {
     private void buildString(ELNode.STRINGVAL node) { emitPushConst(T_STRING, node.value); }
     private void buildConst(Object value) { emitPushConst(K_NONE, value); }
     private void buildAccess(ELNode.ACCESS node) {
-        // Emit: push base, push key, LOAD_PROPERTY
-        build(node.right);   // base object
-        build(node.index);   // key (field name or index)
-        current.emitLoadProperty();
+        // For simple keys (identifiers, numbers, strings), use native LOAD_PROPERTY
+        // For complex keys (ranges, expressions), fall back to trampoline
+        if (isSimpleKey(node.index)) {
+            build(node.right);   // base object
+            build(node.index);   // key
+            current.emitLoadProperty();
+        } else {
+            buildTrampoline(node);
+        }
+    }
+
+    private static boolean isSimpleKey(ELNode key) {
+        return key instanceof ELNode.IDENT
+            || key instanceof ELNode.NUMBER
+            || key instanceof ELNode.STRINGVAL
+            || key instanceof ELNode.CHARVAL;
     }
 
     // ── Identifiers ──
@@ -233,11 +246,14 @@ public class IRBuilder {
     }
 
     private void buildContains(ELNode node) {
-        if (node instanceof ELNode.Binary bin) {
-            build(bin.right);  // container
-            build(bin.left);   // element
+        if (node instanceof ELNode.IN in) {
+            build(in.right);  // container
+            build(in.left);   // element
+            current.emitContains();
+            if (in.negative) {
+                current.emitNot();
+            }
         }
-        current.emitContains();
     }
 
     // ── Binary arithmetic ──
@@ -262,11 +278,17 @@ public class IRBuilder {
     }
     private void buildCat(ELNode node) {
         if (node instanceof ELNode.Binary bin) {
-            boolean prev = inTailPosition;
-            inTailPosition = false;
-            build(bin.left); build(bin.right);
-            inTailPosition = prev;
-            current.emitDynCat();
+            // If both sides are strings, use native CAT; otherwise trampoline
+            int lt = typeIdFromNode(bin.left), rt = typeIdFromNode(bin.right);
+            if (lt == T_STRING && rt == T_STRING) {
+                boolean prev = inTailPosition;
+                inTailPosition = false;
+                build(bin.left); build(bin.right);
+                inTailPosition = prev;
+                current.emitDynCat();
+            } else {
+                buildTrampoline(node);
+            }
         } else buildTrampoline(node);
     }
 
@@ -364,11 +386,25 @@ public class IRBuilder {
     private void buildAssign(ELNode.ASSIGN node) {
         build(node.right);
         if (node.left instanceof ELNode.IDENT ident) {
-            int idx = ensureVar(ident.id); current.emitDup(); current.emitStoreVar(idx);
+            // Store locally (if the variable is in local scope) AND globally
+            int idx = varIndex.getOrDefault(ident.id, -1);
+            current.emitDup();
+            if (idx >= 0) current.emitStoreVar(idx);  // local
+            int nameIdx = putConstant(ident.id);
+            current.emitStoreGlobal(nameIdx);           // global
         } else buildTrampoline(node);
     }
     private void buildDefine(ELNode.DEFINE node) {
-        if (node.expr != null) { build(node.expr); int idx = ensureVar(node.id); current.emitDup(); current.emitStoreVar(idx); }
+        if (node.expr != null) {
+            build(node.expr);
+            // Store as local variable (for IR function scope)
+            int idx = ensureVar(node.id);
+            current.emitDup();
+            current.emitStoreVar(idx);
+            // Also store as global (for persistence across eval calls)
+            int nameIdx = putConstant(node.id);
+            current.emitStoreGlobal(nameIdx);
+        }
     }
 
     // ── Sequential ──
