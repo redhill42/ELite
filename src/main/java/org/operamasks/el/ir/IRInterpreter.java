@@ -202,6 +202,16 @@ public class IRInterpreter {
                 }
 
                 // ============ Function calls ============
+                case INVOKE_TAIL: {
+                    int argc = pl;  // argCount stored in payload
+                    // Pop new arguments from stack (reverse order)
+                    for (int i = argc - 1; i >= 0; i--) {
+                        locals[i] = pop();
+                    }
+                    // Jump to function entry — no stack growth!
+                    ip = blockOffsets[0];
+                    break;
+                }
                 case INVOKE_DYN: {
                     int argc = oc == 0 ? pl : code[ip + 1];
                     Object result = dynamicInvoke(argc);

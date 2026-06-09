@@ -18,10 +18,10 @@ import static org.operamasks.el.ir.Opcode.*;
 public class IRBuilder {
 
     // ── Block management (stored by ID, output in ID order) ──
-    private final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
-    private IREmitter current;
-    private int currentBlockId = 0;
-    private int nextBlockId = 1;  // 0 is the initial block
+    final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
+    IREmitter current;
+    int currentBlockId = 0;
+    int nextBlockId = 1;  // 0 is the initial block
 
     // ── Symbol table ──
     private final Map<String, Integer> varIndex = new LinkedHashMap<>();
@@ -35,7 +35,18 @@ public class IRBuilder {
     private record LoopTargets(int continueBlock, int breakBlock) {}
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
+    // ── Tail-call optimization ──
+    private String lambdaName = null;
+    private boolean inTailPosition = false;
+
     IRBuilder() { currentBlockId = 0; current = new IREmitter(); }
+
+    /** Create a nested builder inheriting TCO state. */
+    private IRBuilder(IRBuilder parent) {
+        this.currentBlockId = 0;
+        this.current = new IREmitter();
+        this.lambdaName = parent.lambdaName;
+    }
 
     // ============ MAIN DISPATCH ============
 
@@ -131,8 +142,22 @@ public class IRBuilder {
 
     // ── Apply ──
     private void buildApply(ELNode.APPLY node) {
+        // Build arguments (never in tail position)
+        boolean prev = inTailPosition;
+        inTailPosition = false;
         for (ELNode arg : node.args) build(arg);
+        // Build function target
         build(node.right);
+        inTailPosition = prev;
+
+        // Detect tail call: self-recursive call in tail position
+        if (prev && lambdaName != null && node.right instanceof ELNode.IDENT) {
+            String targetName = ((ELNode.IDENT) node.right).id;
+            if (targetName.equals(lambdaName)) {
+                current.emitInvokeTail(node.args.length);
+                return;
+            }
+        }
         current.emitInvokeDyn(node.args.length);
     }
 
@@ -140,17 +165,30 @@ public class IRBuilder {
     private void buildBinaryOp(ELNode node) {
         if (!(node instanceof ELNode.Binary bin)) { buildTrampoline(node); return; }
         int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
+        boolean prev = inTailPosition;
+        inTailPosition = false; // sub-expressions of binary ops are NOT in tail position
         build(bin.left); build(bin.right);
+        inTailPosition = prev;
         if (l >= 0 && r >= 0) emitTypedOp(node.op, widerType(l, r));
         else emitDynamicOp(node.op);
     }
     private void buildUnaryOp(ELNode node) {
-        if (node instanceof ELNode.Unary un) { build(un.right); emitDynamicOp(node.op); }
-        else buildTrampoline(node);
+        if (node instanceof ELNode.Unary un) {
+            boolean prev = inTailPosition;
+            inTailPosition = false;
+            build(un.right);
+            inTailPosition = prev;
+            emitDynamicOp(node.op);
+        } else buildTrampoline(node);
     }
     private void buildCat(ELNode node) {
-        if (node instanceof ELNode.Binary bin) { build(bin.left); build(bin.right); current.emitDynCat(); }
-        else buildTrampoline(node);
+        if (node instanceof ELNode.Binary bin) {
+            boolean prev = inTailPosition;
+            inTailPosition = false;
+            build(bin.left); build(bin.right);
+            inTailPosition = prev;
+            current.emitDynCat();
+        } else buildTrampoline(node);
     }
 
     private void emitTypedOp(int op, int t) {
@@ -180,7 +218,10 @@ public class IRBuilder {
     private void buildComparison(ELNode node) {
         if (!(node instanceof ELNode.Binary bin)) { buildTrampoline(node); return; }
         int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
+        boolean prev = inTailPosition;
+        inTailPosition = false;
         build(bin.left); build(bin.right);
+        inTailPosition = prev;
         if (l >= 0 && r >= 0) emitTypedCmp(node.op, widerType(l, r));
         else emitDynamicCmp(node.op);
     }
@@ -221,14 +262,10 @@ public class IRBuilder {
         build(node.cond);
         int thenB = allocBlockId(), elseB = allocBlockId(), mergeB = allocBlockId();
         current.emitJumpIfTrue(thenB);
-        // Fall-through to ELSE: must be explicit JUMP
-        int skipBlock = allocBlockId(); // dummy block for the explicit fall-through jump
         current.emitJump(elseB);
-        // THEN branch
-        startBlock(thenB); build(node.left); current.emitJump(mergeB);
-        // ELSE branch
-        startBlock(elseB); build(node.right); current.emitJump(mergeB);
-        // MERGE
+        // Both branches are in tail position if the conditional is
+        startBlock(thenB); buildTail(node.left);  current.emitJump(mergeB);
+        startBlock(elseB); buildTail(node.right); current.emitJump(mergeB);
         startBlock(mergeB);
     }
 
@@ -256,11 +293,29 @@ public class IRBuilder {
     }
 
     // ── Sequential ──
-    private void buildThen(ELNode.THEN node) { build(node.left); current.emitPop(); build(node.right); }
+    private void buildThen(ELNode.THEN node) {
+        build(node.left); current.emitPop();
+        // right side is in tail position if the THEN is
+        buildTail(node.right);
+    }
     private void buildExpr(ELNode.EXPR node) { build(node.right); }
     private void buildCompound(ELNode.COMPOUND node) {
-        for (int i = 0; i < node.exps.length - 1; i++) { build(node.exps[i]); current.emitPop(); }
-        if (node.exps.length > 0) build(node.exps[node.exps.length - 1]); else emitPushNull();
+        for (int i = 0; i < node.exps.length - 1; i++) {
+            build(node.exps[i]); current.emitPop();
+        }
+        if (node.exps.length > 0) {
+            buildTail(node.exps[node.exps.length - 1]);
+        } else {
+            emitPushNull();
+        }
+    }
+
+    /** Build a node in tail position (preserves current tail status). */
+    private void buildTail(ELNode node) {
+        boolean prev = inTailPosition;
+        inTailPosition = true;
+        build(node);
+        inTailPosition = prev;
     }
 
     // ── While ──
@@ -305,7 +360,11 @@ public class IRBuilder {
     // ── Lambda ──
     private void buildLambda(ELNode.LAMBDA node) {
         IRBuilder nested = new IRBuilder();
+        // Set function name for TCO detection
+        nested.lambdaName = node.name;
         for (ELNode.DEFINE var : node.vars) nested.ensureVar(var.id);
+        // Body is always in tail position
+        nested.inTailPosition = true;
         nested.build(node.body);
         if (!endsWithReturn(nested)) nested.current.emitReturnVoid();
         IRFunction fn = nested.finish(node.name != null ? node.name : "lambda", node.vars.length);
@@ -421,6 +480,19 @@ public class IRBuilder {
     private void emitPushTrue()  { current.emitPushTrue(); }
     private void emitPushFalse() { current.emitPushFalse(); }
     private void emitPushNull()  { current.emitPushNull(); }
+
+    // ── TCO compilation API (for testing and direct use) ──
+
+    /** Compile a lambda body with the given name (for TCO detection) and parameter names. */
+    static IRFunction compileLambda(String name, String[] paramNames, ELNode body) {
+        IRBuilder b = new IRBuilder();
+        b.lambdaName = name;
+        b.inTailPosition = true;
+        for (String p : paramNames) b.ensureVar(p);
+        b.build(body);
+        if (!endsWithReturn(b)) b.current.emitReturnVoid();
+        return b.finish(name != null ? name : "lambda", paramNames.length);
+    }
 
     // ── Static API ──
 

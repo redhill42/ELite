@@ -10,10 +10,6 @@ import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 
-/**
- * End-to-end tests for the IR compilation + interpretation pipeline.
- * Verifies that the IRInterpreter produces the same results as the AST evaluator.
- */
 class IRInterpreterTest {
 
     private static ELContext elctx;
@@ -36,133 +32,96 @@ class IRInterpreterTest {
     }
 
     // ── Arithmetic ──
-
-    @Test
-    void intAddition() {
-        assertEquals(30L, ((Number)interpret("10 + 20")).longValue());
-    }
-
-    @Test
-    void intMultiplication() {
-        assertEquals(56L, ((Number)interpret("7 * 8")).longValue());
-    }
-
-    @Test
-    void doubleAddition() {
-        assertEquals(5.86, ((Number)interpret("3.14 + 2.72")).doubleValue(), 0.001);
-    }
-
-    @Test
-    void doubleDivision() {
-        assertEquals(2.5, ((Number)interpret("20.0 / 8.0")).doubleValue(), 0.001);
-    }
-
-    @Test
-    void precedence() {
-        assertEquals(14L, ((Number)interpret("2 + 3 * 4")).longValue());
-    }
-
-    @Test
-    void remainder() {
-        assertEquals(1L, ((Number)interpret("10 % 3")).longValue());
-    }
-
-    @Test
-    void negation() {
-        assertEquals(-5, ((Number)interpret("-5")).intValue());
-    }
-
-    @Test
-    void complexArith() {
-        Object result = interpret("((10 + 5) * 3 - 8) / 2 + 100 * 4");
-        assertNotNull(result);
-        assertTrue(result instanceof Number);
-        assertEquals(eval("((10 + 5) * 3 - 8) / 2 + 100 * 4"), result,
-            "IR and AST should produce same result");
-    }
+    @Test void intAddition() { assertEquals(30L, ((Number)interpret("10 + 20")).longValue()); }
+    @Test void intMultiplication() { assertEquals(56L, ((Number)interpret("7 * 8")).longValue()); }
+    @Test void doubleAddition() { assertEquals(5.86, ((Number)interpret("3.14 + 2.72")).doubleValue(), 0.001); }
+    @Test void doubleDivision() { assertEquals(2.5, ((Number)interpret("20.0 / 8.0")).doubleValue(), 0.001); }
+    @Test void precedence() { assertEquals(14L, ((Number)interpret("2 + 3 * 4")).longValue()); }
+    @Test void remainder() { assertEquals(1L, ((Number)interpret("10 % 3")).longValue()); }
+    @Test void negation() { assertEquals(-5, ((Number)interpret("-5")).intValue()); }
+    @Test void complexArith() { assertEquals(eval("((10 + 5) * 3 - 8) / 2 + 100 * 4"), interpret("((10 + 5) * 3 - 8) / 2 + 100 * 4")); }
 
     // ── Comparisons ──
+    @Test void intEquality() { assertEquals(true, interpret("100 == 100")); assertEquals(false, interpret("5 == 6")); }
+    @Test void intLessThan() { assertEquals(true, interpret("50 < 100")); assertEquals(false, interpret("100 < 50")); }
+    @Test void intLessEqual() { assertEquals(true, interpret("100 <= 100")); }
 
-    @Test
-    void intEquality() {
-        assertEquals(true, interpret("100 == 100"));
-        assertEquals(false, interpret("5 == 6"));
-    }
+    // ── Booleans / Conditional / Concat / Null ──
+    @Test void booleanTrue() { assertEquals(true, interpret("true")); }
+    @Test void booleanFalse() { assertEquals(false, interpret("false")); }
+    @Test void conditionalTrue() { assertEquals(100L, ((Number)interpret("true ? 100 : 200")).longValue()); }
+    @Test void conditionalFalse() { assertEquals(200L, ((Number)interpret("false ? 100 : 200")).longValue()); }
+    @Test void stringConcat() { assertEquals("helloworld", interpret("\"hello\" ~ \"world\"")); }
+    @Test void nullLiteral() { assertNull(interpret("null")); }
 
-    @Test
-    void intLessThan() {
-        assertEquals(true, interpret("50 < 100"));
-        assertEquals(false, interpret("100 < 50"));
-    }
-
-    @Test
-    void intLessEqual() {
-        assertEquals(true, interpret("100 <= 100"));
-    }
-
-    // ── Booleans ──
-
-    @Test
-    void booleanTrue() {
-        assertEquals(true, interpret("true"));
-    }
-
-    @Test
-    void booleanFalse() {
-        assertEquals(false, interpret("false"));
-    }
-
-    // ── Conditional (ternary ?:) ──
-
-    @Test
-    void conditionalTrue() {
-        assertEquals(100L, ((Number)interpret("true ? 100 : 200")).longValue());
-    }
-
-    @Test
-    void conditionalFalse() {
-        assertEquals(200L, ((Number)interpret("false ? 100 : 200")).longValue());
-    }
-
-    // ── Concatenation ──
-
-    @Test
-    void stringConcat() {
-        assertEquals("helloworld", interpret("\"hello\" ~ \"world\""));
-    }
-
-    // ── Null ──
-
-    @Test
-    void nullLiteral() {
-        assertNull(interpret("null"));
-    }
-
-    // ── Compare IR vs AST results ──
-
-    @Test
-    void irMatchesAst() {
-        String[] exprs = {
-            "10 + 20",
-            "7 * 8",
-            "100.0 / 3.0",
-            "1 + 2 * 3 + 4 * 5",
-            "100 == 100",
-            "((10 + 5) * 3 - 8) / 2 + 100 * 4",
-            "true ? 100 : 200",
-            "\"hello\" ~ \" \" ~ \"world\"",
-        };
-
+    // ── AST match ──
+    @Test void irMatchesAst() {
+        String[] exprs = {"10 + 20","7 * 8","100.0 / 3.0","1 + 2 * 3 + 4 * 5",
+            "100 == 100","((10 + 5) * 3 - 8) / 2 + 100 * 4",
+            "true ? 100 : 200","\"hello\" ~ \" \" ~ \"world\""};
         for (String expr : exprs) {
-            Object astResult = eval(expr);
-            Object irResult = interpret(expr);
-            // Handle Number type differences (e.g., Integer vs Double)
-            if (astResult instanceof Number a && irResult instanceof Number b) {
-                assertEquals(a.doubleValue(), b.doubleValue(), 0.0001,
-                    "Numeric mismatch for: " + expr);
-            } else {
-                assertEquals(astResult, irResult, "Mismatch for: " + expr);
-            }
+            Object a=eval(expr), b=interpret(expr);
+            if (a instanceof Number x && b instanceof Number y) assertEquals(x.doubleValue(),y.doubleValue(),0.0001);
+            else assertEquals(a,b);
         }
+    }
+
+    // ================ Tail-Call Optimization ================
+
+    @Test
+    void tcoInvokeTailOpcodeValid() {
+        IREmitter out = new IREmitter();
+        out.emitPushVar(0, IRFormat.T_INT).emitPushVar(1, IRFormat.T_INT).emitInvokeTail(2);
+        IRFunction fn = buildFn("t", out.toArray(), 2);
+        assertTrue(scanOp(fn, Opcode.INVOKE_TAIL));
+    }
+
+    @Test
+    void tcoSelfCallInTailPositionEmitsInvokeTail() {
+        ELNode expr = Parser.parseExpression("sum(n - 1, acc + n)");
+        IRFunction fn = IRBuilder.compileLambda("sum", new String[]{"n","acc"}, expr);
+        assertTrue(scanOp(fn, Opcode.INVOKE_TAIL),
+            "Self-call 'sum' in tail position must emit INVOKE_TAIL");
+    }
+
+    @Test
+    void tcoCallToDifferentFunctionDoesNotEmitInvokeTail() {
+        ELNode expr = Parser.parseExpression("other(n - 1, acc + n)");
+        IRFunction fn = IRBuilder.compileLambda("sum", new String[]{"n","acc"}, expr);
+        assertFalse(scanOp(fn, Opcode.INVOKE_TAIL),
+            "Call to 'other' (not self) must NOT emit INVOKE_TAIL");
+    }
+
+    @Test
+    void tcoNonTailPositionDoesNotEmitInvokeTail() {
+        // n * fact(n-1) — multiply wraps the call, so it's not in tail position
+        ELNode expr = Parser.parseExpression("n * fact(n - 1)");
+        IRFunction fn = IRBuilder.compileLambda("fact", new String[]{"n"}, expr);
+        assertFalse(scanOp(fn, Opcode.INVOKE_TAIL),
+            "Non-tail call inside multiply must NOT emit INVOKE_TAIL");
+    }
+
+    @Test
+    void tcoAnonymousLambdaNoSelfCall() {
+        // Anonymous lambda (null name) — no self-call possible
+        ELNode expr = Parser.parseExpression("n + acc");
+        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"n","acc"}, expr);
+        assertFalse(scanOp(fn, Opcode.INVOKE_TAIL));
+    }
+
+    // ── helpers ──
+
+    private static IRFunction buildFn(String name, int[] code, int paramCount) {
+        return new IRFunction(name, paramCount, code, new int[]{0},
+                new Object[]{0,1}, new String[]{"n","acc"}, new int[]{0});
+    }
+
+    private static boolean scanOp(IRFunction fn, int op) {
+        for (int b=0; b<fn.blockCount(); b++) {
+            InstructionView v = new InstructionView(fn.code(), fn.blockStart(b));
+            int end = (b+1<fn.blockCount()) ? fn.blockStart(b+1) : fn.code().length;
+            while (v.inBounds() && v.offset()<end) { if(v.opcode()==op) return true; v.advance(); }
+        }
+        return false;
     }
 }

@@ -213,6 +213,11 @@ public class IREmitter {
         return emit2(INVOKE_DYN, K_DYN, argCount, 0);
     }
 
+    /** Tail-recursive call: pops argCount args, stores to locals, jumps to entry. */
+    public IREmitter emitInvokeTail(int argCount) {
+        return emit1(INVOKE_TAIL, K_NONE, argCount);
+    }
+
     // ── Memory ──
 
     public IREmitter emitStoreVar(int varIndex) {

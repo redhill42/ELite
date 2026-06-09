@@ -99,9 +99,10 @@ public final class Opcode {
     // ── Function (0x60-0x6F) ──
     public static final int INVOKE       = 0x60;
     public static final int INVOKE_DYN   = 0x61;
-    public static final int CLOSURE      = 0x62;
-    public static final int RETURN       = 0x63;
-    public static final int RETURN_VOID  = 0x64;
+    public static final int INVOKE_TAIL  = 0x62;
+    public static final int CLOSURE      = 0x63;
+    public static final int RETURN       = 0x64;
+    public static final int RETURN_VOID  = 0x65;
 
     // ── Memory / allocation (0x70-0x7F) ──
     public static final int STORE_VAR    = 0x70;
@@ -198,6 +199,7 @@ public final class Opcode {
             case TABLE_SWITCH:    return "TABLE_SWITCH";
             case INVOKE:       return "INVOKE";
             case INVOKE_DYN:   return "INVOKE_DYN";
+            case INVOKE_TAIL:  return "INVOKE_TAIL";
             case CLOSURE:      return "CLOSURE";
             case RETURN:       return "RETURN";
             case RETURN_VOID:  return "RETURN_VOID";
