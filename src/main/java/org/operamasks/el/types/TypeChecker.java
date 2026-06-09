@@ -79,39 +79,46 @@ public class TypeChecker {
     private void checkNode(ELNode node, TypeInferrer inferrer) {
         if (node == null) return;
 
-        Type inferred = inferrer.infer(node);
-        node.inferredType = inferred;
+        // Use cached type if already inferred (avoid double-inference)
+        Type inferred = node.inferredType;
+        if (inferred == null) {
+            inferred = inferrer.infer(node);
+            node.inferredType = inferred;
+        }
 
+        // Recurse into children that were not inferred during the top-level infer
         if (node instanceof ELNode.LAMBDA) {
             ELNode.LAMBDA lambda = (ELNode.LAMBDA) node;
-            for (ELNode.DEFINE var : lambda.vars) {
-                if (var.type != null && !var.type.isEmpty()) {
-                    inferrer.infer(var);
-                }
+            // LAMBDA's own infer() handles params+body; only check unvisited nodes
+            if (lambda.body != null && lambda.body.inferredType == null) {
+                checkNode(lambda.body, inferrer);
             }
-            checkNode(lambda.body, inferrer);
-        }
-        if (node instanceof ELNode.Unary) {
-            checkNode(((ELNode.Unary) node).right, inferrer);
-        }
-        if (node instanceof ELNode.Binary) {
-            ELNode.Binary bin = (ELNode.Binary) node;
-            checkNode(bin.left, inferrer);
-            checkNode(bin.right, inferrer);
         }
         if (node instanceof ELNode.APPLY) {
             ELNode.APPLY app = (ELNode.APPLY) node;
-            for (ELNode arg : app.args) checkNode(arg, inferrer);
+            if (app.args != null) {
+                for (ELNode arg : app.args) {
+                    if (arg.inferredType == null) checkNode(arg, inferrer);
+                }
+            }
+            if (app.right != null && app.right.inferredType == null) {
+                checkNode(app.right, inferrer);
+            }
         }
         if (node instanceof ELNode.MATCH) {
             ELNode.MATCH match = (ELNode.MATCH) node;
-            for (ELNode.CASE caseNode : match.alts) {
-                for (ELNode body : caseNode.bodies) checkNode(body, inferrer);
+            if (match.alts != null) {
+                for (ELNode.CASE caseNode : match.alts) {
+                    if (caseNode.bodies != null) {
+                        for (ELNode body : caseNode.bodies) {
+                            if (body.inferredType == null) checkNode(body, inferrer);
+                        }
+                    }
+                }
             }
-            if (match.deflt != null) checkNode(match.deflt, inferrer);
-        }
-        if (node instanceof ELNode.BLOCK) {
-            checkNode(((ELNode.BLOCK) node).body, inferrer);
+            if (match.deflt != null && match.deflt.inferredType == null) {
+                checkNode(match.deflt, inferrer);
+            }
         }
     }
 }

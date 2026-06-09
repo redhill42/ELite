@@ -103,7 +103,7 @@ public class TypeInferrer {
 
             // Arithmetic
             case Token.ADD: case Token.SUB:
-            case Token.MUL: case Token.DIV:
+            case Token.MUL: case Token.DIV: case Token.IDIV:
             case Token.REM:
                 result = inferArithmetic(node); break;
             case Token.POW:
@@ -114,6 +114,7 @@ public class TypeInferrer {
             // Bitwise operators
             case Token.BITOR: case Token.BITAND: case Token.XOR:
             case Token.SHL: case Token.SHR: case Token.USHR:
+            case Token.BITNOT:
                 result = inferBitwise(node); break;
 
             // Comparison & logical
@@ -128,6 +129,8 @@ public class TypeInferrer {
                 result = inferConditional((ELNode.COND) node); break;
             case Token.COALESCE:
                 result = inferCoalesce(node); break;
+            case Token.SAFEREF:
+                result = inferSafeRef(node); break;
             case Token.CAT:
                 result = Type.STRING; break;
             case Token.INSTANCEOF:
@@ -212,6 +215,8 @@ public class TypeInferrer {
         if (n instanceof Long) return Type.LONG;
         if (n instanceof Double) return Type.DOUBLE;
         if (n instanceof Float) return Type.FLOAT;
+        if (n instanceof java.math.BigInteger) return Type.LONG; // closest approximation
+        if (n instanceof java.math.BigDecimal) return Type.DOUBLE; // closest approximation
         return Type.NUMBER;
     }
 
@@ -356,11 +361,20 @@ public class TypeInferrer {
     // =========== Bitwise ===========
 
     private Type inferBitwise(ELNode node) {
-        ELNode.Binary bin = (ELNode.Binary) node;
-        Type left = infer(bin.left);
-        Type right = infer(bin.right);
-        if (left == Type.INTEGER || left == Type.LONG) return left;
-        if (right == Type.INTEGER || right == Type.LONG) return right;
+        if (node instanceof ELNode.Binary) {
+            ELNode.Binary bin = (ELNode.Binary) node;
+            Type left = infer(bin.left);
+            Type right = infer(bin.right);
+            if (left == Type.INTEGER || left == Type.LONG) return left;
+            if (right == Type.INTEGER || right == Type.LONG) return right;
+            return Type.INTEGER;
+        }
+        // Unary bitwise (BITNOT)
+        if (node instanceof ELNode.Unary) {
+            Type t = infer(((ELNode.Unary) node).right);
+            if (t == Type.INTEGER || t == Type.LONG) return t;
+            return Type.INTEGER;
+        }
         return Type.INTEGER;
     }
 
@@ -379,6 +393,16 @@ public class TypeInferrer {
         Type right = infer(bin.right);
         Type unified = left.unify(right);
         return unified != null ? unified : left;
+    }
+
+    private Type inferSafeRef(ELNode node) {
+        ELNode.Binary bin = (ELNode.Binary) node;
+        Type left = infer(bin.left);
+        Type right = infer(bin.right);
+        // Safe ref: left ?? right — returns left if non-null, else right
+        // Type is the unification of left and right (non-null part of left + right)
+        Type unified = left.unify(right);
+        return unified != null ? unified : right;
     }
 
     // =========== Sequential (THEN) ===========
@@ -634,18 +658,30 @@ public class TypeInferrer {
 
     private Type inferAssign(ELNode.ASSIGN node) {
         Type rhsType = infer(node.right);
+        // Simple variable assignment: x = value
         if (node.left instanceof ELNode.IDENT) {
             String name = ((ELNode.IDENT) node.left).id;
             Type existing = env.get(name);
             if (existing != null) {
                 Type unified = rhsType.unify(existing);
-                if (unified == null && !rhsType.isSubtypeOf(existing)) {
+                if (unified == null && existing != Type.DYNAMIC
+                    && !rhsType.isSubtypeOf(existing)) {
                     addErrorAt(currentNode,
                         _T(EL_RETURN_TYPE_MISMATCH,
                             existing.toTypeString(), rhsType.toTypeString()));
                 }
             }
             env.put(name, rhsType);
+        }
+        // Tuple destructuring: (a, b) = expr
+        if (node.left instanceof ELNode.TUPLE) {
+            ELNode.TUPLE tup = (ELNode.TUPLE) node.left;
+            for (ELNode elem : tup.elems) {
+                if (elem instanceof ELNode.IDENT) {
+                    String name = ((ELNode.IDENT) elem).id;
+                    env.put(name, Type.DYNAMIC); // individual tuple element types unknown
+                }
+            }
         }
         return rhsType;
     }
@@ -654,19 +690,23 @@ public class TypeInferrer {
 
     private Type inferMatch(ELNode.MATCH node) {
         Type result = Type.BOTTOM;
-        for (ELNode.CASE caseNode : node.alts) {
-            pushScope();
-            Type branchType = infer(caseNode.bodies[0]);
-            Type unified = result.unify(branchType);
-            result = (unified != null) ? unified : Type.DYNAMIC;
-            popScope();
+        if (node.alts != null) {
+            for (ELNode.CASE caseNode : node.alts) {
+                pushScope();
+                if (caseNode.bodies != null && caseNode.bodies.length > 0) {
+                    Type branchType = infer(caseNode.bodies[0]);
+                    Type unified = result.unify(branchType);
+                    result = (unified != null) ? unified : Type.DYNAMIC;
+                }
+                popScope();
+            }
         }
         if (node.deflt != null) {
             Type defType = infer(node.deflt);
             Type unified = result.unify(defType);
             result = (unified != null) ? unified : Type.DYNAMIC;
         }
-        return result;
+        return result == Type.BOTTOM ? Type.DYNAMIC : result;
     }
 
     // =========== New ===========

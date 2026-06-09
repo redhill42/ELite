@@ -12,6 +12,12 @@ class BottomType extends Type {
     }
 
     @Override
+    public Type unify(Type other) {
+        // bottom unified with anything yields the other type
+        return other;
+    }
+
+    @Override
     public String toTypeString() {
         return "Nothing";
     }

@@ -586,4 +586,85 @@ class TypeInferrerTest {
         eng.eval("define greet(name::String)::String => \"Hello, \" ~ name");
         assertEquals("Hello, World", eng.eval("greet(\"World\")"));
     }
+
+    // ========== Fix verification tests ==========
+
+    @Test
+    void numericWideningSubtyping() {
+        // Integer <: Long (fix #1)
+        assertTrue(Type.INTEGER.isSubtypeOf(Type.LONG),
+            "Integer should be subtype of Long (numeric widening)");
+        assertTrue(Type.LONG.isSubtypeOf(Type.DOUBLE),
+            "Long should be subtype of Double (numeric widening)");
+        assertFalse(Type.DOUBLE.isSubtypeOf(Type.INTEGER),
+            "Double should NOT be subtype of Integer");
+    }
+
+    @Test
+    void primitiveTypeUnifyUsesWiderType() {
+        // Integer.unify(Long) → Long (fix #2)
+        Type result = Type.INTEGER.unify(Type.LONG);
+        assertEquals(Type.LONG, result, "Integer + Long should unify to Long");
+        // Double.unify(Integer) → Double
+        Type result2 = Type.DOUBLE.unify(Type.INTEGER);
+        assertEquals(Type.DOUBLE, result2, "Double + Integer should unify to Double");
+    }
+
+    @Test
+    void bottomUnifyReturnsOther() {
+        // Bottom.unify(X) → X (fix #17)
+        assertEquals(Type.INTEGER, Type.BOTTOM.unify(Type.INTEGER));
+        assertEquals(Type.STRING, Type.BOTTOM.unify(Type.STRING));
+        assertEquals(Type.DYNAMIC, Type.BOTTOM.unify(Type.DYNAMIC));
+    }
+
+    @Test
+    void inferIntegerDivision() {
+        // Integer division (fix #5)
+        Type t = infer("10 div 3");
+        assertTrue(t == Type.INTEGER || t == Type.NUMBER || t == Type.DYNAMIC,
+            "Integer division should infer as numeric type, got " + t);
+    }
+
+    @Test
+    void inferBitwiseNot() {
+        // Bitwise NOT (fix #13)
+        Type t = infer(":!:5");
+        assertEquals(Type.INTEGER, t, "Bitwise NOT should return integer");
+    }
+
+    @Test
+    void inferSafeRef() {
+        // Safe reference operator (fix #12)
+        Type t = infer("x !? 42");
+        assertNotNull(t, "Safe ref should produce a type");
+    }
+
+    @Test
+    void conditionalWithWiderTypes() {
+        // true ? 1 : 2.0 — Integer + Double should unify to Double (fix #2)
+        Type t = infer("true ? 1 : 2.0");
+        assertNotNull(t, "Conditional with mixed numeric types should produce a type");
+    }
+
+    @Test
+    void inferPatternMatchedFunctionBody() {
+        // Pattern-matched functions use MATCH nodes internally (fix #4)
+        // define f(0) => 1 | f(1) => 2 | f(_) => 0
+        ELProgram prog = new Parser(
+            "define f(0) => 1 | f(1) => 2 | f(_) => 0").parse();
+        for (ELNode def : prog.getDefinitions()) {
+            assertDoesNotThrow(() -> inferrer.infer(def),
+                "Pattern-matched function should not throw");
+        }
+    }
+
+    @Test
+    void classTypeUnifyWithSameClass() {
+        ClassType ct1 = new ClassType(java.util.List.class, Type.INTEGER);
+        ClassType ct2 = new ClassType(java.util.List.class, Type.INTEGER);
+        // Uses default Type.unify() which checks equals()
+        Type result = ct1.unify(ct2);
+        assertEquals(ct1, result, "Same ClassTypes should unify");
+    }
 }

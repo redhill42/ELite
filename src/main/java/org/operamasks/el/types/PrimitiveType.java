@@ -20,11 +20,35 @@ public class PrimitiveType extends Type {
         if (other instanceof PrimitiveType) {
             PrimitiveType pt = (PrimitiveType) other;
             if (this == pt) return true;
-            // Number hierarchy: Integer <: Long <: Number
-            if (pt == NUMBER && Number.class.isAssignableFrom(this.javaClass)) return true;
             if (pt == OBJECT) return true;
+            if (pt == NUMBER && Number.class.isAssignableFrom(this.javaClass)) return true;
+            // Numeric widening hierarchy: byte → short → int → long → float → double
+            if (isNumericWidening(this.javaClass, pt.javaClass)) return true;
         }
         return false;
+    }
+
+    /**
+     * Check if {@code from} can be implicitly widened to {@code to}
+     * per Java numeric promotion rules.
+     */
+    private static boolean isNumericWidening(Class<?> from, Class<?> to) {
+        if (!Number.class.isAssignableFrom(from) || !Number.class.isAssignableFrom(to))
+            return false;
+        // Order: Byte < Short < Integer < Long < Float < Double
+        int rankFrom = numericRank(from);
+        int rankTo = numericRank(to);
+        return rankFrom >= 0 && rankTo >= 0 && rankFrom <= rankTo;
+    }
+
+    private static int numericRank(Class<?> cls) {
+        if (cls == Byte.class || cls == Byte.TYPE)       return 0;
+        if (cls == Short.class || cls == Short.TYPE)     return 1;
+        if (cls == Integer.class || cls == Integer.TYPE) return 2;
+        if (cls == Long.class || cls == Long.TYPE)       return 3;
+        if (cls == Float.class || cls == Float.TYPE)     return 4;
+        if (cls == Double.class || cls == Double.TYPE)   return 5;
+        return -1;
     }
 
     @Override
@@ -37,6 +61,23 @@ public class PrimitiveType extends Type {
     @Override
     public int hashCode() {
         return name.hashCode();
+    }
+
+    @Override
+    public Type unify(Type other) {
+        if (this.equals(other)) return this;
+        if (other instanceof VarType) return other.unify(this);
+        if (other == DYNAMIC) return this;
+        if (other instanceof PrimitiveType) {
+            PrimitiveType pt = (PrimitiveType) other;
+            // Unify numbers using the wider type
+            if (Number.class.isAssignableFrom(this.javaClass)
+                && Number.class.isAssignableFrom(pt.javaClass)) {
+                if (isNumericWidening(this.javaClass, pt.javaClass)) return pt;
+                if (isNumericWidening(pt.javaClass, this.javaClass)) return this;
+            }
+        }
+        return null; // cannot unify
     }
 
     @Override
