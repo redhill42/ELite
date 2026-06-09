@@ -1,431 +1,400 @@
-/*
- * Copyright (c) 2006-2011 Daniel Yuan.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses.
- */
-
 package org.operamasks.el.integration;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.operamasks.el.EliteTestBase;
 
 /**
  * End-to-end integration tests for the ELite language.
  */
-public class ELIntegrationTest {
-
-    private ScriptEngine engine;
-
-    @Before
-    public void setUp() {
-        engine = new ScriptEngineManager().getEngineByName("ELite");
-        assertNotNull("ELite ScriptEngine not found.", engine);
-    }
-
-    private long evalL(String expr) throws ScriptException {
-        return ((Number) engine.eval(expr)).longValue();
-    }
+class ELIntegrationTest extends EliteTestBase {
 
     // ---- Literals ----
 
     @Test
-    public void testIntegerLiteral() throws ScriptException {
+    void integerLiteral() {
         assertEquals(42L, evalL("42"));
     }
 
     @Test
-    public void testFloatLiteral() throws ScriptException {
-        assertEquals(3.14, ((Number) engine.eval("3.14")).doubleValue(), 0.001);
+    void floatLiteral() {
+        assertEquals(3.14, evalD("3.14"), 0.001);
     }
 
     @Test
-    public void testStringLiteral() throws ScriptException {
-        assertEquals("hello world", engine.eval("\"hello world\""));
+    void stringLiteral() {
+        assertEquals("hello world", eval("\"hello world\""));
     }
 
     @Test
-    public void testBooleanLiteral() throws ScriptException {
-        assertEquals(true, engine.eval("true"));
-        assertEquals(false, engine.eval("false"));
+    void booleanLiteral() {
+        assertEquals(true, eval("true"));
+        assertEquals(false, eval("false"));
     }
 
     @Test
-    public void testNullLiteral() throws ScriptException {
-        assertNull(engine.eval("null"));
+    void nullLiteral() {
+        assertNull(eval("null"));
     }
 
     // ---- Arithmetic ----
 
     @Test
-    public void testAddition() throws ScriptException {
+    void addition() {
         assertEquals(7L, evalL("3 + 4"));
     }
 
     @Test
-    public void testSubtraction() throws ScriptException {
+    void subtraction() {
         assertEquals(10L, evalL("15 - 5"));
     }
 
     @Test
-    public void testMultiplication() throws ScriptException {
+    void multiplication() {
         assertEquals(56L, evalL("7 * 8"));
     }
 
     @Test
-    public void testRemainder() throws ScriptException {
+    void remainder() {
         assertEquals(1L, evalL("10 % 3"));
     }
 
     @Test
-    public void testPrecedence() throws ScriptException {
+    void precedence() {
         assertEquals(14L, evalL("2 + 3 * 4"));
     }
 
     @Test
-    public void testParenthesizedExpression() throws ScriptException {
+    void parenthesizedExpression() {
         assertEquals(20L, evalL("(2 + 3) * 4"));
     }
 
     @Test
-    public void testNestedArithmetic() throws ScriptException {
+    void nestedArithmetic() {
         assertEquals(18L, evalL("(2 + 4) * (5 - 2)"));
     }
 
     @Test
-    public void testUnaryNegation() throws ScriptException {
+    void unaryNegation() {
         assertEquals(-100L, evalL("-100"));
     }
 
     @Test
-    public void testFloatingPointArithmetic() throws ScriptException {
-        assertEquals(7.5, ((Number) engine.eval("3.0 * 2.5")).doubleValue(), 0.001);
+    void floatingPointArithmetic() {
+        assertEquals(7.5, evalD("3.0 * 2.5"), 0.001);
     }
 
     // ---- Comparisons ----
 
     @Test
-    public void testEquality() throws ScriptException {
-        assertEquals(true, engine.eval("1 == 1"));
-        assertEquals(false, engine.eval("1 == 2"));
+    void equality() {
+        assertEquals(true, eval("1 == 1"));
+        assertEquals(false, eval("1 == 2"));
     }
 
     @Test
-    public void testInequality() throws ScriptException {
-        assertEquals(true, engine.eval("1 != 2"));
-        assertEquals(false, engine.eval("1 != 1"));
+    void inequality() {
+        assertEquals(true, eval("1 != 2"));
+        assertEquals(false, eval("1 != 1"));
     }
 
     @Test
-    public void testRelationalOperators() throws ScriptException {
-        assertEquals(true, engine.eval("3 < 5"));
-        assertEquals(true, engine.eval("5 > 3"));
-        assertEquals(true, engine.eval("5 >= 5"));
-        assertEquals(true, engine.eval("3 <= 5"));
+    void relationalOperators() {
+        assertEquals(true, eval("3 < 5"));
+        assertEquals(true, eval("5 > 3"));
+        assertEquals(true, eval("5 >= 5"));
+        assertEquals(true, eval("3 <= 5"));
     }
 
     // ---- Logical ----
 
     @Test
-    public void testLogicalAnd() throws ScriptException {
-        assertEquals(true, engine.eval("true && true"));
-        assertEquals(false, engine.eval("true && false"));
+    void logicalAnd() {
+        assertEquals(true, eval("true && true"));
+        assertEquals(false, eval("true && false"));
     }
 
     @Test
-    public void testLogicalOr() throws ScriptException {
-        assertEquals(true, engine.eval("true || false"));
-        assertEquals(false, engine.eval("false || false"));
+    void logicalOr() {
+        assertEquals(true, eval("true || false"));
+        assertEquals(false, eval("false || false"));
     }
 
     @Test
-    public void testLogicalNot() throws ScriptException {
-        assertEquals(false, engine.eval("!true"));
-        assertEquals(true, engine.eval("!false"));
+    void logicalNot() {
+        assertEquals(false, eval("!true"));
+        assertEquals(true, eval("!false"));
     }
 
     @Test
-    public void testComplexLogical() throws ScriptException {
-        assertEquals(true, engine.eval("(1 < 2) && (3 < 4)"));
-        assertEquals(false, engine.eval("(1 > 2) || (3 > 4)"));
+    void complexLogical() {
+        assertEquals(true, eval("(1 < 2) && (3 < 4)"));
+        assertEquals(false, eval("(1 > 2) || (3 > 4)"));
     }
 
     // ---- Conditional ----
 
     @Test
-    public void testTernaryTrue() throws ScriptException {
+    void ternaryTrue() {
         assertEquals(1L, evalL("true ? 1 : 2"));
     }
 
     @Test
-    public void testTernaryFalse() throws ScriptException {
+    void ternaryFalse() {
         assertEquals(2L, evalL("false ? 1 : 2"));
     }
 
     @Test
-    public void testNestedTernary() throws ScriptException {
-        assertEquals("yes", engine.eval("true ? (false ? \"no\" : \"yes\") : \"maybe\""));
+    void nestedTernary() {
+        assertEquals("yes", eval("true ? (false ? \"no\" : \"yes\") : \"maybe\""));
     }
 
     // ---- String concatenation ----
 
     @Test
-    public void testStringConcat() throws ScriptException {
-        assertEquals("HelloWorld", engine.eval("\"Hello\" ~ \"World\""));
+    void stringConcat() {
+        assertEquals("HelloWorld", eval("\"Hello\" ~ \"World\""));
     }
 
     // ---- Variable definition ----
 
     @Test
-    public void testVariableDefinition() throws ScriptException {
-        engine.eval("define x = 42");
+    void variableDefinition() {
+        exec("define x = 42");
         assertEquals(42L, evalL("x"));
     }
 
     @Test
-    public void testVariableInExpression() throws ScriptException {
-        engine.eval("define a = 10");
-        engine.eval("define b = 20");
+    void variableInExpression() {
+        exec("define a = 10");
+        exec("define b = 20");
         assertEquals(30L, evalL("a + b"));
     }
 
     @Test
-    public void testVariableReassignment() throws ScriptException {
-        engine.eval("define x = 5");
+    void variableReassignment() {
+        exec("define x = 5");
         assertEquals(5L, evalL("x"));
-        engine.eval("x = 10");
+        exec("x = 10");
         assertEquals(10L, evalL("x"));
     }
 
     // ---- Function definition and calls ----
 
     @Test
-    public void testSimpleFunction() throws ScriptException {
-        engine.eval("define add(a, b) => a + b");
+    void simpleFunction() {
+        exec("define add(a, b) => a + b");
         assertEquals(30L, evalL("add(10, 20)"));
     }
 
     @Test
-    public void testFunctionWithExpressionBody() throws ScriptException {
-        engine.eval("define square(x) => x * x");
+    void functionWithExpressionBody() {
+        exec("define square(x) => x * x");
         assertEquals(25L, evalL("square(5)"));
     }
 
     @Test
-    public void testFunctionComposition() throws ScriptException {
-        engine.eval("define double(x) => x * 2");
-        engine.eval("define addOne(x) => x + 1");
+    void functionComposition() {
+        exec("define double(x) => x * 2");
+        exec("define addOne(x) => x + 1");
         assertEquals(11L, evalL("addOne(double(5))"));
     }
 
     @Test
-    public void testBlockFunction() throws ScriptException {
-        engine.eval("define sumTo(n) { define result = n * (n + 1) / 2; result }");
+    void blockFunction() {
+        exec("define sumTo(n) { define result = n * (n + 1) / 2; result }");
         assertEquals(55L, evalL("sumTo(10)"));
     }
 
     // ---- Lambda expressions ----
 
     @Test
-    public void testLambdaExpression() throws ScriptException {
-        engine.eval("define double = \\x => x * 2");
+    void lambdaExpression() {
+        exec("define double = \\x => x * 2");
         assertEquals(20L, evalL("double(10)"));
     }
 
     @Test
-    public void testLambdaAsArgument() throws ScriptException {
-        engine.eval("define apply(f, x) => f(x)");
+    void lambdaAsArgument() {
+        exec("define apply(f, x) => f(x)");
         assertEquals(14L, evalL("apply(\\x => x * 2, 7)"));
+    }
+
+    @Test
+    void thunkLambda() {
+        exec("define answer = \\ => 42");
+        assertEquals(42L, evalL("answer()"));
     }
 
     // ---- Closures ----
 
     @Test
-    public void testClosureCapturesEnvironment() throws ScriptException {
-        engine.eval("define makeAdder(n) => \\x => x + n");
-        engine.eval("define add5 = makeAdder(5)");
+    void closureCapturesEnvironment() {
+        exec("define makeAdder(n) => \\x => x + n");
+        exec("define add5 = makeAdder(5)");
         assertEquals(15L, evalL("add5(10)"));
     }
 
     // ---- Pipe operator ----
 
     @Test
-    public void testPipeOperator() throws ScriptException {
-        engine.eval("define double(x) => x * 2");
-        engine.eval("define addOne(x) => x + 1");
+    void pipeOperator() {
+        exec("define double(x) => x * 2");
+        exec("define addOne(x) => x + 1");
         assertEquals(11L, evalL("5 -> double -> addOne"));
     }
 
     // ---- String interpolation ----
 
     @Test
-    public void testStringInterpolation() throws ScriptException {
-        engine.eval("define name = \"World\"");
-        assertEquals("Hello, World!", engine.eval("\"Hello, ${name}!\""));
+    void stringInterpolation() {
+        exec("define name = \"World\"");
+        assertEquals("Hello, World!", eval("\"Hello, ${name}!\""));
     }
 
     // ---- List operations ----
 
     @Test
-    public void testListLiteral() throws ScriptException {
-        engine.eval("define lst = [1, 2, 3, 4, 5]");
+    void listLiteral() {
+        exec("define lst = [1, 2, 3, 4, 5]");
+        Object result = eval("lst");
+        assertTrue(result instanceof java.util.List);
     }
 
     // ---- Object-oriented: class definition ----
 
     @Test
-    public void testSimpleClass() throws ScriptException {
-        engine.eval("class Point(x, y) { toString() => \"(\" ~ x ~ \", \" ~ y ~ \")\" }");
-        Object result = engine.eval("Point(3, 4)");
+    void simpleClass() {
+        exec("class Point(x, y) { toString() => \"(\" ~ x ~ \", \" ~ y ~ \")\" }");
+        Object result = eval("Point(3, 4)");
         assertNotNull(result);
     }
 
     // ---- Recursive function ----
 
     @Test
-    public void testRecursiveFunction() throws ScriptException {
-        engine.eval("define fib(n) { if (n <= 1) { n } else { fib(n-1) + fib(n-2) } }");
+    void recursiveFunction() {
+        exec("define fib(n) { if (n <= 1) { n } else { fib(n-1) + fib(n-2) } }");
         assertEquals(55L, evalL("fib(10)"));
     }
 
     // ---- Sequence ----
 
     @Test
-    public void testSimpleSequence() throws ScriptException {
-        engine.eval("define r = [1, 2, 3, 4, 5]");
-        Object result = engine.eval("r");
+    void simpleSequence() {
+        exec("define r = [1, 2, 3, 4, 5]");
+        Object result = eval("r");
         assertNotNull(result);
         assertTrue(result instanceof java.util.List);
     }
 
     // ---- Error handling ----
 
-    @Test(expected = ScriptException.class)
-    public void testDivisionByZeroThrows() throws ScriptException {
-        engine.eval("1 / 0");
+    @Test
+    void divisionByZeroThrows() {
+        assertEvalThrows("1 / 0");
     }
 
-    @Test(expected = ScriptException.class)
-    public void testUndefinedVariableThrows() throws ScriptException {
-        engine.eval("undefinedVariable");
+    @Test
+    void undefinedVariableThrows() {
+        assertEvalThrows(freshEngine(), "undefinedVariable");
     }
 
-    @Test(expected = ScriptException.class)
-    public void testSyntaxErrorThrows() throws ScriptException {
-        engine.eval("(1 + 2");
+    @Test
+    void syntaxErrorThrows() {
+        assertEvalThrows("(1 + 2");
     }
 
     // ---- Import and Java interop ----
 
     @Test
-    public void testImportJavaClass() throws ScriptException {
-        engine.eval("import java.util.Date");
-        Object result = engine.eval("new Date(0)");
+    void importJavaClass() {
+        exec("import java.util.Date");
+        Object result = eval("new Date(0)");
         assertNotNull(result);
         assertTrue(result instanceof java.util.Date);
     }
 
     @Test
-    public void testJavaMethodCall() throws ScriptException {
-        Object result = engine.eval("\"hello\".length()");
+    void javaMethodCall() {
+        Object result = eval("\"hello\".length()");
         assertEquals(5, result);
     }
 
     @Test
-    public void testJavaStaticMethodCall() throws ScriptException {
-        assertEquals(42, engine.eval("Math.abs(-42)"));
+    void javaStaticMethodCall() {
+        assertEquals(42, eval("Math.abs(-42)"));
     }
 
     @Test
-    public void testSystemOutPrint() throws ScriptException {
-        engine.eval("System.out.println(\"test from ELite\")");
+    void systemOutPrint() {
+        exec("System.out.println(\"test from ELite\")");
     }
 
     // ---- Type annotations ----
 
     @Test
-    public void testTypeAnnotationOnVariable() throws ScriptException {
-        // define with type annotation should parse and evaluate
-        engine.eval("define x::Integer = 42");
+    void typeAnnotationOnVariable() {
+        exec("define x::Integer = 42");
         assertEquals(42L, evalL("x"));
     }
 
     @Test
-    public void testTypeAnnotationOnFunction() throws ScriptException {
-        // Function with parameter and return type annotations
-        engine.eval("define add(a::Integer, b::Integer)::Integer => a + b");
+    void typeAnnotationOnFunction() {
+        exec("define add(a::Integer, b::Integer)::Integer => a + b");
         assertEquals(30L, evalL("add(10, 20)"));
     }
 
     @Test
-    public void testTypeAnnotationJavaClass() throws ScriptException {
-        engine.eval("define d::java.util.Date = new Date(0)");
-        Object result = engine.eval("d");
+    void typeAnnotationJavaClass() {
+        exec("define d::java.util.Date = new Date(0)");
+        Object result = eval("d");
         assertTrue(result instanceof java.util.Date);
     }
 
     // ---- Type checker errors ----
 
-    @Test(expected = ScriptException.class)
-    public void testUndefinedTypeAnnotationThrowsError() throws ScriptException {
-        // Fresh engine — define with an undefined type should throw
-        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
-        eng.eval("define x::NonExistentType = 42");
-    }
-
-    @Test(expected = ScriptException.class)
-    public void testUndefinedParamTypeThrowsError() throws ScriptException {
-        // Fresh engine — undefined parameter type should throw
-        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
-        eng.eval("define add(a::Unknown, b::Integer)::Integer => a + b");
+    @Test
+    void undefinedTypeAnnotationThrowsError() {
+        ScriptEngine eng = freshEngine();
+        assertEvalThrows(eng, "define x::NonExistentType = 42");
     }
 
     @Test
-    public void testValidParamTypesPass() throws ScriptException {
-        // All parameter types valid — should execute normally
-        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
+    void undefinedParamTypeThrowsError() {
+        ScriptEngine eng = freshEngine();
+        assertEvalThrows(eng, "define add(a::Unknown, b::Integer)::Integer => a + b");
+    }
+
+    @Test
+    void validParamTypesPass() throws ScriptException {
+        ScriptEngine eng = freshEngine();
         eng.eval("define add(a::Integer, b::Integer)::Integer => a + b");
         assertEquals(3L, ((Number) eng.eval("add(1, 2)")).longValue());
     }
 
-    @Test(expected = ScriptException.class)
-    public void testArgTypeMismatchCrossEval() throws ScriptException {
-        // Define in one eval, call in another — should still type-check
-        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
-        eng.eval("define add(a::Integer, b::Integer)::Integer => a + b");
-        eng.eval("print(add(\"1\", 2))");  // ← should be caught across evals
+    @Test
+    void argTypeMismatchCrossEval() {
+        ScriptEngine eng = freshEngine();
+        assertEvalThrows(eng, "define add(a::Integer, b::Integer)::Integer => a + b; print(add(\"1\", 2))");
     }
 
-    @Test(expected = ScriptException.class)
-    public void testReturnTypeMismatchThrowsError() throws ScriptException {
-        // Returning String where Integer is declared
-        ScriptEngine eng = new ScriptEngineManager().getEngineByName("ELite");
-        eng.eval("define hello()::Integer => \"hello, world\"");
+    @Test
+    void returnTypeMismatchThrowsError() {
+        ScriptEngine eng = freshEngine();
+        assertEvalThrows(eng, "define hello()::Integer => \"hello, world\"");
     }
 
     // ---- Hello World styles ----
 
     @Test
-    public void testHelloWorldStyles() throws ScriptException {
-        // Various Hello World styles — verify they don't throw
-        engine.eval("print(\"Hello, World!\")");
-        engine.eval("\"Hello, World!\".print()");
-        engine.eval("\"Hello, World!\" -> print");
+    void helloWorldStyles() {
+        exec("print(\"Hello, World!\")");
+        exec("\"Hello, World!\".print()");
+        exec("\"Hello, World!\" -> print");
     }
 }

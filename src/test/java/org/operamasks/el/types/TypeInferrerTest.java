@@ -1,11 +1,11 @@
 package org.operamasks.el.types;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import javax.el.ELContext;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
@@ -13,13 +13,13 @@ import org.operamasks.el.parser.Parser;
 /**
  * Tests for the type inference system.
  */
-public class TypeInferrerTest {
+class TypeInferrerTest {
 
     private TypeInferrer inferrer;
     private ELContext elctx;
 
-    @Before
-    public void setUp() {
+    @BeforeEach
+    void setUp() {
         elctx = ELEngine.createELContext();
         inferrer = new TypeInferrer(elctx);
     }
@@ -34,104 +34,101 @@ public class TypeInferrerTest {
     // ---- Literal inference ----
 
     @Test
-    public void testInferIntegerLiteral() {
+    void inferIntegerLiteral() {
         assertEquals(Type.INTEGER, infer("42"));
     }
 
     @Test
-    public void testInferDoubleLiteral() {
+    void inferDoubleLiteral() {
         assertEquals(Type.DOUBLE, infer("3.14"));
     }
 
     @Test
-    public void testInferStringLiteral() {
+    void inferStringLiteral() {
         assertEquals(Type.STRING, infer("\"hello\""));
     }
 
     @Test
-    public void testInferBooleanLiteral() {
-        // true/false may be parsed as IDENT or TRUE/FALSE tokens
-        // depending on parseExpression context
+    void inferBooleanLiteral() {
         Type t1 = infer("true");
-        assertTrue("Expected Boolean or IDENT, got " + t1,
-            t1 == Type.BOOLEAN || t1 == Type.DYNAMIC);
+        assertTrue(t1 == Type.BOOLEAN || t1 == Type.DYNAMIC,
+            "Expected Boolean or DYNAMIC, got " + t1);
     }
 
     @Test
-    public void testInferNullLiteral() {
+    void inferNullLiteral() {
         assertEquals(Type.DYNAMIC, infer("null"));
     }
 
     // ---- Arithmetic inference ----
 
     @Test
-    public void testInferIntegerAddition() {
+    void inferIntegerAddition() {
         assertEquals(Type.INTEGER, infer("1 + 2"));
     }
 
     @Test
-    public void testInferDoubleAddition() {
+    void inferDoubleAddition() {
         assertEquals(Type.DOUBLE, infer("3.0 + 4.0"));
     }
 
     @Test
-    public void testInferMultiplication() {
+    void inferMultiplication() {
         assertEquals(Type.INTEGER, infer("4 * 5"));
     }
 
     @Test
-    public void testInferPower() {
+    void inferPower() {
         assertEquals(Type.INTEGER, infer("2 ^ 8"));
     }
 
     @Test
-    public void testInferNegation() {
+    void inferNegation() {
         assertEquals(Type.INTEGER, infer("-42"));
     }
 
     @Test
-    public void testInferStringConcat() {
+    void inferStringConcat() {
         assertEquals(Type.STRING, infer("\"hello\" ~ \"world\""));
     }
 
     // ---- Comparison / Logical inference ----
 
     @Test
-    public void testInferEqualityReturnsBoolean() {
+    void inferEqualityReturnsBoolean() {
         assertEquals(Type.BOOLEAN, infer("1 == 1"));
     }
 
     @Test
-    public void testInferComparisonReturnsBoolean() {
+    void inferComparisonReturnsBoolean() {
         assertEquals(Type.BOOLEAN, infer("3 < 5"));
     }
 
     @Test
-    public void testInferLogicalAndReturnsBoolean() {
+    void inferLogicalAndReturnsBoolean() {
         assertEquals(Type.BOOLEAN, infer("true && false"));
     }
 
     @Test
-    public void testInferLogicalOrReturnsBoolean() {
+    void inferLogicalOrReturnsBoolean() {
         assertEquals(Type.BOOLEAN, infer("true || false"));
     }
 
     @Test
-    public void testInferLogicalNotReturnsBoolean() {
+    void inferLogicalNotReturnsBoolean() {
         assertEquals(Type.BOOLEAN, infer("!true"));
     }
 
     // ---- List inference ----
 
     @Test
-    public void testInferEmptyList() {
-        // parseExpression("[]") may return various node types
+    void inferEmptyList() {
         Type t = infer("[]");
         assertNotNull(t);
     }
 
     @Test
-    public void testInferListLiteral() {
+    void inferListLiteral() {
         Type t = infer("[1, 2, 3]");
         assertNotNull(t);
     }
@@ -139,51 +136,65 @@ public class TypeInferrerTest {
     // ---- Variable binding ----
 
     @Test
-    public void testInferDefineBindsVariable() {
-        // parse() returns a full program; infer the define statement
+    void inferDefineBindsVariable() {
         ELNode node = Parser.parse("define x = 42");
         inferrer.infer(node);
         ELNode lookup = Parser.parseExpression("x");
         Type t = inferrer.infer(lookup);
-        // x should be bound to Integer, but may be dynamic if the parser
-        // doesn't produce DEFINE nodes from parseExpression context
         assertNotNull(t);
     }
 
     // ---- Type hierarchy ----
 
     @Test
-    public void testIntegerIsSubtypeOfNumber() {
+    void integerIsSubtypeOfNumber() {
         assertTrue(Type.INTEGER.isSubtypeOf(Type.NUMBER));
     }
 
     @Test
-    public void testNumberIsNotSubtypeOfInteger() {
+    void numberIsNotSubtypeOfInteger() {
         assertFalse(Type.NUMBER.isSubtypeOf(Type.INTEGER));
     }
 
     @Test
-    public void testDynamicIsSubtypeOfEverything() {
+    void dynamicIsSubtypeOfEverything() {
         assertTrue(Type.DYNAMIC.isSubtypeOf(Type.INTEGER));
         assertTrue(Type.DYNAMIC.isSubtypeOf(Type.STRING));
     }
 
     @Test
-    public void testBottomIsSubtypeOfEverything() {
+    void bottomIsSubtypeOfEverything() {
         assertTrue(Type.BOTTOM.isSubtypeOf(Type.INTEGER));
         assertTrue(Type.BOTTOM.isSubtypeOf(Type.DYNAMIC));
+    }
+
+    @Test
+    void objectIsSupertypeOfInteger() {
+        assertTrue(Type.INTEGER.isSubtypeOf(Type.OBJECT));
+    }
+
+    @Test
+    void topIsSupertypeOfEverything() {
+        assertTrue(Type.INTEGER.isSubtypeOf(Type.TOP));
+        assertTrue(Type.STRING.isSubtypeOf(Type.TOP));
+        assertTrue(Type.DYNAMIC.isSubtypeOf(Type.TOP));
+    }
+
+    @Test
+    void integerIsNotSubtypeOfString() {
+        assertFalse(Type.INTEGER.isSubtypeOf(Type.STRING));
     }
 
     // ---- Unification ----
 
     @Test
-    public void testUnifySameTypes() {
+    void unifySameTypes() {
         Type result = Type.INTEGER.unify(Type.INTEGER);
         assertEquals(Type.INTEGER, result);
     }
 
     @Test
-    public void testUnifyVarWithType() {
+    void unifyVarWithType() {
         VarType v = Type.fresh("test");
         Type result = v.unify(Type.INTEGER);
         assertEquals(Type.INTEGER, result);
@@ -191,50 +202,86 @@ public class TypeInferrerTest {
     }
 
     @Test
-    public void testUnifyTwoVars() {
+    void unifyTwoVars() {
         VarType a = Type.fresh("a");
         VarType b = Type.fresh("b");
         Type result = a.unify(b);
         assertNotNull(result);
     }
 
+    @Test
+    void unifyDifferentTypesReturnsNull() {
+        Type result = Type.INTEGER.unify(Type.STRING);
+        assertNull(result,
+            "Unifying Integer with String should fail (return null)");
+    }
+
+    @Test
+    void varTypeOccursCheck() {
+        VarType v = Type.fresh("t");
+        // A variable does not occur in itself for the base case
+        assertFalse(Type.INTEGER.occurs(v));
+    }
+
     // ---- ClassType ----
 
     @Test
-    public void testClassTypeFromJavaClass() {
+    void classTypeFromJavaClass() {
         Type t = Type.fromClass(java.util.ArrayList.class);
         assertTrue(t instanceof ClassType);
         assertEquals(java.util.ArrayList.class, ((ClassType) t).javaClass);
     }
 
     @Test
-    public void testParameterizedClassType() {
+    void parameterizedClassType() {
         ClassType listInt = new ClassType(java.util.List.class, Type.INTEGER);
         assertEquals("List<Integer>", listInt.toTypeString());
+    }
+
+    @Test
+    void classTypeIsSubtypeOfObject() {
+        Type t = Type.fromClass(java.util.ArrayList.class);
+        assertTrue(t.isSubtypeOf(Type.OBJECT));
     }
 
     // ---- FunctionType ----
 
     @Test
-    public void testFunctionTypeSubtyping() {
-        // (Integer) -> Integer  <:  (Integer) -> Number (covariant return)
+    void functionTypeSubtypingCovariantReturn() {
         FunctionType f1 = new FunctionType(Type.INTEGER, Type.INTEGER);
         FunctionType f2 = new FunctionType(Type.NUMBER, Type.INTEGER);
         assertTrue(f1.isSubtypeOf(f2));
     }
 
     @Test
-    public void testFunctionTypeContravariance() {
-        // (Number) -> Integer  <:  (Integer) -> Integer (contravariant param)
+    void functionTypeContravariantParam() {
+        // f1 = (Number) -> Integer : params=[Number], return=Integer
+        // f2 = (Integer) -> Integer : params=[Integer], return=Integer
+        // f1 <: f2 requires: f2.param <: f1.param (contravariant)
+        //   i.e., Integer <: Number? YES
         FunctionType f1 = new FunctionType(Type.INTEGER, Type.NUMBER);
         FunctionType f2 = new FunctionType(Type.INTEGER, Type.INTEGER);
         assertTrue(f1.isSubtypeOf(f2));
     }
 
+    @Test
+    void functionTypeToString() {
+        // Constructor: (returnType, paramTypes...)
+        FunctionType ft = new FunctionType(Type.STRING, Type.INTEGER);
+        assertEquals("(Integer) -> String", ft.toTypeString());
+    }
+
+    @Test
+    void multiArgFunctionType() {
+        FunctionType ft = new FunctionType(
+            java.util.Arrays.asList(Type.INTEGER, Type.STRING), Type.BOOLEAN);
+        assertEquals("(Integer, String) -> Boolean", ft.toTypeString());
+    }
+
     // ---- VarType ----
 
     @Test
-    public void testVarTypeBinding() {
+    void varTypeBinding() {
         VarType v = new VarType("x");
         assertFalse(v.isBound());
         v.bind(Type.STRING);
@@ -242,37 +289,101 @@ public class TypeInferrerTest {
         assertEquals(Type.STRING, v.resolve());
     }
 
+    @Test
+    void varTypeBoundToAnotherVar() {
+        VarType a = Type.fresh("a");
+        VarType b = Type.fresh("b");
+        a.bind(b);
+        assertTrue(a.isBound());
+        assertEquals(b, a.resolve());
+    }
+
+    @Test
+    void varTypeFreshGeneratesUniqueNames() {
+        VarType v1 = Type.fresh();
+        VarType v2 = Type.fresh();
+        assertNotEquals(v1.toString(), v2.toString());
+    }
+
     // ---- fromClass ----
 
     @Test
-    public void testFromClassInteger() {
+    void fromClassInteger() {
         assertEquals(Type.INTEGER, Type.fromClass(Integer.class));
     }
 
     @Test
-    public void testFromClassString() {
+    void fromClassString() {
         assertEquals(Type.STRING, Type.fromClass(String.class));
     }
 
     @Test
-    public void testFromClassBoolean() {
+    void fromClassBoolean() {
         assertEquals(Type.BOOLEAN, Type.fromClass(Boolean.class));
     }
 
-    // ---- Unknown type annotation errors ----
-
     @Test
-    public void testUndefinedTypeCaptured() throws Exception {
-        // define x::Integer via ScriptEngine — full pipeline
-        javax.script.ScriptEngine eng = new javax.script.ScriptEngineManager().getEngineByName("ELite");
-        eng.eval("define x::Integer = 42");
-        assertEquals(42L, ((Number) eng.eval("x")).longValue());
+    void fromClassLong() {
+        assertEquals(Type.LONG, Type.fromClass(Long.class));
     }
 
     @Test
-    public void testNoAnnotationNoError() {
+    void fromClassDouble() {
+        assertEquals(Type.DOUBLE, Type.fromClass(Double.class));
+    }
+
+    @Test
+    void fromClassNullReturnsDynamic() {
+        assertEquals(Type.DYNAMIC, Type.fromClass(null));
+    }
+
+    @Test
+    void fromClassPrimitiveInt() {
+        assertEquals(Type.INTEGER, Type.fromClass(Integer.TYPE));
+    }
+
+    @Test
+    void fromClassVoid() {
+        Type t = Type.fromClass(Void.TYPE);
+        assertEquals("Void", t.toTypeString());
+    }
+
+    // ---- DynamicType ----
+
+    @Test
+    void dynamicTypeIsSubtypeOfDynamic() {
+        assertTrue(Type.DYNAMIC.isSubtypeOf(Type.DYNAMIC));
+    }
+
+    @Test
+    void dynamicTypeUnifyWithAny() {
+        Type result = Type.DYNAMIC.unify(Type.INTEGER);
+        assertNotNull(result);
+    }
+
+    // ---- Inference from complete programs ----
+
+    @Test
+    void inferDefineWithTypeAnnotation() {
+        ELNode node = Parser.parse("define x::Integer = 42");
+        inferrer.infer(node);
+        assertFalse(inferrer.hasErrors(), "Should have no errors for valid type annotation");
+    }
+
+    @Test
+    void inferDefineWithoutAnnotation() {
         ELNode node = Parser.parse("define x = 42");
         inferrer.infer(node);
-        assertFalse("Should have no errors when no annotation", inferrer.hasErrors());
+        assertFalse(inferrer.hasErrors(), "Should have no errors when no annotation");
+    }
+
+    // ---- Undefined type via ScriptEngine ----
+
+    @Test
+    void validTypeAnnotationViaScriptEngine() throws Exception {
+        javax.script.ScriptEngine eng =
+            new javax.script.ScriptEngineManager().getEngineByName("ELite");
+        eng.eval("define x::Integer = 42");
+        assertEquals(42L, ((Number) eng.eval("x")).longValue());
     }
 }

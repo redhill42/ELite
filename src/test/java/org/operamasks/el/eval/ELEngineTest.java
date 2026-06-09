@@ -1,182 +1,213 @@
-/*
- * Copyright (c) 2006-2011 Daniel Yuan.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses.
- */
-
 package org.operamasks.el.eval;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import javax.el.ELContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.operamasks.el.EliteTestBase;
 
 /**
  * Tests for ELEngine APIs and evaluation via ScriptEngine.
  */
-public class ELEngineTest {
-
-    private ScriptEngine engine;
-
-    @Before
-    public void setUp() {
-        engine = new ScriptEngineManager().getEngineByName("ELite");
-    }
-
-    private long evalL(String expr) throws ScriptException {
-        return ((Number) engine.eval(expr)).longValue();
-    }
+class ELEngineTest extends EliteTestBase {
 
     // ---- ELContext lifecycle ----
 
     @Test
-    public void testCreateDefaultELContext() {
+    void createDefaultELContext() {
         ELContext ctx = ELEngine.createELContext();
         assertNotNull(ctx);
         assertNotNull(ctx.getELResolver());
     }
 
     @Test
-    public void testGetExpressionFactory() {
+    void getExpressionFactory() {
         assertNotNull(ELEngine.getExpressionFactory());
     }
 
     // ---- Arithmetic ----
 
     @Test
-    public void testAddition() throws ScriptException {
+    void addition() {
         assertEquals(30L, evalL("10 + 20"));
     }
 
     @Test
-    public void testSubtraction() throws ScriptException {
+    void subtraction() {
         assertEquals(63L, evalL("100 - 37"));
     }
 
     @Test
-    public void testMultiplication() throws ScriptException {
+    void multiplication() {
         assertEquals(56L, evalL("7 * 8"));
     }
 
     @Test
-    public void testFloatDivision() throws ScriptException {
-        assertEquals(2.5, ((Number) engine.eval("20.0 / 8.0")).doubleValue(), 0.001);
+    void floatDivision() {
+        assertEquals(2.5, evalD("20.0 / 8.0"), 0.001);
     }
 
     @Test
-    public void testPrecedence() throws ScriptException {
+    void precedence() {
         assertEquals(14L, evalL("2 + 3 * 4"));
+    }
+
+    @Test
+    void integerDivision() {
+        assertEquals(3L, evalL("10 div 3"));
+    }
+
+    @Test
+    void remainder() {
+        assertEquals(1L, evalL("10 % 3"));
     }
 
     // ---- Comparison ----
 
     @Test
-    public void testEquality() throws ScriptException {
-        assertEquals(true, engine.eval("5 == 5"));
-        assertEquals(false, engine.eval("5 == 6"));
+    void equality() {
+        assertEquals(true, eval("5 == 5"));
+        assertEquals(false, eval("5 == 6"));
     }
 
     @Test
-    public void testStringEquality() throws ScriptException {
-        assertEquals(true, engine.eval("\"abc\" == \"abc\""));
-        assertEquals(false, engine.eval("\"abc\" == \"xyz\""));
+    void stringEquality() {
+        assertEquals(true, eval("\"abc\" == \"abc\""));
+        assertEquals(false, eval("\"abc\" == \"xyz\""));
     }
 
     @Test
-    public void testRelational() throws ScriptException {
-        assertEquals(true, engine.eval("3 < 5"));
-        assertEquals(false, engine.eval("3 > 5"));
-        assertEquals(true, engine.eval("5 >= 5"));
+    void relational() {
+        assertEquals(true, eval("3 < 5"));
+        assertEquals(false, eval("3 > 5"));
+        assertEquals(true, eval("5 >= 5"));
+    }
+
+    @Test
+    void identityEquality() {
+        assertEquals(true, eval("true === true"));
+        assertEquals(false, eval("true !== true"));
     }
 
     // ---- Logical ----
 
     @Test
-    public void testLogicalAnd() throws ScriptException {
-        assertEquals(true, engine.eval("true && true"));
-        assertEquals(false, engine.eval("true && false"));
+    void logicalAnd() {
+        assertEquals(true, eval("true && true"));
+        assertEquals(false, eval("true && false"));
     }
 
     @Test
-    public void testLogicalOr() throws ScriptException {
-        assertEquals(true, engine.eval("true || false"));
+    void logicalOr() {
+        assertEquals(true, eval("true || false"));
     }
 
     @Test
-    public void testLogicalNot() throws ScriptException {
-        assertEquals(false, engine.eval("!true"));
+    void logicalNot() {
+        assertEquals(false, eval("!true"));
+    }
+
+    @Test
+    void logicalAliases() {
+        assertEquals(true, eval("true and true"));
+        assertEquals(true, eval("false or true"));
+        assertEquals(false, eval("not true"));
     }
 
     // ---- Conditional ----
 
     @Test
-    public void testConditional() throws ScriptException {
+    void conditionalTrue() {
         assertEquals(10L, evalL("true ? 10 : 20"));
+    }
+
+    @Test
+    void conditionalFalse() {
         assertEquals(20L, evalL("false ? 10 : 20"));
     }
 
     // ---- String concatenation ----
 
     @Test
-    public void testStringConcat() throws ScriptException {
-        assertEquals("Hello, World", engine.eval("\"Hello\" ~ \", \" ~ \"World\""));
+    void stringConcat() {
+        assertEquals("Hello, World", eval("\"Hello\" ~ \", \" ~ \"World\""));
     }
 
+    // ---- Power ----
+
     @Test
-    public void testPower() throws ScriptException {
+    void power() {
         assertEquals(1024L, evalL("2 ^ 10"));
     }
 
     // ---- Variable binding via ScriptEngine ----
 
     @Test
-    public void testVariableFromEngine() throws ScriptException {
-        engine.eval("define x = 42");
+    void variableFromDefine() {
+        exec("define x = 42");
         assertEquals(42L, evalL("x"));
     }
 
     @Test
-    public void testVariableInExpression() throws ScriptException {
-        engine.eval("define a = 10");
-        engine.eval("define b = 20");
+    void variableInExpression() {
+        exec("define a = 10");
+        exec("define b = 20");
         assertEquals(30L, evalL("a + b"));
+    }
+
+    @Test
+    void variableReassignment() {
+        exec("define x = 5");
+        assertEquals(5L, evalL("x"));
+        exec("x = 10");
+        assertEquals(10L, evalL("x"));
+    }
+
+    // ---- Compound assignment ----
+
+    @Test
+    void compoundAdd() {
+        exec("define x = 10");
+        exec("x += 5");
+        assertEquals(15L, evalL("x"));
+    }
+
+    @Test
+    void compoundSubtract() {
+        exec("define x = 10");
+        exec("x -= 3");
+        assertEquals(7L, evalL("x"));
+    }
+
+    @Test
+    void compoundMultiply() {
+        exec("define x = 4");
+        exec("x *= 3");
+        assertEquals(12L, evalL("x"));
     }
 
     // ---- Error cases ----
 
-    @Test(expected = ScriptException.class)
-    public void testDivisionByZero() throws ScriptException {
-        engine.eval("1 / 0");
+    @Test
+    void divisionByZeroThrows() {
+        assertEvalThrows("1 / 0");
     }
 
-    @Test(expected = ScriptException.class)
-    public void testUndefinedVariable() throws ScriptException {
-        new ScriptEngineManager().getEngineByName("ELite").eval("undefinedVar");
+    @Test
+    void undefinedVariableThrows() {
+        ScriptEngine eng = freshEngine();
+        assertEvalThrows(eng, "undefinedVar");
     }
 
     // ---- Engine isolation ----
 
     @Test
-    public void testEngineStateIsolation() throws ScriptException {
-        ScriptEngineManager mgr = new ScriptEngineManager();
-        ScriptEngine e1 = mgr.getEngineByName("ELite");
-        ScriptEngine e2 = mgr.getEngineByName("ELite");
+    void engineStateIsolation() throws ScriptException {
+        ScriptEngine e1 = freshEngine();
+        ScriptEngine e2 = freshEngine();
 
         e1.eval("define x = 1");
         e2.eval("define x = 2");
@@ -184,4 +215,25 @@ public class ELEngineTest {
         assertEquals(1L, ((Number) e1.eval("x")).longValue());
         assertEquals(2L, ((Number) e2.eval("x")).longValue());
     }
+
+    // ---- Block body function ----
+
+    @Test
+    void functionWithBlockBody() {
+        exec("define sumTo(n) { define result = n * (n + 1) / 2\n result }");
+        assertEquals(55L, evalL("sumTo(10)"));
+    }
+
+    // ---- Coalescing ----
+
+    @Test
+    void coalescingReturnsLeftIfNotNull() {
+        assertEquals(42L, evalL("42 ?? 99"));
+    }
+
+    @Test
+    void coalescingReturnsRightIfLeftIsNull() {
+        assertEquals(99L, evalL("null ?? 99"));
+    }
+
 }
