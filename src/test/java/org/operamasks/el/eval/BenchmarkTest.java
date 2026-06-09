@@ -1,0 +1,324 @@
+package org.operamasks.el.eval;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import javax.el.ELContext;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.operamasks.el.ir.IRBuilder;
+import org.operamasks.el.ir.IRFunction;
+import org.operamasks.el.ir.IRInterpreter;
+import org.operamasks.el.parser.ELNode;
+import org.operamasks.el.parser.Parser;
+
+/**
+ * Performance benchmarks for ELite evaluation.
+ *
+ * Each benchmark runs a warmup phase followed by measurement iterations.
+ * Results are printed to stdout for comparison across optimization passes.
+ *
+ * Build and run:
+ *   mvn test -Dtest=BenchmarkTest
+ */
+class BenchmarkTest {
+
+    private static ScriptEngine engine;
+
+    @BeforeAll
+    static void createEngine() {
+        engine = new ScriptEngineManager().getEngineByName("ELite");
+        assertNotNull(engine, "ELite ScriptEngine not found on classpath");
+    }
+
+    // ---- helpers ----
+
+    private static Object eval(String expr) {
+        try {
+            return engine.eval(expr);
+        } catch (ScriptException e) {
+            throw new RuntimeException("eval failed: " + expr, e);
+        }
+    }
+
+    private static void exec(String stmt) {
+        try {
+            engine.eval(stmt);
+        } catch (ScriptException e) {
+            throw new RuntimeException("exec failed: " + stmt, e);
+        }
+    }
+
+    /** Run a single expression many times and return ops/sec. */
+    private static double bench(String label, String expr, int warmupIters, int benchIters) {
+        // Compile/pre-warm the expression
+        for (int i = 0; i < warmupIters; i++) {
+            eval(expr);
+        }
+
+        long start = System.nanoTime();
+        for (int i = 0; i < benchIters; i++) {
+            eval(expr);
+        }
+        long elapsed = System.nanoTime() - start;
+
+        double opsPerSec = benchIters / (elapsed / 1_000_000_000.0);
+        System.out.printf("  %-40s %10d iters  %12.0f ops/s  (%6.1f ns/op)%n",
+                label, benchIters, opsPerSec, elapsed / (double) benchIters);
+        return opsPerSec;
+    }
+
+    /** Evaluate a setup expression once, then benchmark a body expression. */
+    private static double benchWithSetup(String label, String setup, String body,
+                                          int warmupIters, int benchIters) {
+        eval(setup);
+        return bench(label, body, warmupIters, benchIters);
+    }
+
+    private static final int WARMUP = 200;
+    private static final int ITERS  = 10_000;
+
+    // ==================== Arithmetic ====================
+
+    @Test
+    void benchArithmeticIntAdd() {
+        System.out.println("\n--- Arithmetic (int) ---");
+        bench("int add (100 + 200)",      "100 + 200", WARMUP, ITERS);
+        bench("int sub (500 - 37)",       "500 - 37", WARMUP, ITERS);
+        bench("int mul (7 * 8)",          "7 * 8", WARMUP, ITERS);
+        bench("int div (100 / 3)",        "100 / 3", WARMUP, ITERS);
+        bench("int mixed (1+2*3+4*5)",   "1 + 2 * 3 + 4 * 5", WARMUP, ITERS);
+        bench("int complex precedence",   "((10 + 5) * 3 - 8) / 2 + 100 * 4", WARMUP, ITERS);
+    }
+
+    @Test
+    void benchArithmeticDouble() {
+        System.out.println("\n--- Arithmetic (double) ---");
+        bench("double add (3.14+2.72)",   "3.14 + 2.72", WARMUP, ITERS);
+        bench("double mul (1.5*2.0)",     "1.5 * 2.0", WARMUP, ITERS);
+        bench("double div (100.0/3.0)",   "100.0 / 3.0", WARMUP, ITERS);
+        bench("double mixed",             "1.5 * 2.0 + 3.5 * 4.0 - 1.5 / 2.0", WARMUP, ITERS);
+    }
+
+    @Test
+    void benchArithmeticLong() {
+        System.out.println("\n--- Arithmetic (long) ---");
+        bench("long add (5000000000L+...)","5000000000L + 7000000000L", WARMUP, ITERS);
+        bench("long mul overflow",        "1000000L * 1000000L", WARMUP, ITERS);
+    }
+
+    // ==================== Comparisons ====================
+
+    @Test
+    void benchComparisons() {
+        System.out.println("\n--- Comparisons ---");
+        bench("int eq (100 == 100)",       "100 == 100", WARMUP, ITERS);
+        bench("int lt (50 < 100)",         "50 < 100", WARMUP, ITERS);
+        bench("int le (100 <= 100)",       "100 <= 100", WARMUP, ITERS);
+        bench("string eq",                 "\"hello\" == \"hello\"", WARMUP, ITERS);
+        bench("chained compare",           "10 < 20 and 20 < 30 and 30 <= 40", WARMUP, ITERS);
+    }
+
+    // ==================== Control Flow ====================
+
+    @Test
+    void benchConditional() {
+        System.out.println("\n--- Conditional ---");
+        bench("simple if/else",           "if (true) { 1 } else { 2 }", WARMUP, ITERS);
+        bench("nested if/else",           "if (1 < 2) { if (3 > 2) { 10 } else { 20 } } else { 30 }", WARMUP, ITERS);
+        bench("ternary (cond?a:b)",       "true ? 100 : 200", WARMUP, ITERS);
+    }
+
+    @Test
+    void benchLoops() {
+        System.out.println("\n--- Loops ---");
+        exec("define whileSum(n) { define x = 0; while (x < n) { x = x + 1 }; x }");
+        bench("while loop (x100)",           "whileSum(100)", WARMUP, ITERS / 100);
+        exec("define forSum(n) { define x = 0; for (i = 0; i < n; i = i + 1) { x = x + 1 }; x }");
+        bench("for loop (x100)",             "forSum(100)", WARMUP, ITERS / 100);
+        exec("define eachSum(n) { define s = 0; for (j in 0..<n) { s = s + j }; s }");
+        bench("for-each range (x100)",       "eachSum(100)", WARMUP, ITERS / 100);
+    }
+
+    // ==================== Function Calls ====================
+
+    @Test
+    void benchFunctionCalls() {
+        System.out.println("\n--- Function Calls ---");
+        // Define a function, then call it many times
+        exec("define add(x, y) => x + y");
+        bench("call add(x,y)",            "add(3, 4)", WARMUP, ITERS);
+
+        exec("define factorial(n) { if (n <= 1) { 1 } else { n * factorial(n - 1) } }");
+        bench("recursive factorial(10)",  "factorial(10)", WARMUP, ITERS);
+
+        exec("define fib(n) { if (n <= 1) { n } else { fib(n-1) + fib(n-2) } }");
+        bench("recursive fib(15)",        "fib(15)", WARMUP, ITERS);
+    }
+
+    // ==================== Variables ====================
+
+    @Test
+    void benchVariableAccess() {
+        System.out.println("\n--- Variable Access ---");
+        exec("define a = 42");
+        exec("define b = 3.14");
+        exec("define c = \"hello\"");
+        bench("read int var",             "a", WARMUP, ITERS);
+        bench("read double var",          "b", WARMUP, ITERS);
+        bench("read string var",          "c", WARMUP, ITERS);
+    }
+
+    // ==================== Data Structures ====================
+
+    @Test
+    void benchDataStructures() {
+        System.out.println("\n--- Data Structures ---");
+        bench("list literal [1,2,3]",     "[1, 2, 3]", WARMUP, ITERS);
+        bench("list index access",        "(\\list -> list[2])([1,2,3,4,5])", WARMUP, ITERS);
+        bench("map literal",              "{a: 1, b: 2, c: 3}", WARMUP, ITERS);
+        bench("range creation",           "0..<100", WARMUP, ITERS);
+    }
+
+    // ==================== String Operations ====================
+
+    @Test
+    void benchStrings() {
+        System.out.println("\n--- String Operations ---");
+        bench("string concat (~)",        "\"hello\" ~ \" \" ~ \"world\"", WARMUP, ITERS);
+        bench("string length",            "\"hello world\".length", WARMUP, ITERS);
+    }
+
+    // ==================== Pattern Matching ====================
+
+    @Test
+    void benchPatternMatching() {
+        System.out.println("\n--- Pattern Matching ---");
+        bench("simple match",             "match (3) { case 1: \"one\"; case 2: \"two\"; case 3: \"three\"; else \"?\" }", WARMUP, ITERS);
+    }
+
+    // ==================== Pipeline ====================
+
+    @Test
+    void benchPipeline() {
+        System.out.println("\n--- Pipeline / Lambda ---");
+        bench("simple lambda",            "(\\x => x + 1)(5)", WARMUP, ITERS);
+        bench("pipeline (->>)",          "5 ->> (\\x => x + 1) ->> (\\x => x * 2)", WARMUP, ITERS);
+    }
+
+    // ==================== Composite ====================
+
+    @Test
+    void benchComposite() {
+        System.out.println("\n--- Composite (mixed workload) ---");
+        // A realistic expression mixing arithmetic, vars, conditionals, and calls
+        exec("define max2(a, b) => if (a >= b) { a } else { b }");
+        exec("define x = 100");
+        exec("define y = 200");
+        bench("mixed expr", "((x + y) * 2 - 50) / 3 + max2(x, y)", WARMUP, ITERS);
+    }
+
+    // ==================== Overall Summary ====================
+
+    @Test
+    void benchOverallSummary() {
+        System.out.println("\n==============================================");
+        System.out.println("  ELite Performance Benchmark Summary");
+        System.out.println("  (AST Tree-Walking Interpreter — baseline)");
+        System.out.println("==============================================");
+
+        double total = 0;
+        int count   = 0;
+
+        System.out.println("\n--- Arithmetic ---");
+        total += bench("10 + 20",                "10 + 20", WARMUP, ITERS); count++;
+        total += bench("7 * 8",                  "7 * 8", WARMUP, ITERS); count++;
+        total += bench("100.0 / 3.0",            "100.0 / 3.0", WARMUP, ITERS); count++;
+        total += bench("1+2*3+4*5",              "1 + 2 * 3 + 4 * 5", WARMUP, ITERS); count++;
+
+        System.out.println("\n--- Comparisons ---");
+        total += bench("100 == 100",             "100 == 100", WARMUP, ITERS); count++;
+        total += bench("\"hello\" == \"hello\"", "\"hello\" == \"hello\"", WARMUP, ITERS); count++;
+
+        System.out.println("\n--- Control Flow ---");
+        total += bench("if (true) { 1 } else { 2 }", "if (true) { 1 } else { 2 }", WARMUP, ITERS); count++;
+        total += bench("true ? 100 : 200",       "true ? 100 : 200", WARMUP, ITERS); count++;
+
+        System.out.println("\n--- Variables ---");
+        exec("define a = 42");
+        total += bench("read var a",             "a", WARMUP, ITERS); count++;
+
+        System.out.println("\n--- Function Calls ---");
+        exec("define sq(x) => x * x");
+        total += bench("call sq(5)",             "sq(5)", WARMUP, ITERS); count++;
+        total += bench("lambda (\\x=>x+1)(5)",   "(\\x => x + 1)(5)", WARMUP, ITERS); count++;
+
+        System.out.println("\n--- Data Structures ---");
+        total += bench("list [1,2,3]",          "[1, 2, 3]", WARMUP, ITERS); count++;
+        total += bench("map {a:1,b:2}",         "{a: 1, b: 2}", WARMUP, ITERS); count++;
+
+        System.out.println("\n--- Strings ---");
+        total += bench("concat \"a\"~\"b\"",     "\"a\" ~ \"b\"", WARMUP, ITERS); count++;
+
+        double avg = total / count;
+        System.out.printf("%n=== Average across %d benchmarks: %,.0f ops/s (%.1f ns/op) ===%n",
+                count, avg, 1_000_000_000.0 / avg);
+    }
+
+    // ==================== IR vs AST Comparison ====================
+
+    private static ELContext elctx = ELEngine.createELContext();
+
+    /** Benchmark IR interpreter on a simple expression. */
+    private static double benchIR(String label, String expr, int warmup, int iters) {
+        ELNode node = Parser.parseExpression(expr);
+        IRFunction fn = IRBuilder.compile(node);
+        IRInterpreter interp = new IRInterpreter(elctx, fn);
+
+        // Warmup
+        for (int i = 0; i < warmup; i++) interp.execute(null);
+
+        long start = System.nanoTime();
+        for (int i = 0; i < iters; i++) interp.execute(null);
+        long elapsed = System.nanoTime() - start;
+
+        double opsPerSec = iters / (elapsed / 1_000_000_000.0);
+        System.out.printf("  %-40s %10d iters  %12.0f ops/s  (%6.1f ns/op)  [IR]%n",
+                label, iters, opsPerSec, elapsed / (double) iters);
+        return opsPerSec;
+    }
+
+    @Test
+    void benchIRvsAST() {
+        System.out.println("\n==============================================");
+        System.out.println("  IR Interpreter vs AST Tree-Walking");
+        System.out.println("==============================================");
+
+        String[][] tests = {
+            {"arithmetic: 10 + 20",         "10 + 20"},
+            {"arithmetic: 7 * 8",           "7 * 8"},
+            {"arithmetic: 3.14 + 2.72",     "3.14 + 2.72"},
+            {"arithmetic: 100.0 / 3.0",     "100.0 / 3.0"},
+            {"arithmetic: 1+2*3+4*5",       "1 + 2 * 3 + 4 * 5"},
+            {"comparison: 100 == 100",      "100 == 100"},
+            {"comparison: 50 < 100",        "50 < 100"},
+            {"conditional: true?100:200",   "true ? 100 : 200"},
+            {"conditional: false?100:200",  "false ? 100 : 200"},
+            {"concat: \"a\"~\"b\"",          "\"a\" ~ \"b\""},
+            {"complex mix",                 "((10 + 5) * 3 - 8) / 2 + 100 * 4"},
+        };
+
+        double astTotal = 0, irTotal = 0;
+        for (String[] t : tests) {
+            System.out.println("\n  " + t[0] + ":");
+            astTotal += bench("  AST", t[1], WARMUP, ITERS);
+            irTotal  += benchIR("  IR ", t[1], WARMUP, ITERS);
+        }
+
+        double speedup = irTotal / astTotal;
+        System.out.printf("%n=== IR/AST speedup: %.2fx ===%n", speedup);
+    }
+}
