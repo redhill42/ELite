@@ -154,6 +154,7 @@ public class ConstantFolder implements IRPass {
             case IDIV, LDIV -> wrap(na.longValue() / nb.longValue());  // integer division
             case DYNDIV -> {  // ELite /: float for non-evenly-divisible
                 long xl = na.longValue(), yl = nb.longValue();
+                if (yl == 0) yield null;  // division by zero — don't fold
                 yield isFloat ? na.doubleValue() / nb.doubleValue()
                     : (xl % yl == 0) ? wrap(xl / yl) : na.doubleValue() / nb.doubleValue();
             }
