@@ -927,7 +927,7 @@ class GameOfLifeControls extends Panel
         });
 
         // number of generations
-        genLabel = new Label(genLabelText + "        ");
+        genLabel = new Label(genLabelText ~ "        ");
 
         // start and stop button
         startstopButton = new Button(startLabelText);
@@ -972,7 +972,7 @@ class GameOfLifeControls extends Panel
      * @param generations number of generations
      */
     public void showGeneration(generations) {
-        genLabel.text = genLabelText + generations + "      ";
+        genLabel.text = genLabelText ~ generations ~ "      ";
     }
 
     /**

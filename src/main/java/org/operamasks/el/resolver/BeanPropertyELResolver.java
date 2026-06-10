@@ -18,6 +18,8 @@ package org.operamasks.el.resolver;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.HashSet;
+import java.util.Set;
 import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
 import java.beans.FeatureDescriptor;
@@ -438,6 +440,7 @@ public class BeanPropertyELResolver extends ELResolver
         public BeanFields(final Class baseClass) {
             AccessController.doPrivileged(new PrivilegedAction<Object>() {
                 public Object run() {
+                    // Walk superclass chain
                     for (Class c = baseClass; c != null; c = c.getSuperclass()) {
                         for (Field f : c.getDeclaredFields()) {
                             if (fieldAccessible(baseClass, f)) {
@@ -446,7 +449,22 @@ public class BeanPropertyELResolver extends ELResolver
                             }
                         }
                     }
+                    // Walk interface chain (e.g. JFrame implements WindowConstants with EXIT_ON_CLOSE)
+                    walkInterfaces(baseClass, new HashSet<>());
                     return null;
+                }
+                private void walkInterfaces(Class c, Set<Class> seen) {
+                    for (Class iface : c.getInterfaces()) {
+                        if (seen.add(iface)) {
+                            for (Field f : iface.getDeclaredFields()) {
+                                if (fieldAccessible(baseClass, f)) {
+                                    f.setAccessible(true);
+                                    fieldMap.putIfAbsent(f.getName(), f);
+                                }
+                            }
+                            walkInterfaces(iface, seen);
+                        }
+                    }
                 }});
         }
 
