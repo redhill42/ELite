@@ -93,7 +93,7 @@ public class IRBuilder {
             case Token.COALESCE: buildCoalesce(node); break;
 
             case Token.ASSIGN:    buildAssign((ELNode.ASSIGN) node); break;
-            case Token.ASSIGNOP:  buildTrampoline(node); break;  // compound: AST handles persistence
+            case Token.ASSIGNOP:  buildAssignOp((ELNode.ASSIGNOP) node); break;
             case Token.DEFINE:    buildDefine((ELNode.DEFINE) node); break;
 
             case Token.THEN: buildThen((ELNode.THEN) node); break;
@@ -406,12 +406,21 @@ public class IRBuilder {
     }
 
     // ── Compound assignment (+=, -=, etc.) ──
+    // 在 IR 层面展开为 x = x op y，不依赖 AST 节点结构
     private void buildAssignOp(ELNode.ASSIGNOP node) {
-        // x += 5 → right = ADD(IDENT("x"), 5)
-        // Just build the inner expression (reads var, computes result),
-        // then store it back to the same variable
-        build(node.right);  // computes new value
         if (node.left instanceof ELNode.IDENT ident) {
+            // 构建: left-value op right-value, 然后存回 left
+            build(node.left);        // push current value of x
+            build(node.right);       // push delta (5)
+            // Emit the binary operation
+            int leftT = typeIdFromNode(node.left);
+            int rightT = typeIdFromNode(node.right);
+            if (leftT >= 0 && rightT >= 0) {
+                emitTypedOp(node.binary.op, widerType(leftT, rightT));
+            } else {
+                emitDynamicOp(node.binary.op);
+            }
+            // Store result back
             int nameIdx = putConstant(ident.id);
             current.emitDup();
             current.emitStoreGlobal(nameIdx);
