@@ -2,6 +2,8 @@ package org.operamasks.el.ir;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.objectweb.asm.*;
 import static org.operamasks.el.ir.Opcode.*;
@@ -39,15 +41,23 @@ public class IRBytecodeCompiler {
     private final String internalName;
     private final Label[] blockLabels;
 
+    // Shared class loader so compiled callees are visible to callers
+    private static final SingleLoader LOADER = new SingleLoader();
+
+    private static class SingleLoader extends ClassLoader {
+        SingleLoader() { super(IRBytecodeCompiler.class.getClassLoader()); }
+        Class<?> define(String name, byte[] bc) {
+            return defineClass(name, bc, 0, bc.length);
+        }
+    }
+
     public static CompiledFunction compile(IRFunction fn) {
         String name = "ELiteCompiled$" + CLASS_COUNTER.incrementAndGet();
         byte[] bc = new IRBytecodeCompiler(fn, name).compileBytecode();
         try {
-            Class<?> c = new ClassLoader(IRBytecodeCompiler.class.getClassLoader()) {
-                Class<?> define() { return defineClass(name, bc, 0, bc.length); }
-            }.define();
+            Class<?> c = LOADER.define(name, bc);
             java.lang.reflect.Method m = c.getMethod("execute", Object[].class);
-            return new CompiledFunction(m, bc);
+            return new CompiledFunction(m, bc, name);
         } catch (Exception e) {
             throw new RuntimeException("Bytecode compile failed", e);
         }
@@ -199,7 +209,9 @@ public class IRBytecodeCompiler {
                 int funcIdx = pl;
                 int argc = oc == 0 ? 0 : v.operand(0);
                 IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
-                emitPackArgsAndCall(argc, true, target);
+                // Compile callee now and call directly (no HashMap/reflection)
+                CompiledFunction calleeCf = compileOrGet(target);
+                emitPackArgsAndCall(argc, true, calleeCf);
             }
             case INVOKE_DYN, INVOKE -> {
                 int argc = oc == 0 ? pl : v.operand(0);
@@ -307,8 +319,18 @@ public class IRBytecodeCompiler {
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
         }
     }
+    private final Map<IRFunction, CompiledFunction> calleeCache = new HashMap<>();
+
+    private CompiledFunction compileOrGet(IRFunction target) {
+        return calleeCache.computeIfAbsent(target, fn -> {
+            // Specialize with unknown types (varTypes tracking will do the work)
+            IRFunction specialized = IRSpeclializer.specialize(fn, new int[fn.paramCount()]);
+            return compile(specialized);
+        });
+    }
+
     /** Pack args from stack into Object[] and call helper. */
-    private void emitPackArgsAndCall(int argc, boolean direct, IRFunction target) {
+    private void emitPackArgsAndCall(int argc, boolean direct, CompiledFunction cf) {
         // Pop argc args from stack, pack into Object[], call helper
         if (argc == 0) {
             mv.visitInsn(A_ICONST_0);
@@ -326,13 +348,14 @@ public class IRBytecodeCompiler {
                 mv.visitInsn(A_AASTORE);
             }
         }
-        if (direct) {
-            // Register function and pass its int ID via ldc
-            int funcId = registerFunction(target);
-            emitIntConst(funcId);
-            mv.visitInsn(A_SWAP); // args, id → id, args
+        if (direct && cf != null) {
+            // Call callee's execute directly: invokestatic CalleeClass.execute(Object[])Object
+            mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute",
+                "([Ljava/lang/Object;)Ljava/lang/Object;", false);
+        } else if (direct) {
+            // No compiled function available — use helper
             mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                "invokeDirect", "(I[Ljava/lang/Object;)Ljava/lang/Object;", false);
+                "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         } else {
             // Target is on the stack (below the args we popped)
             mv.visitInsn(A_SWAP); // args, target → target, args
@@ -672,15 +695,19 @@ public class IRBytecodeCompiler {
     public static class CompiledFunction {
         private final java.lang.reflect.Method method;
         private final byte[] bytecode;
+        private final String className;
 
-        CompiledFunction(java.lang.reflect.Method m, byte[] bc) {
-            this.method = m; this.bytecode = bc;
+        CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className) {
+            this.method = m; this.className = className; this.bytecode = bc;
         }
 
         public Object execute(Object[] locals) {
             try { return method.invoke(null, (Object) locals); }
             catch (Exception e) { throw new RuntimeException(e); }
         }
+
+        /** Internal name for invokestatic bytecode. */
+        public String internalName() { return className.replace('.', '/'); }
 
         /** Return a human-readable disassembly of the generated bytecode. */
         public String bytecodeAsString() {
