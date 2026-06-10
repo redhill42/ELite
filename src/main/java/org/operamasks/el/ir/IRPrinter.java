@@ -54,10 +54,10 @@ public final class IRPrinter {
             }
         }
 
-        if (exps.size() > 1) {
+        if (!exps.isEmpty()) {
             sb.append("; combined\n");
             try {
-                IRFunction fn = IRBuilder.compile(exps);
+                IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
                 sb.append(formatIR(fn));
             } catch (Exception e) {
                 sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");

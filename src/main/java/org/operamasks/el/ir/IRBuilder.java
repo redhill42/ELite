@@ -809,9 +809,25 @@ public class IRBuilder {
     }
 
     public static IRFunction compile(List<ELNode> expressions) {
+        return compileWithDefs(null, expressions);
+    }
+
+    /** Compile expressions with prior function definitions for direct call optimization. */
+    public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> expressions) {
         clearKnownFunctions();
         IRBuilder b = new IRBuilder();
-        for (int i = 0; i < expressions.size() - 1; i++) { b.build(expressions.get(i)); b.current.emitPop(); }
+
+        // Pre-register function definitions for direct call optimization
+        if (defs != null) {
+            for (ELNode def : defs) {
+                registerDef(b, def);
+            }
+        }
+
+        // Compile expressions
+        for (int i = 0; i < expressions.size() - 1; i++) {
+            b.build(expressions.get(i)); b.current.emitPop();
+        }
         if (!expressions.isEmpty()) {
             ELNode last = expressions.get(expressions.size() - 1);
             b.build(last);
@@ -821,5 +837,20 @@ public class IRBuilder {
             }
         }
         return FOLDER.transform(b.finish("<program>", 0));
+    }
+
+    /** Pre-compile a function definition and register it for direct calls. */
+    private static void registerDef(IRBuilder b, ELNode def) {
+        if (def instanceof ELNode.DEFINE d && d.expr instanceof ELNode.LAMBDA lam) {
+            IRBuilder nested = new IRBuilder();
+            nested.lambdaName = lam.name;
+            for (ELNode.DEFINE var : lam.vars) nested.ensureVar(var.id);
+            nested.inTailPosition = true;
+            nested.build(lam.body);
+            if (!endsWithReturn(nested)) nested.current.emitReturnVoid();
+            IRFunction fn = nested.finish(lam.name != null ? lam.name : d.id, lam.vars.length);
+            int poolIdx = b.putConstant(fn);
+            b.registerFunction(lam.name != null ? lam.name : d.id, poolIdx);
+        }
     }
 }

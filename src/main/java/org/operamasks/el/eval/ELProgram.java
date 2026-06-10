@@ -143,7 +143,7 @@ public class ELProgram implements Serializable
 
             if (useIREvaluation && !exps.isEmpty()) {
                 try {
-                    IRFunction irFn = IRBuilder.compile(exps);
+                    IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
                     IRInterpreter interp = new IRInterpreter(elctx, irFn, env);
                     return interp.execute(null);
                 } catch (Exception e) {
