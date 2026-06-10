@@ -148,6 +148,7 @@ public class ELProgram implements Serializable
                     // Try JVM bytecode compilation first
                     try {
                         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
+                        IRBytecodeCompiler.setCallerELCtx(elctx);
                         return cf.execute(null);
                     } catch (Throwable bcErr) {
                         // Bytecode failed (VerifyError, etc.) — fall back to IR interpreter

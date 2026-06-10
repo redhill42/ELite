@@ -318,24 +318,43 @@ public class IRBytecodeCompiler {
         }
     }
 
-    private static final javax.el.ELContext SHARED_ELCTX =
-        org.operamasks.el.eval.ELEngine.createELContext();
+    // Thread-local state to avoid shared mutable state across tests
+    private static final ThreadLocal<javax.el.ELContext> localELCtx =
+        ThreadLocal.withInitial(() -> org.operamasks.el.eval.ELEngine.createELContext());
 
-    // Function registry: maps int IDs to IRFunctions for ldc-based lookup
-    private static final java.util.Map<Integer, IRFunction> funcRegistry = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final AtomicInteger funcIdCounter = new AtomicInteger();
+    // Optional caller ELContext (set by ELProgram; used for global variable access)
+    private static final ThreadLocal<javax.el.ELContext> callerELCtx = new ThreadLocal<>();
+
+    /** Set the caller's ELContext for global variable resolution. */
+    public static void setCallerELCtx(javax.el.ELContext ctx) { callerELCtx.set(ctx); }
+
+    private static final ThreadLocal<java.util.Map<Integer, IRFunction>> localFuncRegistry =
+        ThreadLocal.withInitial(java.util.concurrent.ConcurrentHashMap::new);
+
+    private static final ThreadLocal<AtomicInteger> localFuncIdCounter =
+        ThreadLocal.withInitial(() -> new AtomicInteger(0));
+
+    /** Clear all thread-local state. Call before each program execution. */
+    public static void resetState() {
+        localELCtx.remove();
+        localFuncRegistry.remove();
+        localFuncIdCounter.remove();
+    }
+
+    private static javax.el.ELContext elctx() { return localELCtx.get(); }
+    private static java.util.Map<Integer, IRFunction> funcRegistry() { return localFuncRegistry.get(); }
 
     private int registerFunction(IRFunction fn) {
-        int id = funcIdCounter.incrementAndGet();
-        funcRegistry.put(id, fn);
+        int id = localFuncIdCounter.get().incrementAndGet();
+        funcRegistry().put(id, fn);
         return id;
     }
 
     /** Direct call to a compiled or interpreted IRFunction. */
     public static Object invokeDirect(int funcId, Object[] args) {
-        IRFunction fn = funcRegistry.get(funcId);
+        IRFunction fn = funcRegistry().get(funcId);
         if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
-        return new IRInterpreter(SHARED_ELCTX, fn).execute(args);
+        return new IRInterpreter(elctx(), fn).execute(args);
     }
 
     // ── Simple call helpers (1-2 args popped from stack) ──
@@ -380,14 +399,14 @@ public class IRBytecodeCompiler {
     // ── Property, global, collection helpers ──
 
     public static Object loadProp(Object base, Object key) {
-        javax.el.ELContext c = SHARED_ELCTX;
+        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
         c.setPropertyResolved(false);
         Object r = c.getELResolver().getValue(c, base, key);
         if (!c.isPropertyResolved()) throw new RuntimeException("Property not found: " + key);
         return r;
     }
     public static Object pushGlobal(String name) {
-        javax.el.ELContext c = SHARED_ELCTX;
+        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
         javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
         if (ve != null) return ve.getValue(c);
         c.setPropertyResolved(false);
@@ -396,7 +415,8 @@ public class IRBytecodeCompiler {
         throw new RuntimeException("Undefined: " + name);
     }
     public static Object storeGlobal(String name, Object value) {
-        SHARED_ELCTX.getVariableMapper().setVariable(name,
+        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
+        c.getVariableMapper().setVariable(name,
             new org.operamasks.el.eval.closure.LiteralClosure(value));
         return value;
     }
@@ -427,7 +447,7 @@ public class IRBytecodeCompiler {
     /** Dynamic call: delegate to ELEngine.invokeTarget. */
     public static Object invokeDyn(Object target, Object[] args) {
         elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
-        return org.operamasks.el.eval.ELEngine.invokeTarget(SHARED_ELCTX, target, closures);
+        return org.operamasks.el.eval.ELEngine.invokeTarget(elctx(), target, closures);
     }
 
     private void unboxBoolean() {

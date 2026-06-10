@@ -795,10 +795,12 @@ public class IRBuilder {
     /** Clear the function registry before compiling a new program. */
     private static void clearKnownFunctions() {
         knownFunctions.get().clear();
+        knownFunctions.remove();  // also remove ThreadLocal to prevent cross-test pollution
     }
 
     public static IRFunction compile(ELNode node) {
         clearKnownFunctions();
+        IRBytecodeCompiler.resetState();
         IRBuilder b = new IRBuilder();
         b.build(node);
         if (!endsWithReturn(b)) {
@@ -815,6 +817,7 @@ public class IRBuilder {
     /** Compile expressions with prior function definitions for direct call optimization. */
     public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> expressions) {
         clearKnownFunctions();
+        IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry per compilation
         IRBuilder b = new IRBuilder();
 
         // Pre-register function definitions for direct call optimization
