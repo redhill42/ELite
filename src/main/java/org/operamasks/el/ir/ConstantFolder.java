@@ -151,29 +151,50 @@ public class ConstantFolder implements IRPass {
                 : wrap(na.longValue() - nb.longValue());
             case IMUL, LMUL, DYNMUL -> isFloat ? na.doubleValue() * nb.doubleValue()
                 : wrap(na.longValue() * nb.longValue());
-            case IDIV, LDIV -> wrap(na.longValue() / nb.longValue());  // integer division
-            case DYNDIV -> {  // ELite /: float for non-evenly-divisible
+            case IDIV, LDIV -> {
+                if (nb.longValue() == 0) yield null;
+                yield wrap(na.longValue() / nb.longValue());
+            }
+            case DYNDIV -> {
                 long xl = na.longValue(), yl = nb.longValue();
-                if (yl == 0) yield null;  // division by zero — don't fold
+                if (yl == 0) yield null;
                 yield isFloat ? na.doubleValue() / nb.doubleValue()
                     : (xl % yl == 0) ? wrap(xl / yl) : na.doubleValue() / nb.doubleValue();
             }
-            case IREM, LREM, DYNREM -> isFloat ? na.doubleValue() % nb.doubleValue()
-                : wrap(na.longValue() % nb.longValue());
+            case IREM, LREM, DYNREM -> {
+                if (nb.longValue() == 0) yield null;
+                yield isFloat ? na.doubleValue() % nb.doubleValue()
+                    : wrap(na.longValue() % nb.longValue());
+            }
+            // Typed double ops
             case DADD -> na.doubleValue() + nb.doubleValue();
             case DSUB -> na.doubleValue() - nb.doubleValue();
             case DMUL -> na.doubleValue() * nb.doubleValue();
             case DDIV -> na.doubleValue() / nb.doubleValue();
+            // Power ops
+            case IPOW -> wrap((long) Math.pow(na.intValue(), nb.intValue()));
+            case LPOW -> wrap((long) Math.pow(na.longValue(), nb.longValue()));
+            case DPOW, DYNPOW -> Math.pow(na.doubleValue(), nb.doubleValue());
+            // Comparison ops — all types
             case IEQ, LEQ -> na.longValue() == nb.longValue();
             case INE, LNE -> na.longValue() != nb.longValue();
             case ILT, LLT -> na.longValue() < nb.longValue();
             case ILE, LLE -> na.longValue() <= nb.longValue();
-            case IGT       -> na.longValue() > nb.longValue();
-            case IGE       -> na.longValue() >= nb.longValue();
+            case IGT, LGT -> na.longValue() > nb.longValue();
+            case IGE, LGE -> na.longValue() >= nb.longValue();
             case DEQ -> na.doubleValue() == nb.doubleValue();
             case DNE -> na.doubleValue() != nb.doubleValue();
             case DLT -> na.doubleValue() < nb.doubleValue();
             case DLE -> na.doubleValue() <= nb.doubleValue();
+            case DGT -> na.doubleValue() > nb.doubleValue();
+            case DGE -> na.doubleValue() >= nb.doubleValue();
+            // Bitwise ops (int and long only)
+            case IAND, LAND -> wrap(na.longValue() & nb.longValue());
+            case IOR, LOR   -> wrap(na.longValue() | nb.longValue());
+            case IXOR, LXOR -> wrap(na.longValue() ^ nb.longValue());
+            case ISHL, LSHL -> wrap(na.longValue() << nb.longValue());
+            case ISHR, LSHR -> wrap(na.longValue() >> nb.longValue());
+            case IUSHR, LUSHR -> wrap(na.longValue() >>> nb.longValue());
             default  -> null;
         };
     }
