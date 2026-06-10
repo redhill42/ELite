@@ -126,7 +126,12 @@ public class IRSpeclializer implements IRPass {
                 case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL); }
                 case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL); }
                 case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL); }
-                case DYNEQ, DYNLT, DYNLE -> { pop2(); pushType(T_BOOL); }
+                case DYNEQ, DYNLT, DYNLE -> {
+                    int t2 = popType(), t1 = popType();
+                    int newOp = specializeCmpOp(op, t1, t2);
+                    if (newOp >= 0) { code[v.offset()] = pack1(newOp, K_BOOL, 0); changed = true; }
+                    pushType(T_BOOL);
+                }
 
                 case NOT -> { pop1(); pushType(T_BOOL); }
                 case DUP -> pushType(peekType());
@@ -211,6 +216,24 @@ public class IRSpeclializer implements IRPass {
                 case T_INT -> IDIV; case T_LONG -> LDIV; case T_DOUBLE -> DDIV; default -> -1; };
             case DYNREM -> switch (typeId) {
                 case T_INT -> IREM; case T_LONG -> LREM; default -> -1; };
+            default -> -1;
+        };
+    }
+
+    /** Map DYN comparison to typed comparison based on operand types. */
+    private static int specializeCmpOp(int dynOp, int t1, int t2) {
+        if (t1 < 0 || t2 < 0) return -1;
+        int wider = wider(t1, t2);
+        return switch (dynOp) {
+            case Opcode.DYNEQ -> switch (wider) {
+                case T_INT -> Opcode.IEQ; case T_LONG -> Opcode.LEQ;
+                case T_DOUBLE -> Opcode.DEQ; default -> -1; };
+            case Opcode.DYNLT -> switch (wider) {
+                case T_INT -> Opcode.ILT; case T_LONG -> Opcode.LLT;
+                case T_DOUBLE -> Opcode.DLT; default -> -1; };
+            case Opcode.DYNLE -> switch (wider) {
+                case T_INT -> Opcode.ILE; case T_LONG -> Opcode.LLE;
+                case T_DOUBLE -> Opcode.DLE; default -> -1; };
             default -> -1;
         };
     }
