@@ -112,19 +112,19 @@ public class IRBytecodeCompiler {
             case IREM -> { emitUnboxInt(2); mv.visitInsn(A_IREM); emitBoxInt(); }
             case INEG -> { emitUnboxInt(1); mv.visitInsn(A_INEG); emitBoxInt(); }
             case IPOW -> emitCall2("intPow");
-            case LADD -> { emitUnboxLong(2); mv.visitInsn(A_LADD); emitBoxLong(); }
-            case LSUB -> { emitUnboxLong(2); mv.visitInsn(A_LSUB); emitBoxLong(); }
-            case LMUL -> { emitUnboxLong(2); mv.visitInsn(A_LMUL); emitBoxLong(); }
-            case LDIV -> { emitUnboxLong(2); mv.visitInsn(A_LDIV); emitBoxLong(); }
-            case LREM -> { emitUnboxLong(2); mv.visitInsn(A_LREM); emitBoxLong(); }
-            case LNEG -> { emitUnboxLong(1); mv.visitInsn(A_LNEG); emitBoxLong(); }
-            case LPOW -> emitCall2("longPow");
-            case DADD -> { emitUnboxDouble(2); mv.visitInsn(A_DADD); emitBoxDouble(); }
-            case DSUB -> { emitUnboxDouble(2); mv.visitInsn(A_DSUB); emitBoxDouble(); }
-            case DMUL -> { emitUnboxDouble(2); mv.visitInsn(A_DMUL); emitBoxDouble(); }
-            case DDIV -> { emitUnboxDouble(2); mv.visitInsn(A_DDIV); emitBoxDouble(); }
-            case DNEG -> { emitUnboxDouble(1); mv.visitInsn(A_DNEG); emitBoxDouble(); }
-            case DPOW -> emitCall2("doublePow");
+            case LADD -> emitDynCall("dynAdd", 2);
+            case LSUB -> emitDynCall("dynSub", 2);
+            case LMUL -> emitDynCall("dynMul", 2);
+            case LDIV -> emitDynCall("dynDiv", 2);
+            case LREM -> emitDynCall("dynRem", 2);
+            case LNEG -> emitDynCall("dynNeg", 1);
+            case LPOW -> emitDynCall("dynPow", 2);
+            case DADD -> emitDynCall("dynAdd", 2);
+            case DSUB -> emitDynCall("dynSub", 2);
+            case DMUL -> emitDynCall("dynMul", 2);
+            case DDIV -> emitDynCall("dynDiv", 2);
+            case DNEG -> emitDynCall("dynNeg", 1);
+            case DPOW -> emitDynCall("dynPow", 2);
 
             case IEQ -> { emitUnboxInt(2); emitICmp(A_IF_ICMPEQ); }
             case INE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPNE); }
@@ -377,18 +377,37 @@ public class IRBytecodeCompiler {
     private static final ThreadLocal<java.util.Map<IRFunction, CompiledFunction>> compiledCache =
         ThreadLocal.withInitial(java.util.HashMap::new);
 
-    /** Direct call: use compiled version if available, otherwise interpret. */
+    /** Direct call: use compiled version if available, specialize on first call. */
     public static Object invokeDirect(int funcId, Object[] args) {
         IRFunction fn = funcRegistry().get(funcId);
         if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
         // Check cache first
         CompiledFunction cf = compiledCache.get().get(fn);
         if (cf == null) {
-            // Compile and cache
-            cf = compile(fn);
+            // Infer arg types from the actual arguments and specialize
+            int[] argTypes = inferTypes(args);
+            IRFunction specialized = args.length > 0 ? IRSpeclializer.specialize(fn, argTypes) : fn;
+            cf = compile(specialized);
             compiledCache.get().put(fn, cf);
         }
         return cf.execute(args);
+    }
+
+    private static int[] inferTypes(Object[] args) {
+        int[] types = new int[args.length];
+        for (int i = 0; i < args.length; i++) {
+            types[i] = typeOf(args[i]);
+        }
+        return types;
+    }
+
+    private static int typeOf(Object v) {
+        if (v instanceof Integer || v instanceof Short || v instanceof Byte) return IRFormat.T_INT;
+        if (v instanceof Long) return IRFormat.T_LONG;
+        if (v instanceof Double || v instanceof Float) return IRFormat.T_DOUBLE;
+        if (v instanceof Boolean) return IRFormat.T_BOOL;
+        if (v instanceof String) return IRFormat.T_STRING;
+        return -1;
     }
 
     // ── Simple call helpers (1-2 args popped from stack) ──
@@ -516,10 +535,15 @@ public class IRBytecodeCompiler {
 
     private void emitUnboxLong(int count) {
         if (count == 2) {
-            mv.visitInsn(A_SWAP);
+            // Store both to temp slots to avoid SWAP issues with long (cat 2)
+            mv.visitVarInsn(A_ASTORE, 3);  // rhs → slot 3
+            mv.visitVarInsn(A_ASTORE, 2);  // lhs → slot 2
+            // Load and unbox lhs (slot 2)
+            mv.visitVarInsn(A_ALOAD, 2);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
-            mv.visitInsn(A_SWAP);
+            // Load and unbox rhs (slot 3)
+            mv.visitVarInsn(A_ALOAD, 3);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
         } else {
