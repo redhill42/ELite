@@ -30,6 +30,8 @@ import org.operamasks.el.shell.command.Command;
 import org.operamasks.el.shell.command.CommandProvider;
 import org.operamasks.el.parser.IncompleteException;
 import org.operamasks.el.parser.Position;
+import org.operamasks.el.parser.Parser;
+import org.operamasks.el.ir.IRPrinter;
 import org.operamasks.el.eval.StackTrace;
 import static org.operamasks.el.resources.Resources.*;
 import elite.lang.Builtin;
@@ -40,6 +42,7 @@ public class Main
     private ShellContext shellContext;
     private String script;
     private String filename;
+    private boolean dumpIR = false;
 
     public Main() {
         this.shellContext = new ShellContext();
@@ -68,8 +71,16 @@ public class Main
             int status = 0;
 
             if (filename != null) {
+                if (dumpIR) {
+                    dumpProgramIR(filename);
+                    return 0;
+                }
                 status = CommandProvider.exec(shellContext, filename);
             } else if (script != null) {
+                if (dumpIR) {
+                    System.out.println(IRPrinter.dumpProgram(script));
+                    return 0;
+                }
                 status = exec_script(engine, script);
             }
 
@@ -99,6 +110,8 @@ public class Main
                     shellContext.setEncoding(args[++argIndex]);
                 } else if (args[argIndex].equals("-i")) {
                     shellContext.setInteractive(true);
+                } else if (args[argIndex].equals("--dump-ir")) {
+                    dumpIR = true;
                 } else if (args[argIndex].startsWith("-")) {
                     printUsage();
                     return false;
@@ -204,6 +217,12 @@ public class Main
         }
 
         return 0;
+    }
+
+    private static void dumpProgramIR(String filename) throws IOException {
+        String source = new String(java.nio.file.Files.readAllBytes(
+            java.nio.file.Paths.get(filename)));
+        System.out.println(IRPrinter.dumpProgram(source));
     }
 
     private ScriptEngine createScriptEngine(String[] args) {
