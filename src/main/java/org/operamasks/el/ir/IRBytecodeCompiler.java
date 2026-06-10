@@ -373,11 +373,22 @@ public class IRBytecodeCompiler {
         return id;
     }
 
-    /** Direct call to a compiled or interpreted IRFunction. */
+    // Cache of compiled functions for fast direct calls
+    private static final ThreadLocal<java.util.Map<IRFunction, CompiledFunction>> compiledCache =
+        ThreadLocal.withInitial(java.util.HashMap::new);
+
+    /** Direct call: use compiled version if available, otherwise interpret. */
     public static Object invokeDirect(int funcId, Object[] args) {
         IRFunction fn = funcRegistry().get(funcId);
         if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
-        return new IRInterpreter(elctx(), fn).execute(args);
+        // Check cache first
+        CompiledFunction cf = compiledCache.get().get(fn);
+        if (cf == null) {
+            // Compile and cache
+            cf = compile(fn);
+            compiledCache.get().put(fn, cf);
+        }
+        return cf.execute(args);
     }
 
     // ── Simple call helpers (1-2 args popped from stack) ──
