@@ -144,6 +144,7 @@ public class ConstantFolder implements IRPass {
             case ISUB, LSUB -> wrap(na.longValue() - nb.longValue());
             case IMUL, LMUL -> wrap(na.longValue() * nb.longValue());
             case IDIV, LDIV -> wrap(na.longValue() / nb.longValue());
+            case IREM, LREM -> wrap(na.longValue() % nb.longValue());
             case DADD -> na.doubleValue() + nb.doubleValue();
             case DSUB -> na.doubleValue() - nb.doubleValue();
             case DMUL -> na.doubleValue() * nb.doubleValue();

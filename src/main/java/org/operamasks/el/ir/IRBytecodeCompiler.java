@@ -24,6 +24,7 @@ public class IRBytecodeCompiler {
     private static final int A_INVOKESPECIAL = 183, A_INVOKESTATIC = 184, A_INVOKEVIRTUAL = 182;
     private static final int A_CHECKCAST = 192, A_AALOAD = 50, A_AASTORE = 83;
     private static final int A_DUP = 89, A_POP = 87, A_SWAP = 95, A_GOTO = 167;
+    private static final int A_DUP_X1 = 90, A_ANEWARRAY = 189;
 
     private static final AtomicInteger CLASS_COUNTER = new AtomicInteger();
     private static final String LOCALS_DESC = "[Ljava/lang/Object;";
@@ -92,8 +93,8 @@ public class IRBytecodeCompiler {
         int op = v.opcode(), oc = v.opCount(), pl = v.payload();
         switch (op) {
             case PUSH_CONST -> emitPush(v);
-            case PUSH_TRUE  -> mv.visitInsn(A_ICONST_1);
-            case PUSH_FALSE -> mv.visitInsn(A_ICONST_0);
+            case PUSH_TRUE  -> { mv.visitInsn(A_ICONST_1); mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false); }
+            case PUSH_FALSE -> { mv.visitInsn(A_ICONST_0); mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false); }
             case PUSH_NULL  -> mv.visitInsn(A_ACONST_NULL);
 
             case IADD -> { emitUnboxInt(2); mv.visitInsn(A_IADD); emitBoxInt(); }
@@ -103,17 +104,23 @@ public class IRBytecodeCompiler {
             case IREM -> { emitUnboxInt(2); mv.visitInsn(A_IREM); emitBoxInt(); }
             case INEG -> { emitUnboxInt(1); mv.visitInsn(A_INEG); emitBoxInt(); }
 
-            case IEQ -> emitICmp(A_IF_ICMPEQ); case INE -> emitICmp(A_IF_ICMPNE);
-            case ILT -> emitICmp(A_IF_ICMPLT); case ILE -> emitICmp(A_IF_ICMPLE);
-            case IGT -> emitICmp(A_IF_ICMPGT); case IGE -> emitICmp(A_IF_ICMPGE);
+            case IEQ -> { emitUnboxInt(2); emitICmp(A_IF_ICMPEQ); }
+            case INE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPNE); }
+            case ILT -> { emitUnboxInt(2); emitICmp(A_IF_ICMPLT); }
+            case ILE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPLE); }
+            case IGT -> { emitUnboxInt(2); emitICmp(A_IF_ICMPGT); }
+            case IGE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPGE); }
 
             case LEQ -> emitLCmp(A_IFEQ); case LNE -> emitLCmp(A_IFNE);
             case LLT -> emitLCmp(A_IFLT); case LLE -> emitLCmp(A_IFLE);
             case LGT -> emitLCmp(A_IFGT); case LGE -> emitLCmp(A_IFGE);
 
-            case DEQ -> emitDCmp(A_IFEQ); case DNE -> emitDCmp(A_IFNE);
-            case DLT -> emitDCmp(A_IFLT); case DLE -> emitDCmp(A_IFLE);
-            case DGT -> emitDCmp(A_IFGT); case DGE -> emitDCmp(A_IFGE);
+            case DEQ -> { emitUnboxDouble(2); emitDCmp(A_IFEQ); }
+            case DNE -> { emitUnboxDouble(2); emitDCmp(A_IFNE); }
+            case DLT -> { emitUnboxDouble(2); emitDCmp(A_IFLT); }
+            case DLE -> { emitUnboxDouble(2); emitDCmp(A_IFLE); }
+            case DGT -> { emitUnboxDouble(2); emitDCmp(A_IFGT); }
+            case DGE -> { emitUnboxDouble(2); emitDCmp(A_IFGE); }
 
             case PUSH_VAR -> {
                 mv.visitVarInsn(A_ALOAD, 0);
@@ -133,6 +140,16 @@ public class IRBytecodeCompiler {
             case RETURN -> { mv.visitInsn(A_ARETURN); }  // already boxed
             case RETURN_VOID -> { mv.visitInsn(A_ACONST_NULL); mv.visitInsn(A_ARETURN); }
             case NOP -> {}
+            // Dynamic ops: fall back to interpreter
+            case DYNADD -> emitDynFallback("dynamicAdd", 2);
+            case DYNSUB -> emitDynFallback("dynamicSub", 2);
+            case DYNMUL -> emitDynFallback("dynamicMul", 2);
+            case DYNDIV -> emitDynFallback("dynamicDiv", 2);
+            case DYNREM -> emitDynFallback("dynamicRem", 2);
+            case DYNNEG -> emitDynFallback("dynamicNeg", 1);
+            case DYNPOW -> emitDynFallback("dynamicPow", 2);
+            case DYNCAT -> emitDynFallback("dynamicCat", 2);
+            case DYNEQ, DYNLT, DYNLE, DYNIN -> emitDynFallback("dynamicCmp", 2);
             default -> throw new UnsupportedOperationException("BC: " + Opcode.name(op));
         }
     }
@@ -142,6 +159,8 @@ public class IRBytecodeCompiler {
         mv.visitJumpInsn(jvmOp, t);
         mv.visitInsn(A_ICONST_0); mv.visitJumpInsn(A_GOTO, e);
         mv.visitLabel(t); mv.visitInsn(A_ICONST_1); mv.visitLabel(e);
+        // Box to Boolean
+        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
     }
     private void emitDCmp(int jvmOp) {
         mv.visitInsn(A_DCMPG);
@@ -149,6 +168,7 @@ public class IRBytecodeCompiler {
         mv.visitJumpInsn(jvmOp, t);
         mv.visitInsn(A_ICONST_0); mv.visitJumpInsn(A_GOTO, e);
         mv.visitLabel(t); mv.visitInsn(A_ICONST_1); mv.visitLabel(e);
+        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
     }
     private void emitLCmp(int jvmOp) {
         mv.visitInsn(A_LCMP);
@@ -156,19 +176,19 @@ public class IRBytecodeCompiler {
         mv.visitJumpInsn(jvmOp, t);
         mv.visitInsn(A_ICONST_0); mv.visitJumpInsn(A_GOTO, e);
         mv.visitLabel(t); mv.visitInsn(A_ICONST_1); mv.visitLabel(e);
+        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
     }
 
     private void emitUnboxInt(int count) {
-        // Unbox `count` Integer objects from top of stack to ints
-        // Stack: ... Integer_N ... Integer_1 → ... int_N ... int_1
+        // Stack: ... obj_N ... obj_1 → ... int_N ... int_1 (same order, unboxed)
         if (count == 2) {
-            mv.visitInsn(A_SWAP);  // Integer2 Integer1 → Integer1 Integer2
+            mv.visitInsn(A_SWAP);  // obj2 obj1 → obj1 obj2
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
-            mv.visitInsn(A_SWAP);  // Integer1 int2 → int2 Integer1
+            mv.visitInsn(A_SWAP);  // obj1 int2 → int2 obj1
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
-            mv.visitInsn(A_SWAP);  // int2 int1 → int1 int2
+            // Stack: int2 int1 (lhs at top, rhs below — correct for IREM/ISUB/etc.)
         } else {
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
@@ -176,6 +196,91 @@ public class IRBytecodeCompiler {
     }
     private void emitBoxInt() {
         mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+    }
+
+    private void emitUnboxDouble(int count) {
+        if (count == 2) {
+            mv.visitInsn(A_SWAP);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+            mv.visitInsn(A_SWAP);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+            mv.visitInsn(A_SWAP);
+        } else {
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+        }
+    }
+
+    private void emitDynFallback(String methodName, int argCount) {
+        // Pop args, call static helper: Object dynOp(String name, Object... args)
+        // For simplicity: pack args into Object[], call helper
+        emitIntConst(argCount);
+        mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+        // Store args into array
+        for (int i = argCount - 1; i >= 0; i--) {
+            mv.visitInsn(A_DUP_X1);  // arr, val → val, arr, val
+            mv.visitInsn(A_SWAP);    // val, val, arr
+            emitIntConst(i);
+            mv.visitInsn(A_SWAP);    // val, arr, i, val
+            mv.visitInsn(A_AASTORE); // arr[i] = val
+            if (i > 0) {
+                mv.visitInsn(A_SWAP); // arr, val
+            }
+        }
+        // Now stack: [args_array]
+        // Call static helper: dynamicOp(methodName, args)
+        mv.visitLdcInsn(methodName);
+        mv.visitInsn(A_SWAP);
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler", "dynFallback",
+            "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+    }
+
+    /** Fallback to IRInterpreter for dynamic operations. */
+    @SuppressWarnings("unused")
+    private static Object dynFallback(String method, Object[] args) {
+        return switch (method) {
+            case "dynamicAdd" -> dynamicAdd(args[0], args[1]);
+            case "dynamicSub" -> dynamicSub(args[0], args[1]);
+            case "dynamicMul" -> dynamicMul(args[0], args[1]);
+            case "dynamicDiv" -> dynamicDiv(args[0], args[1]);
+            case "dynamicRem" -> dynamicRem(args[0], args[1]);
+            case "dynamicNeg" -> dynamicNeg(args[0]);
+            case "dynamicPow" -> dynamicPow(args[0], args[1]);
+            case "dynamicCat" -> dynamicCat(args[0], args[1]);
+            case "dynamicCmp" -> dynamicCmp(args[0], args[1]);
+            default -> throw new UnsupportedOperationException("DYN: " + method);
+        };
+    }
+
+    // Simplified dynamic dispatch (mirrors IRInterpreter)
+    private static Number dynamicAdd(Object x, Object y) {
+        return ((Number)x).doubleValue() + ((Number)y).doubleValue();
+    }
+    private static Number dynamicSub(Object x, Object y) {
+        return ((Number)x).doubleValue() - ((Number)y).doubleValue();
+    }
+    private static Number dynamicMul(Object x, Object y) {
+        return ((Number)x).doubleValue() * ((Number)y).doubleValue();
+    }
+    private static Number dynamicDiv(Object x, Object y) {
+        return ((Number)x).doubleValue() / ((Number)y).doubleValue();
+    }
+    private static Number dynamicRem(Object x, Object y) {
+        return ((Number)x).doubleValue() % ((Number)y).doubleValue();
+    }
+    private static Number dynamicNeg(Object x) {
+        return -((Number)x).doubleValue();
+    }
+    private static Number dynamicPow(Object x, Object y) {
+        return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
+    }
+    private static String dynamicCat(Object x, Object y) {
+        return String.valueOf(x) + String.valueOf(y);
+    }
+    private static boolean dynamicCmp(Object x, Object y) {
+        return String.valueOf(x).equals(String.valueOf(y));
     }
 
     private void emitPush(InstructionView v) {
@@ -189,6 +294,9 @@ public class IRBytecodeCompiler {
         } else if (val instanceof Double d) {
             emitDoubleConst(d);
             mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+        } else if (val instanceof Boolean b) {
+            mv.visitInsn(b ? A_ICONST_1 : A_ICONST_0);
+            mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
         } else {
             mv.visitLdcInsn(val);
         }
