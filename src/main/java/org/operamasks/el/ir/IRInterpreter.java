@@ -158,7 +158,7 @@ public class IRInterpreter {
                 case LUSHR:{ long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>>>r); ip+=1; break; }
                 case LBITNOT:{ long v=((Number)pop()).longValue(); push(~v); ip+=1; break; }
 
-                // ============ Dynamic arithmetic (delegate to AST) ============
+                // ============ Dynamic arithmetic ============
                 case DYNADD: case DYNSUB: case DYNMUL: case DYNDIV:
                 case DYNREM: case DYNNEG: case DYNPOW:
                 case DYNCAT:

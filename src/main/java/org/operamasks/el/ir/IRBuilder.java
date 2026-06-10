@@ -64,6 +64,9 @@ public class IRBuilder {
             case Token.CHARVAL:   buildConst(((ELNode.CHARVAL) node).value); break;
             case Token.TRUE:      emitPushTrue();  break;
             case Token.FALSE:     emitPushFalse(); break;
+            case Token.BOOLEANVAL:
+                if (((ELNode.BOOLEANVAL) node).value) emitPushTrue(); else emitPushFalse();
+                break;
             case Token.NULL:      emitPushNull();  break;
             case Token.SYMBOL:    buildConst(((ELNode.SYMBOL) node).value); break;
 
@@ -92,8 +95,12 @@ public class IRBuilder {
             case Token.COND:     buildConditional((ELNode.COND) node); break;
             case Token.COALESCE: buildCoalesce(node); break;
 
-            case Token.ASSIGN:    buildAssign((ELNode.ASSIGN) node); break;
-            case Token.ASSIGNOP:  buildAssignOp((ELNode.ASSIGNOP) node); break;
+            case Token.ASSIGN:
+                if (node instanceof ELNode.ASSIGNOP)
+                    buildAssignOp((ELNode.ASSIGNOP) node);
+                else
+                    buildAssign((ELNode.ASSIGN) node);
+                break;
             case Token.DEFINE:    buildDefine((ELNode.DEFINE) node); break;
 
             case Token.THEN: buildThen((ELNode.THEN) node); break;
