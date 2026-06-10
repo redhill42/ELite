@@ -35,6 +35,7 @@ import org.operamasks.el.resolver.MethodResolver;
 import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.FieldClosure;
 import org.operamasks.el.ir.IRBuilder;
+import org.operamasks.el.ir.IRBytecodeCompiler;
 import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.ir.IRInterpreter;
 import org.operamasks.util.Utils;
@@ -138,12 +139,20 @@ public class ELProgram implements Serializable
                 node.getValue(env);
             }
 
-            // 3) execute statements (IR native, with AST fallback)
+            // 3) execute statements (bytecode → IR → AST fallback chain)
             Object result = null;
 
             if (useIREvaluation && !exps.isEmpty()) {
                 try {
                     IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
+                    // Try JVM bytecode compilation first
+                    try {
+                        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
+                        return cf.execute(null);
+                    } catch (Throwable bcErr) {
+                        // Bytecode failed (VerifyError, etc.) — fall back to IR interpreter
+                    }
+                    // IR interpreter fallback
                     IRInterpreter interp = new IRInterpreter(elctx, irFn, env);
                     return interp.execute(null);
                 } catch (Exception e) {
