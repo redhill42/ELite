@@ -77,39 +77,41 @@ public class ConstantFolder implements IRPass {
     }
 
     private int[] foldBlock(int[] code) {
-        int n = code.length;
-        boolean anyFolded = false;
+        // Iterate until no more folds (handles cascading: 3*3+5 → 9+5 → 14)
+        boolean changed;
+        do {
+            changed = foldOnePass(code);
+            if (changed) code = compactNops(code);
+        } while (changed);
+        return code;
+    }
 
+    /** Single pass: scan and fold adjacent PUSH_CONST pairs. Returns true if any fold occurred. */
+    private boolean foldOnePass(int[] code) {
+        boolean anyFolded = false;
         InstructionView v = new InstructionView(code, 0);
         while (v.inBounds()) {
             int startOffset = v.offset();
-
             if (v.opcode() == PUSH_CONST) {
                 InstructionView c1 = v.dup();
                 int aPoolIdx = c1.constPoolIndex();
                 c1.advance();
-
                 if (c1.inBounds() && c1.opcode() == PUSH_CONST) {
                     InstructionView c2 = c1.dup();
                     int bPoolIdx = c2.constPoolIndex();
                     c2.advance();
-
                     if (c2.inBounds()) {
                         int op = c2.opcode();
                         Object folded = tryFold(op, pool, aPoolIdx, bPoolIdx);
                         if (folded != null) {
                             int newPoolIdx = ensureInPool(folded);
                             int kind = poolKind(folded);
-                            int payload = newPoolIdx & 0xFFFF;
-                            code[startOffset] = pack1(PUSH_CONST, kind, payload);
-
-                            // NOP out the other two instructions
+                            code[startOffset] = pack1(PUSH_CONST, kind, newPoolIdx & 0xFFFF);
                             int c1W = c1.totalWords(), c2W = c2.totalWords();
                             code[c1.offset()] = pack1(NOP, K_NONE, 0);
                             code[c2.offset()] = pack1(NOP, K_NONE, 0);
                             for (int i = 1; i < c1W; i++) code[c1.offset() + i] = 0;
                             for (int i = 1; i < c2W; i++) code[c2.offset() + i] = 0;
-
                             anyFolded = true;
                         }
                     }
@@ -117,12 +119,13 @@ public class ConstantFolder implements IRPass {
             }
             v.advance();
         }
+        return anyFolded;
+    }
 
-        if (!anyFolded) return code;
-
-        // Compact: remove NOP instructions
+    /** Remove NOP instructions from code. */
+    private static int[] compactNops(int[] code) {
         IntList compacted = new IntList();
-        v = new InstructionView(code, 0);
+        InstructionView v = new InstructionView(code, 0);
         while (v.inBounds()) {
             if (v.opcode() != NOP) {
                 int words = v.totalWords();
@@ -134,17 +137,28 @@ public class ConstantFolder implements IRPass {
     }
 
     private Object tryFold(int op, Object[] pool, int aIdx, int bIdx) {
-        if (aIdx >= pool.length || bIdx >= pool.length) return null;
-        Object a = pool[aIdx], b = pool[bIdx];
+        Object a = getFromPool(aIdx), b = getFromPool(bIdx);
+        if (a == null || b == null) return null;
         if (!(a instanceof Number) || !(b instanceof Number)) return null;
 
         Number na = (Number) a, nb = (Number) b;
+        boolean isFloat = (na instanceof Double || na instanceof Float
+                       || nb instanceof Double || nb instanceof Float);
         return switch (op) {
-            case IADD, LADD -> wrap(na.longValue() + nb.longValue());
-            case ISUB, LSUB -> wrap(na.longValue() - nb.longValue());
-            case IMUL, LMUL -> wrap(na.longValue() * nb.longValue());
-            case IDIV, LDIV -> wrap(na.longValue() / nb.longValue());
-            case IREM, LREM -> wrap(na.longValue() % nb.longValue());
+            case IADD, LADD, DYNADD -> isFloat ? na.doubleValue() + nb.doubleValue()
+                : wrap(na.longValue() + nb.longValue());
+            case ISUB, LSUB, DYNSUB -> isFloat ? na.doubleValue() - nb.doubleValue()
+                : wrap(na.longValue() - nb.longValue());
+            case IMUL, LMUL, DYNMUL -> isFloat ? na.doubleValue() * nb.doubleValue()
+                : wrap(na.longValue() * nb.longValue());
+            case IDIV, LDIV -> wrap(na.longValue() / nb.longValue());  // integer division
+            case DYNDIV -> {  // ELite /: float for non-evenly-divisible
+                long xl = na.longValue(), yl = nb.longValue();
+                yield isFloat ? na.doubleValue() / nb.doubleValue()
+                    : (xl % yl == 0) ? wrap(xl / yl) : na.doubleValue() / nb.doubleValue();
+            }
+            case IREM, LREM, DYNREM -> isFloat ? na.doubleValue() % nb.doubleValue()
+                : wrap(na.longValue() % nb.longValue());
             case DADD -> na.doubleValue() + nb.doubleValue();
             case DSUB -> na.doubleValue() - nb.doubleValue();
             case DMUL -> na.doubleValue() * nb.doubleValue();
@@ -172,6 +186,15 @@ public class ConstantFolder implements IRPass {
         if (v instanceof Boolean || v instanceof Integer || v instanceof Long
             || v instanceof Double || v instanceof String) return K_PRIM;
         return K_NONE;
+    }
+
+    private Object getFromPool(int idx) {
+        if (idx < pool.length) return pool[idx];
+        if (addedConstants != null) {
+            int extIdx = idx - pool.length;
+            if (extIdx < addedConstants.size()) return addedConstants.get(extIdx);
+        }
+        return null;
     }
 
     private int ensureInPool(Object value) {
