@@ -140,16 +140,19 @@ public class IRBytecodeCompiler {
             case RETURN -> { mv.visitInsn(A_ARETURN); }  // already boxed
             case RETURN_VOID -> { mv.visitInsn(A_ACONST_NULL); mv.visitInsn(A_ARETURN); }
             case NOP -> {}
-            // Dynamic ops: fall back to interpreter
-            case DYNADD -> emitDynFallback("dynamicAdd", 2);
-            case DYNSUB -> emitDynFallback("dynamicSub", 2);
-            case DYNMUL -> emitDynFallback("dynamicMul", 2);
-            case DYNDIV -> emitDynFallback("dynamicDiv", 2);
-            case DYNREM -> emitDynFallback("dynamicRem", 2);
-            case DYNNEG -> emitDynFallback("dynamicNeg", 1);
-            case DYNPOW -> emitDynFallback("dynamicPow", 2);
-            case DYNCAT -> emitDynFallback("dynamicCat", 2);
-            case DYNEQ, DYNLT, DYNLE, DYNIN -> emitDynFallback("dynamicCmp", 2);
+            // Dynamic ops: call static helper methods directly
+            case DYNADD -> emitDynCall("dynAdd", 2);
+            case DYNSUB -> emitDynCall("dynSub", 2);
+            case DYNMUL -> emitDynCall("dynMul", 2);
+            case DYNDIV -> emitDynCall("dynDiv", 2);
+            case DYNREM -> emitDynCall("dynRem", 2);
+            case DYNNEG -> emitDynCall("dynNeg", 1);
+            case DYNPOW -> emitDynCall("dynPow", 2);
+            case DYNCAT -> emitDynCall("dynCat", 2);
+            case DYNEQ  -> emitDynCall("dynEq", 2);
+            case DYNLT  -> emitDynCall("dynLt", 2);
+            case DYNLE  -> emitDynCall("dynLe", 2);
+            case DYNIN  -> emitDynCall("dynIn", 2);
             default -> throw new UnsupportedOperationException("BC: " + Opcode.name(op));
         }
     }
@@ -213,74 +216,64 @@ public class IRBytecodeCompiler {
         }
     }
 
-    private void emitDynFallback(String methodName, int argCount) {
-        // Pop args, call static helper: Object dynOp(String name, Object... args)
-        // For simplicity: pack args into Object[], call helper
-        emitIntConst(argCount);
-        mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-        // Store args into array
-        for (int i = argCount - 1; i >= 0; i--) {
-            mv.visitInsn(A_DUP_X1);  // arr, val → val, arr, val
-            mv.visitInsn(A_SWAP);    // val, val, arr
-            emitIntConst(i);
-            mv.visitInsn(A_SWAP);    // val, arr, i, val
-            mv.visitInsn(A_AASTORE); // arr[i] = val
-            if (i > 0) {
-                mv.visitInsn(A_SWAP); // arr, val
-            }
-        }
-        // Now stack: [args_array]
-        // Call static helper: dynamicOp(methodName, args)
-        mv.visitLdcInsn(methodName);
-        mv.visitInsn(A_SWAP);
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler", "dynFallback",
-            "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+    private void emitDynCall(String method, int argCount) {
+        String desc = argCount == 2
+            ? "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            : "(Ljava/lang/Object;)Ljava/lang/Object;";
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            method, desc, false);
     }
 
-    /** Fallback to IRInterpreter for dynamic operations. */
-    @SuppressWarnings("unused")
-    private static Object dynFallback(String method, Object[] args) {
-        return switch (method) {
-            case "dynamicAdd" -> dynamicAdd(args[0], args[1]);
-            case "dynamicSub" -> dynamicSub(args[0], args[1]);
-            case "dynamicMul" -> dynamicMul(args[0], args[1]);
-            case "dynamicDiv" -> dynamicDiv(args[0], args[1]);
-            case "dynamicRem" -> dynamicRem(args[0], args[1]);
-            case "dynamicNeg" -> dynamicNeg(args[0]);
-            case "dynamicPow" -> dynamicPow(args[0], args[1]);
-            case "dynamicCat" -> dynamicCat(args[0], args[1]);
-            case "dynamicCmp" -> dynamicCmp(args[0], args[1]);
-            default -> throw new UnsupportedOperationException("DYN: " + method);
-        };
-    }
+    // ── Dynamic operation helpers (called from compiled bytecode) ──
 
-    // Simplified dynamic dispatch (mirrors IRInterpreter)
-    private static Number dynamicAdd(Object x, Object y) {
+    public static Object dynAdd(Object x, Object y) {
         return ((Number)x).doubleValue() + ((Number)y).doubleValue();
     }
-    private static Number dynamicSub(Object x, Object y) {
+    public static Object dynSub(Object x, Object y) {
         return ((Number)x).doubleValue() - ((Number)y).doubleValue();
     }
-    private static Number dynamicMul(Object x, Object y) {
+    public static Object dynMul(Object x, Object y) {
         return ((Number)x).doubleValue() * ((Number)y).doubleValue();
     }
-    private static Number dynamicDiv(Object x, Object y) {
+    public static Object dynDiv(Object x, Object y) {
+        if (x instanceof Long xl && y instanceof Long yl) {
+            if (yl == 0) throw new ArithmeticException("/ by zero");
+            return (xl % yl == 0) ? xl / yl : (double)xl / (double)yl;
+        }
+        if (x instanceof Integer xi && y instanceof Integer yi) {
+            if (yi == 0) throw new ArithmeticException("/ by zero");
+            return (xi % yi == 0) ? xi / yi : (double)xi / (double)yi;
+        }
         return ((Number)x).doubleValue() / ((Number)y).doubleValue();
     }
-    private static Number dynamicRem(Object x, Object y) {
+    public static Object dynRem(Object x, Object y) {
         return ((Number)x).doubleValue() % ((Number)y).doubleValue();
     }
-    private static Number dynamicNeg(Object x) {
+    public static Object dynNeg(Object x) {
         return -((Number)x).doubleValue();
     }
-    private static Number dynamicPow(Object x, Object y) {
+    public static Object dynPow(Object x, Object y) {
         return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
     }
-    private static String dynamicCat(Object x, Object y) {
+    public static Object dynCat(Object x, Object y) {
         return String.valueOf(x) + String.valueOf(y);
     }
-    private static boolean dynamicCmp(Object x, Object y) {
-        return String.valueOf(x).equals(String.valueOf(y));
+    public static Object dynEq(Object x, Object y) {
+        return java.util.Objects.equals(x, y);
+    }
+    @SuppressWarnings({"unchecked","rawtypes"})
+    public static Object dynLt(Object x, Object y) {
+        if (x instanceof Comparable a && y instanceof Comparable b) return a.compareTo(b) < 0;
+        return String.valueOf(x).compareTo(String.valueOf(y)) < 0;
+    }
+    @SuppressWarnings({"unchecked","rawtypes"})
+    public static Object dynLe(Object x, Object y) {
+        if (x instanceof Comparable a && y instanceof Comparable b) return a.compareTo(b) <= 0;
+        return String.valueOf(x).compareTo(String.valueOf(y)) <= 0;
+    }
+    public static Object dynIn(Object x, Object y) {
+        if (y instanceof java.util.Collection<?> c) return c.contains(x);
+        return false;
     }
 
     private void emitPush(InstructionView v) {
