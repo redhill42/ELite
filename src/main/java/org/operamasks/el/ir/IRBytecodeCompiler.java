@@ -218,15 +218,8 @@ public class IRBytecodeCompiler {
                 int varIdx = pl & 0xFFFF;
                 if (typedMode && varIdx < argTypeIds.length) {
                     int t = argTypeIds[varIdx];
-                    // Box to Object before storing (STORE_VAR returns value)
-                    switch (t) {
-                        case IRFormat.T_INT -> mv.visitMethodInsn(A_INVOKESTATIC,
-                            "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                        case IRFormat.T_LONG -> mv.visitMethodInsn(A_INVOKESTATIC,
-                            "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-                        case IRFormat.T_DOUBLE -> mv.visitMethodInsn(A_INVOKESTATIC,
-                            "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-                    }
+                    // Store typed value AND keep on stack (assignment returns value)
+                    emitTypedStore(varIdx, t);
                 } else {
                     mv.visitVarInsn(A_ALOAD, 0);
                     mv.visitInsn(A_SWAP);
@@ -487,27 +480,22 @@ public class IRBytecodeCompiler {
     /** Set the caller's ELContext for global variable resolution. */
     public static void setCallerELCtx(javax.el.ELContext ctx) { callerELCtx.set(ctx); }
 
-    private static final ThreadLocal<java.util.Map<Integer, IRFunction>> localFuncRegistry =
-        ThreadLocal.withInitial(java.util.concurrent.ConcurrentHashMap::new);
-
-    private static final ThreadLocal<AtomicInteger> localFuncIdCounter =
+    private static final ThreadLocal<java.util.Map<Integer, IRFunction>> funcRegistry =
+        ThreadLocal.withInitial(java.util.HashMap::new);
+    private static final ThreadLocal<AtomicInteger> funcIdCounter =
         ThreadLocal.withInitial(() -> new AtomicInteger(0));
 
     /** Clear all thread-local state. Call before each program execution. */
     public static void resetState() {
         localELCtx.remove();
-        localFuncRegistry.remove();
-        localFuncIdCounter.remove();
+        funcRegistry.remove();
+        funcIdCounter.remove();
     }
 
     private static javax.el.ELContext elctx() { return localELCtx.get(); }
-    private static java.util.Map<Integer, IRFunction> funcRegistry() { return localFuncRegistry.get(); }
+    private static java.util.Map<Integer, IRFunction> funcRegistry() { return funcRegistry.get(); }
 
-    private int registerFunction(IRFunction fn) {
-        int id = localFuncIdCounter.get().incrementAndGet();
-        funcRegistry().put(id, fn);
-        return id;
-    }
+    // registerFunction removed — use compileOrGet + calleeCache instead
 
     // Cache of compiled functions for fast direct calls
     private static final ThreadLocal<java.util.Map<IRFunction, CompiledFunction>> compiledCache =
