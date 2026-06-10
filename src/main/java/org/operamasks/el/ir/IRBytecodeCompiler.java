@@ -278,8 +278,9 @@ public class IRBytecodeCompiler {
                 int funcIdx = pl;
                 int argc = oc == 0 ? 0 : v.operand(0);
                 IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
-                // Compile callee now and call directly (no HashMap/reflection)
-                CompiledFunction calleeCf = compileOrGet(target);
+                // If we're in typed mode and calling ourselves, pass our own arg types
+                int[] callTypes = (typedMode && target == fn) ? argTypeIds : null;
+                CompiledFunction calleeCf = compileOrGet(target, callTypes);
                 emitPackArgsAndCall(argc, true, calleeCf);
             }
             case INVOKE_DYN, INVOKE -> {
@@ -390,10 +391,18 @@ public class IRBytecodeCompiler {
     }
     private final Map<IRFunction, CompiledFunction> calleeCache = new HashMap<>();
 
-    private CompiledFunction compileOrGet(IRFunction target) {
+    private CompiledFunction compileOrGet(IRFunction target, int[] argTypes) {
+        if (argTypes != null && allKnown(argTypes)) {
+            // Typed call: cache by (target, typeSignature)
+            String key = target.toString() + java.util.Arrays.toString(argTypes);
+            return calleeCache.computeIfAbsent(target, fn -> {
+                IRFunction specialized = IRSpeclializer.specialize(fn, argTypes);
+                return compileWithTypes(specialized, argTypes);
+            });
+        }
         return calleeCache.computeIfAbsent(target, fn -> {
             IRFunction specialized = IRSpeclializer.specialize(fn, new int[fn.paramCount()]);
-            return compile(specialized);  // generic Object[] version for compile-time calls
+            return compile(specialized);
         });
     }
 
@@ -418,38 +427,38 @@ public class IRBytecodeCompiler {
         }
         if (direct && cf != null) {
             String desc = cf.methodDescriptor();
-            if (desc != null && cf.argTypes() != null) {
-                // Typed call: unbox args, call directly with primitive types
-                int[] calleeTypes = cf.argTypes();
-                // Args on stack: arg0 (bottom), arg1, ..., argN (top) — all boxed
-                // Need to unbox in reverse and call
+            if (desc != null && cf.argTypes() != null && argc > 0) {
+                // Typed call: unbox args, store to temps, reload in order, call directly
+                int[] types = cf.argTypes();
+                int[] slots = new int[argc];
+                int nextSlot = 4; // start after locals param slot
+                // Step 1: pop args in reverse, unbox, store to temp slots
                 for (int i = argc - 1; i >= 0; i--) {
-                    int t = calleeTypes[i];
+                    int t = types[i];
+                    slots[i] = nextSlot;
+                    // Unbox: stack top = arg_i (boxed Object)
+                    compileUnbox(t);
+                    // Store to temp slot
                     switch (t) {
-                        case IRFormat.T_INT -> {
-                            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
-                            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
-                        }
-                        case IRFormat.T_LONG -> {
-                            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
-                            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
-                        }
-                        case IRFormat.T_DOUBLE -> {
-                            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
-                            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-                        }
-                        // T_BOOL and Object: keep as Object reference
+                        case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(54 /* ISTORE */, nextSlot);
+                        case IRFormat.T_LONG -> mv.visitVarInsn(55 /* LSTORE */, nextSlot);
+                        case IRFormat.T_DOUBLE -> mv.visitVarInsn(57 /* DSTORE */, nextSlot);
+                        default -> mv.visitVarInsn(A_ASTORE, nextSlot);
                     }
-                    if (i > 0) {
-                        // Rotate unboxed value below remaining args
-                        int slot = 4 + i; // temp slot
-                        mv.visitVarInsn(t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE ? 55 : 54, slot);
-                        // This gets complex — for simplicity, use helpers for typed calls
+                    nextSlot += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
+                }
+                // Step 2: reload args in forward order
+                for (int i = 0; i < argc; i++) {
+                    int t = types[i];
+                    switch (t) {
+                        case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(21 /* ILOAD */, slots[i]);
+                        case IRFormat.T_LONG -> mv.visitVarInsn(22 /* LLOAD */, slots[i]);
+                        case IRFormat.T_DOUBLE -> mv.visitVarInsn(24 /* DLOAD */, slots[i]);
+                        default -> mv.visitVarInsn(A_ALOAD, slots[i]);
                     }
                 }
-                // For now, just call with Object[] — typed unboxing is complex
-                mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute",
-                    "([Ljava/lang/Object;)Ljava/lang/Object;", false);
+                // Step 3: call typed method
+                mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute", desc, false);
             } else {
                 // Generic Object[] call
                 mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute",
@@ -650,6 +659,25 @@ public class IRBytecodeCompiler {
     public static Object invokeDyn(Object target, Object[] args) {
         elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
         return org.operamasks.el.eval.ELEngine.invokeTarget(elctx(), target, closures);
+    }
+
+    /** Unbox top-of-stack Object to primitive based on type. */
+    private void compileUnbox(int typeId) {
+        switch (typeId) {
+            case IRFormat.T_INT -> {
+                mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+                mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
+            }
+            case IRFormat.T_LONG -> {
+                mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+                mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+            }
+            case IRFormat.T_DOUBLE -> {
+                mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+                mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+            }
+            // T_BOOL and Object: leave as Object reference
+        }
     }
 
     private void unboxBoolean() {
