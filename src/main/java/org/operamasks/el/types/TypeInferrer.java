@@ -470,10 +470,13 @@ public class TypeInferrer {
         // Use annotated return type if available
         Type returnType = resolveTypeAnnotation(node.rtype);
         if (returnType != null) {
-            Type unified = bodyType.unify(returnType);
-            if (unified == null && bodyType != Type.DYNAMIC && bodyType != Type.BOTTOM) {
-                addErrorAt(currentNode,
-                    _T(EL_RETURN_TYPE_MISMATCH, returnType.toTypeString(), bodyType.toTypeString()));
+            // void functions can return any value (it's discarded)
+            if (!isVoidType(returnType)) {
+                Type unified = bodyType.unify(returnType);
+                if (unified == null && bodyType != Type.DYNAMIC && bodyType != Type.BOTTOM) {
+                    addErrorAt(currentNode,
+                        _T(EL_RETURN_TYPE_MISMATCH, returnType.toTypeString(), bodyType.toTypeString()));
+                }
             }
             bodyType = returnType;
         }
@@ -779,6 +782,13 @@ public class TypeInferrer {
             addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, node.base));
             return Type.DYNAMIC;
         }
+    }
+
+    private static boolean isVoidType(Type t) {
+        if (t instanceof PrimitiveType pt) {
+            return pt.toTypeString().equals("Void") || pt.toTypeString().equals("void");
+        }
+        return false;
     }
 
     // =========== Scope management ===========
