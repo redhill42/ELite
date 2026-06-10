@@ -6,12 +6,19 @@ import static org.operamasks.el.ir.Opcode.*;
 import static org.operamasks.el.ir.IRFormat.*;
 
 /**
- * Inline expansion pass: replaces INVOKE_DIRECT calls with the callee's body.
- * Combines with IRSpeclializer for type specialization at call sites.
+ * Inline expansion pass: replaces INVOKE_DIRECT with the callee's body.
+ *
+ * Two-pass approach:
+ * 1. Scan for inline targets, collect all constant pools
+ * 2. Build merged pool, remap indices, emit inlined code
  */
 public class InlinePass implements IRPass {
 
     private static final int MAX_INLINE_SIZE = 20;
+
+    // State accumulated during transform
+    private Object[] mergedPool;
+    private Map<IRFunction, Integer> poolBaseMap; // fn → base index in merged pool
 
     @Override
     public IRFunction transform(IRFunction input) {
@@ -20,40 +27,45 @@ public class InlinePass implements IRPass {
         int blockCount = input.blockCount();
         Object[] pool = input.constantPool();
 
+        // Pass 1: collect all inline targets and their constant pools
+        this.poolBaseMap = new HashMap<>();
+        List<Object> extraConstants = new ArrayList<>();
+        Set<IRFunction> inlineTargets = new HashSet<>();
+
+        for (int b = 0; b < blockCount; b++) {
+            int start = offsets[b];
+            int end = (b + 1 < blockCount) ? offsets[b + 1] : oldCode.length;
+            collectTargets(oldCode, start, end, pool, inlineTargets, extraConstants);
+        }
+
+        if (inlineTargets.isEmpty()) return input; // nothing to inline
+
+        // Build merged pool
+        this.mergedPool = new Object[pool.length + extraConstants.size()];
+        System.arraycopy(pool, 0, mergedPool, 0, pool.length);
+        for (int i = 0; i < extraConstants.size(); i++) {
+            mergedPool[pool.length + i] = extraConstants.get(i);
+        }
+
+        // Pass 2: build blocks with inlined code and remapped indices
         int[][] newBlocks = new int[blockCount][];
         boolean changed = false;
 
         for (int b = 0; b < blockCount; b++) {
             int start = offsets[b];
             int end = (b + 1 < blockCount) ? offsets[b + 1] : oldCode.length;
-            newBlocks[b] = tryInlineInBlock(oldCode, start, end, pool, input.paramCount());
-            if (newBlocks[b] == null) {
-                // No changes — copy original block
+            int[] newBlock = buildBlock(oldCode, start, end, pool);
+            if (newBlock == null) {
                 newBlocks[b] = Arrays.copyOfRange(oldCode, start, end);
             } else {
+                newBlocks[b] = newBlock;
                 changed = true;
             }
         }
 
         if (!changed) return input;
 
-        // Merge extra constants from inlined functions into the pool
-        Object[] newPool = pool;
-        if (!extraPool.isEmpty()) {
-            newPool = new Object[pool.length + extraPool.size()];
-            System.arraycopy(pool, 0, newPool, 0, pool.length);
-            for (int i = 0; i < extraPool.size(); i++) {
-                newPool[pool.length + i] = extraPool.get(i);
-            }
-            // Fix up pool indices in block code: pool.length maps to extra pool start
-            for (int b = 0; b < blockCount; b++) {
-                if (newBlocks[b] != null) {
-                    fixPoolIndices(newBlocks[b], pool.length);
-                }
-            }
-        }
-
-        // Rebuild with new block sizes
+        // Rebuild function
         IntList merged = new IntList();
         int[] newOffsets = new int[blockCount];
         for (int b = 0; b < blockCount; b++) {
@@ -62,60 +74,57 @@ public class InlinePass implements IRPass {
         }
 
         return new IRFunction(input.name(), input.paramCount(),
-                merged.toArray(), newOffsets, newPool,
+                merged.toArray(), newOffsets, mergedPool,
                 input.varNames(), input.sourcePositions());
     }
 
-    /** Fix pool indices: values >= MARK_BASE are remapped to (value - MARK_BASE + baseOffset). */
-    private static final int MARK_BASE = 0xFF00; // high marker to distinguish from normal indices
-
-    private static void fixPoolIndices(int[] code, int baseOffset) {
-        InstructionView v = new InstructionView(code, 0);
-        while (v.inBounds()) {
-            int op = v.opcode();
-            if (op == PUSH_CONST || op == PUSH_GLOBAL || op == PUSH_GLOBAL_N || op == STORE_GLOBAL) {
-                int idx = v.constPoolIndex();
-                if (idx >= MARK_BASE) {
-                    int absIdx = baseOffset + (idx - MARK_BASE);
-                    int kind = v.kind();
-                    if (absIdx < 0x10000) {
-                        code[v.offset()] = pack1(op, kind, absIdx & 0xFFFF);
-                    }
+    /** Pass 1: scan a block for inline targets and collect their constants. */
+    private void collectTargets(int[] code, int start, int end, Object[] pool,
+                                 Set<IRFunction> targets, List<Object> extra) {
+        InstructionView v = new InstructionView(code, start);
+        while (v.inBounds() && v.offset() < end) {
+            if (v.opcode() == INVOKE_DIRECT && canInlineTarget(code, v, pool)) {
+                IRFunction callee = (IRFunction) pool[v.payload()];
+                if (targets.add(callee)) {
+                    // First time seeing this callee: add its constants to extra pool
+                    int base = pool.length + extra.size();
+                    poolBaseMap.put(callee, base);
+                    for (Object c : callee.constantPool()) extra.add(c);
                 }
             }
             v.advance();
         }
     }
 
-    /** Try to inline calls in a block. Returns new code or null if no changes. */
-    private int[] tryInlineInBlock(int[] code, int start, int end,
-                                    Object[] pool, int callerParamCount) {
-        // First pass: check if there's anything to inline
-        boolean hasInlineTarget = false;
+    /** Pass 2: build a new block with inlined code and remapped pool indices. */
+    private int[] buildBlock(int[] code, int start, int end, Object[] callerPool) {
+        // Check if there's anything to inline
+        boolean hasInline = false;
         InstructionView scan = new InstructionView(code, start);
         while (scan.inBounds() && scan.offset() < end) {
-            if (scan.opcode() == INVOKE_DIRECT && canInlineTarget(code, scan, pool)) {
-                hasInlineTarget = true;
-                break;
+            if (scan.opcode() == INVOKE_DIRECT
+                && poolBaseMap.containsKey(callerPool[scan.payload()])) {
+                hasInline = true; break;
             }
             scan.advance();
         }
-        if (!hasInlineTarget) return null;
+        if (!hasInline) return null;
 
-        // Second pass: build new block with inlined calls
         IntList out = new IntList();
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
-            if (v.opcode() == INVOKE_DIRECT && canInlineTarget(code, v, pool)) {
-                int funcIdx = v.payload();
-                int argc = v.opCount() > 0 ? code[v.offset() + 1] : 0;
-                IRFunction callee = (IRFunction) pool[funcIdx];
-                int[] argTypes = inferArgTypes(code, start, v.offset(), argc);
-                emitInlinedBody(out, callee, argc, argTypes);
-                v.advance(); // skip INVOKE_DIRECT
-                continue;
+            if (v.opcode() == INVOKE_DIRECT) {
+                IRFunction callee = (IRFunction) callerPool[v.payload()];
+                Integer base = poolBaseMap.get(callee);
+                if (base != null) {
+                    int argc = v.opCount() > 0 ? code[v.offset() + 1] : 0;
+                    int[] argTypes = inferArgTypes(code, start, v.offset(), argc);
+                    emitInlinedBody(out, callee, argc, argTypes, base);
+                    v.advance();
+                    continue;
+                }
             }
-            // Copy instruction as-is
+            // Copy as-is
             int w = v.totalWords();
             for (int i = 0; i < w; i++) out.add(code[v.offset() + i]);
             v.advance();
@@ -123,18 +132,14 @@ public class InlinePass implements IRPass {
         return out.toArray();
     }
 
-    private static boolean canInlineTarget(int[] code, InstructionView v, Object[] pool) {
+    private boolean canInlineTarget(int[] code, InstructionView v, Object[] pool) {
         int funcIdx = v.payload();
         if (funcIdx >= pool.length) return false;
-        Object fn = pool[funcIdx];
-        if (!(fn instanceof IRFunction callee)) return false;
-        return canInline(callee);
+        return pool[funcIdx] instanceof IRFunction fn && canInline(fn);
     }
 
     private static boolean canInline(IRFunction callee) {
         if (callee.blockCount() != 1) return false;
-        // No constant pool dependencies for now (pool merging is complex)
-        if (callee.constantPool().length > 0) return false;
         int[] body = callee.code();
         int count = 0;
         InstructionView v = new InstructionView(body, 0);
@@ -143,15 +148,13 @@ public class InlinePass implements IRPass {
             if (count > MAX_INLINE_SIZE) return false;
             int op = v.opcode();
             if (op == INVOKE_DIRECT || op == INVOKE_DYN || op == INVOKE
-                || Opcode.isJump(op) || op == INVOKE_TAIL
-                || op == PUSH_CONST) return false; // can't handle constants yet
+                || Opcode.isJump(op) || op == INVOKE_TAIL) return false;
             v.advance();
         }
         return count <= MAX_INLINE_SIZE;
     }
 
-    /** Infer argument types from instructions before the call site. */
-    private static int[] inferArgTypes(int[] code, int blockStart, int callOffset, int argc) {
+    private int[] inferArgTypes(int[] code, int blockStart, int callOffset, int argc) {
         int[] types = new int[argc];
         Arrays.fill(types, -1);
         int off = callOffset;
@@ -159,14 +162,10 @@ public class InlinePass implements IRPass {
             off = prevInst(code, blockStart, off);
             if (off < 0) break;
             int op = IRFormat.opcode(code[off]);
-            int kind = IRFormat.kind(code[off]);
             types[i] = switch (op) {
-                case PUSH_CONST -> kind == K_PRIM ? IRFormat.payload(code[off]) : -1;
                 case PUSH_TRUE, PUSH_FALSE -> T_BOOL;
-                case PUSH_NULL -> -1;
                 case IADD, ISUB, IMUL, IDIV, IREM, INEG -> T_INT;
                 case DADD, DSUB, DMUL, DDIV, DNEG -> T_DOUBLE;
-                case IEQ, INE, ILT, ILE, IGT, IGE -> T_BOOL;
                 default -> -1;
             };
         }
@@ -179,21 +178,19 @@ public class InlinePass implements IRPass {
         return prev;
     }
 
-    /** Emit the inlined body, popping args and remapping PUSH_VAR and pool indices. */
-    private void emitInlinedBody(IntList out, IRFunction callee, int argc, int[] argTypes) {
-        IRFunction body = argc > 0 ? IRSpeclializer.specialize(callee, argTypes) : callee;
+    /** Emit inlined body with remapped pool indices. */
+    private void emitInlinedBody(IntList out, IRFunction callee, int argc,
+                                  int[] argTypes, int poolBase) {
+        IRFunction body = IRSpeclializer.specialize(callee, argTypes);
         int baseSlot = 8;
 
-        // Build a pool index remapping table: calleePoolIdx → callerPoolIdx
-        int[] poolRemap = buildPoolRemap(body.constantPool());
-
-        // Pop args from stack into temp locals (argN-1 first)
+        // Pop args into temp locals (argN-1 first)
         for (int i = argc - 1; i >= 0; i--) {
             out.add(pack1(STORE_VAR, K_NONE, (baseSlot + i) & 0xFFFF));
             out.add(pack1(POP, K_NONE, 0));
         }
 
-        // Emit callee body, remapping PUSH_VAR and pool indices
+        // Emit body with remapped pool indices and PUSH_VAR remapping
         int[] bodyCode = body.code();
         InstructionView bv = new InstructionView(bodyCode, 0);
         while (bv.inBounds()) {
@@ -202,34 +199,20 @@ public class InlinePass implements IRPass {
                 int varIdx = bv.varIndex();
                 int remapped = (varIdx < argc) ? (baseSlot + varIdx) : varIdx;
                 out.add(pack1(PUSH_VAR, K_PRIM, remapped & 0xFFFF));
-            } else if (op == PUSH_CONST || op == PUSH_GLOBAL || op == PUSH_GLOBAL_N
-                       || op == STORE_GLOBAL) {
+            } else if (op == PUSH_CONST) {
                 int calleeIdx = bv.constPoolIndex();
-                int callerIdx = poolRemap[calleeIdx];
+                int callerIdx = poolBase + calleeIdx;
                 int kind = bv.kind();
-                int outOp = (op == STORE_GLOBAL) ? op : (op == PUSH_GLOBAL_N ? PUSH_GLOBAL : op);
-                // Write with marker index (will be fixed in fixPoolIndices)
-                out.add(pack1(outOp, kind, callerIdx & 0xFFFF));
-                if (IRFormat.opCount(out.toArray()[out.size()-1]) > 0) {
-                    out.add(callerIdx >>> 16); // not needed for oc=0 but safe
-                }
+                out.add(pack1(PUSH_CONST, kind, callerIdx & 0xFFFF));
+            } else if (op == PUSH_GLOBAL || op == PUSH_GLOBAL_N || op == STORE_GLOBAL) {
+                int calleeIdx = bv.constPoolIndex();
+                int callerIdx = poolBase + calleeIdx;
+                out.add(pack1(op, K_NONE, callerIdx & 0xFFFF));
             } else if (op != RETURN && op != RETURN_VOID) {
                 int w = bv.totalWords();
                 for (int i = 0; i < w; i++) out.add(bodyCode[bv.offset() + i]);
             }
             bv.advance();
         }
-    }
-
-    private List<Object> extraPool = new ArrayList<>();
-
-    /** Build a remapping table from callee pool indices to caller pool indices. */
-    private int[] buildPoolRemap(Object[] calleePool) {
-        int[] remap = new int[calleePool.length];
-        for (int i = 0; i < calleePool.length; i++) {
-            extraPool.add(calleePool[i]);
-            remap[i] = MARK_BASE + extraPool.size() - 1; // Marker index
-        }
-        return remap;
     }
 }
