@@ -306,7 +306,7 @@ public class IRBuilder {
             case Token.ADD -> { if(t==T_INT)current.emitIAdd(); else if(t==T_LONG)current.emitLAdd(); else if(t==T_DOUBLE)current.emitDAdd(); else current.emitDynAdd(); }
             case Token.SUB -> { if(t==T_INT)current.emitISub(); else if(t==T_LONG)current.emitLSub(); else if(t==T_DOUBLE)current.emitDSub(); else current.emitDynSub(); }
             case Token.MUL -> { if(t==T_INT)current.emitIMul(); else if(t==T_LONG)current.emitLMul(); else if(t==T_DOUBLE)current.emitDMul(); else current.emitDynMul(); }
-            case Token.DIV -> { if(t==T_INT)current.emitIDiv(); else if(t==T_LONG)current.emitLDiv(); else if(t==T_DOUBLE)current.emitDDiv(); else current.emitDynDiv(); }
+            case Token.DIV -> current.emitDynDiv();  // use dynamic path for correct ELite semantics
             case Token.REM -> { if(t==T_INT)current.emitIRem(); else current.emitDynRem(); }
             case Token.NEG -> { if(t==T_INT)current.emitINeg(); else if(t==T_LONG)current.emitLNeg(); else if(t==T_DOUBLE)current.emitDNeg(); else current.emitDynNeg(); }
             default -> emitDynamicOp(op);

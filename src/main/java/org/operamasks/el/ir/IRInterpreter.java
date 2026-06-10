@@ -238,14 +238,14 @@ public class IRInterpreter {
                     break;
                 }
                 case INVOKE_DYN: {
-                    int argc = oc == 0 ? pl : code[ip + 1];
+                    int argc = pl;  // argCount is always in payload
                     Object result = dynamicInvoke(argc);
                     push(result);
                     ip += 1 + oc;
                     break;
                 }
                 case INVOKE: {
-                    int argc = oc == 0 ? pl : code[ip + 1];
+                    int argc = pl;
                     Object result = dynamicInvoke(argc);
                     push(result);
                     ip += 1 + oc;
@@ -490,8 +490,17 @@ public class IRInterpreter {
     }
 
     private Number dynamicDiv(Object x, Object y) {
-        if (x instanceof Integer && y instanceof Integer) return ((Integer)x) / ((Integer)y);
-        if (x instanceof Long && y instanceof Long) return ((Long)x) / ((Long)y);
+        // ELite / semantics: float division for non-evenly-divisible integers
+        if (x instanceof Integer && y instanceof Integer) {
+            int xi=(Integer)x, yi=(Integer)y;
+            if (yi==0) throw new ArithmeticException("Division by zero");
+            return (xi % yi == 0) ? xi / yi : (double)xi / (double)yi;
+        }
+        if (x instanceof Long && y instanceof Long) {
+            long xl=(Long)x, yl=(Long)y;
+            if (yl==0) throw new ArithmeticException("Division by zero");
+            return (xl % yl == 0) ? xl / yl : (double)xl / (double)yl;
+        }
         if (x instanceof Double && y instanceof Double) return ((Double)x) / ((Double)y);
         return ((Number)x).doubleValue() / ((Number)y).doubleValue();
     }
