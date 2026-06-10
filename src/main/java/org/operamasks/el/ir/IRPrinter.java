@@ -33,6 +33,8 @@ public final class IRPrinter {
                 try {
                     IRFunction fn = IRBuilder.compile(def);
                     sb.append(formatIR(fn));
+                    // If the definition wraps a lambda, also dump the lambda body IR
+                    dumpLambdaBody(sb, def);
                 } catch (Exception e) {
                     sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");
                 }
@@ -143,6 +145,26 @@ public final class IRPrinter {
         if (c instanceof IRFunction fn) return "<IRFunction " + fn.name() + ">";
         if (c instanceof ELNode n) return "<" + n.getClass().getSimpleName() + ">";
         return c.getClass().getSimpleName();
+    }
+
+    /** If the node is a DEFINE wrapping a LAMBDA, dump the lambda body IR. */
+    private static void dumpLambdaBody(StringBuilder sb, ELNode node) {
+        if (node instanceof org.operamasks.el.parser.ELNode.DEFINE def
+            && def.expr instanceof org.operamasks.el.parser.ELNode.LAMBDA lambda) {
+
+            String name = lambda.name != null ? lambda.name : def.id;
+            String[] params = new String[lambda.vars.length];
+            for (int i = 0; i < lambda.vars.length; i++) {
+                params[i] = lambda.vars[i].id;
+            }
+            IRFunction bodyIR = IRBuilder.compileLambda(name, params, lambda.body);
+            sb.append("  [lambda body]\n");
+            sb.append(indent(formatIR(bodyIR), "  "));
+        }
+    }
+
+    private static String indent(String s, String prefix) {
+        return prefix + s.replace("\n", "\n" + prefix);
     }
 
     private static String nodeName(ELNode node) {
