@@ -141,6 +141,8 @@ public class TypeInferrer {
                 result = Type.BOOLEAN; break;
 
             // Lambda and application
+            case Token.CLASSDEF:
+                result = inferClassDef((ELNode.CLASSDEF) node); break;
             case Token.LAMBDA:
                 result = inferLambda((ELNode.LAMBDA) node); break;
             case Token.APPLY:
@@ -207,6 +209,23 @@ public class TypeInferrer {
         node.inferredType = result;
         currentNode = prev;
         return result;
+    }
+
+    // =========== Class definition ===========
+
+    private Type inferClassDef(ELNode.CLASSDEF node) {
+        // Register as a class type using Object.class as placeholder
+        // (user-defined classes don't have a Java Class at type-check time)
+        ClassType classType = new ClassType(Object.class);
+        env.put(node.id, classType);
+
+        if (node.ivars != null) {
+            for (ELNode.DEFINE var : node.ivars) {
+                infer(var);
+            }
+        }
+
+        return classType;
     }
 
     // =========== Literals ===========
@@ -748,6 +767,11 @@ public class TypeInferrer {
     // =========== New ===========
 
     private Type inferNew(ELNode.NEW node) {
+        // Check if it's a user-defined class registered in the environment
+        Type envType = env.get(node.base);
+        if (envType != null) return envType;
+
+        // Try to resolve as a Java class
         try {
             Class<?> cls = ELEngine.resolveJavaClass(elctx, node.base);
             return new ClassType(cls);

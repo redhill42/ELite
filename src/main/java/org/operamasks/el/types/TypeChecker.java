@@ -69,10 +69,17 @@ public class TypeChecker {
 
     private void registerDefinition(ELNode node, TypeInferrer inferrer) {
         if (node instanceof ELNode.DEFINE) {
-            ELNode.DEFINE def = (ELNode.DEFINE) node;
-            // inferDefine validates the define's own type annotation
-            // and recursively validates the expression (LAMBDA params etc.)
             inferrer.infer(node);
+        } else if (node instanceof ELNode.CLASSDEF) {
+            ELNode.CLASSDEF cls = (ELNode.CLASSDEF) node;
+            // Register the class name as a known type
+            inferrer.infer(node);
+            // Also register instance variables as properties of the class
+            if (cls.ivars != null) {
+                for (ELNode.DEFINE var : cls.ivars) {
+                    inferrer.infer(var);
+                }
+            }
         }
     }
 
