@@ -626,7 +626,7 @@ public class IRInterpreter {
     // ── Iterator helpers ──
 
     @SuppressWarnings({"unchecked","rawtypes"})
-    private static java.util.Iterator<?> getIterator(Object coll) {
+    static java.util.Iterator<?> getIterator(Object coll) {
         if (coll instanceof Iterable) return ((Iterable) coll).iterator();
         if (coll instanceof Object[]) return java.util.Arrays.asList((Object[]) coll).iterator();
         if (coll.getClass().isArray()) {

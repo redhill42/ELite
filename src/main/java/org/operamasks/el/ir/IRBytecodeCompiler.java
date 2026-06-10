@@ -189,6 +189,41 @@ public class IRBytecodeCompiler {
                 int argc = oc == 0 ? pl : v.operand(0);
                 emitPackArgsAndCall(argc, false, null);
             }
+            // ─── Property access, globals ───
+            case LOAD_PROPERTY -> emitCall2("loadProp");
+            case PUSH_GLOBAL, PUSH_GLOBAL_N -> emitCall1("pushGlobal", v);
+            case STORE_GLOBAL -> {
+                int idx = v.payload();
+                String name = (String) fn.constantPool()[idx];
+                mv.visitLdcInsn(name);
+                mv.visitInsn(A_SWAP);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "storeGlobal", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
+
+            // ─── Collections ───
+            case NEW_LIST  -> emitCallN("newList", pl);
+            case NEW_MAP   -> emitCallN("newMap", pl);
+            case NEW_TUPLE -> emitCallN("newTuple", pl);
+            case NEW_RANGE -> emitCall2("newRange");
+
+            // ─── Iteration ───
+            case GET_ITER  -> emitCall1Obj("getIter");
+            case ITER_NEXT -> emitCall1Obj("iterNext");
+            case ITER_DONE -> {
+                emitCall1Obj("iterNext"); // pop iterator, push next value
+                mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL → done
+            }
+
+            // ─── Bitwise (via helpers) ───
+            case IAND, LAND -> emitCall2("bitAnd");
+            case IOR, LOR   -> emitCall2("bitOr");
+            case IXOR, LXOR -> emitCall2("bitXor");
+            case ISHL, LSHL -> emitCall2("bitShl");
+            case ISHR, LSHR -> emitCall2("bitShr");
+            case IUSHR, LUSHR -> emitCall2("bitUshr");
+            case IBITNOT, LBITNOT -> emitCall1Obj("bitNot");
+
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
@@ -300,6 +335,92 @@ public class IRBytecodeCompiler {
         if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
         return new IRInterpreter(SHARED_ELCTX, fn).execute(args);
     }
+
+    // ── Simple call helpers (1-2 args popped from stack) ──
+
+    private void emitCall2(String method) {
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            method, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+    }
+    private void emitCall1Obj(String method) {
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            method, "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+    }
+    private void emitCall1(String method, InstructionView v) {
+        // Stack has the value to store. For storeGlobal: pop value.
+        // For pushGlobal: just call helper with name from pool.
+        int idx = v.constPoolIndex();
+        String name = (String) fn.constantPool()[idx];
+        mv.visitLdcInsn(name);
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            method, "(Ljava/lang/String;)Ljava/lang/Object;", false);
+    }
+    private void emitCallN(String method, int count) {
+        // Pop count values from stack, pack into Object[], call helper
+        if (count == 0) {
+            mv.visitInsn(A_ICONST_0);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+        } else {
+            int[] slots = new int[count];
+            for (int i = 0; i < count; i++) slots[i] = i + 1;
+            for (int i = count - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, slots[i]);
+            emitIntConst(count);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+            for (int i = 0; i < count; i++) {
+                mv.visitInsn(A_DUP); emitIntConst(i);
+                mv.visitVarInsn(A_ALOAD, slots[i]); mv.visitInsn(A_AASTORE);
+            }
+        }
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            method, "([Ljava/lang/Object;)Ljava/lang/Object;", false);
+    }
+
+    // ── Property, global, collection helpers ──
+
+    public static Object loadProp(Object base, Object key) {
+        javax.el.ELContext c = SHARED_ELCTX;
+        c.setPropertyResolved(false);
+        Object r = c.getELResolver().getValue(c, base, key);
+        if (!c.isPropertyResolved()) throw new RuntimeException("Property not found: " + key);
+        return r;
+    }
+    public static Object pushGlobal(String name) {
+        javax.el.ELContext c = SHARED_ELCTX;
+        javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
+        if (ve != null) return ve.getValue(c);
+        c.setPropertyResolved(false);
+        Object r = c.getELResolver().getValue(c, null, name);
+        if (c.isPropertyResolved()) return r;
+        throw new RuntimeException("Undefined: " + name);
+    }
+    public static Object storeGlobal(String name, Object value) {
+        SHARED_ELCTX.getVariableMapper().setVariable(name,
+            new org.operamasks.el.eval.closure.LiteralClosure(value));
+        return value;
+    }
+    public static Object newList(Object[] elems) { return java.util.Arrays.asList(elems); }
+    public static Object newMap(Object[] kvs) {
+        java.util.LinkedHashMap<Object,Object> m = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < kvs.length; i += 2) m.put(kvs[i], kvs[i+1]);
+        return m;
+    }
+    public static Object newTuple(Object[] elems) { return elems; }
+    public static Object newRange(Object begin, Object end) {
+        return org.operamasks.el.eval.Ranges.createRange(
+            ((Number)begin).longValue(), ((Number)end).longValue(), 1);
+    }
+    public static Object getIter(Object coll) { return IRInterpreter.getIterator(coll); }
+    public static Object iterNext(Object it) {
+        java.util.Iterator<?> iter = (java.util.Iterator<?>) it;
+        return iter.hasNext() ? iter.next() : null;
+    }
+    public static Object bitAnd(Object a, Object b) { return ((Number)a).longValue() & ((Number)b).longValue(); }
+    public static Object bitOr(Object a, Object b)  { return ((Number)a).longValue() | ((Number)b).longValue(); }
+    public static Object bitXor(Object a, Object b) { return ((Number)a).longValue() ^ ((Number)b).longValue(); }
+    public static Object bitShl(Object a, Object b) { return ((Number)a).longValue() << ((Number)b).longValue(); }
+    public static Object bitShr(Object a, Object b) { return ((Number)a).longValue() >> ((Number)b).longValue(); }
+    public static Object bitUshr(Object a, Object b){ return ((Number)a).longValue() >>> ((Number)b).longValue(); }
+    public static Object bitNot(Object a) { return ~((Number)a).longValue(); }
 
     /** Dynamic call: delegate to ELEngine.invokeTarget. */
     public static Object invokeDyn(Object target, Object[] args) {
