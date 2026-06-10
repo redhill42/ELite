@@ -129,4 +129,99 @@ class IRBuilderTest {
         try { engine.eval(stmt); }
         catch (ScriptException e) { throw new RuntimeException("exec failed: " + stmt, e); }
     }
+
+    // ── Function calls ──
+
+    @Test void functionCallViaGlobal() {
+        ELNode node = parse("add(3, 4)");
+        // Without define, add is a global reference
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+        // Should compile to PUSH_CONST(3,4) + PUSH_GLOBAL("add") + INVOKE_DYN
+        assertTrue(scanOp(fn, Opcode.INVOKE_DYN) || scanOp(fn, Opcode.INVOKE_DIRECT),
+            "function call should have invoke");
+    }
+
+    // ── Property access ──
+
+    @Test void propertyAccessCompiles() {
+        ELNode node = parse("x.y");
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+        // Should have LOAD_PROPERTY
+        assertTrue(scanOp(fn, Opcode.LOAD_PROPERTY), "x.y should use LOAD_PROPERTY");
+    }
+
+    @Test void indexAccessCompiles() {
+        ELNode node = parse("x[0]");
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+    }
+
+    // ── List/map literals ──
+
+    @Test void listLiteralCompiles() {
+        ELNode node = parse("[1, 2, 3]");
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+        assertTrue(scanOp(fn, Opcode.NEW_LIST), "list literal should use NEW_LIST");
+    }
+
+    @Test void mapLiteralCompiles() {
+        ELNode node = parse("{a: 1, b: 2}");
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+        assertTrue(scanOp(fn, Opcode.NEW_MAP), "map literal should use NEW_MAP");
+    }
+
+    // ── Control flow in expressions ──
+
+    @Test void conditionalCompilesWithBlocks() {
+        ELNode node = parse("true ? 100 : 200");
+        IRFunction fn = IRBuilder.compile(node);
+        assertTrue(fn.blockCount() >= 3, "?: should produce >= 3 blocks");
+        assertTrue(scanOp(fn, Opcode.JUMP_IF_TRUE), "?: should have JUMP_IF_TRUE");
+    }
+
+    @Test void logicalAndCompilesWithJumps() {
+        ELNode node = parse("true && false");
+        IRFunction fn = IRBuilder.compile(node);
+        assertTrue(fn.blockCount() >= 2, "&& should produce multiple blocks");
+    }
+
+    @Test void logicalOrCompilesWithJumps() {
+        ELNode node = parse("true || false");
+        IRFunction fn = IRBuilder.compile(node);
+        assertTrue(fn.blockCount() >= 2, "|| should produce multiple blocks");
+    }
+
+    // ── Coalesce ──
+
+    @Test void coalesceCompilesWithNullCheck() {
+        ELNode node = parse("x ?? 100");
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+        assertTrue(scanOp(fn, Opcode.JUMP_IF_NONNULL), "?? should have null check");
+    }
+
+    // ── String concat ──
+
+    @Test void stringConcatCompiles() {
+        ELNode node = parse("\"hello\" ~ \"world\"");
+        IRFunction fn = IRBuilder.compile(node);
+        assertNotNull(fn);
+        assertTrue(scanOp(fn, Opcode.DYNCAT), "string concat should use DYNCAT");
+    }
+
+    static boolean scanOp(IRFunction fn, int target) {
+        for (int b = 0; b < fn.blockCount(); b++) {
+            InstructionView v = new InstructionView(fn.code(), fn.blockStart(b));
+            int end = (b+1 < fn.blockCount()) ? fn.blockStart(b+1) : fn.code().length;
+            while (v.inBounds() && v.offset() < end) {
+                if (v.opcode() == target) return true;
+                v.advance();
+            }
+        }
+        return false;
+    }
 }
