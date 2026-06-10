@@ -27,9 +27,9 @@ public class IRBuilder {
     private final Map<String, Integer> varIndex = new LinkedHashMap<>();
     private final List<String> varNames = new ArrayList<>();
 
-    // ── Constant pool ──
-    private final Map<Object, Integer> constIndex = new HashMap<>();
-    private final List<Object> constants = new ArrayList<>();
+    // ── Constant pool (may be shared with parent builder) ──
+    private Map<Object, Integer> constIndex = new HashMap<>();
+    private List<Object> constants = new ArrayList<>();
 
     // ── Loop stack ──
     private record LoopTargets(int continueBlock, int breakBlock) {}
@@ -41,11 +41,14 @@ public class IRBuilder {
 
     IRBuilder() { currentBlockId = 0; current = new IREmitter(); }
 
-    /** Create a nested builder inheriting TCO state. */
+    /** Create a nested builder sharing the parent's constant pool. */
     private IRBuilder(IRBuilder parent) {
         this.currentBlockId = 0;
         this.current = new IREmitter();
         this.lambdaName = parent.lambdaName;
+        // Share constants with parent so pool indices are consistent
+        this.constants = parent.constants;
+        this.constIndex = parent.constIndex;
     }
 
     // ============ MAIN DISPATCH ============
@@ -647,7 +650,7 @@ public class IRBuilder {
 
     // ── Lambda ──
     private void buildLambda(ELNode.LAMBDA node) {
-        IRBuilder nested = new IRBuilder();
+        IRBuilder nested = new IRBuilder(this);  // share parent pool
         nested.lambdaName = node.name;
         for (ELNode.DEFINE var : node.vars) nested.ensureVar(var.id);
         nested.inTailPosition = true;
@@ -855,7 +858,7 @@ public class IRBuilder {
     private static void registerDef(IRBuilder b, ELNode def) {
         if (def instanceof ELNode.DEFINE d && d.expr instanceof ELNode.LAMBDA lam) {
             String name = lam.name != null ? lam.name : d.id;
-            IRBuilder nested = new IRBuilder();
+            IRBuilder nested = new IRBuilder(b);  // share parent pool
             nested.lambdaName = lam.name;
             for (ELNode.DEFINE var : lam.vars) nested.ensureVar(var.id);
             nested.inTailPosition = true;

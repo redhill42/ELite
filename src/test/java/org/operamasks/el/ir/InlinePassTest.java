@@ -63,7 +63,6 @@ class InlinePassTest {
         assertEquals(55L, ((Number)new IRInterpreter(ctx, result).execute(null)).longValue());
     }
 
-    @org.junit.jupiter.api.Disabled("pool merging across nested builders needs fix")
     @Test
     void inlinePreservesResult() {
         // define sq(x)=>x*x; define sumSq(a,b)=>sq(a)+sq(b); sumSq(3,4)
