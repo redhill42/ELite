@@ -555,15 +555,13 @@ public class IRInterpreter {
     // ── Dynamic invocation ──
 
     private Object dynamicInvoke(int argCount) {
-        // Stack layout: [target] [arg1] ... [argN]
-        // After popping args, target is at sp - argCount - 1
-        // Actually: args are pushed left-to-right, then target
-        // Stack: ... arg0 arg1 ... argN target
-        Object target = pop();
+        // Stack layout: target below, args on top
+        // Stack: ... target arg0 arg1 ... argN
         Object[] args = new Object[argCount];
         for (int i = argCount - 1; i >= 0; i--) {
             args[i] = pop();
         }
+        Object target = pop();
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion
             javax.el.ELContext elctx = evalContext.getELContext();

@@ -181,37 +181,44 @@ public class IRBuilder {
     }
 
     // ── Apply ──
-    private void buildApply(ELNode.APPLY node) {
-        // Build arguments (never in tail position)
+        private void buildApply(ELNode.APPLY node) {
+        // Determine if this will use direct call or TCO (avoids pushing target)
+        boolean isTail = inTailPosition && lambdaName != null
+            && node.right instanceof ELNode.IDENT
+            && lambdaName.equals(((ELNode.IDENT) node.right).id);
+        boolean isDirect = !isTail && node.right instanceof ELNode.IDENT
+            && knownFunctions.get().get(((ELNode.IDENT) node.right).id) != null;
+
+        if (isTail) {
+            // TCO: build args (never in tail position), emit INVOKE_TAIL
+            boolean prev = inTailPosition;
+            inTailPosition = false;
+            for (ELNode arg : node.args) build(arg);
+            inTailPosition = prev;
+            current.emitInvokeTail(node.args.length);
+            return;
+        }
+
+        if (isDirect) {
+            // Direct call: build args, emit INVOKE_DIRECT
+            boolean prev = inTailPosition;
+            inTailPosition = false;
+            for (ELNode arg : node.args) build(arg);
+            inTailPosition = prev;
+            Integer funcIdx = knownFunctions.get().get(((ELNode.IDENT) node.right).id);
+            current.emitInvokeDirect(funcIdx, node.args.length);
+            return;
+        }
+
+        // Fallback: dynamic invoke. Build target first, then args,
+        // so stack is [target, arg0, ..., argN].
         boolean prev = inTailPosition;
         inTailPosition = false;
+        build(node.right);
         for (ELNode arg : node.args) build(arg);
         inTailPosition = prev;
-
-        // Detect tail call: self-recursive call in tail position
-        if (prev && lambdaName != null && node.right instanceof ELNode.IDENT) {
-            String targetName = ((ELNode.IDENT) node.right).id;
-            if (targetName.equals(lambdaName)) {
-                current.emitInvokeTail(node.args.length);
-                return;
-            }
-        }
-
-        // Direct call optimization: known function in registry
-        if (node.right instanceof ELNode.IDENT ident) {
-            Integer funcIdx = knownFunctions.get().get(ident.id);
-            if (funcIdx != null) {
-                current.emitInvokeDirect(funcIdx, node.args.length);
-                return;
-            }
-        }
-
-        // Fallback: dynamic invoke
-        build(node.right);
         current.emitInvokeDyn(node.args.length);
-    }
-
-    // ── Literals: list, map, tuple, range ──
+    }    // ── Literals: list, map, tuple, range ──
 
     private void buildCons(ELNode.CONS node) {
         // Walk the CONS chain, count and emit elements, then NEW_LIST

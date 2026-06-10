@@ -544,8 +544,7 @@ public class IRBytecodeCompiler {
             mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
                 "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         } else {
-            // Target is on the stack (below the args we popped)
-            mv.visitInsn(A_SWAP); // args, target → target, args
+            // Stack is [target, argsArray] — correct order for invokeDyn(target, args)
             mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
                 "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
