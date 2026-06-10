@@ -652,8 +652,10 @@ public class IRBytecodeCompiler {
                 case 16 -> "bipush"; case 17 -> "sipush";
                 case 18 -> "ldc"; case 21 -> "iload"; case 25 -> "aload";
                 case 46 -> "iaload"; case 50 -> "aaload";
+                case 75 -> "astore_0"; case 76 -> "astore_1";
+                case 77 -> "astore_2"; case 78 -> "astore_3"; case 58 -> "astore";
                 case 79 -> "iastore"; case 83 -> "aastore";
-                case 87 -> "pop"; case 89 -> "dup"; case 95 -> "swap";
+                case 87 -> "pop"; case 89 -> "dup"; case 90 -> "dup_x1"; case 95 -> "swap";
                 case 96 -> "iadd"; case 100 -> "isub"; case 104 -> "imul";
                 case 108 -> "idiv"; case 112 -> "irem"; case 116 -> "ineg";
                 case 97 -> "ladd"; case 101 -> "lsub"; case 105 -> "lmul";
