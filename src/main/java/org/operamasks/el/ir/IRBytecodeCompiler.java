@@ -111,6 +111,20 @@ public class IRBytecodeCompiler {
             case IDIV -> { emitUnboxInt(2); mv.visitInsn(A_IDIV); emitBoxInt(); }
             case IREM -> { emitUnboxInt(2); mv.visitInsn(A_IREM); emitBoxInt(); }
             case INEG -> { emitUnboxInt(1); mv.visitInsn(A_INEG); emitBoxInt(); }
+            case IPOW -> emitCall2("intPow");
+            case LADD -> { emitUnboxLong(2); mv.visitInsn(A_LADD); emitBoxLong(); }
+            case LSUB -> { emitUnboxLong(2); mv.visitInsn(A_LSUB); emitBoxLong(); }
+            case LMUL -> { emitUnboxLong(2); mv.visitInsn(A_LMUL); emitBoxLong(); }
+            case LDIV -> { emitUnboxLong(2); mv.visitInsn(A_LDIV); emitBoxLong(); }
+            case LREM -> { emitUnboxLong(2); mv.visitInsn(A_LREM); emitBoxLong(); }
+            case LNEG -> { emitUnboxLong(1); mv.visitInsn(A_LNEG); emitBoxLong(); }
+            case LPOW -> emitCall2("longPow");
+            case DADD -> { emitUnboxDouble(2); mv.visitInsn(A_DADD); emitBoxDouble(); }
+            case DSUB -> { emitUnboxDouble(2); mv.visitInsn(A_DSUB); emitBoxDouble(); }
+            case DMUL -> { emitUnboxDouble(2); mv.visitInsn(A_DMUL); emitBoxDouble(); }
+            case DDIV -> { emitUnboxDouble(2); mv.visitInsn(A_DDIV); emitBoxDouble(); }
+            case DNEG -> { emitUnboxDouble(1); mv.visitInsn(A_DNEG); emitBoxDouble(); }
+            case DPOW -> emitCall2("doublePow");
 
             case IEQ -> { emitUnboxInt(2); emitICmp(A_IF_ICMPEQ); }
             case INE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPNE); }
@@ -193,6 +207,7 @@ public class IRBytecodeCompiler {
             }
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> emitCall2("loadProp");
+            case STORE_PROPERTY -> emitCall3("storeProp");
             case PUSH_GLOBAL, PUSH_GLOBAL_N -> emitCall1("pushGlobal", v);
             case STORE_GLOBAL -> {
                 int idx = v.payload();
@@ -363,6 +378,10 @@ public class IRBytecodeCompiler {
         mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
             method, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
+    private void emitCall3(String method) {
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            method, "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+    }
     private void emitCall1Obj(String method) {
         mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
             method, "(Ljava/lang/Object;)Ljava/lang/Object;", false);
@@ -397,6 +416,16 @@ public class IRBytecodeCompiler {
     }
 
     // ── Property, global, collection helpers ──
+
+    public static Object storeProp(Object base, Object key, Object value) {
+        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
+        c.getELResolver().setValue(c, base, key, value);
+        return value;
+    }
+
+    public static Object intPow(Object x, Object y) { return (long)Math.pow(((Number)x).intValue(), ((Number)y).intValue()); }
+    public static Object longPow(Object x, Object y) { return (long)Math.pow(((Number)x).longValue(), ((Number)y).longValue()); }
+    public static Object doublePow(Object x, Object y) { return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue()); }
 
     public static Object loadProp(Object base, Object key) {
         javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
@@ -457,6 +486,26 @@ public class IRBytecodeCompiler {
 
     private void emitBoxInt() {
         mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+    }
+
+    private void emitUnboxLong(int count) {
+        if (count == 2) {
+            mv.visitInsn(A_SWAP);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+            mv.visitInsn(A_SWAP);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+        } else {
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+        }
+    }
+    private void emitBoxLong() {
+        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+    }
+    private void emitBoxDouble() {
+        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
     }
 
     private void emitUnboxDouble(int count) {
