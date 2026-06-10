@@ -807,7 +807,8 @@ public class IRBuilder {
             int typeId = b.typeIdFromNode(node);
             b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
         }
-        return FOLDER.transform(b.finish("<expr>", 0));
+        IRFunction fn = FOLDER.transform(b.finish("<expr>", 0));
+        return IRSpeclializer.specialize(fn, new int[0]);
     }
 
     public static IRFunction compile(List<ELNode> expressions) {
@@ -839,7 +840,8 @@ public class IRBuilder {
                 b.current.emitReturn(t >= 0 ? t : T_INT);
             }
         }
-        return FOLDER.transform(b.finish("<program>", 0));
+        IRFunction fn = FOLDER.transform(b.finish("<program>", 0));
+        return IRSpeclializer.specialize(fn, new int[0]);
     }
 
     /** Pre-compile a function definition and register it for direct calls. */
@@ -856,6 +858,9 @@ public class IRBuilder {
                 nested.current.emitReturn(t >= 0 ? t : T_INT);
             }
             IRFunction fn = nested.finish(name, lam.vars.length);
+            // Apply specialization based on local variable types
+            fn = IRSpeclializer.specialize(fn, new int[lam.vars.length]);
+            fn = FOLDER.transform(fn);  // fold constants in specialized code
             int poolIdx = b.putConstant(fn);
             b.registerFunction(name, poolIdx);
         }
