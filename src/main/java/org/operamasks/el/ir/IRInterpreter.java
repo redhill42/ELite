@@ -356,8 +356,8 @@ public class IRInterpreter {
                 case ITER_NEXT: {
                     java.util.Iterator<?> it = (java.util.Iterator<?>) pop();
                     Object next = it.hasNext() ? it.next() : null;
-                    push(next);
-                    push(it);  // push iterator back for next iteration
+                    push(it);    // iterator first (bottom)
+                    push(next);  // value on top (popped by ITER_DONE or STORE_VAR)
                     ip += 1;
                     break;
                 }

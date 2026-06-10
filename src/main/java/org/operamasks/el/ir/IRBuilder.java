@@ -119,7 +119,7 @@ public class IRBuilder {
             case Token.TUPLE:     buildTuple((ELNode.TUPLE) node); break;
             case Token.RANGE:     buildRange((ELNode.RANGE) node); break;
             case Token.IN:        buildContains(node); break;
-            case Token.INSTANCEOF: buildBinaryOp(node); break;  // TODO: INSTANCEOF instruction
+            case Token.INSTANCEOF: buildInstanceOf((ELNode.INSTANCEOF) node); break;
             case Token.NIL:       current.emitNewList(0); break;  // [] = empty list
             case Token.ARRAY:     buildTrampoline(node); break;  // complex, rare
 
@@ -262,6 +262,13 @@ public class IRBuilder {
             build(node.end);
             current.emitNewRange();
         }
+    }
+
+    private void buildInstanceOf(ELNode.INSTANCEOF node) {
+        build(node.right);  // evaluate the expression
+        // Put type name in constant pool, emit INSTANCEOF trampoline
+        int typeIdx = putConstant(node.type);
+        current.emit2(0xE0, K_DYN, typeIdx, node.negative ? 1 : 0);
     }
 
     private void buildContains(ELNode node) {
