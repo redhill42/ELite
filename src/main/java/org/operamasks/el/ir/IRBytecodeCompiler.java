@@ -35,6 +35,7 @@ public class IRBytecodeCompiler {
     private final MethodVisitor mv;
     private final String className;
     private final String internalName;
+    private final Label[] blockLabels;
 
     public static CompiledFunction compile(IRFunction fn) {
         String name = "ELiteCompiled$" + CLASS_COUNTER.incrementAndGet();
@@ -54,6 +55,7 @@ public class IRBytecodeCompiler {
         this.fn = fn;
         this.className = className;
         this.internalName = className.replace('.', '/');
+        this.blockLabels = new Label[fn.blockCount()];
 
         cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         cw.visit(61, 1 | 0x20, internalName, null, "java/lang/Object", null);
@@ -71,6 +73,10 @@ public class IRBytecodeCompiler {
 
     private byte[] compileBytecode() {
         mv.visitCode();
+        // Allocate labels for all blocks first (for forward references)
+        for (int b = 0; b < fn.blockCount(); b++) {
+            blockLabels[b] = new Label();
+        }
         for (int b = 0; b < fn.blockCount(); b++) compileBlock(b);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
@@ -79,7 +85,7 @@ public class IRBytecodeCompiler {
     }
 
     private void compileBlock(int blockId) {
-        mv.visitLabel(new Label());
+        mv.visitLabel(blockLabels[blockId]);
         int start = fn.blockStart(blockId);
         int end = (blockId + 1 < fn.blockCount()) ? fn.blockStart(blockId + 1) : fn.code().length;
         InstructionView v = new InstructionView(fn.code(), start);
@@ -139,6 +145,39 @@ public class IRBytecodeCompiler {
             case POP_N -> { for (int i=0; i<pl; i++) mv.visitInsn(A_POP); }
             case RETURN -> { mv.visitInsn(A_ARETURN); }  // already boxed
             case RETURN_VOID -> { mv.visitInsn(A_ACONST_NULL); mv.visitInsn(A_ARETURN); }
+            // ─── Control flow ───
+            case JUMP -> mv.visitJumpInsn(A_GOTO, blockLabels[v.jumpTarget()]);
+            case JUMP_IF_TRUE -> {
+                unboxBoolean();
+                mv.visitJumpInsn(154, blockLabels[v.jumpTarget()]); // IFNE
+            }
+            case JUMP_IF_FALSE -> {
+                unboxBoolean();
+                mv.visitJumpInsn(153, blockLabels[v.jumpTarget()]); // IFEQ
+            }
+            case JUMP_IF_NULL -> mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL
+            case JUMP_IF_NONNULL -> mv.visitJumpInsn(199, blockLabels[v.jumpTarget()]); // IFNONNULL
+            case INVOKE_TAIL -> {
+                // Pop args, store to locals, jump to entry block
+                int argc = pl;
+                for (int i = argc - 1; i >= 0; i--) {
+                    mv.visitVarInsn(A_ALOAD, 0);  // locals array
+                    mv.visitInsn(A_SWAP);          // val, array → array, val
+                    emitIntConst(i);
+                    mv.visitInsn(A_SWAP);
+                    mv.visitInsn(A_AASTORE);       // locals[i] = val
+                }
+                mv.visitJumpInsn(A_GOTO, blockLabels[0]); // jump to entry
+            }
+            case NOT -> {
+                unboxBoolean();
+                // Negate: ICONST_1 XOR
+                Label t = new Label(), e = new Label();
+                mv.visitJumpInsn(154, t); // IFNE → true
+                mv.visitInsn(A_ICONST_1); mv.visitJumpInsn(A_GOTO, e);
+                mv.visitLabel(t); mv.visitInsn(A_ICONST_0); mv.visitLabel(e);
+                mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
@@ -197,6 +236,11 @@ public class IRBytecodeCompiler {
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
         }
     }
+    private void unboxBoolean() {
+        mv.visitTypeInsn(A_CHECKCAST, "java/lang/Boolean");
+        mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+    }
+
     private void emitBoxInt() {
         mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
     }

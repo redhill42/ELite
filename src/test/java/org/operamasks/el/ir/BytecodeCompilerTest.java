@@ -37,4 +37,14 @@ class BytecodeCompilerTest {
     @Test void arithmeticSeq() {
         assertEquals(14L, ((Number)bcEval("2 + 3 * 4")).longValue());
     }
+
+    // ─── Control flow ───
+
+    @Test void conditionalTrue()  { assertEquals(100L, ((Number)bcEval("true ? 100 : 200")).longValue()); }
+    @Test void conditionalFalse() { assertEquals(200L, ((Number)bcEval("false ? 100 : 200")).longValue()); }
+    @Test void intNot()  { assertEquals(false, bcEval("!true")); }
+    @Test void intAnd()  { assertEquals(true, bcEval("true && true")); assertEquals(false, bcEval("true && false")); }
+    @Test void intOr()   { assertEquals(true, bcEval("true || false")); assertEquals(false, bcEval("false || false")); }
+    @Test void coalesce() { assertEquals(100L, ((Number)bcEval("100 ?? 200")).longValue()); }
+    @Test void nullCoalesce() { assertEquals(200L, ((Number)bcEval("null ?? 200")).longValue()); }
 }
