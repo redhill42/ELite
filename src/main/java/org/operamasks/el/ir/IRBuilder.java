@@ -847,7 +847,10 @@ public class IRBuilder {
             for (ELNode.DEFINE var : lam.vars) nested.ensureVar(var.id);
             nested.inTailPosition = true;
             nested.build(lam.body);
-            if (!endsWithReturn(nested)) nested.current.emitReturnVoid();
+            if (!endsWithReturn(nested)) {
+                int t = nested.typeIdFromNode(lam.body);
+                nested.current.emitReturn(t >= 0 ? t : T_INT);
+            }
             IRFunction fn = nested.finish(lam.name != null ? lam.name : d.id, lam.vars.length);
             int poolIdx = b.putConstant(fn);
             b.registerFunction(lam.name != null ? lam.name : d.id, poolIdx);

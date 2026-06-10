@@ -178,6 +178,17 @@ public class IRBytecodeCompiler {
                 mv.visitLabel(t); mv.visitInsn(A_ICONST_0); mv.visitLabel(e);
                 mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
             }
+            // ─── Function calls ───
+            case INVOKE_DIRECT -> {
+                int funcIdx = pl;
+                int argc = oc == 0 ? 0 : v.operand(0);
+                IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
+                emitPackArgsAndCall(argc, true, target);
+            }
+            case INVOKE_DYN, INVOKE -> {
+                int argc = oc == 0 ? pl : v.operand(0);
+                emitPackArgsAndCall(argc, false, null);
+            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
@@ -236,6 +247,66 @@ public class IRBytecodeCompiler {
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
         }
     }
+    /** Pack args from stack into Object[] and call helper. */
+    private void emitPackArgsAndCall(int argc, boolean direct, IRFunction target) {
+        // Pop argc args from stack, pack into Object[], call helper
+        if (argc == 0) {
+            mv.visitInsn(A_ICONST_0);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+        } else {
+            int[] tempSlots = new int[argc];
+            for (int i = 0; i < argc; i++) tempSlots[i] = i + 1;
+            for (int i = argc - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, tempSlots[i]);
+            emitIntConst(argc);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+            for (int i = 0; i < argc; i++) {
+                mv.visitInsn(A_DUP);
+                emitIntConst(i);
+                mv.visitVarInsn(A_ALOAD, tempSlots[i]);
+                mv.visitInsn(A_AASTORE);
+            }
+        }
+        if (direct) {
+            // Register function and pass its int ID via ldc
+            int funcId = registerFunction(target);
+            emitIntConst(funcId);
+            mv.visitInsn(A_SWAP); // args, id → id, args
+            mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                "invokeDirect", "(I[Ljava/lang/Object;)Ljava/lang/Object;", false);
+        } else {
+            // Target is on the stack (below the args we popped)
+            mv.visitInsn(A_SWAP); // args, target → target, args
+            mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
+    }
+
+    private static final javax.el.ELContext SHARED_ELCTX =
+        org.operamasks.el.eval.ELEngine.createELContext();
+
+    // Function registry: maps int IDs to IRFunctions for ldc-based lookup
+    private static final java.util.Map<Integer, IRFunction> funcRegistry = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final AtomicInteger funcIdCounter = new AtomicInteger();
+
+    private int registerFunction(IRFunction fn) {
+        int id = funcIdCounter.incrementAndGet();
+        funcRegistry.put(id, fn);
+        return id;
+    }
+
+    /** Direct call to a compiled or interpreted IRFunction. */
+    public static Object invokeDirect(int funcId, Object[] args) {
+        IRFunction fn = funcRegistry.get(funcId);
+        if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
+        return new IRInterpreter(SHARED_ELCTX, fn).execute(args);
+    }
+
+    /** Dynamic call: delegate to ELEngine.invokeTarget. */
+    public static Object invokeDyn(Object target, Object[] args) {
+        elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
+        return org.operamasks.el.eval.ELEngine.invokeTarget(SHARED_ELCTX, target, closures);
+    }
+
     private void unboxBoolean() {
         mv.visitTypeInsn(A_CHECKCAST, "java/lang/Boolean");
         mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);

@@ -47,4 +47,22 @@ class BytecodeCompilerTest {
     @Test void intOr()   { assertEquals(true, bcEval("true || false")); assertEquals(false, bcEval("false || false")); }
     @Test void coalesce() { assertEquals(100L, ((Number)bcEval("100 ?? 200")).longValue()); }
     @Test void nullCoalesce() { assertEquals(200L, ((Number)bcEval("null ?? 200")).longValue()); }
+
+    // ─── Function calls ───
+    @Test void simpleCall() {
+        // Parse full program with define + call
+        org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser("define add(x,y) => x + y; add(3, 4)");
+        var prog = p.parse();
+        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        assertEquals(7L, ((Number)cf.execute(null)).longValue());
+    }
+
+    @Test void callWithSingleArg() {
+        org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser("define sq(x) => x * x; sq(5)");
+        var prog = p.parse();
+        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        assertEquals(25L, ((Number)cf.execute(null)).longValue());
+    }
 }
