@@ -241,6 +241,14 @@ public class IRBytecodeCompiler {
             case IUSHR, LUSHR -> emitCall2("bitUshr");
             case IBITNOT, LBITNOT -> emitCall1Obj("bitNot");
 
+            // Trampoline: fall back to AST evaluator for complex ops (try/catch/throw etc.)
+            case 0xE0 -> {
+                int poolIdx = v.constPoolIndex();
+                Object node = fn.constantPool()[poolIdx];
+                mv.visitLdcInsn(node);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "trampoline", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
@@ -426,6 +434,13 @@ public class IRBytecodeCompiler {
     public static Object intPow(Object x, Object y) { return (long)Math.pow(((Number)x).intValue(), ((Number)y).intValue()); }
     public static Object longPow(Object x, Object y) { return (long)Math.pow(((Number)x).longValue(), ((Number)y).longValue()); }
     public static Object doublePow(Object x, Object y) { return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue()); }
+
+    /** Trampoline: evaluate an ELNode via AST interpreter (for try/catch/throw etc.). */
+    public static Object trampoline(Object nodeObj) {
+        org.operamasks.el.parser.ELNode node = (org.operamasks.el.parser.ELNode) nodeObj;
+        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
+        return node.getValue(new org.operamasks.el.eval.EvaluationContext(c));
+    }
 
     public static Object loadProp(Object base, Object key) {
         javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
