@@ -228,13 +228,24 @@ public class IRInterpreter {
 
                 // ============ Function calls ============
                 case INVOKE_TAIL: {
-                    int argc = pl;  // argCount stored in payload
-                    // Pop new arguments from stack (reverse order)
+                    int argc = pl;
                     for (int i = argc - 1; i >= 0; i--) {
                         locals[i] = pop();
                     }
-                    // Jump to function entry — no stack growth!
                     ip = blockOffsets[0];
+                    break;
+                }
+                case INVOKE_DIRECT: {
+                    int funcIdx = pl;  // function pool index in payload
+                    int argc = oc == 0 ? 0 : code[ip + 1];  // argCount in first operand
+                    IRFunction targetFn = (IRFunction) constantPool[funcIdx];
+                    // Pop arguments
+                    Object[] args = new Object[argc];
+                    for (int i = argc - 1; i >= 0; i--) args[i] = pop();
+                    // Direct call: avoids ELEngine.invokeTarget overhead
+                    IRInterpreter callee = new IRInterpreter(elctx, targetFn, evalContext);
+                    push(callee.execute(args));
+                    ip += 1 + oc;
                     break;
                 }
                 case INVOKE_DYN: {

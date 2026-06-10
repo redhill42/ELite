@@ -218,6 +218,12 @@ public class IREmitter {
         return emit1(INVOKE_TAIL, K_NONE, argCount);
     }
 
+    /** Direct call to a known IRFunction (pool index of the IRFunction). */
+    public IREmitter emitInvokeDirect(int funcPoolIdx, int argCount) {
+        if (fits16(funcPoolIdx)) return emit2(INVOKE_DIRECT, K_NONE, funcPoolIdx, argCount);
+        else return emit3(INVOKE_DIRECT, K_NONE, funcPoolIdx >>> 16, funcPoolIdx & 0xFFFF, argCount);
+    }
+
     // ── Memory ──
 
     public IREmitter emitStoreVar(int varIndex) {

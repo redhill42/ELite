@@ -183,8 +183,6 @@ public class IRBuilder {
         boolean prev = inTailPosition;
         inTailPosition = false;
         for (ELNode arg : node.args) build(arg);
-        // Build function target
-        build(node.right);
         inTailPosition = prev;
 
         // Detect tail call: self-recursive call in tail position
@@ -195,6 +193,18 @@ public class IRBuilder {
                 return;
             }
         }
+
+        // Direct call optimization: known function in registry
+        if (node.right instanceof ELNode.IDENT ident) {
+            Integer funcIdx = knownFunctions.get().get(ident.id);
+            if (funcIdx != null) {
+                current.emitInvokeDirect(funcIdx, node.args.length);
+                return;
+            }
+        }
+
+        // Fallback: dynamic invoke
+        build(node.right);
         current.emitInvokeDyn(node.args.length);
     }
 
@@ -517,46 +527,101 @@ public class IRBuilder {
     }
 
     private void buildForEach(ELNode.FOREACH node) {
-        // Compile to: GET_ITER → header block → ITER_NEXT → ITER_DONE → body → header
-        build(node.range);      // push collection/range
-        current.emitGetIter();  // push iterator
+        // Optimize: simple integer ranges use indexed loop instead of iterator
+        if (canOptimizeRange(node)) {
+            buildOptimizedRangeFor(node);
+            return;
+        }
+
+        // General iterator-based for-each (fallback)
+        build(node.range);
+        current.emitGetIter();
 
         int header = allocBlockId(), body = allocBlockId(), exit = allocBlockId();
         loopStack.push(new LoopTargets(header, exit));
-
         current.emitJump(header);
 
-        // Header: ITER_NEXT, ITER_DONE(done)
         startBlock(header);
-        current.emitIterNext();       // push next value, push iterator
-        current.emitIterDone(exit);   // if null → exit
-        // Stack: [value, iterator]
+        current.emitIterNext();
+        current.emitIterDone(exit);
 
-        // Bind loop variable
         if (node.var != null) {
             int varIdx = ensureVar(node.var.id);
-            current.emitStoreVar(varIdx);  // store value to var, keep on stack
-            current.emitPop();             // discard dupe
+            current.emitStoreVar(varIdx);
+            current.emitPop();
         }
-        // Stack: [iterator]
-        // Bind index variable if present
         if (node.index != null) {
-            // index not easily tracked; use trampoline for indexed for-each
-            // For now, just bind index to 0 (not correct for all cases)
-            // TODO: proper index counter
             int idxVar = ensureVar(node.index.id);
-            current.emitPushConst(0);   // placeholder index
+            current.emitPushConst(0);
             current.emitStoreVar(idxVar);
             current.emitPop();
         }
 
         current.emitJump(body);
 
-        // Body
         startBlock(body);
         build(node.body);
-        current.emitPop();               // discard body result
-        current.emitJump(header);        // loop back
+        current.emitPop();
+        current.emitJump(header);
+
+        startBlock(exit);
+        emitPushNull();
+        loopStack.pop();
+    }
+
+    /** Check if the for-each iterates over a simple integer range [start..end] or [start..<end). */
+    private static boolean canOptimizeRange(ELNode.FOREACH node) {
+        if (node.var == null || node.index != null) return false;
+        if (!(node.range instanceof ELNode.RANGE r)) return false;
+        if (r.next != null) return false; // custom step not supported
+        return isSimple(r.begin) && isSimple(r.end);
+    }
+
+    private static boolean isSimple(ELNode n) {
+        return n instanceof ELNode.IDENT || n instanceof ELNode.NUMBER
+            || n instanceof ELNode.POS || n instanceof ELNode.NEG;
+    }
+
+    /** Emit indexed loop: i = start; while (i <= end) { body; i = i + 1 } */
+    private void buildOptimizedRangeFor(ELNode.FOREACH node) {
+        ELNode.RANGE r = (ELNode.RANGE) node.range;
+        String loopVar = node.var.id;
+        int varIdx = ensureVar(loopVar);
+        boolean exclusive = r.exclude;
+
+        // Emit constant 1 for increment
+        int oneIdx = putConstant(1L);
+
+        // Initialize loop var: i = start (discard the expression result)
+        build(r.begin);
+        current.emitStoreVar(varIdx);
+        current.emitPop();  // STORE_VAR pushes back, pop it
+
+        int header = allocBlockId(), body = allocBlockId(), exit = allocBlockId();
+        loopStack.push(new LoopTargets(header, exit));
+
+        // Jump to header
+        current.emitJump(header);
+
+        // Header: push i, push end, compare, branch
+        startBlock(header);
+        current.emitPushVar(varIdx, T_INT);
+        build(r.end);
+        if (exclusive) current.emitDLt(); else current.emitDLe();
+        current.emitJumpIfFalse(exit);
+        current.emitJump(body);
+
+        // Body: execute, then increment
+        startBlock(body);
+        build(node.body);
+        current.emitPop();                // discard body result
+        // i = i + 1
+        current.emitPushVar(varIdx, T_INT);
+        current.emitPushConst(oneIdx);    // push constant 1
+        current.emitIAdd();
+        current.emitStoreVar(varIdx);     // stores to i, pushes result back
+        current.emitPop();                // discard
+        current.emitJump(header);
 
         // Exit
         startBlock(exit);
@@ -576,15 +641,19 @@ public class IRBuilder {
     // ── Lambda ──
     private void buildLambda(ELNode.LAMBDA node) {
         IRBuilder nested = new IRBuilder();
-        // Set function name for TCO detection
         nested.lambdaName = node.name;
         for (ELNode.DEFINE var : node.vars) nested.ensureVar(var.id);
-        // Body is always in tail position
         nested.inTailPosition = true;
         nested.build(node.body);
         if (!endsWithReturn(nested)) nested.current.emitReturnVoid();
         IRFunction fn = nested.finish(node.name != null ? node.name : "lambda", node.vars.length);
-        emitPushConst(K_NONE, fn);
+        int poolIdx = putConstant(fn);
+        // Register for direct call optimization
+        registerFunction(node.name, poolIdx);
+        // Emit PUSH_CONST with the already-registered pool index
+        int kind = K_NONE;
+        if (poolIdx < 0x10000) current.emit1(PUSH_CONST, kind, poolIdx);
+        else current.emit2(PUSH_CONST, kind, poolIdx >>> 16, poolIdx & 0xFFFF);
     }
 
     // ── Trampoline ──
@@ -697,6 +766,15 @@ public class IRBuilder {
     private void emitPushFalse() { current.emitPushFalse(); }
     private void emitPushNull()  { current.emitPushNull(); }
 
+    // ── Function registry for direct calls ──
+    private static final ThreadLocal<Map<String, Integer>> knownFunctions =
+        ThreadLocal.withInitial(HashMap::new);
+
+    /** Register a function name → constant pool index for direct call optimization. */
+    private void registerFunction(String name, int irFunctionPoolIdx) {
+        if (name != null) knownFunctions.get().put(name, irFunctionPoolIdx);
+    }
+
     // ── TCO compilation API (for testing and direct use) ──
 
     /** Compile a lambda body with the given name (for TCO detection) and parameter names. */
@@ -714,7 +792,13 @@ public class IRBuilder {
 
     private static final ConstantFolder FOLDER = new ConstantFolder();
 
+    /** Clear the function registry before compiling a new program. */
+    private static void clearKnownFunctions() {
+        knownFunctions.get().clear();
+    }
+
     public static IRFunction compile(ELNode node) {
+        clearKnownFunctions();
         IRBuilder b = new IRBuilder();
         b.build(node);
         if (!endsWithReturn(b)) {
@@ -725,6 +809,7 @@ public class IRBuilder {
     }
 
     public static IRFunction compile(List<ELNode> expressions) {
+        clearKnownFunctions();
         IRBuilder b = new IRBuilder();
         for (int i = 0; i < expressions.size() - 1; i++) { b.build(expressions.get(i)); b.current.emitPop(); }
         if (!expressions.isEmpty()) {
