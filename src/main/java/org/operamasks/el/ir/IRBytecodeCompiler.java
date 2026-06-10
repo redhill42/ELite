@@ -132,6 +132,48 @@ public class IRBytecodeCompiler {
 
         String methodDesc = desc != null ? desc : EXECUTE_DESC;
         mv = cw.visitMethod(1 | 8, "execute", methodDesc, null, null);
+        // In typed mode: box params into Object[] locals array at entry
+        if (typedMode && argTypeIds != null) {
+            // Compute total JVM slots used by params
+            int totalSlots = 0;
+            for (int t : argTypeIds) totalSlots += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
+            int arrSlot = totalSlots; // put locals array after all params
+            // Create Object[paramCount]
+            emitIntConst(argTypeIds.length);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+            mv.visitVarInsn(A_ASTORE, arrSlot); // locals array in safe slot
+            // Box each param into locals[i]
+            int jvmSlot = 0;
+            for (int i = 0; i < argTypeIds.length; i++) {
+                mv.visitVarInsn(A_ALOAD, arrSlot); // locals array
+                emitIntConst(i);
+                int t = argTypeIds[i];
+                switch (t) {
+                    case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(21, jvmSlot);
+                    case IRFormat.T_LONG -> mv.visitVarInsn(22, jvmSlot);
+                    case IRFormat.T_DOUBLE -> mv.visitVarInsn(24, jvmSlot);
+                    default -> mv.visitVarInsn(A_ALOAD, jvmSlot);
+                }
+                switch (t) {
+                    case IRFormat.T_INT -> mv.visitMethodInsn(A_INVOKESTATIC,
+                        "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                    case IRFormat.T_LONG -> mv.visitMethodInsn(A_INVOKESTATIC,
+                        "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                    case IRFormat.T_DOUBLE -> mv.visitMethodInsn(A_INVOKESTATIC,
+                        "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                }
+                mv.visitInsn(A_AASTORE);
+                jvmSlot += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
+            }
+            // Now the body uses Object[]-based access (slot arrSlot has the locals array)
+            // PUSH_VAR/STORE_VAR are already compiled to use ALOAD 0 → AALOAD pattern
+            // which loads from locals array at slot 0. We need to remap slot 0 → arrSlot.
+            // Copy array to slot 0 for body's Object[]-based PUSH_VAR/STORE_VAR
+            mv.visitVarInsn(A_ALOAD, arrSlot);
+            mv.visitVarInsn(A_ASTORE, 0);
+            // Body uses Object[] access, not typed access
+            this.typedMode = false;
+        }
     }
 
     private byte[] compileBytecode() {
@@ -271,10 +313,15 @@ public class IRBytecodeCompiler {
                 int funcIdx = pl;
                 int argc = oc == 0 ? 0 : v.operand(0);
                 IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
-                // If we're in typed mode and calling ourselves, pass our own arg types
-                int[] callTypes = (typedMode && target == fn) ? argTypeIds : null;
-                CompiledFunction calleeCf = compileOrGet(target, callTypes);
-                emitPackArgsAndCall(argc, true, calleeCf);
+                // Self-recursive in typed mode → direct typed call
+                if (typedMode && target == fn && argc > 0 && allKnown(argTypeIds)) {
+                    CompiledFunction calleeCf = compileOrGet(target, argTypeIds);
+                    emitPackArgsAndCall(argc, true, calleeCf);
+                } else {
+                    // General case: register funcId, call invokeDirect at runtime
+                    int funcId = registerOrGetId(target);
+                    emitPackArgsAndCall(argc, true, funcId);
+                }
             }
             case INVOKE_DYN, INVOKE -> {
                 int argc = oc == 0 ? pl : v.operand(0);
@@ -384,6 +431,16 @@ public class IRBytecodeCompiler {
         }
     }
     private final Map<IRFunction, CompiledFunction> calleeCache = new HashMap<>();
+    private final Map<IRFunction, Integer> funcIdMap = new HashMap<>();
+    private int nextFuncId = 1;
+
+    private int registerOrGetId(IRFunction target) {
+        return funcIdMap.computeIfAbsent(target, fn -> {
+            int id = funcIdCounter.get().incrementAndGet();
+            funcRegistry().put(id, fn);
+            return id;
+        });
+    }
 
     private CompiledFunction compileOrGet(IRFunction target, int[] argTypes) {
         if (argTypes != null && allKnown(argTypes)) {
@@ -398,6 +455,30 @@ public class IRBytecodeCompiler {
             IRFunction specialized = IRSpeclializer.specialize(fn, new int[fn.paramCount()]);
             return compile(specialized);
         });
+    }
+
+    /** Pack args, call invokeDirect(funcId, Object[]) at runtime (supports typed optimization). */
+    private void emitPackArgsAndCall(int argc, boolean direct, int funcId) {
+        // Pack args into Object[] array
+        if (argc == 0) {
+            mv.visitInsn(A_ICONST_0);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+        } else {
+            int[] tempSlots = new int[argc];
+            for (int i = 0; i < argc; i++) tempSlots[i] = i + 1;
+            for (int i = argc - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, tempSlots[i]);
+            emitIntConst(argc);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+            for (int i = 0; i < argc; i++) {
+                mv.visitInsn(A_DUP); emitIntConst(i);
+                mv.visitVarInsn(A_ALOAD, tempSlots[i]); mv.visitInsn(A_AASTORE);
+            }
+        }
+        // Push funcId and call invokeDirect
+        emitIntConst(funcId);
+        mv.visitInsn(A_SWAP);
+        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            "invokeDirect", "(I[Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
 
     /** Pack args from stack into Object[] and call helper. */
@@ -510,10 +591,7 @@ public class IRBytecodeCompiler {
         if (cf == null) {
             int[] argTypes = inferTypes(args);
             IRFunction specialized = args.length > 0 ? IRSpeclializer.specialize(fn, argTypes) : fn;
-            // Use typed compilation if all arg types are known
-            cf = (argTypes != null && allKnown(argTypes))
-                ? compileWithTypes(specialized, argTypes)
-                : compile(specialized);
+            cf = compile(specialized);  // generic Object[] version
             compiledCache.get().put(fn, cf);
         }
         return cf.execute(args);
