@@ -18,9 +18,10 @@ import static org.operamasks.el.ir.IRFormat.*;
  */
 public class IRSpeclializer implements IRPass {
 
-    private int[] argTypes;   // type IDs for each parameter (-1 = unknown)
-    private int[] typeStack;  // simulated stack: type ID for each slot
-    private int sp;           // stack pointer
+    private int[] argTypes;    // type IDs for each parameter (-1 = unknown)
+    private int[] varTypes;    // tracked types for local variables
+    private int[] typeStack;   // simulated stack: type ID for each slot
+    private int sp;            // stack pointer
     private Object[] pool;
 
     /**
@@ -42,6 +43,9 @@ public class IRSpeclializer implements IRPass {
 
     IRFunction transform(IRFunction fn, int[] argTypes) {
         this.argTypes = argTypes;
+        this.varTypes = new int[Math.max(argTypes.length, 32)];
+        System.arraycopy(argTypes, 0, varTypes, 0, argTypes.length);
+        for (int i = argTypes.length; i < varTypes.length; i++) varTypes[i] = -1;
         this.pool = fn.constantPool();
         this.typeStack = new int[64];
         this.sp = 0;
@@ -88,11 +92,7 @@ public class IRSpeclializer implements IRPass {
                 }
                 case PUSH_VAR -> {
                     int varIdx = v.varIndex();
-                    int t = (varIdx < argTypes.length) ? argTypes[varIdx] : -1;
-                    if (t >= 0) {
-                        // Insert GUARD_TYPE before PUSH_VAR
-                        // For now, just track the type
-                    }
+                    int t = varIdx < varTypes.length ? varTypes[varIdx] : -1;
                     pushType(t);
                 }
                 case PUSH_TRUE, PUSH_FALSE -> pushType(T_BOOL);
@@ -134,8 +134,13 @@ public class IRSpeclializer implements IRPass {
                 case POP_N -> { for (int i=0; i<v.payload(); i++) pop1(); }
 
                 case RETURN, RETURN_VOID -> {}
-                case STORE_VAR, STORE_GLOBAL -> {
-                    // Pops value, pushes it back (assignment returns value)
+                case STORE_VAR -> {
+                    int t = peekType();
+                    int varIdx = v.payload() & 0xFFFF;
+                    if (varIdx < varTypes.length) varTypes[varIdx] = t;
+                    pop1(); pushType(t);
+                }
+                case STORE_GLOBAL -> {
                     int t = peekType();
                     pop1(); pushType(t);
                 }
