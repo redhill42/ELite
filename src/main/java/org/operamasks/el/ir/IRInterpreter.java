@@ -140,6 +140,24 @@ public class IRInterpreter {
                 case LPOW: { long e=((Number)pop()).longValue(),b=((Number)pop()).longValue(); push((long)Math.pow(b,e)); ip+=1; break; }
                 case DPOW: { double e=((Number)pop()).doubleValue(),b=((Number)pop()).doubleValue(); push(Math.pow(b,e)); ip+=1; break; }
 
+                // ============ Typed bitwise (int) ============
+                case IAND: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l&r); ip+=1; break; }
+                case IOR:  { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l|r); ip+=1; break; }
+                case IXOR: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l^r); ip+=1; break; }
+                case ISHL: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l<<r); ip+=1; break; }
+                case ISHR: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l>>r); ip+=1; break; }
+                case IUSHR:{ int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l>>>r); ip+=1; break; }
+                case IBITNOT: { int v=((Number)pop()).intValue(); push(~v); ip+=1; break; }
+
+                // ============ Typed bitwise (long) ============
+                case LAND: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l&r); ip+=1; break; }
+                case LOR:  { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l|r); ip+=1; break; }
+                case LXOR: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l^r); ip+=1; break; }
+                case LSHL: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l<<r); ip+=1; break; }
+                case LSHR: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>>r); ip+=1; break; }
+                case LUSHR:{ long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>>>r); ip+=1; break; }
+                case LBITNOT:{ long v=((Number)pop()).longValue(); push(~v); ip+=1; break; }
+
                 // ============ Dynamic arithmetic (delegate to AST) ============
                 case DYNADD: case DYNSUB: case DYNMUL: case DYNDIV:
                 case DYNREM: case DYNNEG: case DYNPOW:

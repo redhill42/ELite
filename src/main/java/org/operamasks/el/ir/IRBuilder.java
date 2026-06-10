@@ -81,18 +81,20 @@ public class IRBuilder {
             case Token.SHL:    case Token.SHR:   case Token.USHR:
             case Token.BITNOT: buildBinaryOp(node); break;
 
-            case Token.EQ:  case Token.NE:  case Token.IDNE: case Token.IDEQ:
+            case Token.EQ:  case Token.NE:
             case Token.LT:  case Token.LE:  case Token.GT:   case Token.GE:
                 buildComparison(node); break;
+            case Token.IDEQ: case Token.IDNE:
+                buildIdentityCmp((ELNode.Binary) node); break;
             case Token.AND: case Token.OR: case Token.NOT:
                 buildLogical(node); break;
 
             case Token.COND:     buildConditional((ELNode.COND) node); break;
             case Token.COALESCE: buildCoalesce(node); break;
 
-            case Token.ASSIGN:   buildAssign((ELNode.ASSIGN) node); break;
-            case Token.ASSIGNOP: buildTrampoline(node); break;  // compound assign: trampoline for now
-            case Token.DEFINE:   buildDefine((ELNode.DEFINE) node); break;
+            case Token.ASSIGN:    buildAssign((ELNode.ASSIGN) node); break;
+            case Token.ASSIGNOP:  buildTrampoline(node); break;  // compound: AST handles persistence
+            case Token.DEFINE:    buildDefine((ELNode.DEFINE) node); break;
 
             case Token.THEN: buildThen((ELNode.THEN) node); break;
             case Token.EXPR: if (node instanceof ELNode.EXPR) buildExpr((ELNode.EXPR) node); else buildTrampoline(node); break;
@@ -308,7 +310,16 @@ public class IRBuilder {
             case Token.ADD -> current.emitDynAdd(); case Token.SUB -> current.emitDynSub();
             case Token.MUL -> current.emitDynMul(); case Token.DIV -> current.emitDynDiv();
             case Token.REM -> current.emitDynRem(); case Token.NEG -> current.emitDynNeg();
-            case Token.POW -> current.emitDynPow(); default -> current.emitDynAdd();
+            case Token.POW -> current.emitDynPow();
+            // Bitwise: emit typed (int) by default for dynamic path
+            case Token.BITOR  -> current.emit1(Opcode.IOR, IRFormat.K_PRIM, IRFormat.T_INT);
+            case Token.BITAND -> current.emit1(Opcode.IAND, IRFormat.K_PRIM, IRFormat.T_INT);
+            case Token.XOR    -> current.emit1(Opcode.IXOR, IRFormat.K_PRIM, IRFormat.T_INT);
+            case Token.SHL    -> current.emit1(Opcode.ISHL, IRFormat.K_PRIM, IRFormat.T_INT);
+            case Token.SHR    -> current.emit1(Opcode.ISHR, IRFormat.K_PRIM, IRFormat.T_INT);
+            case Token.USHR   -> current.emit1(Opcode.IUSHR, IRFormat.K_PRIM, IRFormat.T_INT);
+            case Token.BITNOT -> current.emit1(Opcode.IBITNOT, IRFormat.K_PRIM, IRFormat.T_INT);
+            default -> current.emitDynAdd();
         }
     }
 
@@ -380,6 +391,33 @@ public class IRBuilder {
         startBlock(nullB); current.emitPop(); build(bin.right); current.emitJump(mergeB);
         startBlock(keepB); current.emitJump(mergeB);
         startBlock(mergeB);
+    }
+
+    // ── Identity comparison (=== / !==) ──
+    private void buildIdentityCmp(ELNode.Binary node) {
+        boolean prev = inTailPosition;
+        inTailPosition = false;
+        build(node.left);
+        build(node.right);
+        inTailPosition = prev;
+        // Emit as dynamic comparison — interpreter handles === via reference equality
+        current.emitDynEq();
+        if (node.op == Token.IDNE) current.emitNot();
+    }
+
+    // ── Compound assignment (+=, -=, etc.) ──
+    private void buildAssignOp(ELNode.ASSIGNOP node) {
+        // x += 5 → right = ADD(IDENT("x"), 5)
+        // Just build the inner expression (reads var, computes result),
+        // then store it back to the same variable
+        build(node.right);  // computes new value
+        if (node.left instanceof ELNode.IDENT ident) {
+            int nameIdx = putConstant(ident.id);
+            current.emitDup();
+            current.emitStoreGlobal(nameIdx);
+        } else {
+            buildTrampoline(node);
+        }
     }
 
     // ── Assign/Define ──
