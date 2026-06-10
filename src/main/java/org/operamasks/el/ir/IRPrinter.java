@@ -1,7 +1,10 @@
 package org.operamasks.el.ir;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.List;
 
+import org.objectweb.asm.*;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 
@@ -59,6 +62,7 @@ public final class IRPrinter {
             try {
                 IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
                 sb.append(formatIR(fn));
+                sb.append(dumpBytecode(fn));
             } catch (Exception e) {
                 sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");
             }
@@ -69,6 +73,16 @@ public final class IRPrinter {
 
     private static String format(IRFunction fn, String source) {
         return "; " + source + "\n" + formatIR(fn);
+    }
+
+    /** Dump JVM bytecode for an IRFunction (requires bytecode compiler). */
+    public static String dumpBytecode(IRFunction fn) {
+        try {
+            IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+            return cf.bytecodeAsString();
+        } catch (Exception e) {
+            return "[bytecode compile failed: " + e.getMessage() + "]";
+        }
     }
 
     public static String formatIR(IRFunction fn) {

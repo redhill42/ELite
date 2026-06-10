@@ -43,6 +43,7 @@ public class Main
     private String script;
     private String filename;
     private boolean dumpIR = false;
+    private boolean dumpBC = false;
 
     public Main() {
         this.shellContext = new ShellContext();
@@ -112,6 +113,8 @@ public class Main
                     shellContext.setInteractive(true);
                 } else if (args[argIndex].equals("--dump-ir")) {
                     dumpIR = true;
+                } else if (args[argIndex].equals("--bc")) {
+                    dumpBC = true;
                 } else if (args[argIndex].startsWith("-")) {
                     printUsage();
                     return false;
