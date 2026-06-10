@@ -617,7 +617,7 @@ public class IRBuilder {
         startBlock(header);
         current.emitPushVar(varIdx, T_INT);
         build(r.end);
-        if (exclusive) current.emitDLt(); else current.emitDLe();
+        if (exclusive) current.emitILt(); else current.emitILe();  // int comparison, not dynamic
         current.emitJumpIfFalse(exit);
         current.emitJump(body);
 
