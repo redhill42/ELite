@@ -101,4 +101,24 @@ class ClassTest extends EliteTestBase {
         assertEquals(1L, evalL("p.first()"));
         assertEquals(2L, evalL("p.second()"));
     }
+
+    // ── Type checker regression tests ──
+
+    @Test
+    void userDefinedClassWithNewAndFieldAccess() {
+        exec("class Point { define x, y }");
+        exec("define pt = new Point");
+        exec("pt.x = 10");
+        exec("pt.y = 20");
+        assertEquals(30L, evalL("pt.x + pt.y"));
+    }
+
+    @Test
+    void voidMethodNoReturnTypeMismatchError() {
+        exec("class Counter { define n\n public void increment() => n += 1 }");
+        exec("define c = new Counter");
+        exec("c.n = 5");
+        exec("c.increment()");
+        assertEquals(6L, evalL("c.n"));
+    }
 }
