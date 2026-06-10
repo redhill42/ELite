@@ -842,6 +842,7 @@ public class IRBuilder {
     /** Pre-compile a function definition and register it for direct calls. */
     private static void registerDef(IRBuilder b, ELNode def) {
         if (def instanceof ELNode.DEFINE d && d.expr instanceof ELNode.LAMBDA lam) {
+            String name = lam.name != null ? lam.name : d.id;
             IRBuilder nested = new IRBuilder();
             nested.lambdaName = lam.name;
             for (ELNode.DEFINE var : lam.vars) nested.ensureVar(var.id);
@@ -851,9 +852,9 @@ public class IRBuilder {
                 int t = nested.typeIdFromNode(lam.body);
                 nested.current.emitReturn(t >= 0 ? t : T_INT);
             }
-            IRFunction fn = nested.finish(lam.name != null ? lam.name : d.id, lam.vars.length);
+            IRFunction fn = nested.finish(name, lam.vars.length);
             int poolIdx = b.putConstant(fn);
-            b.registerFunction(lam.name != null ? lam.name : d.id, poolIdx);
+            b.registerFunction(name, poolIdx);
         }
     }
 }
