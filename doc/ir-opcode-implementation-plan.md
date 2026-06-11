@@ -74,38 +74,102 @@
 ## P0: CLOSURE (0x63) + CAPTURE (0x73) — 闭包支持
 
 ### 当前状态
-闭包通过 Java 层的 `Procedure` 对象和 `ELEngine.invokeTarget()` 实现。lambda 中的自由变量（如 `\y => x+y` 中的 `x`）被编译为 `PUSH_GLOBAL`，在运行时通过 ELContext 的 VariableMapper 查找。这绕过了 IR 的类型系统，且每次调用都需要 Java 反射。
 
-### 实现步骤
+`define f(x) => \y => x+y` 中，lambda `\y => x+y` 的 IR 编译流程：
 
-1. **IR 语义定义**
-   - `CLOSURE funcIdx, captureCount`：创建一个闭包对象，捕获栈顶 `captureCount` 个值，函数体由 `funcIdx` 指定
-   - `CAPTURE varIdx`：将局部变量 `varIdx` 推入栈顶，并从当前 frame 中"捕获"它（将其复制到闭包的环境中）
+1. `buildLambda` → 嵌套 IRBuilder → 编译 body `x + y`
+   - `y` 在 nested.varIndex 中 → `PUSH_VAR v0`
+   - `x` 不在 nested.varIndex 中 → `PUSH_GLOBAL "x"`
+2. IRFunction 放入常量池 → `PUSH_CONST <IRFunction>`
+3. 运行时 `f(1)(2)`:
+   - `f(1)` → INVOKE_DIRECT → 返回 IRFunction（push 到栈上）
+   - `(2)` → INVOKE_DYN → `dynamicInvoke(IRFunction, [2])`
+   - 创建新 IRInterpreter → `PUSH_GLOBAL "x"` → ELResolver → VariableMapper → 找到 x=1
 
-2. **IRBuilder 修改**
-   - `buildLambda()` (line 652)：分析 lambda 体中的自由变量（不在 `varIndex` 中的标识符）
-   - 对于每个捕获的变量，在 lambda 体前发射 `CAPTURE` 指令
-   - 将 `PUSH_GLOBAL` 替换为 `PUSH_VAR`（使用闭包内的变量索引）
-   - 发射 `CLOSURE` 指令替代当前的 `PUSH_CONST <IRFunction>`
+**性能问题**: 每次闭包调用都要：
+1. 通过 ELResolver 链查找捕获变量
+2. 创建新的 IRInterpreter 实例
+3. 维护 `evalContext` 父作用域链
 
-3. **IRInterpreter 实现**
-   - `CLOSURE`：创建 `ClosureObject`（或类似的），包含 IRFunction 引用和捕获的变量数组
-   - `CAPTURE`：将当前栈顶的值复制到闭包捕获数组中
-   - `INVOKE_DYN`：当目标是闭包对象时，设置捕获的变量并调用 IRFunction
+### 子计划
 
-4. **IRBytecodeCompiler 实现**
-   - `CLOSURE`：使用 `invokedynamic` 或生成匿名内部类来创建闭包对象
-   - `CAPTURE`：将值存储到闭包对象的字段中
-   - 生成的类需要有一个 `execute(Object[])` 方法
+#### Step 1: 自由变量分析
 
-5. **优化**
-   - 对于不捕获任何变量的 lambda（纯函数），可以复用同一个闭包实例（无状态 lambda）
-   - 内联小闭包（InlinePass 已有基础）
+在 `buildLambda` 中，分析 lambda body 中所有 `IDENT` 节点，找出不在 nested.varIndex 也不在 nested.paramFlags 中的标识符 → 这就是**捕获变量**（自由变量）。
+
+```java
+// 伪代码
+Set<String> freeVars = new HashSet<>();
+walkAst(node.body, n -> {
+    if (n instanceof IDENT && !nested.varIndex.containsKey(n.id)) {
+        freeVars.add(n.id);
+    }
+});
+```
+
+关键约束：自由变量必须是**外层局部变量**（在父 builder 的 varIndex 中），否则是全局变量（应保持 PUSH_GLOBAL）。
+
+#### Step 2: 重写 lambda body
+
+对每个捕获变量，将其添加到 nested.varIndex（使用新的 slot 编号，paramCount + captureIdx）。同时将 body 中的 `PUSH_GLOBAL` 替换为 `PUSH_VAR`。
+
+lambda IRFunction 的 varNames 扩展为 `[params..., captured...]`，paramCount 不变（捕获变量不是调用参数）。
+
+#### Step 3: CAPTURE 指令
+
+在 lambda body 的**调用点**（发出 INVOKE_DYN 或 INVOKE_DIRECT 的地方），在 PUSH_CONST(IRFunction) 之后、INVOKE 之前，插入 CAPTURE 指令：
+
+```
+PUSH_VAR x       ; 外层变量 x 的值（在父 frame 中）
+...
+PUSH_CONST <IRFunction>
+CAPTURE N        ; 捕获栈顶 N 个值到闭包
+INVOKE_DYN ...
+```
+
+`CAPTURE count` — 将栈顶 `count` 个值弹出，存入闭包对象。
+
+#### Step 4: CLOSURE 指令
+
+CLOSURE 替代当前的 PUSH_CONST + CAPTURE 组合：
+
+```
+CAPTURE varIdx1  ; 推入捕获值 1
+CAPTURE varIdx2  ; 推入捕获值 2
+CLOSURE funcIdx 2 ; 弹出 2 个值，创建闭包(funcIdx, [val1, val2])
+```
+
+`CLOSURE funcIdx, captureCount` — 弹出 `captureCount` 个值，从常量池 funcIdx 取出 IRFunction，创建闭包对象。
+
+#### Step 5: IRInterpreter — 闭包调用
+
+`INVOKE_DYN` 检测 `target instanceof Closure`：
+- 从闭包中取出 IRFunction + 捕获值
+- 创建 IRInterpreter，locals = [args..., captured...]
+- 不再需要 evalContext 父作用域链
+
+#### Step 6: IRBytecodeCompiler — 闭包编译
+
+- `CLOSURE` → 生成匿名类封装 IRFunction + captured values
+- `CAPTURE` → 将值写入闭包对象的字段
+- 闭包调用时直接调用 execute(Object[] args)
+
+#### 实施顺序（建议）
+
+```
+Step 1-2: 自由变量分析 + body 重写  (~复杂)
+Step 3-4: CAPTURE + CLOSURE opcode   (~中等)
+Step 5:   IRInterpreter 闭包支持     (~简单)
+Step 6:   BytecodeCompiler 闭包支持  (~复杂)
+```
 
 ### 风险
-- 闭包的生命周期管理（逃逸分析相关）
-- 与现有 `Procedure` 系统的兼容性
-- 递归闭包（闭包调用自身）的处理
+
+- **自由变量分析**：需要遍历 AST 识别自由变量，可能遗漏嵌套闭包中的深层捕获
+- **捕获顺序**：捕获值在闭包中的索引需要和 body 中 PUSH_VAR 的索引一致
+- **递归闭包**：闭包调用自身时（如 Y combinator），需要将闭包自身也作为捕获值
+- **现有 Procedure 兼容**：AST 求值路径仍使用 Procedure，需要保持兼容
+- **evalContext 链**：移除 PUSH_GLOBAL 后，不再依赖父作用域，需确保 evalContext 正确初始化
 
 ---
 
