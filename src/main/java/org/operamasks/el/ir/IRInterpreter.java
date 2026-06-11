@@ -594,9 +594,12 @@ public class IRInterpreter {
     private static boolean checkType(Object val, int typeId) {
         if (val == null) return false;
         return switch (typeId) {
-            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short || val instanceof Byte;
-            case IRFormat.T_LONG   -> val instanceof Long;
-            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float;
+            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short
+                                   || val instanceof Byte || val instanceof Long;
+            case IRFormat.T_LONG   -> val instanceof Long || val instanceof Integer
+                                   || val instanceof Short || val instanceof Byte;
+            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float
+                                   || val instanceof Long || val instanceof Integer;
             case IRFormat.T_BOOL   -> val instanceof Boolean;
             case IRFormat.T_STRING -> val instanceof String;
             default -> true;  // unknown type → pass

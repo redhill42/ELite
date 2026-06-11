@@ -23,11 +23,13 @@ class GuardTypeTest {
         assertTrue(scanOp(spec, Opcode.GUARD_TYPE));
     }
 
-    @Test void inferredParamNoGuard() {
+    @Test void inferredParamNowGetsGuard() {
         IRFunction fn = IRBuilder.compileLambda("add",
             new String[]{"x"}, Parser.parseExpression("x + 1"));
         IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
-        assertFalse(scanOp(spec, Opcode.GUARD_TYPE));
+        // Inferred params now get strict guards too (Phase 7 will add deopt)
+        assertTrue(scanOp(spec, Opcode.GUARD_TYPE),
+            "Inferred param should now get GUARD_TYPE (strict for now)");
         assertFalse(scanOp(spec, Opcode.DYNADD));
     }
 

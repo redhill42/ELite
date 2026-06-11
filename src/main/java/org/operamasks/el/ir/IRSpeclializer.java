@@ -28,6 +28,10 @@ public class IRSpeclializer implements IRPass {
     private Object[] pool;
     private IRFunction fn;     // current function being specialized
 
+    // Deopt block generation for inferred types (Phase 7 — TBD)
+    // private List<IntList> deoptBlocks;
+    // private int nextBlockId;
+
     /**
      * Create a specialized version of fn for the given argument types.
      *
@@ -65,7 +69,7 @@ public class IRSpeclializer implements IRPass {
         for (int b = 0; b < fn.blockCount(); b++) {
             int start = fn.blockStart(b);
             int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : oldCode.length;
-            newBlocks[b] = specializeBlock(oldCode, start, end);
+            newBlocks[b] = specializeBlockSimple(oldCode, start, end);
             if (newBlocks[b] != null) changed = true;
         }
 
@@ -86,7 +90,7 @@ public class IRSpeclializer implements IRPass {
                 fn.varNames(), fn.sourcePositions(), fn.paramFlags());
     }
 
-    private IntList specializeBlock(int[] code, int start, int end) {
+    private IntList specializeBlockSimple(int[] code, int start, int end) {
         sp = 0;
         boolean changed = false;
         IntList out = new IntList();
@@ -128,9 +132,11 @@ public class IRSpeclializer implements IRPass {
                     if (t1 >= 0 && t2 >= 0) {
                         int newOp = mapBinaryOp(op, wider);
                         if (newOp >= 0) {
-                            // Emit guards for explicit-type operands (skip if already guarded)
+                            // Guard operands that came from variables with known types
                             if (e1) emitGuardIfNeeded(out, t1, s1);
+                            else if (t1 >= 0 && s1 >= 0) emitGuard(out, t1);
                             if (e2) emitGuardIfNeeded(out, t2, s2);
+                            else if (t2 >= 0 && s2 >= 0) emitGuard(out, t2);
                             out.add(pack1(newOp, K_PRIM, wider));
                             changed = true;
                         } else {
@@ -139,16 +145,17 @@ public class IRSpeclializer implements IRPass {
                     } else {
                         copyInst(out, code, v);
                     }
-                    pushType(wider >= 0 ? wider : wider(t1, t2), false, -1); // result is never explicit
+                    pushType(wider >= 0 ? wider : wider(t1, t2), false, -1);
                 }
                 case DYNNEG -> {
                     int s = varSrcAt(0);
                     boolean e = explicitAt(0);
                     int t = popType();
-                    if (t >= 0) {
+                    if (t >= 0 && s >= 0) { // only guard if from a variable
                         int newOp = mapNegOp(t);
                         if (newOp >= 0) {
                             if (e) emitGuardIfNeeded(out, t, s);
+                            else emitGuard(out, t);
                             out.add(pack1(newOp, K_PRIM, t));
                             changed = true;
                         } else {
@@ -157,7 +164,7 @@ public class IRSpeclializer implements IRPass {
                     } else {
                         copyInst(out, code, v);
                     }
-                    pushType(t, false, -1); // result is never explicit
+                    pushType(t, false, -1);
                 }
 
                 // Comparisons (results are booleans, not from variables)
@@ -171,7 +178,9 @@ public class IRSpeclializer implements IRPass {
                     int newOp = specializeCmpOp(op, t1, t2);
                     if (newOp >= 0) {
                         if (e1) emitGuardIfNeeded(out, t1, s1);
+                        else if (t1 >= 0 && s1 >= 0) emitGuard(out, t1);
                         if (e2) emitGuardIfNeeded(out, t2, s2);
+                        else if (t2 >= 0 && s2 >= 0) emitGuard(out, t2);
                         out.add(pack1(newOp, K_BOOL, 0));
                         changed = true;
                     } else {
