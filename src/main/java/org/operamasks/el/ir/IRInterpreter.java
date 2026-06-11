@@ -420,6 +420,15 @@ public class IRInterpreter {
                     ip += 1 + oc;
                     break;
                 }
+                case INVOKE_SETTER: {
+                    java.lang.reflect.Method m = (java.lang.reflect.Method) constantPool[pl];
+                    Object value = pop();
+                    Object base = pop();
+                    try { m.invoke(base, value); push(value); }
+                    catch (Exception e) { throw new RuntimeException("setter invoke failed", e); }
+                    ip += 1 + oc;
+                    break;
+                }
 
                 // ============ Trampoline to AST evaluator ============
                 case 0xE0: { // OP_INTERP_TRAMPOLINE

@@ -392,10 +392,24 @@ public class IRBytecodeCompiler {
             case INVOKE_GETTER -> {
                 int poolIdx = v.constPoolIndex();
                 Object method = fn.constantPool()[poolIdx];
-                mv.visitLdcInsn(method); // push Method
+                mv.visitLdcInsn(method);
                 mv.visitInsn(A_SWAP);    // method, base → base, method
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
                     "invokeGetter", "(Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
+            }
+            // Setter call: base below, value on top. Push Method from pool.
+            case INVOKE_SETTER -> {
+                int poolIdx = v.constPoolIndex();
+                Object method = fn.constantPool()[poolIdx];
+                // Stack: [value, base]. Push Method → [value, base, method].
+                mv.visitLdcInsn(method);
+                // Need [base, value, method] for invokeSetter.
+                // SWAP: [value, base, method] → [value, method, base]
+                mv.visitInsn(A_SWAP);
+                // DUP_X2: [value, method, base] → [base, value, method, base]
+                // This is getting complex. Use a helper with value-first order.
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "invokeSetterBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
             }
 
             // Trampoline: AST-dependent ops that bytecode cannot compile
@@ -766,6 +780,12 @@ public class IRBytecodeCompiler {
     public static Object invokeGetter(Object base, java.lang.reflect.Method m) {
         try { return m.invoke(base); }
         catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
+    }
+
+    /** Invoke a setter — args are (value, base, method) from bytecode stack order. */
+    public static Object invokeSetterBC(Object value, Object base, java.lang.reflect.Method m) {
+        try { m.invoke(base, value); return value; }
+        catch (Exception e) { throw new RuntimeException("setter invoke failed", e); }
     }
 
     /** Direct field load for known Java types. */

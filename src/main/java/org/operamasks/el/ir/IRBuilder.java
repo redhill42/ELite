@@ -551,15 +551,25 @@ public class IRBuilder {
             org.operamasks.el.types.Type baseType = access.right != null ? access.right.inferredType : null;
             java.lang.Class<?> javaClass = resolveJavaClass(baseType);
             if (javaClass != null && fieldName != null) {
+                // 1) Check for public field
                 try {
                     java.lang.reflect.Field field = javaClass.getField(fieldName);
                     if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
                         build(access.right); // base below value: [value, base]
                         int nameIdx = putConstant(fieldName);
-                        current.emitStoreField(nameIdx); // pops [value, base], pushes value
+                        current.emitStoreField(nameIdx);
                         return;
                     }
-                } catch (NoSuchFieldException e) { /* fall through to property */ }
+                } catch (NoSuchFieldException e) { /* fall through */ }
+
+                // 2) Check for JavaBean setter: setXxx(type)
+                java.lang.reflect.Method setter = resolveSetter(javaClass, fieldName);
+                if (setter != null) {
+                    build(access.right); // base below value: [value, base]
+                    int methodIdx = putConstant(setter);
+                    current.emit2(INVOKE_SETTER, K_FN, methodIdx, 0);
+                    return;
+                }
             }
             build(access.right); // base
             build(access.index); // key

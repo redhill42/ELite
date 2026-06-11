@@ -144,6 +144,7 @@ public final class Opcode {
 
     // ── Java interop (0xE1-0xEF) ──
     public static final int INVOKE_GETTER = 0xE1; // call getter method (pool idx → Method)
+    public static final int INVOKE_SETTER = 0xE2; // call setter method (pool idx → Method)
 
     // ── NOP (for deleted instructions after folding) ──
     public static final int NOP = 0xFE;
@@ -236,6 +237,7 @@ public final class Opcode {
             case PUSH_FALSE: return "PUSH_FALSE";
             case PUSH_NULL:  return "PUSH_NULL";
             case INVOKE_GETTER: return "INVOKE_GETTER";
+            case INVOKE_SETTER: return "INVOKE_SETTER";
             case NOP: return "NOP";
             default: return "UNKNOWN(" + op + ")";
         }
