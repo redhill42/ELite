@@ -28,9 +28,8 @@ public class IRSpeclializer implements IRPass {
     private Object[] pool;
     private IRFunction fn;     // current function being specialized
 
-    // Deopt block generation for inferred types (Phase 7 — TBD)
-    // private List<IntList> deoptBlocks;
-    // private int nextBlockId;
+    // Placeholder for block IDs that will be patched after block list is built
+    private static final int DEOPT_PLACEHOLDER = 0xFFFE;
 
     /**
      * Create a specialized version of fn for the given argument types.
@@ -88,6 +87,164 @@ public class IRSpeclializer implements IRPass {
         return new IRFunction(fn.name(), fn.paramCount(),
                 merged.toArray(), newOffsets, fn.constantPool(),
                 fn.varNames(), fn.sourcePositions(), fn.paramFlags());
+    }
+
+    /** Patch the last JUMP instruction in a block to target newBlockId. */
+    private static void patchLastJump(IntList block, int newBlockId) {
+        for (int i = block.size() - 1; i >= 0; i--) {
+            int word = block.get(i);
+            if (IRFormat.opcode(word) == JUMP) {
+                block.set(i, pack1(JUMP, K_NONE, newBlockId & 0xFFFF));
+                return;
+            }
+        }
+    }
+
+    /**
+     * Try to split the block for deopt. Scans for the last dynamic op with
+     * inferred-type operands. If found as the last non-terminator, builds
+     * [prefix, deopt, suffix] blocks. Returns null if no deopt possible.
+     */
+    private List<IntList> tryDeoptSplit(int[] code, int start, int end) {
+        return null; // TODO: enable when deopt splitting is stable
+        // Find the last dynamic op before the terminator
+        int deoptPos = -1, deoptArgc = 0;
+        InstructionView deoptV = null;
+        InstructionView lastNonTerm = null;
+
+        InstructionView v = new InstructionView(code, start);
+        while (v.inBounds() && v.offset() < end) {
+            int op = v.opcode();
+            if (op != RETURN && op != RETURN_VOID && !Opcode.isJump(op)
+                && op != GUARD_TYPE && op != NOP) {
+                lastNonTerm = v.dup();
+                if (op == DYNADD || op == DYNSUB || op == DYNMUL
+                    || op == DYNDIV || op == DYNREM || op == DYNNEG
+                    || op == DYNEQ || op == DYNLT || op == DYNLE) {
+                    deoptV = v.dup();
+                    deoptPos = v.offset();
+                }
+            }
+            v.advance();
+        }
+
+        if (deoptV == null) return null;
+
+        // Check if any operand has inferred (non-explicit) type
+        boolean hasInferred = false;
+        int op = deoptV.opcode();
+        deoptArgc = (op == DYNNEG) ? 1 : 2;
+        // We need to re-simulate the stack up to deoptPos to check types
+        // For now, only deopt if the block ends with this op and RETURN/RETURN_VOID
+        if (lastNonTerm == null || lastNonTerm.offset() != deoptPos) return null;
+
+        // Simple heuristic: the op is the last non-terminator, try deopt
+        // Re-simulate to get actual types at this point
+        sp = 0;
+        InstructionView sv = new InstructionView(code, start);
+        while (sv.inBounds() && sv.offset() < deoptPos) {
+            simulateStackForType(code, sv, false);
+            sv.advance();
+        }
+
+        boolean e2 = explicitAt(0), e1 = deoptArgc > 1 ? explicitAt(1) : false;
+        int t2 = peekType(), t1 = deoptArgc > 1 ? typeStack[sp-2] : -1;
+        hasInferred = (t2 >= 0 && !e2) || (t1 >= 0 && !e1);
+
+        if (!hasInferred) return null;
+
+        // Build the split blocks
+        int newOp = -1, resultType = -1;
+        if (deoptArgc == 2) {
+            int wider = wider(t1, t2);
+            newOp = mapBinaryOp(op, wider);
+            resultType = wider;
+        } else {
+            newOp = mapNegOp(t2);
+            resultType = t2;
+        }
+        if (newOp < 0) return null;
+
+        // Block 0: prefix up to deopt + guards + typed op + JUMP
+        IntList prefix = new IntList();
+        sv = new InstructionView(code, start);
+        while (sv.inBounds() && sv.offset() < deoptPos) {
+            copyInst(prefix, code, sv);
+            sv.advance();
+        }
+        // Guards with deopt block ID (placeholder patched by transform)
+        int deoptBlockPlaceholder = DEOPT_PLACEHOLDER;
+        if (deoptArgc == 2) {
+            if (e2) emitGuardDeopt(prefix, t2, deoptBlockPlaceholder);
+            if (e1) emitGuardDeopt(prefix, t1, deoptBlockPlaceholder);
+        } else {
+            if (e2) emitGuardDeopt(prefix, t2, deoptBlockPlaceholder);
+        }
+        prefix.add(pack1(newOp, K_PRIM, resultType));
+        // JUMP to suffix (placeholder, patched by transform)
+        prefix.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
+
+        // Block 1: deopt — original dynamic op + JUMP to suffix
+        IntList deopt = new IntList();
+        copyInst(deopt, code, deoptV);
+        deopt.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
+
+        // Block 2: suffix — everything after deopt op
+        IntList suffix = new IntList();
+        sv = new InstructionView(code, deoptPos);
+        sv.advance(); // skip the dynamic op
+        while (sv.inBounds() && sv.offset() < end) {
+            copyInst(suffix, code, sv);
+            sv.advance();
+        }
+
+        return List.of(prefix, deopt, suffix);
+    }
+
+    /** Simulate stack effects for type tracking without emitting code. */
+    private void simulateStackForType(int[] code, InstructionView v, boolean trackVars) {
+        int op = v.opcode();
+        switch (op) {
+            case PUSH_CONST -> {
+                Object val = getConst(v.constPoolIndex());
+                pushType(typeOf(val), false, -1);
+            }
+            case PUSH_VAR -> {
+                int varIdx = v.varIndex();
+                int t = varIdx < varTypes.length ? varTypes[varIdx] : -1;
+                boolean expl = fn.isExplicitParamType(varIdx);
+                pushType(t, expl, varIdx);
+            }
+            case PUSH_TRUE, PUSH_FALSE -> pushType(T_BOOL, false, -1);
+            case PUSH_NULL -> pushType(-1, false, -1);
+            case IADD, ISUB, IMUL, IDIV, IREM -> { pop2(); pushType(T_INT, false, -1); }
+            case LADD, LSUB, LMUL, LDIV, LREM -> { pop2(); pushType(T_LONG, false, -1); }
+            case DADD, DSUB, DMUL, DDIV -> { pop2(); pushType(T_DOUBLE, false, -1); }
+            case INEG -> { pop1(); pushType(T_INT, false, -1); }
+            case LNEG -> { pop1(); pushType(T_LONG, false, -1); }
+            case DNEG -> { pop1(); pushType(T_DOUBLE, false, -1); }
+            case DYNADD, DYNSUB, DYNMUL, DYNDIV, DYNREM -> {
+                int t2 = popType(), t1 = popType();
+                pushType(wider(t1, t2) >= 0 ? wider(t1, t2) : t1, false, -1);
+            }
+            case DYNNEG -> { int t = popType(); pushType(t >= 0 ? t : -1, false, -1); }
+            case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL, false, -1); }
+            case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL, false, -1); }
+            case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL, false, -1); }
+            case DYNEQ, DYNLT, DYNLE -> { pop2(); pushType(T_BOOL, false, -1); }
+            case DUP -> { int t = peekType(); boolean e = peekExplicit(); pushType(t, e, varSrcAt(0)); }
+            case POP -> pop1();
+            case POP_N -> { for (int i=0; i<v.payload(); i++) pop1(); }
+            case STORE_VAR -> {
+                int t = peekType(), vi = v.payload() & 0xFFFF;
+                if (vi < varTypes.length) varTypes[vi] = t;
+                pop1(); pushType(t, peekExplicit(), -1);
+            }
+            case NOT -> { pop1(); pushType(T_BOOL, false, -1); }
+            case RETURN, RETURN_VOID, JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
+                 JUMP_IF_NULL, JUMP_IF_NONNULL, NOP -> {} // no stack effect
+            default -> {} // conservative: no stack change
+        }
     }
 
     private IntList specializeBlockSimple(int[] code, int start, int end) {
@@ -258,6 +415,28 @@ public class IRSpeclializer implements IRPass {
     private static void emitGuard(IntList out, int typeId) {
         out.add(IRFormat.pack2h(GUARD_TYPE, K_GUARDED, typeId));
         out.add(Opcode.STRICT_GUARD);
+    }
+
+    /** Emit a deopt guard: check type, jump to deoptBlockId on mismatch. */
+    private static void emitGuardDeopt(IntList out, int typeId, int deoptBlockId) {
+        out.add(IRFormat.pack2h(GUARD_TYPE, K_GUARDED, typeId));
+        out.add(deoptBlockId);
+    }
+
+    /** Patch all DEOPT_PLACEHOLDER values in a block to the real block ID. */
+    private static void patchPlaceholders(IntList block, int suffixBlockId, int deoptBlockId) {
+        for (int i = block.size() - 1; i >= 0; i--) {
+            int word = block.get(i);
+            int op = IRFormat.opcode(word);
+            if (op == JUMP && IRFormat.payload(word) == DEOPT_PLACEHOLDER) {
+                block.set(i, pack1(JUMP, K_NONE, suffixBlockId & 0xFFFF));
+            } else if (op == GUARD_TYPE) {
+                // GUARD_TYPE is 2 words: header + deopt target
+                if (i + 1 < block.size() && block.get(i + 1) == DEOPT_PLACEHOLDER) {
+                    block.set(i + 1, deoptBlockId);
+                }
+            }
+        }
     }
 
     /** Copy a variable-length instruction from source to output. */
