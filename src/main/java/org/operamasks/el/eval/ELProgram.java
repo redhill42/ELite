@@ -51,6 +51,13 @@ public class ELProgram implements Serializable
     /** Enable IR-based evaluation for this program. Default: true (IR native). */
     private boolean useIREvaluation = true;
 
+    /**
+     * When true, bytecode/IR failures throw instead of silently falling back.
+     * Set via system property {@code elite.strict} or programmatically.
+     * Recommended for development/testing; off by default for production resilience.
+     */
+    static boolean STRICT_BYTECODE = Boolean.getBoolean("elite.strict");
+
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
     /** @return the list of expression/statement nodes */
@@ -152,12 +159,21 @@ public class ELProgram implements Serializable
                         return cf.execute(null);
                     } catch (Throwable bcErr) {
                         // Bytecode failed (VerifyError, etc.) — fall back to IR interpreter
+                        if (STRICT_BYTECODE) {
+                            throw new RuntimeException(
+                                "Bytecode compilation failed (strict mode)", bcErr);
+                        }
+                        System.err.println("[elite] bytecode fallback: " + bcErr.getMessage());
                     }
                     // IR interpreter fallback
                     IRInterpreter interp = new IRInterpreter(elctx, irFn, env);
                     return interp.execute(null);
                 } catch (Exception e) {
                     // IR path unavailable — fall back to AST
+                    if (STRICT_BYTECODE) {
+                        throw new RuntimeException("IR evaluation failed (strict mode)", e);
+                    }
+                    System.err.println("[elite] IR fallback: " + e.getMessage());
                 }
             }
 
