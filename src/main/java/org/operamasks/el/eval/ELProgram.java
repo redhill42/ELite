@@ -38,6 +38,7 @@ import org.operamasks.el.ir.IRBuilder;
 import org.operamasks.el.ir.IRBytecodeCompiler;
 import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.ir.IRInterpreter;
+import org.operamasks.el.ir.CompilationError;
 import org.operamasks.util.Utils;
 
 public class ELProgram implements Serializable
@@ -50,6 +51,17 @@ public class ELProgram implements Serializable
 
     /** Enable IR-based evaluation for this program. Default: true (IR native). */
     private boolean useIREvaluation = true;
+
+    /**
+     * Optimization level for expression evaluation.
+     * <ul>
+     *   <li>0 — AST interpreter only (for parser/AST validation)</li>
+     *   <li>2 — IR interpreter (fall back to AST for unsupported ops)</li>
+     *   <li>3 — JVM bytecode (fall back to IR for unsupported ops)</li>
+     * </ul>
+     * Read from system property {@code elite.opt.level}; defaults to 2 (IR).
+     */
+    static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
 
     /**
      * When true, bytecode/IR failures throw instead of silently falling back.
@@ -146,47 +158,82 @@ public class ELProgram implements Serializable
                 node.getValue(env);
             }
 
-            // 3) execute statements (bytecode → IR → AST fallback chain)
-            Object result = null;
-            Throwable lastIRFailure = null;
-
-            if (useIREvaluation && !exps.isEmpty()) {
-                try {
-                    IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
-                    // Try JVM bytecode compilation first
-                    try {
-                        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
-                        IRBytecodeCompiler.setCallerELCtx(elctx);
-                        return cf.execute(null);
-                    } catch (Throwable bcErr) {
-                        lastIRFailure = bcErr;
-                        System.err.println("[elite] bytecode fallback: " + bcErr.getMessage());
-                    }
-                    // IR interpreter fallback
-                    IRInterpreter interp = new IRInterpreter(elctx, irFn, env);
-                    return interp.execute(null);
-                } catch (Exception e) {
-                    lastIRFailure = e;
-                    System.err.println("[elite] IR fallback: " + e.getMessage());
-                }
-            }
-
-            // AST tree-walking fallback (last resort)
-            for (ELNode node : exps) {
-                frame.setPos(node.pos);
-                result = node.getValue(env);
-            }
-            lastIRFailure = null; // AST succeeded, clear previous failures
-
-            // All paths (bytecode + IR + AST) failed
-            if (STRICT_BYTECODE && lastIRFailure != null) {
-                if (lastIRFailure instanceof RuntimeException re) throw re;
-                throw new RuntimeException("All evaluation paths failed", lastIRFailure);
-            }
-            return result;
+            // 3) execute statements using selected evaluation strategy
+            return evaluate(defs, exps, env, elctx, frame);
         } finally {
             StackTrace.removeFrame(elctx);
         }
+    }
+
+    /**
+     * Execute expressions using the selected optimization level.
+     * <p>
+     * Level 0 (AST): always use AST interpreter.
+     * Level 2 (IR):  use IR interpreter; fall back to AST on IR failure.
+     * Level 3 (BC):  compile to JVM bytecode; on CompilationError,
+     *                fall back to IR, then to AST if IR also fails.
+     * <p>
+     * Exceptions from the selected level are user program errors.
+     * Exceptions from fallback indicate the primary level cannot handle
+     * the code and are logged (not propagated).
+     */
+    private Object evaluate(List<ELNode> defs, List<ELNode> exps,
+                            EvaluationContext env, javax.el.ELContext elctx,
+                            Frame frame) {
+        if (exps.isEmpty()) return null;
+
+        switch (OPT_LEVEL) {
+            case 0:
+                return evaluateAST(exps, frame, env);
+
+            case 2: {
+                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
+                if (irFn.hasUnsupportedOps()) {
+                    System.err.println("[elite] IR has unsupported ops, using AST");
+                    return evaluateAST(exps, frame, env);
+                }
+                try {
+                    return new IRInterpreter(elctx, irFn, env).execute(null);
+                } catch (Exception e) {
+                    // IR interpreter bug or limitation — fall back to AST
+                    System.err.println("[elite] IR fallback: " + e.getMessage());
+                    return evaluateAST(exps, frame, env);
+                }
+            }
+
+            case 3: default: {
+                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
+                try {
+                    IRBytecodeCompiler.CompiledFunction cf =
+                        IRBytecodeCompiler.compile(irFn);
+                    IRBytecodeCompiler.setCallerELCtx(elctx);
+                    return cf.execute(null);
+                } catch (CompilationError e) {
+                    System.err.println("[elite] bytecode fallback: " + e.getMessage());
+                    // Fall back to IR, then AST
+                    if (!irFn.hasUnsupportedOps()) {
+                        try {
+                            return new IRInterpreter(elctx, irFn, env).execute(null);
+                        } catch (Exception irErr) {
+                            System.err.println("[elite] IR fallback: " + irErr.getMessage());
+                        }
+                    }
+                    return evaluateAST(exps, frame, env);
+                }
+                // VerifyError and other Errors propagate — they're compiler bugs
+            }
+        }
+    }
+
+    /** Execute expressions using the AST tree-walking interpreter. */
+    private static Object evaluateAST(List<ELNode> exps, Frame frame,
+                                       EvaluationContext env) {
+        Object result = null;
+        for (ELNode node : exps) {
+            frame.setPos(node.pos);
+            result = node.getValue(env);
+        }
+        return result;
     }
 
     // Implementation

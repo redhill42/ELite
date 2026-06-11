@@ -368,14 +368,9 @@ public class IRBytecodeCompiler {
             case IUSHR, LUSHR -> emitCall2("bitUshr");
             case IBITNOT, LBITNOT -> emitCall1Obj("bitNot");
 
-            // Trampoline: fall back to AST evaluator for complex ops (try/catch/throw etc.)
-            case 0xE0 -> {
-                int poolIdx = v.constPoolIndex();
-                Object node = fn.constantPool()[poolIdx];
-                mv.visitLdcInsn(node);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "trampoline", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
-            }
+            // Trampoline: AST-dependent ops that bytecode cannot compile
+            case 0xE0 -> throw new CompilationError(
+                "Trampoline op not supported in bytecode: " + fn.constantPool()[v.constPoolIndex()]);
             case GUARD_TYPE -> {
                 int typeId = v.payload() & 0xFF;
                 int deoptBlockId = v.opCount() > 0 ? v.operand(0) : 0;
@@ -992,15 +987,16 @@ public class IRBytecodeCompiler {
         }
 
         public Object execute(Object[] locals) {
-            try { return method.invoke(null, (Object) (locals != null ? locals : new Object[0])); }
-            catch (java.lang.reflect.InvocationTargetException e) {
+            try {
+                return method.invoke(null, (Object) (locals != null ? locals : new Object[0]));
+            } catch (java.lang.reflect.InvocationTargetException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException re) throw re;
                 if (cause instanceof Error err) throw err;
                 throw new RuntimeException(cause);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
             }
-            catch (RuntimeException e) { throw e; }
-            catch (Exception e) { throw new RuntimeException(e); }
         }
 
         /** Internal name for invokestatic bytecode. */

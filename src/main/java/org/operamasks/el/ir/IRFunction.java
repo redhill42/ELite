@@ -85,6 +85,22 @@ public class IRFunction {
         return Math.max(paramCount, varNames != null ? varNames.length : 0);
     }
 
+    /** Check if this function contains ops that the IR interpreter cannot handle. */
+    public boolean hasUnsupportedOps() {
+        for (int b = 0; b < blockCount(); b++) {
+            int start = blockStart(b);
+            int end = (b + 1 < blockCount()) ? blockStart(b + 1) : code.length;
+            InstructionView v = new InstructionView(code, start);
+            while (v.inBounds() && v.offset() < end) {
+                int op = v.opcode();
+                // Trampoline ops (0xE0) require AST evaluation — IR can't handle
+                if (op == 0xE0) return true;
+                v.advance();
+            }
+        }
+        return false;
+    }
+
     /** Get the code offset for a given block ID. */
     public int blockStart(int blockId) {
         return blockOffsets[blockId];
