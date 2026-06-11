@@ -126,6 +126,8 @@ public class IRBuilder {
             case Token.INSTANCEOF: buildInstanceOf((ELNode.INSTANCEOF) node); break;
             case Token.NIL:       current.emitNewList(0); break;  // [] = empty list
             case Token.ARRAY:     buildTrampoline(node); break;  // complex, rare
+            case Token.INC:       buildIncDec((ELNode.INC) node); break;
+            case Token.DEC:       buildIncDec((ELNode.DEC) node); break;
 
             default: buildTrampoline(node);
         }
@@ -373,6 +375,34 @@ public class IRBuilder {
         if (l >= 0 && r >= 0) emitTypedOp(node.op, widerType(l, r));
         else emitDynamicOp(node.op);
     }
+    /** Expand ++x / x++ / --x / x-- for local variables. */
+    private void buildIncDec(ELNode node) {
+        boolean isInc = node.op == Token.INC;
+        boolean isPre = node instanceof ELNode.INC inc ? inc.is_preincrement
+                      : ((ELNode.DEC) node).is_preincrement;
+        ELNode target = ((ELNode.Unary) node).right;
+
+        if (target instanceof ELNode.IDENT ident) {
+            Integer idx = varIndex.get(ident.id);
+            if (idx != null) {
+                // Local variable: emit INC/DEC opcode
+                if (isPre) {
+                    // ++x / --x: increment in-place, push new value
+                    current.emit1(isInc ? INC : DEC, K_PRIM, idx);
+                } else {
+                    // x++ / x--: push old value, increment, keep old value on stack
+                    int t = typeIdFromNode(target);
+                    current.emitPushVar(idx, t >= 0 ? t : T_INT);
+                    current.emit1(isInc ? INC : DEC, K_PRIM, idx);
+                    current.emitPop(); // discard new value, leave old value
+                }
+                return;
+            }
+        }
+        // Non-local or complex target → trampoline
+        buildTrampoline(node);
+    }
+
     private void buildUnaryOp(ELNode node) {
         if (node instanceof ELNode.Unary un) {
             boolean prev = inTailPosition;

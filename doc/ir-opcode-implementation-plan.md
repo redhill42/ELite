@@ -1,17 +1,73 @@
 # IR Opcode 实现计划
 
-本文档描述了当前已定义但尚未实现的 IR opcode，以及实现它们所需的步骤和优先级。
+本文档描述了 ELite IR 中待实现的 opcode 及其实现状态。
 
 ## 优先级总览
 
-| 优先级 | Opcodes | 收益 | 复杂度 |
-|--------|---------|------|--------|
-| P0 | CLOSURE + CAPTURE | 闭包性能（消除 Java 反射调用） | 高 |
-| P1 | GUARD_TYPE + GUARD_NONNULL + DEOPT | 类型化执行的正确性基础 | 中 |
-| P2 | LOAD_FIELD + STORE_FIELD | Java interop 字段访问加速 | 中 |
-| P3 | TABLE_SWITCH | 模式匹配性能（跳转表替代 if-else 链） | 中 |
-| P4 | CAT | 已知类型的字符串拼接优化 | 低 |
-| P5 | INC + DEC | 自增/自减微观优化 | 低 |
+| 优先级 | Opcodes | 状态 | 实现方法 |
+|--------|---------|:--:|------|
+| P0 | CLOSURE + CAPTURE | ⏳ | 未实现 |
+| P1 | GUARD_TYPE + DEOPT | ✅ | 类型守卫 + deopt 回退块，支持显式标注(strict)和推导(deopt)两种模式 |
+| P2 | LOAD_FIELD + STORE_FIELD | ✅ | 已知 Java 类型属性访问优先级：getter/setter → public field → ELResolver |
+| P3 | TABLE_SWITCH | ⏳ | 未实现 |
+| P4 | CAT | ⏳ | 未实现 |
+| P5 | INC + DEC | ✅ | 局部变量自增/自减，展开为 INC/DEC opcode |
+
+---
+
+## 已完成项目实现总结
+
+### P1: GUARD_TYPE (0x80) + DEOPT — 类型守卫 ✅
+
+**实现文件**: `IRSpeclializer.java`, `IRInterpreter.java`, `IRBytecodeCompiler.java`, `IRBuilder.java`, `IRFunction.java`
+
+- `IRFunction.paramFlags`: 标记每个参数是否显式标注类型（`PARAM_EXPLICIT_TYPE`）
+- `GUARD_TYPE typeId, deoptBlockId`: 检查栈顶类型，匹配则继续，不匹配则跳转到 deoptBlockId
+  - `deoptBlockId == STRICT_GUARD (0xFFFF)`: 显式类型 — 不匹配时抛 `TypeMismatchError`
+  - 其他值: 推导类型 — 不匹配时跳转到 deopt block（包含原始动态操作的回退块）
+- IRBuilder: `buildLambda` 和 `registerDef` 中根据 `var.type != null` 设置 paramFlags
+- IRSpeclializer: 扫描动态操作，emit GUARD_TYPE。显式类型用 strict guard，推导类型用 deopt guard
+- 守卫消除 (Phase 6): 同一 basic block 内，已守卫过的变量不重复检查。`STORE_VAR` 和函数调用后失效
+- 类型兼容检查: `checkType` 接受 `Long → T_INT`, `Integer → T_LONG` 等
+- `elite.opt.level` 系统属性控制优化级别：0=AST, 2=IR(默认), 3=Bytecode
+
+### P2: LOAD_FIELD (0x71) + STORE_FIELD (0x72) + INVOKE_GETTER (0xE1) + INVOKE_SETTER (0xE2) ✅
+
+**实现文件**: `IRBuilder.java`, `IRInterpreter.java`, `IRBytecodeCompiler.java`, `Opcode.java`, `IREmitter.java`
+
+- 已知 Java 类型属性访问优先级：
+  1. JavaBean getter (`getXxx()`/`isXxx()`) → `INVOKE_GETTER`，setter (`setXxx()`) → `INVOKE_SETTER`
+  2. public field → `LOAD_FIELD` / `STORE_FIELD`
+  3. ELResolver chain → `LOAD_PROPERTY` / `STORE_PROPERTY`（回退）
+- `IRBuilder.resolveGetter/Setter`: 编译时通过 `Class.getMethod()` 查找 getter/setter
+- `IRInterpreter`: loadField/storeField 使用 `Class.getField().get/set()`，INVOKE_GETTER/SETTER 使用 `Method.invoke()`
+- `IRBytecodeCompiler`: loadField/storeField 通过静态辅助方法反射访问
+- 类型未知时回退到原有的 ELResolver 链
+
+### P5: INC (0xA3) + DEC (0xA4) ✅
+
+**实现文件**: `IRBuilder.java`, `IRInterpreter.java`, `IRBytecodeCompiler.java`
+
+- 局部变量的 `++x`/`x++`/`--x`/`x--` 展开为 INC/DEC opcode
+- `INC varIdx`: locals[varIdx] += 1，push 新值
+- `DEC varIdx`: locals[varIdx] -= 1，push 新值
+- 前缀: 直接 INC/DEC（push 新值即结果）
+- 后缀: PUSH_VAR(旧值) + INC/DEC + POP（保留旧值在栈上）
+- 非局部变量回退到 trampoline（AST 解释器）
+- IRInterpreter: 支持 Long/Integer/Double 类型自增/自减
+- IRBytecodeCompiler: incLocal/decLocal 静态辅助方法
+
+### 编译流水线优化 ✅
+
+**实现文件**: `ELProgram.java`, `CompilationError.java`, `IRFunction.java`
+
+- `elite.opt.level` 系统属性选择执行策略：
+  - 0: AST 解释器（验证 parser/AST）
+  - 2: IR 解释器（默认，不支持时回退 AST）
+  - 3: JVM 字节码（CompilationError 时回退 IR→AST）
+- `CompilationError extends Error`: 区分编译器能力不足 vs 编译器 bug
+- `IRFunction.hasUnsupportedOps()`: 预检查 trampoline 操作（0xE0）
+- `execute()` 异常传播: 用户程序异常直接向上传播，不包装
 
 ---
 

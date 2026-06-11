@@ -427,6 +427,20 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
                     "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
             }
+            case INC -> {
+                int varIdx = pl;
+                mv.visitVarInsn(A_ALOAD, 0);
+                emitIntConst(varIdx);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "incLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
+            }
+            case DEC -> {
+                int varIdx = pl;
+                mv.visitVarInsn(A_ALOAD, 0);
+                emitIntConst(varIdx);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "decLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
+            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
@@ -775,6 +789,28 @@ public class IRBytecodeCompiler {
     public static Object bitShr(Object a, Object b) { return ((Number)a).longValue() >> ((Number)b).longValue(); }
     public static Object bitUshr(Object a, Object b){ return ((Number)a).longValue() >>> ((Number)b).longValue(); }
     public static Object bitNot(Object a) { return ~((Number)a).longValue(); }
+
+    /** Increment local variable by 1, return new value. */
+    public static Object incLocal(Object[] locals, int idx) {
+        Object val = locals[idx];
+        if (val instanceof Long l) val = l + 1;
+        else if (val instanceof Integer i) val = i + 1;
+        else if (val instanceof Double d) val = d + 1.0;
+        else val = ((Number) val).longValue() + 1;
+        locals[idx] = val;
+        return val;
+    }
+
+    /** Decrement local variable by 1, return new value. */
+    public static Object decLocal(Object[] locals, int idx) {
+        Object val = locals[idx];
+        if (val instanceof Long l) val = l - 1;
+        else if (val instanceof Integer i) val = i - 1;
+        else if (val instanceof Double d) val = d - 1.0;
+        else val = ((Number) val).longValue() - 1;
+        locals[idx] = val;
+        return val;
+    }
 
     /** Invoke a getter Method on a base object. */
     public static Object invokeGetter(Object base, java.lang.reflect.Method m) {
