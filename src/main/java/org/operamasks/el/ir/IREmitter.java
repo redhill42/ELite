@@ -266,6 +266,12 @@ public class IREmitter {
         else return emit2(LOAD_FIELD, K_NONE, fieldNameIdx >>> 16, fieldNameIdx & 0xFFFF);
     }
 
+    /** Create closure: pops captureCount values + IRFunction, pushes ClosureObject. */
+    public IREmitter emitClosure(int funcPoolIdx, int captureCount) {
+        if (fits16(funcPoolIdx)) return emit2(CLOSURE, K_FN, funcPoolIdx, captureCount);
+        else return emit3(CLOSURE, K_FN, funcPoolIdx >>> 16, funcPoolIdx & 0xFFFF, captureCount);
+    }
+
     /** Direct field store: pops value then base, pushes value. Field name in pool. */
     public IREmitter emitStoreField(int fieldNameIdx) {
         if (fits16(fieldNameIdx)) return emit1(STORE_FIELD, K_NONE, fieldNameIdx);

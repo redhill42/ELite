@@ -28,6 +28,10 @@ public class IRBuilder {
     private final List<String> varNames = new ArrayList<>();
     private final List<Integer> paramFlags = new ArrayList<>(); // per-var flags
 
+    // ── Closure capture ──
+    private final IRBuilder parent; // enclosing scope (null for top-level)
+    private final Map<String, Integer> capturedVars = new LinkedHashMap<>(); // free vars → capture index
+
     // ── Constant pool (may be shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
     private List<Object> constants = new ArrayList<>();
@@ -40,16 +44,19 @@ public class IRBuilder {
     String lambdaName = null;
     boolean inTailPosition = false;
 
-    IRBuilder() { currentBlockId = 0; current = new IREmitter(); }
+    IRBuilder() { this(null); }
 
     /** Create a nested builder sharing the parent's constant pool. */
     private IRBuilder(IRBuilder parent) {
+        this.parent = parent;
         this.currentBlockId = 0;
         this.current = new IREmitter();
-        this.lambdaName = parent.lambdaName;
-        // Share constants with parent so pool indices are consistent
-        this.constants = parent.constants;
-        this.constIndex = parent.constIndex;
+        if (parent != null) {
+            this.lambdaName = parent.lambdaName;
+            // Share constants with parent so pool indices are consistent
+            this.constants = parent.constants;
+            this.constIndex = parent.constIndex;
+        }
     }
 
     // ============ MAIN DISPATCH ============
@@ -240,6 +247,17 @@ public class IRBuilder {
     private void buildIdent(ELNode.IDENT node) {
         Integer idx = varIndex.get(node.id);
         if (idx != null) {
+            int t = typeIdFromNode(node);
+            current.emitPushVar(idx, t >= 0 ? t : T_INT);
+        } else if (parent != null && parent.varIndex.containsKey(node.id)) {
+            // Free variable captured from enclosing scope
+            idx = capturedVars.get(node.id);
+            if (idx == null) {
+                idx = capturedVars.size();
+                capturedVars.put(node.id, idx);
+                // Add to this builder's varIndex (body will use PUSH_VAR)
+                ensureVar(node.id, 0);
+            }
             int t = typeIdFromNode(node);
             current.emitPushVar(idx, t >= 0 ? t : T_INT);
         } else {
@@ -800,14 +818,26 @@ public class IRBuilder {
             int t = nested.typeIdFromNode(node.body);
             nested.current.emitReturn(t >= 0 ? t : T_INT);
         }
-        IRFunction fn = nested.finish(node.name != null ? node.name : "lambda", node.vars.length);
+        IRFunction fn = nested.finish(node.name != null ? node.name : "lambda",
+                                       node.vars.length, nested.capturedVars);
         int poolIdx = putConstant(fn);
-        // Register for direct call optimization
         registerFunction(node.name, poolIdx);
-        // Emit PUSH_CONST with the already-registered pool index
-        int kind = K_NONE;
-        if (poolIdx < 0x10000) current.emit1(PUSH_CONST, kind, poolIdx);
-        else current.emit2(PUSH_CONST, kind, poolIdx >>> 16, poolIdx & 0xFFFF);
+
+        // Emit: push captured values, then CLOSURE (or PUSH_CONST if no captures)
+        if (nested.capturedVars.isEmpty()) {
+            int kind = K_NONE;
+            if (poolIdx < 0x10000) current.emit1(PUSH_CONST, kind, poolIdx);
+            else current.emit2(PUSH_CONST, kind, poolIdx >>> 16, poolIdx & 0xFFFF);
+        } else {
+            // Push outer values of captured variables onto stack
+            for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
+                Integer outerIdx = varIndex.get(e.getKey());
+                if (outerIdx != null) {
+                    current.emitPushVar(outerIdx, T_INT);
+                }
+            }
+            current.emitClosure(poolIdx, nested.capturedVars.size());
+        }
     }
 
     // ── Trampoline ──
@@ -897,6 +927,10 @@ public class IRBuilder {
     }
 
     IRFunction finish(String name, int paramCount) {
+        return finish(name, paramCount, null);
+    }
+
+    IRFunction finish(String name, int paramCount, Map<String, Integer> captures) {
         // Seal current block
         if (current != null && !current.isEmpty()) blockMap.put(currentBlockId, current.toArray());
         else if (current != null) { current.emitReturnVoid(); blockMap.put(currentBlockId, current.toArray()); }
@@ -918,7 +952,8 @@ public class IRBuilder {
             for (int i = 0; i < paramCount && i < paramFlags.size(); i++) pf[i] = paramFlags.get(i);
         }
 
-        return new IRFunction(name, paramCount, merged.toArray(), offsets,
+        return new IRFunction(name, paramCount, captures != null ? captures.size() : 0,
+            merged.toArray(), offsets,
             constants.toArray(new Object[0]), varNames.toArray(new String[0]),
             new int[count], pf);
     }

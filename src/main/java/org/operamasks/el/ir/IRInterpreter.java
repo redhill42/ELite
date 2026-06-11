@@ -454,6 +454,18 @@ public class IRInterpreter {
                     break;
                 }
 
+                // ============ Closure creation ============
+                case CLOSURE: {
+                    int funcIdx = pl;
+                    int captureCount = oc > 0 ? code[ip + 1] : 0;
+                    IRFunction fn = (IRFunction) constantPool[funcIdx];
+                    Object[] captured = new Object[captureCount];
+                    for (int i = captureCount - 1; i >= 0; i--) captured[i] = pop();
+                    push(new IRClosure(fn, captured));
+                    ip += 1 + oc;
+                    break;
+                }
+
                 // ============ Trampoline to AST evaluator ============
                 case 0xE0: { // OP_INTERP_TRAMPOLINE
                     int poolIdx = oc == 0 ? pl : code[ip + 1];
@@ -633,6 +645,16 @@ public class IRInterpreter {
         // Handle IRFunction target (from inline lambda): execute directly
         if (target instanceof IRFunction irFn) {
             return new IRInterpreter(elctx, irFn, evalContext).execute(args);
+        }
+        // Handle IRClosure target: expand args with captured values
+        if (target instanceof IRClosure closure) {
+            IRFunction irFn = closure.function;
+            int paramCount = irFn.paramCount();
+            int captureCount = irFn.captureCount();
+            Object[] expandedArgs = new Object[paramCount + captureCount];
+            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length, paramCount));
+            System.arraycopy(closure.captured, 0, expandedArgs, paramCount, captureCount);
+            return new IRInterpreter(elctx, irFn, evalContext).execute(expandedArgs);
         }
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion

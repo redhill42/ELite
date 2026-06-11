@@ -114,7 +114,7 @@ public class IRSpeclializer implements IRPass {
             newOffsets[i] = merged.size();
             merged.addAll(allBlocks.get(i).toArray());
         }
-        return new IRFunction(fn.name(), fn.paramCount(),
+        return new IRFunction(fn.name(), fn.paramCount(), fn.captureCount(),
                 merged.toArray(), newOffsets, fn.constantPool(),
                 fn.varNames(), fn.sourcePositions(), fn.paramFlags());
     }

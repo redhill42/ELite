@@ -17,6 +17,8 @@ public class IRFunction {
 
     private final String name;
     private final int paramCount;
+    /** Number of captured (closure) variables. 0 = no captures. */
+    private final int captureCount;
     /** Single contiguous code array for all blocks. */
     private final int[] code;
     /** Start offset of each basic block in the code array. */
@@ -40,7 +42,7 @@ public class IRFunction {
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions) {
-        this(name, paramCount, code, blockOffsets, constantPool, varNames,
+        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
              sourcePositions, null);
     }
 
@@ -48,8 +50,17 @@ public class IRFunction {
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions, int[] paramFlags) {
+        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
+             sourcePositions, paramFlags);
+    }
+
+    IRFunction(String name, int paramCount, int captureCount,
+               int[] code, int[] blockOffsets,
+               Object[] constantPool, String[] varNames,
+               int[] sourcePositions, int[] paramFlags) {
         this.name = name;
         this.paramCount = paramCount;
+        this.captureCount = captureCount;
         this.code = code;
         this.blockOffsets = blockOffsets;
         this.constantPool = constantPool;
@@ -60,6 +71,7 @@ public class IRFunction {
 
     public String name()       { return name; }
     public int paramCount()    { return paramCount; }
+    public int captureCount()  { return captureCount; }
     public int[] code()        { return code; }
     public int[] blockOffsets() { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
