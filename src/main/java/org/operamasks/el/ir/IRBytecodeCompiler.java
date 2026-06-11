@@ -397,6 +397,32 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
                     "invokeGetter", "(Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
             }
+            case CLOSURE -> {
+                int funcIdx = pl;
+                int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
+                // Pack captureCount values from stack into Object[]
+                if (captureCount > 0) {
+                    int[] ts = new int[captureCount];
+                    for (int i = 0; i < captureCount; i++) ts[i] = i + 1;
+                    for (int i = captureCount - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, ts[i]);
+                    emitIntConst(captureCount);
+                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+                    for (int i = 0; i < captureCount; i++) {
+                        mv.visitInsn(A_DUP); emitIntConst(i);
+                        mv.visitVarInsn(A_ALOAD, ts[i]); mv.visitInsn(A_AASTORE);
+                    }
+                } else {
+                    mv.visitInsn(A_ICONST_0);
+                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+                }
+                Object fnObj = fn.constantPool()[funcIdx];
+                mv.visitLdcInsn(fnObj);
+                mv.visitInsn(A_SWAP);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "createClosure",
+                    "(Lorg/operamasks/el/ir/IRFunction;[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
+            }
+
             // Setter call: base below, value on top. Push Method from pool.
             case INVOKE_SETTER -> {
                 int poolIdx = v.constPoolIndex();
@@ -851,12 +877,26 @@ public class IRBytecodeCompiler {
         }
     }
 
+    /** Create a closure from IRFunction + captured values. */
+    public static IRClosure createClosure(IRFunction fn, Object[] captured) {
+        return new IRClosure(fn, captured);
+    }
+
     /** Dynamic call: delegate to ELEngine.invokeTarget. */
     public static Object invokeDyn(Object target, Object[] args) {
         // Handle IRFunction target (from inline lambda): execute via IR interpreter
         if (target instanceof IRFunction irFn) {
             javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
             return new IRInterpreter(c, irFn, null).execute(args);
+        }
+        // Handle IRClosure target: expand args with captured values
+        if (target instanceof IRClosure closure) {
+            javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
+            IRFunction irFn = closure.function;
+            Object[] expandedArgs = new Object[irFn.paramCount() + irFn.captureCount()];
+            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length, irFn.paramCount()));
+            System.arraycopy(closure.captured, 0, expandedArgs, irFn.paramCount(), irFn.captureCount());
+            return new IRInterpreter(c, irFn, null).execute(expandedArgs);
         }
         elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
         return org.operamasks.el.eval.ELEngine.invokeTarget(elctx(), target, closures);
