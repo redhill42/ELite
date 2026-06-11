@@ -350,8 +350,22 @@ public class IRBytecodeCompiler {
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> emitCall2("loadProp");
             case STORE_PROPERTY -> emitCall3("storeProp");
-            case LOAD_FIELD -> throw new CompilationError("LOAD_FIELD not yet bytecode-compilable");
-            case STORE_FIELD -> throw new CompilationError("STORE_FIELD not yet bytecode-compilable");
+            case LOAD_FIELD -> {
+                int idx = v.payload();
+                String name = (String) fn.constantPool()[idx];
+                // Stack: [base]. LDC name → [base, name] — name on top (2nd param ✓)
+                mv.visitLdcInsn(name);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "loadField", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
+            case STORE_FIELD -> {
+                int idx = v.payload();
+                String name = (String) fn.constantPool()[idx];
+                // Stack: [value, base]. LDC name → [value, base, name] — name on top (3rd param ✓)
+                mv.visitLdcInsn(name);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
             case PUSH_GLOBAL -> emitCall1("pushGlobal", v);
             case STORE_GLOBAL -> {
                 int idx = v.payload();
