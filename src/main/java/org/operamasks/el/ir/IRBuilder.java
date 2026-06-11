@@ -152,13 +152,13 @@ public class IRBuilder {
     private void buildAccess(ELNode.ACCESS node) {
         // For simple keys (identifiers, numbers, strings), use native LOAD_PROPERTY
         if (isSimpleKey(node.index)) {
-            // Try to resolve field access at compile time for known Java types
+            // Try to resolve field/getter access at compile time for known Java types
             String fieldName = getKeyName(node.index);
             org.operamasks.el.types.Type baseType = node.right != null ? node.right.inferredType : null;
             java.lang.Class<?> javaClass = resolveJavaClass(baseType);
 
             if (javaClass != null && fieldName != null) {
-                // Check for public field
+                // 1) Check for public field (fastest path)
                 try {
                     java.lang.reflect.Field field = javaClass.getField(fieldName);
                     if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
@@ -167,11 +167,19 @@ public class IRBuilder {
                         current.emitLoadField(nameIdx);
                         return;
                     }
-                } catch (NoSuchFieldException e) {
-                    // Not a field — try JavaBean property via LOAD_PROPERTY fallback
+                } catch (NoSuchFieldException e) { /* fall through */ }
+
+                // 2) Check for JavaBean getter: getXxx() or isXxx()
+                java.lang.reflect.Method getter = resolveGetter(javaClass, fieldName);
+                if (getter != null) {
+                    build(node.right); // push base
+                    int methodIdx = putConstant(getter);
+                    current.emit2(0xE1 /* OP_INVOKE_GETTER */, K_FN, methodIdx, 0);
+                    return;
                 }
-                // Field not found or not public — this is a compile-time error
-                // for known types (unless it's a JavaBean property, handled by LOAD_PROPERTY)
+
+                // 3) Neither field nor getter — fall back to ELResolver
+                // (could be a method, static member, or nested class)
             }
 
             build(node.right);   // base object
@@ -180,6 +188,28 @@ public class IRBuilder {
         } else {
             buildTrampoline(node);
         }
+    }
+
+    /** Resolve a JavaBean getter method (getXxx or isXxx) for the given property name. */
+    static java.lang.reflect.Method resolveGetter(Class<?> cls, String propName) {
+        String suffix = Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
+        // Try getXxx()
+        try { return cls.getMethod("get" + suffix); } catch (NoSuchMethodException e) {}
+        // Try isXxx() (for booleans)
+        try { return cls.getMethod("is" + suffix); } catch (NoSuchMethodException e) {}
+        return null;
+    }
+
+    /** Resolve a JavaBean setter method (setXxx) for the given property name. */
+    static java.lang.reflect.Method resolveSetter(Class<?> cls, String propName) {
+        String suffix = Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
+        try { return cls.getMethod("set" + suffix, getGetterReturnType(cls, propName)); }
+        catch (NoSuchMethodException e) { return null; }
+    }
+
+    private static Class<?> getGetterReturnType(Class<?> cls, String propName) {
+        java.lang.reflect.Method getter = resolveGetter(cls, propName);
+        return getter != null ? getter.getReturnType() : Object.class;
     }
 
     /** Resolve a Type to a concrete Java Class, or null if unknown. */

@@ -388,6 +388,16 @@ public class IRBytecodeCompiler {
             case IUSHR, LUSHR -> emitCall2("bitUshr");
             case IBITNOT, LBITNOT -> emitCall1Obj("bitNot");
 
+            // Getter call: invoke Method reflectively on base object
+            case INVOKE_GETTER -> {
+                int poolIdx = v.constPoolIndex();
+                Object method = fn.constantPool()[poolIdx];
+                mv.visitLdcInsn(method); // push Method
+                mv.visitInsn(A_SWAP);    // method, base → base, method
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "invokeGetter", "(Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
+            }
+
             // Trampoline: AST-dependent ops that bytecode cannot compile
             case 0xE0 -> throw new CompilationError(
                 "Trampoline op not supported in bytecode: " + fn.constantPool()[v.constPoolIndex()]);
@@ -751,6 +761,12 @@ public class IRBytecodeCompiler {
     public static Object bitShr(Object a, Object b) { return ((Number)a).longValue() >> ((Number)b).longValue(); }
     public static Object bitUshr(Object a, Object b){ return ((Number)a).longValue() >>> ((Number)b).longValue(); }
     public static Object bitNot(Object a) { return ~((Number)a).longValue(); }
+
+    /** Invoke a getter Method on a base object. */
+    public static Object invokeGetter(Object base, java.lang.reflect.Method m) {
+        try { return m.invoke(base); }
+        catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
+    }
 
     /** Direct field load for known Java types. */
     public static Object loadField(Object base, String name) {

@@ -52,4 +52,39 @@ class FieldAccessTest {
                 "Error should mention field name: " + e.getMessage());
         }
     }
+
+    // Java classes with getter/setter for testing
+    public static class Person {
+        private String name;
+        private int age;
+        public Person(String name, int age) { this.name = name; this.age = age; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public int getAge() { return age; }
+        public void setAge(int age) { this.age = age; }
+        public boolean isAdult() { return age >= 18; }
+    }
+
+    @Test void getterViaInterpreter() throws Exception {
+        javax.script.ScriptEngine e =
+            new javax.script.ScriptEngineManager().getEngineByName("ELite");
+        e.put("p", new Person("Alice", 30));
+        assertEquals("Alice", e.eval("p.name"));
+        assertEquals(30L, ((Number) e.eval("p.age")).longValue());
+    }
+
+    @Test void setterViaInterpreter() throws Exception {
+        javax.script.ScriptEngine e =
+            new javax.script.ScriptEngineManager().getEngineByName("ELite");
+        e.put("p", new Person("Bob", 20));
+        e.eval("p.name = \"Charlie\"");
+        assertEquals("Charlie", e.eval("p.name"));
+    }
+
+    @Test void booleanGetterIsXxx() throws Exception {
+        javax.script.ScriptEngine e =
+            new javax.script.ScriptEngineManager().getEngineByName("ELite");
+        e.put("p", new Person("Dave", 25));
+        assertEquals(true, e.eval("p.adult"));
+    }
 }

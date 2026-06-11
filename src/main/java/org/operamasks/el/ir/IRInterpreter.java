@@ -411,6 +411,16 @@ public class IRInterpreter {
                     break;
                 }
 
+                // ============ JavaBean getter call ============
+                case INVOKE_GETTER: {
+                    java.lang.reflect.Method m = (java.lang.reflect.Method) constantPool[pl];
+                    Object base = pop();
+                    try { push(m.invoke(base)); }
+                    catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
+                    ip += 1 + oc;
+                    break;
+                }
+
                 // ============ Trampoline to AST evaluator ============
                 case 0xE0: { // OP_INTERP_TRAMPOLINE
                     int poolIdx = oc == 0 ? pl : code[ip + 1];
