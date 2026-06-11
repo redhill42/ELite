@@ -251,13 +251,13 @@ public class IRBuilder {
             current.emitPushVar(idx, t >= 0 ? t : T_INT);
         } else if (parent != null && parent.varIndex.containsKey(node.id)) {
             // Free variable captured from enclosing scope
-            idx = capturedVars.get(node.id);
-            if (idx == null) {
-                idx = capturedVars.size();
-                capturedVars.put(node.id, idx);
-                // Add to this builder's varIndex (body will use PUSH_VAR)
-                ensureVar(node.id, 0);
+            // capturedVars tracks capture order; varIndex gives actual slot
+            Integer captureIdx = capturedVars.get(node.id);
+            if (captureIdx == null) {
+                capturedVars.put(node.id, capturedVars.size());
+                captureIdx = ensureVar(node.id, 0); // adds to varIndex, returns slot
             }
+            idx = varIndex.get(node.id); // use actual varIndex slot
             int t = typeIdFromNode(node);
             current.emitPushVar(idx, t >= 0 ? t : T_INT);
         } else {
