@@ -350,26 +350,8 @@ public class IRBytecodeCompiler {
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> emitCall2("loadProp");
             case STORE_PROPERTY -> emitCall3("storeProp");
-            case LOAD_FIELD -> {
-                int idx = v.payload();
-                String name = (String) fn.constantPool()[idx];
-                mv.visitLdcInsn(name);
-                mv.visitInsn(A_SWAP); // name, base → base, name
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "loadField", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-            }
-            case STORE_FIELD -> {
-                int idx = v.payload();
-                String name = (String) fn.constantPool()[idx];
-                // Stack: [value, base]. Push name → [value, base, name].
-                mv.visitLdcInsn(name);
-                // Need [base, name, value] for storeField(base, name, value).
-                // SWAP: [value, base, name] → [value, name, base]
-                mv.visitInsn(A_SWAP);
-                // DUP_X2 is complex. Use a helper with different arg order: storeField(value, base, name)
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-            }
+            case LOAD_FIELD -> throw new CompilationError("LOAD_FIELD not yet bytecode-compilable");
+            case STORE_FIELD -> throw new CompilationError("STORE_FIELD not yet bytecode-compilable");
             case PUSH_GLOBAL -> emitCall1("pushGlobal", v);
             case STORE_GLOBAL -> {
                 int idx = v.payload();
@@ -404,15 +386,7 @@ public class IRBytecodeCompiler {
             case IUSHR, LUSHR -> emitCall2("bitUshr");
             case IBITNOT, LBITNOT -> emitCall1Obj("bitNot");
 
-            // Getter call: invoke Method reflectively on base object
-            case INVOKE_GETTER -> {
-                int poolIdx = v.constPoolIndex();
-                Object method = fn.constantPool()[poolIdx];
-                mv.visitLdcInsn(method);
-                mv.visitInsn(A_SWAP);    // method, base → base, method
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "invokeGetter", "(Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
-            }
+            case INVOKE_GETTER -> throw new CompilationError("INVOKE_GETTER not yet bytecode-compilable");
             case CLOSURE -> {
                 int funcIdx = pl;
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
@@ -439,47 +413,9 @@ public class IRBytecodeCompiler {
                     "(Lorg/operamasks/el/ir/IRFunction;[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
             }
 
-            case INVOKE_METHOD -> {
-                int poolIdx = v.constPoolIndex();
-                int argc = v.opCount() > 0 ? v.operand(0) : 0;
-                Object method = fn.constantPool()[poolIdx];
-                // Pack base + args into Object[argc+1]
-                int totalArgs = argc + 1; // include base
-                if (totalArgs == 0) {
-                    mv.visitInsn(A_ICONST_0);
-                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-                } else {
-                    int[] ts = new int[totalArgs];
-                    for (int i = 0; i < totalArgs; i++) ts[i] = i + 1;
-                    for (int i = totalArgs - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, ts[i]);
-                    emitIntConst(totalArgs);
-                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-                    for (int i = 0; i < totalArgs; i++) {
-                        mv.visitInsn(A_DUP); emitIntConst(i);
-                        mv.visitVarInsn(A_ALOAD, ts[i]); mv.visitInsn(A_AASTORE);
-                    }
-                }
-                // Stack: [argsArray]. Push Method, swap, call.
-                mv.visitLdcInsn(method);
-                mv.visitInsn(A_SWAP);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "invokeMethodBC", "([Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
-            }
+            case INVOKE_METHOD -> throw new CompilationError("INVOKE_METHOD not yet bytecode-compilable");
 
-            // Setter call: base below, value on top. Push Method from pool.
-            case INVOKE_SETTER -> {
-                int poolIdx = v.constPoolIndex();
-                Object method = fn.constantPool()[poolIdx];
-                // Stack: [value, base]. Push Method → [value, base, method].
-                mv.visitLdcInsn(method);
-                // Need [base, value, method] for invokeSetter.
-                // SWAP: [value, base, method] → [value, method, base]
-                mv.visitInsn(A_SWAP);
-                // DUP_X2: [value, method, base] → [base, value, method, base]
-                // This is getting complex. Use a helper with value-first order.
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "invokeSetterBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
-            }
+            case INVOKE_SETTER -> throw new CompilationError("INVOKE_SETTER not yet bytecode-compilable");
 
             // Trampoline: AST-dependent ops that bytecode cannot compile
             case 0xE0 -> throw new CompilationError(
