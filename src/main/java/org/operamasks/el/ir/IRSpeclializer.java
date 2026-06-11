@@ -147,96 +147,94 @@ public class IRSpeclializer implements IRPass {
      * [prefix, deopt, suffix] blocks. Returns null if no deopt possible.
      */
     private List<IntList> tryDeoptSplit(int[] code, int start, int end) {
-        // Find the last specializable dynamic op before the terminator.
-        // Only deopt if it's the last non-terminator and exactly one dynamic op.
-        int dynCount = 0;
-        int deoptPos = -1, deoptArgc = 0;
-        InstructionView deoptV = null, lastNonTerm = null;
+        // Check if any dynamic op in this block has inferred types
+        boolean hasInferred = false;
+        InstructionView firstDyn = null;
 
+        sp = 0;
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             int op = v.opcode();
-            if (op != RETURN && op != RETURN_VOID && !Opcode.isJump(op)
-                && op != GUARD_TYPE && op != NOP) {
-                lastNonTerm = v.dup();
-                if (op == DYNADD || op == DYNSUB || op == DYNMUL
-                    || op == DYNDIV || op == DYNREM || op == DYNNEG) {
-                    dynCount++;
-                    deoptV = v.dup();
-                    deoptPos = v.offset();
+            // Check types BEFORE simulation (stack has operands before op executes)
+            if (op == DYNADD || op == DYNSUB || op == DYNMUL
+                || op == DYNDIV || op == DYNREM || op == DYNNEG
+                || op == DYNEQ || op == DYNLT || op == DYNLE) {
+                int argc = (op == DYNNEG) ? 1 : 2;
+                boolean allInferred = true, anyTyped = false;
+                for (int i = 0; i < argc; i++) {
+                    if (sp <= i) { allInferred = false; break; }
+                    if (explicitAt(i)) allInferred = false;
+                    if (typeStack[sp - 1 - i] >= 0) anyTyped = true;
+                }
+                if (anyTyped && allInferred) {
+                    hasInferred = true;
+                    if (firstDyn == null) firstDyn = v.dup();
                 }
             }
+            // Now simulate the op's effect on the stack for subsequent ops
+            simulateStackForType(code, v, true);
             v.advance();
         }
 
-        // Only deopt if exactly one specializable op AND it's the last non-terminator
-        if (deoptV == null || dynCount != 1) return null;
-        if (lastNonTerm == null || lastNonTerm.offset() != deoptPos) return null;
+        if (!hasInferred || firstDyn == null) return null;
 
-        int op = deoptV.opcode();
-        deoptArgc = (op == DYNNEG) ? 1 : 2;
-
-        // Re-simulate stack to check types at deopt point
+        // Build prefix: copy all instructions, replacing inferred dynamic ops
+        // with guards + typed op. Build deopt: copy all instructions as-is.
         sp = 0;
-        InstructionView sv = new InstructionView(code, start);
-        while (sv.inBounds() && sv.offset() < deoptPos) {
-            simulateStackForType(code, sv, true);
-            sv.advance();
-        }
-
-        // Only deopt if all typed operands are inferred (not explicit)
-        boolean allInferred = true;
-        boolean anyTyped = false;
-        for (int i = 0; i < deoptArgc; i++) {
-            int t = sp > i ? typeStack[sp - 1 - i] : -1;
-            boolean e = explicitAt(i);
-            if (t >= 0 && !e) anyTyped = true;
-            if (e) allInferred = false;
-        }
-        if (!anyTyped || !allInferred) return null;
-
-        // Compute specialized op (with bounds checks)
-        int newOp = -1, resultType = -1;
-        if (deoptArgc == 2) {
-            if (sp < 2) return null;
-            int t2 = peekType(), t1 = typeStack[sp-2];
-            int wider = wider(t1, t2);
-            newOp = mapBinaryOp(op, wider);
-            resultType = wider;
-        } else {
-            if (sp < 1) return null;
-            int t = popType();
-            newOp = mapNegOp(t);
-            resultType = t;
-            pushType(t, false, -1); // restore
-        }
-        if (newOp < 0) return null;
-
-        // Block 0: prefix — instructions before deopt + guard + typed op + JUMP
         IntList prefix = new IntList();
-        sv = new InstructionView(code, start);
-        while (sv.inBounds() && sv.offset() < deoptPos) {
-            copyInst(prefix, code, sv);
-            sv.advance();
-        }
-        // Emit one guard for the top-of-stack (GUARD_TYPE peeks, so one guard covers
-        // both operands for binary ops since types are widened to compatible type)
-        emitGuardDeopt(prefix, resultType, DEOPT_PLACEHOLDER);
-        prefix.add(pack1(newOp, K_PRIM, resultType));
-        prefix.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
-
-        // Block 1: deopt — original dynamic op + JUMP to suffix
         IntList deopt = new IntList();
-        copyInst(deopt, code, deoptV);
+        v = new InstructionView(code, start);
+        while (v.inBounds() && v.offset() < end) {
+            int op = v.opcode();
+            // Skip terminator — goes to suffix
+            if (op == RETURN || op == RETURN_VOID || Opcode.isJump(op)) break;
+
+            // Copy original to deopt block
+            copyInst(deopt, code, v);
+
+            // Check if this op should be replaced in the typed prefix
+            boolean replaced = false;
+            if (op == DYNADD || op == DYNSUB || op == DYNMUL
+                || op == DYNDIV || op == DYNREM || op == DYNNEG) {
+                int argc = (op == DYNNEG) ? 1 : 2;
+                boolean allInferred = true;
+                int resultType = -1, newOp = -1;
+                for (int i = 0; i < argc; i++) {
+                    if (sp <= i || explicitAt(i)) { allInferred = false; break; }
+                }
+                if (allInferred && sp >= argc) {
+                    if (argc == 2) {
+                        int t2 = typeStack[sp-1], t1 = typeStack[sp-2];
+                        int wider = wider(t1, t2);
+                        newOp = mapBinaryOp(op, wider);
+                        resultType = wider;
+                    } else {
+                        int t = typeStack[sp-1];
+                        newOp = mapNegOp(t);
+                        resultType = t;
+                    }
+                    if (newOp >= 0) {
+                        emitGuardDeopt(prefix, resultType, DEOPT_PLACEHOLDER);
+                        prefix.add(pack1(newOp, K_PRIM, resultType));
+                        replaced = true;
+                    }
+                }
+            }
+            if (!replaced) copyInst(prefix, code, v);
+
+            simulateStackForType(code, v, true);
+            v.advance();
+        }
+
+        // Add JUMP to suffix in both prefix and deopt
+        prefix.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
         deopt.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
 
-        // Block 2: suffix — instructions after deopt op (terminator)
+        // Build suffix: just the terminator
         IntList suffix = new IntList();
-        sv = new InstructionView(code, deoptPos);
-        sv.advance(); // skip dynamic op
-        while (sv.inBounds() && sv.offset() < end) {
-            copyInst(suffix, code, sv);
-            sv.advance();
+        while (v.inBounds() && v.offset() < end) {
+            copyInst(suffix, code, v);
+            v.advance();
         }
 
         return List.of(prefix, deopt, suffix);

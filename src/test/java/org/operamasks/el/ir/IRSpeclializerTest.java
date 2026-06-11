@@ -43,11 +43,10 @@ class IRSpeclializerTest {
                 new String[]{"a","b","c"}, Parser.parseExpression("a * b + c"));
         int[] types = {IRFormat.T_INT, IRFormat.T_INT, IRFormat.T_INT};
         IRFunction spec = IRSpeclializer.specialize(fn, types);
-        // Multi-op block: no deopt (dynCount > 1), fully specialized inline
+        // Multi-op block with inferred types: deopt-split with IMUL+IADD in prefix
         assertTrue(scanOp(spec, Opcode.IMUL), "a*b should be IMUL");
         assertTrue(scanOp(spec, Opcode.IADD), "result+c should be IADD");
-        assertFalse(scanOp(spec, Opcode.DYNADD), "DYNADD should be gone");
-        assertFalse(scanOp(spec, Opcode.DYNMUL), "DYNMUL should be gone");
+        assertTrue(scanOp(spec, Opcode.GUARD_TYPE), "Should have deopt guards");
     }
 
     @Test
