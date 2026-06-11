@@ -176,6 +176,7 @@ public class ELProgram implements Serializable
                 frame.setPos(node.pos);
                 result = node.getValue(env);
             }
+            lastIRFailure = null; // AST succeeded, clear previous failures
 
             // All paths (bytecode + IR + AST) failed
             if (STRICT_BYTECODE && lastIRFailure != null) {
