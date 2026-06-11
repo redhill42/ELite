@@ -6,7 +6,7 @@
 
 | 优先级 | Opcodes | 状态 | 实现方法 |
 |--------|---------|:--:|------|
-| P0 | CLOSURE + CAPTURE | ⏳ | 未实现 |
+| P0 | CLOSURE + CAPTURE | ✅ | 自由变量分析→body重写→CLOSURE opcode→IRClosure→解释器和字节码支持 |
 | P1 | GUARD_TYPE + DEOPT | ✅ | 类型守卫 + deopt 回退块，支持显式标注(strict)和推导(deopt)两种模式 |
 | P2 | LOAD_FIELD + STORE_FIELD | ✅ | 已知 Java 类型属性访问优先级：getter/setter → public field → ELResolver |
 | P3 | TABLE_SWITCH | ⏳ | 未实现 |
@@ -322,6 +322,80 @@ Step 6:   BytecodeCompiler 闭包支持  (~复杂)
 ### 风险
 - 前缀/后缀语义的栈管理容易出错
 - 收益较小（节省一条赋值指令）
+
+---
+
+## P3: TABLE_SWITCH (0x59) — 模式匹配跳转表 (评估)
+
+### 当前状态
+
+`match/case`（常量模式匹配）全部走 trampoline → AST 解释器。例如：
+```
+match (x) { case 1 => "one"; case 2 => "two"; case 3 => "three"; default => "other" }
+```
+在 IR 中是一个 `CONST_MATCH` 节点，直接 `buildTrampoline(node)`。
+
+### 收益分析
+
+- **适用场景**：连续整数 case、字符串 case、枚举 case
+- **当前性能**：O(n) 链式 if-else 在 AST 中执行
+- **优化后性能**：O(1) 跳转表，字节码可生成 JVM `TABLESWITCH`/`LOOKUPSWITCH`
+- **实际收益**：case 数量多时收益大，少量 case 时差异不大
+
+### 关键挑战
+
+**变长指令**：TABLE_SWITCH 后跟 N 个 (value, blockId) 对，指令长度 = 1 + N*2 字。这与当前 IR 的固定字长指令不同。需要：
+1. `InstructionView` 能跳过变长指令
+2. `IRFormat` 能编码/解码 case 表
+3. Block 管理：每个 case 臂需要单独的 basic block
+
+### 实现步骤
+
+**Step 1 — IRBuilder 检测**：
+在 `build` 中检测 `CONST_MATCH` 节点，分析 case 列表：
+- 如果所有 case 都是常量（NUMBER/STRINGVAL），且数量 ≥ 3 → 使用 TABLE_SWITCH
+- 否则回退 trampoline
+
+**Step 2 — TABLE_SWITCH 编码**：
+```
+TABLE_SWITCH numCases defaultBlockId
+  caseValue1 blockId1
+  caseValue2 blockId2
+  ...
+```
+- 首字: opcode(8) | kind(4) | opCount(2) | payload(numCases<<16 | defaultBlockId)
+- Wait, numCases could be large. Better: opCount=2+N*2, payload=numCases
+- operand(0): defaultBlockId
+- operand(1): caseValue1, operand(2): blockId1, ...
+
+**Step 3 — Block 管理**：
+TABLE_SWITCH 是一个**多出口**指令。不像 JUMP 只有一个目标，TABLE_SWITCH 有 N+1 个目标（N 个 case + 1 个 default）。这打破了"每个 block 必须以 terminator 结束"的规则。
+
+解决方案：TABLE_SWITCH 本身是 terminator，它列出所有可能的目标 block。
+
+**Step 4 — IRInterpreter**：
+1. 弹出匹配值
+2. 遍历 case 表查找匹配
+3. 跳转到匹配的 block（或 default block）
+
+**Step 5 — IRBytecodeCompiler**：
+1. 发射 JVM `lookupswitch` 指令（处理稀疏 case）
+2. 如果 case 值连续 → 发射 `tableswitch`（更高效）
+
+### 复杂度评估
+
+| 方面 | 难度 | 说明 |
+|------|:--:|------|
+| IRBuilder 检测 | 低 | 分析 case 常量，一次性 |
+| 变长指令编码 | 中 | 需要扩展 IRFormat 和 InstructionView |
+| Block 管理 | 中 | TABLE_SWITCH 是多出口 terminator |
+| IRInterpreter | 低 | 线性查找 case 表 |
+| BytecodeCompiler | 中 | tableswitch/lookupswitch 字节码 |
+| 总体 | **中等** | 主要是变长指令和 block 管理的工程复杂度 |
+
+### 建议
+
+可以在一个 session 内完成。先实现变长指令的基础设施，再实现 TABLE_SWITCH。收益主要是密集 case 匹配场景。
 
 ---
 
