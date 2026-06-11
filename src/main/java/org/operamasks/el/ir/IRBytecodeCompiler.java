@@ -375,20 +375,14 @@ public class IRBytecodeCompiler {
             case GUARD_TYPE -> {
                 int typeId = v.payload() & 0xFF;
                 int deoptBlockId = v.opCount() > 0 ? v.operand(0) : 0;
-                if (deoptBlockId == Opcode.STRICT_GUARD) {
-                    // Strict guard: duplicate top, check type, throw on mismatch
-                    mv.visitInsn(A_DUP);
-                    emitIntConst(typeId);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                        "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
-                } else {
-                    // Deopt guard: check type, jump to deopt block on mismatch
-                    mv.visitInsn(A_DUP);
-                    emitIntConst(typeId);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                        "guardTypeCheck", "(Ljava/lang/Object;I)Z", false);
-                    mv.visitJumpInsn(153, blockLabels[deoptBlockId]); // IFEQ → mismatch
-                }
+                // Bytecode backend cannot do multi-entry deopt blocks.
+                // Use strict guard (throw on mismatch). If guard fails,
+                // ELProgram catches the exception and falls back to IR
+                // interpreter, which handles deopt correctly.
+                mv.visitInsn(A_DUP);
+                emitIntConst(typeId);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
             }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
@@ -982,12 +976,21 @@ public class IRBytecodeCompiler {
         private final String className;
         private final int[] argTypes;
 
-        CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className, int[] argTypes) {
-            this.method = m; this.className = className; this.bytecode = bc; this.argTypes = argTypes;
+        CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className,
+                         int[] argTypes) {
+            this.method = m; this.className = className; this.bytecode = bc;
+            this.argTypes = argTypes;
         }
 
         public Object execute(Object[] locals) {
-            try { return method.invoke(null, (Object) locals); }
+            try { return method.invoke(null, (Object) (locals != null ? locals : new Object[0])); }
+            catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException re) throw re;
+                if (cause instanceof Error err) throw err;
+                throw new RuntimeException(cause);
+            }
+            catch (RuntimeException e) { throw e; }
             catch (Exception e) { throw new RuntimeException(e); }
         }
 

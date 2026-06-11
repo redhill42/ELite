@@ -50,31 +50,18 @@ class BytecodeCompilerTest {
 
     // ─── Function calls ───
     @Test void simpleCall() {
-        // Parse full program with define + call
         org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser("define add(x,y) => x + y; add(3, 4)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
-        // Bytecode may fail for deopt-split blocks; verify via IR interpreter
-        try {
-            IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-            assertEquals(7L, ((Number)cf.execute(null)).longValue());
-        } catch (Throwable bcErr) {
-            // Fall back to IR interpreter (deopt blocks not yet bytecode-compilable)
-            javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-            assertEquals(7L, ((Number)new IRInterpreter(ctx, fn).execute(null)).longValue());
-        }
+        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        assertEquals(7L, ((Number)cf.execute(null)).longValue());
     }
 
     @Test void callWithSingleArg() {
         org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser("define sq(x) => x * x; sq(5)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
-        try {
-            IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-            assertEquals(25L, ((Number)cf.execute(null)).longValue());
-        } catch (Throwable bcErr) {
-            javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-            assertEquals(25L, ((Number)new IRInterpreter(ctx, fn).execute(null)).longValue());
-        }
+        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        assertEquals(25L, ((Number)cf.execute(null)).longValue());
     }
 }

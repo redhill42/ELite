@@ -160,6 +160,7 @@ public class ELProgram implements Serializable
                     } catch (Throwable bcErr) {
                         // Bytecode failed (VerifyError, etc.) — fall back to IR interpreter
                         if (STRICT_BYTECODE) {
+                            if (bcErr instanceof RuntimeException) throw (RuntimeException) bcErr;
                             throw new RuntimeException(
                                 "Bytecode compilation failed (strict mode)", bcErr);
                         }
@@ -171,6 +172,7 @@ public class ELProgram implements Serializable
                 } catch (Exception e) {
                     // IR path unavailable — fall back to AST
                     if (STRICT_BYTECODE) {
+                        if (e instanceof RuntimeException) throw (RuntimeException) e;
                         throw new RuntimeException("IR evaluation failed (strict mode)", e);
                     }
                     System.err.println("[elite] IR fallback: " + e.getMessage());

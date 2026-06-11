@@ -80,6 +80,11 @@ public class IRFunction {
             && (paramFlags[paramIdx] & PARAM_EXPLICIT_TYPE) != 0;
     }
 
+    /** Maximum local variable index (params + define'd vars). */
+    public int maxLocalCount() {
+        return Math.max(paramCount, varNames != null ? varNames.length : 0);
+    }
+
     /** Get the code offset for a given block ID. */
     public int blockStart(int blockId) {
         return blockOffsets[blockId];
