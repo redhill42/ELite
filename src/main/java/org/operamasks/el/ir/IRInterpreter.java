@@ -570,6 +570,10 @@ public class IRInterpreter {
             args[i] = pop();
         }
         Object target = pop();
+        // Handle IRFunction target (from inline lambda): execute directly
+        if (target instanceof IRFunction irFn) {
+            return new IRInterpreter(elctx, irFn, evalContext).execute(args);
+        }
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion
             javax.el.ELContext elctx = evalContext.getELContext();

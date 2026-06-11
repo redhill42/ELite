@@ -739,6 +739,11 @@ public class IRBytecodeCompiler {
 
     /** Dynamic call: delegate to ELEngine.invokeTarget. */
     public static Object invokeDyn(Object target, Object[] args) {
+        // Handle IRFunction target (from inline lambda): execute via IR interpreter
+        if (target instanceof IRFunction irFn) {
+            javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
+            return new IRInterpreter(c, irFn, null).execute(args);
+        }
         elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
         return org.operamasks.el.eval.ELEngine.invokeTarget(elctx(), target, closures);
     }

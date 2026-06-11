@@ -671,7 +671,10 @@ public class IRBuilder {
         }
         nested.inTailPosition = true;
         nested.build(node.body);
-        if (!endsWithReturn(nested)) nested.current.emitReturnVoid();
+        if (!endsWithReturn(nested)) {
+            int t = nested.typeIdFromNode(node.body);
+            nested.current.emitReturn(t >= 0 ? t : T_INT);
+        }
         IRFunction fn = nested.finish(node.name != null ? node.name : "lambda", node.vars.length);
         int poolIdx = putConstant(fn);
         // Register for direct call optimization
