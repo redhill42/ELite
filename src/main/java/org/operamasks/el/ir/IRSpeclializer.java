@@ -63,40 +63,80 @@ public class IRSpeclializer implements IRPass {
 
         boolean changed = false;
         int[] oldCode = fn.code();
-        IntList[] newBlocks = new IntList[fn.blockCount()];
+        int origBlockCount = fn.blockCount();
 
-        for (int b = 0; b < fn.blockCount(); b++) {
+        // Build expanded block list (deopt split may create new blocks)
+        List<IntList> allBlocks = new ArrayList<>();
+        int[] oldToNew = new int[origBlockCount]; // old block ID → new first index
+        int[] extraBlocks = new int[origBlockCount]; // 0=no split, 2=split into 3
+
+        for (int b = 0; b < origBlockCount; b++) {
             int start = fn.blockStart(b);
-            int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : oldCode.length;
+            int end = (b + 1 < origBlockCount) ? fn.blockStart(b + 1) : oldCode.length;
+            oldToNew[b] = allBlocks.size();
 
-            newBlocks[b] = specializeBlockSimple(oldCode, start, end);
-            if (newBlocks[b] != null) changed = true;
+            List<IntList> deoptSplit = tryDeoptSplit(oldCode, start, end);
+            if (deoptSplit != null) {
+                allBlocks.addAll(deoptSplit);
+                extraBlocks[b] = 2;
+                changed = true;
+            } else {
+                IntList specialized = specializeBlockSimple(oldCode, start, end);
+                if (specialized != null) {
+                    allBlocks.add(specialized);
+                    changed = true;
+                } else {
+                    IntList orig = new IntList();
+                    for (int i = start; i < end; i++) orig.add(oldCode[i]);
+                    allBlocks.add(orig);
+                }
+            }
         }
 
         if (!changed) return fn;
 
-        // Rebuild function with specialized code
+        // Patch placeholders and remap JUMP targets for expanded blocks
+        for (int b = 0; b < origBlockCount; b++) {
+            if (extraBlocks[b] > 0) {
+                int prefixIdx = oldToNew[b];
+                int deoptIdx = prefixIdx + 1;
+                int suffixIdx = prefixIdx + 2;
+                patchPlaceholders(allBlocks.get(prefixIdx), suffixIdx, deoptIdx);
+                patchPlaceholders(allBlocks.get(deoptIdx), suffixIdx, deoptIdx);
+            }
+        }
+        remapAllJumps(allBlocks, oldToNew, origBlockCount);
+
+        // Rebuild function
         IntList merged = new IntList();
-        int[] newOffsets = new int[fn.blockCount()];
-        for (int b = 0; b < fn.blockCount(); b++) {
-            newOffsets[b] = merged.size();
-            int start = fn.blockStart(b);
-            int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : oldCode.length;
-            if (newBlocks[b] != null) merged.addAll(newBlocks[b].toArray());
-            else for (int i = start; i < end; i++) merged.add(oldCode[i]);
+        int[] newOffsets = new int[allBlocks.size()];
+        for (int i = 0; i < allBlocks.size(); i++) {
+            newOffsets[i] = merged.size();
+            merged.addAll(allBlocks.get(i).toArray());
         }
         return new IRFunction(fn.name(), fn.paramCount(),
                 merged.toArray(), newOffsets, fn.constantPool(),
                 fn.varNames(), fn.sourcePositions(), fn.paramFlags());
     }
 
-    /** Patch the last JUMP instruction in a block to target newBlockId. */
-    private static void patchLastJump(IntList block, int newBlockId) {
-        for (int i = block.size() - 1; i >= 0; i--) {
-            int word = block.get(i);
-            if (IRFormat.opcode(word) == JUMP) {
-                block.set(i, pack1(JUMP, K_NONE, newBlockId & 0xFFFF));
-                return;
+    /** Remap all JUMP-type instruction targets from old to new block IDs. */
+    private static void remapAllJumps(List<IntList> blocks, int[] oldToNew, int oldCount) {
+        for (IntList block : blocks) {
+            for (int i = 0; i < block.size(); i++) {
+                int word = block.get(i);
+                int op = IRFormat.opcode(word);
+                if (Opcode.isJump(op) || op == INVOKE_TAIL) {
+                    int oc = IRFormat.opCount(word);
+                    int oldTarget = oc == 0 ? IRFormat.payload(word) : block.get(i + 1);
+                    if (oldTarget < oldCount) {
+                        int newTarget = oldToNew[oldTarget];
+                        if (oc == 0) {
+                            block.set(i, IRFormat.pack1(op, K_NONE, newTarget & 0xFFFF));
+                        } else {
+                            block.set(i + 1, newTarget & 0xFFFF);
+                        }
+                    }
+                }
             }
         }
     }
@@ -108,19 +148,20 @@ public class IRSpeclializer implements IRPass {
      */
     private List<IntList> tryDeoptSplit(int[] code, int start, int end) {
         // Find the last specializable dynamic op before the terminator.
-        // Only deopt if it's the ONLY non-terminator in the block.
+        // Only deopt if it's the last non-terminator and exactly one dynamic op.
         int dynCount = 0;
         int deoptPos = -1, deoptArgc = 0;
-        InstructionView deoptV = null;
+        InstructionView deoptV = null, lastNonTerm = null;
 
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             int op = v.opcode();
             if (op != RETURN && op != RETURN_VOID && !Opcode.isJump(op)
                 && op != GUARD_TYPE && op != NOP) {
-                dynCount++;
+                lastNonTerm = v.dup();
                 if (op == DYNADD || op == DYNSUB || op == DYNMUL
                     || op == DYNDIV || op == DYNREM || op == DYNNEG) {
+                    dynCount++;
                     deoptV = v.dup();
                     deoptPos = v.offset();
                 }
@@ -128,8 +169,9 @@ public class IRSpeclializer implements IRPass {
             v.advance();
         }
 
-        // Only deopt if exactly one dynamic op in the block
+        // Only deopt if exactly one specializable op AND it's the last non-terminator
         if (deoptV == null || dynCount != 1) return null;
+        if (lastNonTerm == null || lastNonTerm.offset() != deoptPos) return null;
 
         int op = deoptV.opcode();
         deoptArgc = (op == DYNNEG) ? 1 : 2;
@@ -153,14 +195,16 @@ public class IRSpeclializer implements IRPass {
         }
         if (!anyTyped || !allInferred) return null;
 
-        // Compute specialized op
+        // Compute specialized op (with bounds checks)
         int newOp = -1, resultType = -1;
         if (deoptArgc == 2) {
+            if (sp < 2) return null;
             int t2 = peekType(), t1 = typeStack[sp-2];
             int wider = wider(t1, t2);
             newOp = mapBinaryOp(op, wider);
             resultType = wider;
         } else {
+            if (sp < 1) return null;
             int t = popType();
             newOp = mapNegOp(t);
             resultType = t;

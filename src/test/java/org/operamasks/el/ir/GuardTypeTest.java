@@ -23,14 +23,23 @@ class GuardTypeTest {
         assertTrue(scanOp(spec, Opcode.GUARD_TYPE));
     }
 
-    @Test void inferredParamNowGetsGuard() {
+    @Test void inferredParamNowGetsDeoptGuard() {
         IRFunction fn = IRBuilder.compileLambda("add",
             new String[]{"x"}, Parser.parseExpression("x + 1"));
         IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
-        // Inferred params now get strict guards too (Phase 7 will add deopt)
-        assertTrue(scanOp(spec, Opcode.GUARD_TYPE),
-            "Inferred param should now get GUARD_TYPE (strict for now)");
-        assertFalse(scanOp(spec, Opcode.DYNADD));
+        // Inferred single-op block: should be deopt-split with 3 blocks
+        assertTrue(spec.blockCount() >= 2, "Deopt split should create extra blocks");
+        assertTrue(scanOp(spec, Opcode.GUARD_TYPE), "Should have GUARD_TYPE");
+        assertTrue(scanOp(spec, Opcode.DYNADD), "DYNADD should be in deopt block");
+    }
+
+    @Test void explicitParamStillUsesStrictGuard() {
+        IRFunction fn = buildTypedLambda("add", new String[]{"x"},
+            new int[]{IRFunction.PARAM_EXPLICIT_TYPE}, "x + 1");
+        IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
+        // Explicit type: strict guard, no block splitting
+        assertTrue(scanOpWithPayload(spec, Opcode.GUARD_TYPE, Opcode.STRICT_GUARD));
+        assertFalse(scanOp(spec, Opcode.DYNADD)); // fully specialized, no fallback
     }
 
     @Test void guardWithStrictSentinel() {
@@ -71,6 +80,19 @@ class GuardTypeTest {
             new int[]{IRFormat.T_INT, IRFormat.T_INT});
         int n = countOp(spec, Opcode.GUARD_TYPE);
         assertTrue(n <= 2, "Redundant guard not eliminated: " + n);
+    }
+
+    @Test void deoptFallbackPreservesCorrectResult() {
+        // Deopt should produce same result as dynamic path when guard passes
+        try {
+            javax.script.ScriptEngine e =
+                new javax.script.ScriptEngineManager().getEngineByName("ELite");
+            // Without type annotation — inferred types with deopt fallback
+            assertEquals(42L, ((Number)e.eval("(\\x => x + 2)(40)")).longValue());
+            assertEquals(7L, ((Number)e.eval("(\\a => \\b => a + b)(3)(4)")).longValue());
+        } catch (javax.script.ScriptException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     @Test void guardEliminationWithTwoParams() {
