@@ -225,6 +225,19 @@ public class IRBuilder {
         return null;
     }
 
+    /** Resolve a public method by name and argument count. Returns null if ambiguous. */
+    static java.lang.reflect.Method resolveMethod(Class<?> cls, String name, int argCount) {
+        java.lang.reflect.Method found = null;
+        for (java.lang.reflect.Method m : cls.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == argCount
+                && java.lang.reflect.Modifier.isPublic(m.getModifiers())) {
+                if (found != null) return null; // ambiguous overload
+                found = m;
+            }
+        }
+        return found;
+    }
+
     /** Resolve a JavaBean setter method (setXxx) for the given property name. */
     static java.lang.reflect.Method resolveSetter(Class<?> cls, String propName) {
         String suffix = Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
@@ -313,6 +326,26 @@ public class IRBuilder {
             return;
         }
 
+        // Try to resolve direct method call for known Java types
+        if (node.right instanceof ELNode.ACCESS access && isSimpleKey(access.index)) {
+            String methodName = getKeyName(access.index);
+            org.operamasks.el.types.Type baseType = access.right != null ? access.right.inferredType : null;
+            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
+            if (javaClass != null && methodName != null) {
+                java.lang.reflect.Method method = resolveMethod(javaClass, methodName, node.args.length);
+                if (method != null) {
+                    // Direct method call: push base, push args, INVOKE_METHOD
+                    boolean prev2 = inTailPosition;
+                    inTailPosition = false;
+                    build(access.right); // base
+                    for (ELNode arg : node.args) build(arg); // args
+                    inTailPosition = prev2;
+                    int methodIdx = putConstant(method);
+                    current.emitInvokeMethod(methodIdx, node.args.length);
+                    return;
+                }
+            }
+        }
         // Fallback: dynamic invoke. Build target first, then args,
         // so stack is [target, arg0, ..., argN].
         boolean prev = inTailPosition;

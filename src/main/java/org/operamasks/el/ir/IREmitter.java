@@ -283,6 +283,13 @@ public class IREmitter {
     }
 
     /** Create closure: pops captureCount values + IRFunction, pushes ClosureObject. */
+    /** Direct method call: pops argc args + base, calls Method.invoke, pushes result. */
+    public IREmitter emitInvokeMethod(int methodPoolIdx, int argCount) {
+        if (fits16(methodPoolIdx)) return emit2(INVOKE_METHOD, K_FN, methodPoolIdx, argCount);
+        else return emit3(INVOKE_METHOD, K_FN, methodPoolIdx >>> 16, methodPoolIdx & 0xFFFF, argCount);
+    }
+
+    /** Create closure: pops captureCount values + IRFunction, pushes ClosureObject. */
     public IREmitter emitClosure(int funcPoolIdx, int captureCount) {
         if (fits16(funcPoolIdx)) return emit2(CLOSURE, K_FN, funcPoolIdx, captureCount);
         else return emit3(CLOSURE, K_FN, funcPoolIdx >>> 16, funcPoolIdx & 0xFFFF, captureCount);

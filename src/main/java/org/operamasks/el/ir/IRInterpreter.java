@@ -469,6 +469,17 @@ public class IRInterpreter {
                     ip += 1 + oc;
                     break;
                 }
+                case INVOKE_METHOD: {
+                    java.lang.reflect.Method m = (java.lang.reflect.Method) constantPool[pl];
+                    int argc = oc > 0 ? code[ip + 1] : 0;
+                    Object[] args = new Object[argc];
+                    for (int i = argc - 1; i >= 0; i--) args[i] = pop();
+                    Object base = pop();
+                    try { push(m.invoke(base, args)); }
+                    catch (Exception e) { throw new RuntimeException("method invoke failed", e); }
+                    ip += 1 + oc;
+                    break;
+                }
 
                 // ============ Closure creation ============
                 case CLOSURE: {

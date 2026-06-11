@@ -439,6 +439,19 @@ public class IRBytecodeCompiler {
                     "(Lorg/operamasks/el/ir/IRFunction;[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
             }
 
+            case INVOKE_METHOD -> {
+                int poolIdx = v.constPoolIndex();
+                int argc = v.opCount() > 0 ? v.operand(0) : 0;
+                Object method = fn.constantPool()[poolIdx];
+                mv.visitLdcInsn(method);
+                emitPackArgsAndCall(argc, false, null);
+                // Stack after packing: [argsArray]. Load method, swap, call.
+                mv.visitLdcInsn(method);
+                mv.visitInsn(A_SWAP);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "invokeMethodBC", "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
+            }
+
             // Setter call: base below, value on top. Push Method from pool.
             case INVOKE_SETTER -> {
                 int poolIdx = v.constPoolIndex();
@@ -858,6 +871,17 @@ public class IRBytecodeCompiler {
     public static Object invokeGetter(Object base, java.lang.reflect.Method m) {
         try { return m.invoke(base); }
         catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
+    }
+
+    /** Invoke a method via reflection — args are (argsArray, method). */
+    public static Object invokeMethodBC(Object[] args, java.lang.reflect.Method m) {
+        // The target (base) is the first element of args, the rest are method args
+        if (args == null || args.length == 0) throw new RuntimeException("Method call with no base");
+        Object base = args[0];
+        Object[] methodArgs = new Object[args.length - 1];
+        System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
+        try { return m.invoke(base, methodArgs); }
+        catch (Exception e) { throw new RuntimeException("method invoke failed", e); }
     }
 
     /** Invoke a setter — args are (value, base, method) from bytecode stack order. */
