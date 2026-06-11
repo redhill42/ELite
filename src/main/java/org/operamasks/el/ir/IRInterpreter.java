@@ -404,15 +404,24 @@ public class IRInterpreter {
                     break;
                 }
 
-                // ============ Guards (not yet used, pass through) ============
-                case GUARD_TYPE:
-                case GUARD_NONNULL:
+                // ============ Type guard ============
+                case GUARD_TYPE: {
+                    int typeId = IRFormat.payload(code[ip]);
+                    int deoptBlockId = oc > 0 ? code[ip + 1] : 0;
+                    Object val = peek();
+                    if (!checkType(val, typeId)) {
+                        if (deoptBlockId == Opcode.STRICT_GUARD) {
+                            String expected = IRFormat.primTypeName(typeId);
+                            String actual = val == null ? "null" : val.getClass().getName();
+                            throw new RuntimeException(
+                                "Type mismatch: expected " + expected + ", got " + actual);
+                        }
+                        ip = blockOffsets[deoptBlockId];
+                        break;
+                    }
                     ip += 1 + oc;
                     break;
-
-                case DEOPT:
-                    // Fall back to full AST interpretation for this function
-                    throw new UnsupportedOperationException("deopt not yet implemented");
+                }
 
                 // ============ NOP ============
                 case NOP:
@@ -579,6 +588,19 @@ public class IRInterpreter {
         if (v instanceof String) return !((String) v).isEmpty();
         if (v instanceof Number) return ((Number) v).doubleValue() != 0;
         return true;
+    }
+
+    /** Check if a runtime value matches the expected primitive type ID. */
+    private static boolean checkType(Object val, int typeId) {
+        if (val == null) return false;
+        return switch (typeId) {
+            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short || val instanceof Byte;
+            case IRFormat.T_LONG   -> val instanceof Long;
+            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float;
+            case IRFormat.T_BOOL   -> val instanceof Boolean;
+            case IRFormat.T_STRING -> val instanceof String;
+            default -> true;  // unknown type → pass
+        };
     }
 
     // ── Global variable storage ──

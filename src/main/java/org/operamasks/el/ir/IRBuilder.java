@@ -26,6 +26,7 @@ public class IRBuilder {
     // ── Symbol table ──
     private final Map<String, Integer> varIndex = new LinkedHashMap<>();
     private final List<String> varNames = new ArrayList<>();
+    private final List<Integer> paramFlags = new ArrayList<>(); // per-var flags
 
     // ── Constant pool (may be shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
@@ -36,8 +37,8 @@ public class IRBuilder {
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
     // ── Tail-call optimization ──
-    private String lambdaName = null;
-    private boolean inTailPosition = false;
+    String lambdaName = null;
+    boolean inTailPosition = false;
 
     IRBuilder() { currentBlockId = 0; current = new IREmitter(); }
 
@@ -664,7 +665,10 @@ public class IRBuilder {
     private void buildLambda(ELNode.LAMBDA node) {
         IRBuilder nested = new IRBuilder(this);  // share parent pool
         nested.lambdaName = node.name;
-        for (ELNode.DEFINE var : node.vars) nested.ensureVar(var.id);
+        for (ELNode.DEFINE var : node.vars) {
+            int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
+            nested.ensureVar(var.id, flags);
+        }
         nested.inTailPosition = true;
         nested.build(node.body);
         if (!endsWithReturn(nested)) nested.current.emitReturnVoid();
@@ -698,7 +702,16 @@ public class IRBuilder {
 
     // ── Symbol/type helpers ──
     int ensureVar(String name) {
-        return varIndex.computeIfAbsent(name, k -> { varNames.add(k); return varNames.size() - 1; });
+        return ensureVar(name, 0);
+    }
+    int ensureVar(String name, int flags) {
+        Integer idx = varIndex.get(name);
+        if (idx != null) return idx;
+        idx = varNames.size();
+        varNames.add(name);
+        paramFlags.add(flags);
+        varIndex.put(name, idx);
+        return idx;
     }
     private int putConstant(Object value) {
         return constIndex.computeIfAbsent(value, k -> { constants.add(k); return constants.size() - 1; });
@@ -740,7 +753,7 @@ public class IRBuilder {
     }
 
     // ── Finalization ──
-    private static boolean endsWithReturn(IRBuilder b) {
+    static boolean endsWithReturn(IRBuilder b) {
         if (b.current != null && !b.current.isEmpty()) {
             InstructionView v = new InstructionView(b.current.toArray(), 0);
             int lastOp = -1; while (v.inBounds()) { lastOp = v.opcode(); v.advance(); }
@@ -770,8 +783,16 @@ public class IRBuilder {
         int[] offsets = new int[count];
         for (int i = 0; i < count; i++) { offsets[i] = merged.size(); merged.addAll(ordered[i]); }
 
+        // Build paramFlags: trim to paramCount
+        int[] pf = null;
+        if (!paramFlags.isEmpty()) {
+            pf = new int[paramCount];
+            for (int i = 0; i < paramCount && i < paramFlags.size(); i++) pf[i] = paramFlags.get(i);
+        }
+
         return new IRFunction(name, paramCount, merged.toArray(), offsets,
-            constants.toArray(new Object[0]), varNames.toArray(new String[0]), new int[count]);
+            constants.toArray(new Object[0]), varNames.toArray(new String[0]),
+            new int[count], pf);
     }
 
     // ── Convenience emits ──
@@ -872,7 +893,10 @@ public class IRBuilder {
             String name = lam.name != null ? lam.name : d.id;
             IRBuilder nested = new IRBuilder(b);  // share parent pool
             nested.lambdaName = lam.name;
-            for (ELNode.DEFINE var : lam.vars) nested.ensureVar(var.id);
+            for (ELNode.DEFINE var : lam.vars) {
+                int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
+                nested.ensureVar(var.id, flags);
+            }
             nested.inTailPosition = true;
             nested.build(lam.body);
             if (!endsWithReturn(nested)) {

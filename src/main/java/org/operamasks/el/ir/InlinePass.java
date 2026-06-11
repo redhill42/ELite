@@ -77,7 +77,7 @@ public class InlinePass implements IRPass {
 
         return new IRFunction(input.name(), input.paramCount(),
                 merged.toArray(), newOffsets, mergedPool,
-                input.varNames(), input.sourcePositions());
+                input.varNames(), input.sourcePositions(), input.paramFlags());
     }
 
     /** Get the full function pool index from an INVOKE_DIRECT instruction. */

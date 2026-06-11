@@ -29,10 +29,25 @@ public class IRFunction {
     /** Optional: positions for debugging. Parallel to blocks. */
     private final int[] sourcePositions;
 
+    /**
+     * Per-parameter flags. Bit 0 = type was explicitly annotated (vs. inferred).
+     * Parallel to varNames; only the first paramCount entries are meaningful.
+     * May be null for functions compiled without type annotation info.
+     */
+    private final int[] paramFlags;
+
     IRFunction(String name, int paramCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions) {
+        this(name, paramCount, code, blockOffsets, constantPool, varNames,
+             sourcePositions, null);
+    }
+
+    IRFunction(String name, int paramCount,
+               int[] code, int[] blockOffsets,
+               Object[] constantPool, String[] varNames,
+               int[] sourcePositions, int[] paramFlags) {
         this.name = name;
         this.paramCount = paramCount;
         this.code = code;
@@ -40,6 +55,7 @@ public class IRFunction {
         this.constantPool = constantPool;
         this.varNames = varNames;
         this.sourcePositions = sourcePositions;
+        this.paramFlags = paramFlags;
     }
 
     public String name()       { return name; }
@@ -49,6 +65,20 @@ public class IRFunction {
     public Object[] constantPool() { return constantPool; }
     public String[] varNames() { return varNames; }
     public int[] sourcePositions() { return sourcePositions; }
+
+    /**
+     * Per-parameter flags. Bit 0 (EXPLICIT_TYPE) = type was explicitly annotated.
+     * Returns null if no annotation info is available.
+     */
+    public static final int PARAM_EXPLICIT_TYPE = 1;
+
+    public int[] paramFlags() { return paramFlags; }
+
+    /** Check if parameter at index {@code paramIdx} has an explicit type annotation. */
+    public boolean isExplicitParamType(int paramIdx) {
+        return paramFlags != null && paramIdx < paramFlags.length
+            && (paramFlags[paramIdx] & PARAM_EXPLICIT_TYPE) != 0;
+    }
 
     /** Get the code offset for a given block ID. */
     public int blockStart(int blockId) {

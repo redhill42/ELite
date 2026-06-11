@@ -283,12 +283,11 @@ public class IREmitter {
 
     // ── Type guards ──
 
+    /** Emit a type guard: check stack top type, deopt or throw on mismatch.
+     *  @param primTypeId  T_INT, T_LONG, T_DOUBLE, etc.
+     *  @param deoptBlockId  fallback block, or Opcode.STRICT_GUARD to throw error. */
     public IREmitter emitGuardType(int primTypeId, int deoptBlockId) {
         return emit2(GUARD_TYPE, K_GUARDED, primTypeId, deoptBlockId);
-    }
-
-    public IREmitter emitGuardNonNull(int deoptBlockId) {
-        return emit2(GUARD_NONNULL, K_NONE, deoptBlockId, 0);
     }
 
     // ── Concatenation ──

@@ -21,8 +21,10 @@ public class IRSpeclializer implements IRPass {
     private int[] argTypes;    // type IDs for each parameter (-1 = unknown)
     private int[] varTypes;    // tracked types for local variables
     private int[] typeStack;   // simulated stack: type ID for each slot
+    private boolean[] explicitStack; // whether each stack slot has explicit type
     private int sp;            // stack pointer
     private Object[] pool;
+    private IRFunction fn;     // current function being specialized
 
     /**
      * Create a specialized version of fn for the given argument types.
@@ -42,23 +44,25 @@ public class IRSpeclializer implements IRPass {
     }
 
     IRFunction transform(IRFunction fn, int[] argTypes) {
+        this.fn = fn;
         this.argTypes = argTypes;
         this.varTypes = new int[Math.max(argTypes.length, 32)];
         System.arraycopy(argTypes, 0, varTypes, 0, argTypes.length);
         for (int i = argTypes.length; i < varTypes.length; i++) varTypes[i] = -1;
         this.pool = fn.constantPool();
         this.typeStack = new int[64];
+        this.explicitStack = new boolean[64];
         this.sp = 0;
 
         boolean changed = false;
         int[] oldCode = fn.code();
-        int[] newCode = oldCode.clone();
+        IntList[] newBlocks = new IntList[fn.blockCount()];
 
         for (int b = 0; b < fn.blockCount(); b++) {
             int start = fn.blockStart(b);
             int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : oldCode.length;
-            boolean blockChanged = specializeBlock(newCode, start, end);
-            if (blockChanged) changed = true;
+            newBlocks[b] = specializeBlock(oldCode, start, end);
+            if (newBlocks[b] != null) changed = true;
         }
 
         if (!changed) return fn;
@@ -70,101 +74,181 @@ public class IRSpeclializer implements IRPass {
             newOffsets[b] = merged.size();
             int start = fn.blockStart(b);
             int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : oldCode.length;
-            for (int i = start; i < end; i++) merged.add(newCode[i]);
+            if (newBlocks[b] != null) merged.addAll(newBlocks[b].toArray());
+            else for (int i = start; i < end; i++) merged.add(oldCode[i]);
         }
         return new IRFunction(fn.name(), fn.paramCount(),
                 merged.toArray(), newOffsets, fn.constantPool(),
-                fn.varNames(), fn.sourcePositions());
+                fn.varNames(), fn.sourcePositions(), fn.paramFlags());
     }
 
-    private boolean specializeBlock(int[] code, int start, int end) {
+    private IntList specializeBlock(int[] code, int start, int end) {
         sp = 0;
         boolean changed = false;
+        IntList out = new IntList();
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             int op = v.opcode();
 
-            // Track types on the simulated stack
+            // Track types on the simulated stack and copy to output
             switch (op) {
                 case PUSH_CONST -> {
                     Object val = getConst(v.constPoolIndex());
-                    pushType(typeOf(val));
+                    pushType(typeOf(val), false); // constants are never explicit
+                    copyInst(out, code, v);
                 }
                 case PUSH_VAR -> {
                     int varIdx = v.varIndex();
                     int t = varIdx < varTypes.length ? varTypes[varIdx] : -1;
-                    pushType(t);
+                    boolean expl = fn.isExplicitParamType(varIdx);
+                    pushType(t, expl);
+                    copyInst(out, code, v);
                 }
-                case PUSH_TRUE, PUSH_FALSE -> pushType(T_BOOL);
-                case PUSH_NULL -> pushType(-1);
+                case PUSH_TRUE, PUSH_FALSE -> { pushType(T_BOOL, false); copyInst(out, code, v); }
+                case PUSH_NULL -> { pushType(-1, false); copyInst(out, code, v); }
 
                 // Typed arithmetic: pop 2, push result type
-                case IADD, ISUB, IMUL, IDIV, IREM -> { pop2(); pushType(T_INT); }
-                case LADD, LSUB, LMUL, LDIV, LREM -> { pop2(); pushType(T_LONG); }
-                case DADD, DSUB, DMUL, DDIV ->     { pop2(); pushType(T_DOUBLE); }
-                case INEG -> { pop1(); pushType(T_INT); }
-                case LNEG -> { pop1(); pushType(T_LONG); }
-                case DNEG -> { pop1(); pushType(T_DOUBLE); }
+                case IADD, ISUB, IMUL, IDIV, IREM -> { pop2(); pushType(T_INT, false); copyInst(out, code, v); }
+                case LADD, LSUB, LMUL, LDIV, LREM -> { pop2(); pushType(T_LONG, false); copyInst(out, code, v); }
+                case DADD, DSUB, DMUL, DDIV ->     { pop2(); pushType(T_DOUBLE, false); copyInst(out, code, v); }
+                case INEG -> { pop1(); pushType(T_INT, false); copyInst(out, code, v); }
+                case LNEG -> { pop1(); pushType(T_LONG, false); copyInst(out, code, v); }
+                case DNEG -> { pop1(); pushType(T_DOUBLE, false); copyInst(out, code, v); }
 
                 // Dynamic ops: check if we can specialize
                 case DYNADD, DYNSUB, DYNMUL, DYNDIV, DYNREM -> {
+                    boolean e2 = explicitAt(0), e1 = explicitAt(1);
                     int t2 = popType(), t1 = popType();
-                    int resultType = specializeBinary(code, v.offset(), op, t1, t2);
-                    pushType(resultType);
-                    if (resultType >= 0) changed = true;
+                    int wider = wider(t1, t2);
+                    if (t1 >= 0 && t2 >= 0) {
+                        int newOp = mapBinaryOp(op, wider);
+                        if (newOp >= 0) {
+                            // Emit guards for explicit-type operands
+                            if (e1) emitGuard(out, t1);
+                            if (e2) emitGuard(out, t2);
+                            out.add(pack1(newOp, K_PRIM, wider));
+                            changed = true;
+                        } else {
+                            copyInst(out, code, v);
+                        }
+                    } else {
+                        copyInst(out, code, v);
+                    }
+                    pushType(wider >= 0 ? wider : wider(t1, t2), e1 || e2);
                 }
                 case DYNNEG -> {
+                    boolean e = explicitAt(0);
                     int t = popType();
                     if (t >= 0) {
-                        replaceDynNeg(code, v.offset(), t);
-                        changed = true;
+                        int newOp = mapNegOp(t);
+                        if (newOp >= 0) {
+                            if (e) emitGuard(out, t);
+                            out.add(pack1(newOp, K_PRIM, t));
+                            changed = true;
+                        } else {
+                            copyInst(out, code, v);
+                        }
+                    } else {
+                        copyInst(out, code, v);
                     }
-                    pushType(t);
+                    pushType(t, e);
                 }
 
                 // Comparisons
-                case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL); }
-                case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL); }
-                case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL); }
+                case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL, false); copyInst(out, code, v); }
+                case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL, false); copyInst(out, code, v); }
+                case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL, false); copyInst(out, code, v); }
                 case DYNEQ, DYNLT, DYNLE -> {
+                    boolean e2 = explicitAt(0), e1 = explicitAt(1);
                     int t2 = popType(), t1 = popType();
                     int newOp = specializeCmpOp(op, t1, t2);
-                    if (newOp >= 0) { code[v.offset()] = pack1(newOp, K_BOOL, 0); changed = true; }
-                    pushType(T_BOOL);
+                    if (newOp >= 0) {
+                        if (e1) emitGuard(out, t1);
+                        if (e2) emitGuard(out, t2);
+                        out.add(pack1(newOp, K_BOOL, 0));
+                        changed = true;
+                    } else {
+                        copyInst(out, code, v);
+                    }
+                    pushType(T_BOOL, e1 || e2);
                 }
 
-                case NOT -> { pop1(); pushType(T_BOOL); }
-                case DUP -> pushType(peekType());
-                case POP -> pop1();
-                case POP_N -> { for (int i=0; i<v.payload(); i++) pop1(); }
+                // Ops that don't need type-stack tracking: copy as-is
+                case INVOKE_DIRECT, INVOKE_DYN, INVOKE, INVOKE_TAIL,
+                     JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE, JUMP_IF_NULL, JUMP_IF_NONNULL,
+                     LOAD_PROPERTY, STORE_PROPERTY,
+                     NEW_LIST, NEW_MAP, NEW_TUPLE, NEW_RANGE,
+                     GET_ITER, ITER_NEXT, ITER_DONE,
+                     IAND, IOR, IXOR, ISHL, ISHR, IUSHR, IBITNOT,
+                     LAND, LOR, LXOR, LSHL, LSHR, LUSHR, LBITNOT,
+                     DYNPOW, DYNCAT, DYNIN,
+                     CAT, CONTAINS, IPOW, LPOW, DPOW,
+                     GUARD_TYPE, NOP -> copyInst(out, code, v);
 
-                case RETURN, RETURN_VOID -> {}
+                case NOT -> { pop1(); pushType(T_BOOL, false); copyInst(out, code, v); }
+                case DUP -> { boolean e = peekExplicit(); pushType(peekType(), e); copyInst(out, code, v); }
+                case POP -> { pop1(); copyInst(out, code, v); }
+                case POP_N -> { for (int i=0; i<v.payload(); i++) pop1(); copyInst(out, code, v); }
+
+                case RETURN, RETURN_VOID -> copyInst(out, code, v);
                 case STORE_VAR -> {
                     int t = peekType();
+                    boolean e = peekExplicit();
                     int varIdx = v.payload() & 0xFFFF;
                     if (varIdx < varTypes.length) varTypes[varIdx] = t;
-                    pop1(); pushType(t);
+                    pop1(); pushType(t, e);
+                    copyInst(out, code, v);
                 }
                 case STORE_GLOBAL -> {
-                    int t = peekType();
-                    pop1(); pushType(t);
+                    int t = peekType(); boolean e = peekExplicit();
+                    pop1(); pushType(t, e);
+                    copyInst(out, code, v);
                 }
+                default -> copyInst(out, code, v);
             }
             v.advance();
         }
-        return changed;
+        return changed ? out : null;
+    }
+
+    /** Emit a strict (throw-on-fail) guard for the given type. */
+    private static void emitGuard(IntList out, int typeId) {
+        out.add(IRFormat.pack2h(GUARD_TYPE, K_GUARDED, typeId));
+        out.add(Opcode.STRICT_GUARD);
+    }
+
+    /** Copy a variable-length instruction from source to output. */
+    private static void copyInst(IntList out, int[] code, InstructionView v) {
+        int w = v.totalWords();
+        for (int i = 0; i < w; i++) out.add(code[v.offset() + i]);
+    }
+
+    private static int mapNegOp(int t) {
+        return switch (t) {
+            case T_INT -> INEG; case T_LONG -> LNEG;
+            case T_DOUBLE -> DNEG; default -> -1;
+        };
     }
 
     // ── Type stack helpers ──
 
-    private void pushType(int t) {
+    private void pushType(int t, boolean explicit) {
         if (sp >= typeStack.length) {
             typeStack = Arrays.copyOf(typeStack, typeStack.length * 2);
+            explicitStack = Arrays.copyOf(explicitStack, explicitStack.length * 2);
         }
-        typeStack[sp++] = t;
+        typeStack[sp] = t;
+        explicitStack[sp] = explicit;
+        sp++;
     }
     private int popType() { return sp > 0 ? typeStack[--sp] : -1; }
     private int peekType() { return sp > 0 ? typeStack[sp - 1] : -1; }
+    /** Get explicit flag at stack offset (0=top, 1=below top), without popping. */
+    private boolean explicitAt(int offset) {
+        int idx = sp - 1 - offset;
+        return idx >= 0 && idx < explicitStack.length && explicitStack[idx];
+    }
+    private boolean peekExplicit() { return explicitAt(0); }
     private void pop1() { popType(); }
     private void pop2() { popType(); popType(); }
 

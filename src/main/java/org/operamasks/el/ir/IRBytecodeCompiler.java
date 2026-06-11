@@ -372,6 +372,24 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
                     "trampoline", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
+            case GUARD_TYPE -> {
+                int typeId = v.payload() & 0xFF;
+                int deoptBlockId = v.opCount() > 0 ? v.operand(0) : 0;
+                if (deoptBlockId == Opcode.STRICT_GUARD) {
+                    // Strict guard: duplicate top, check type, throw on mismatch
+                    mv.visitInsn(A_DUP);
+                    emitIntConst(typeId);
+                    mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                        "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
+                } else {
+                    // Deopt guard: check type, jump to deopt block on mismatch
+                    mv.visitInsn(A_DUP);
+                    emitIntConst(typeId);
+                    mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                        "guardTypeCheck", "(Ljava/lang/Object;I)Z", false);
+                    mv.visitJumpInsn(153, blockLabels[deoptBlockId]); // IFEQ → mismatch
+                }
+            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
@@ -888,6 +906,35 @@ public class IRBytecodeCompiler {
     public static Object dynIn(Object x, Object y) {
         if (y instanceof java.util.Collection<?> c) return c.contains(x);
         return false;
+    }
+
+    // ── Type guard helpers ──
+
+    /** Check if value matches type, throw TypeMismatchError if not. */
+    public static void guardTypeStrict(Object val, int typeId) {
+        if (!checkGuardType(val, typeId)) {
+            String expected = IRFormat.primTypeName(typeId);
+            String actual = val == null ? "null" : val.getClass().getName();
+            throw new RuntimeException(
+                "Type mismatch: expected " + expected + ", got " + actual);
+        }
+    }
+
+    /** Check if value matches type, return boolean. */
+    public static boolean guardTypeCheck(Object val, int typeId) {
+        return checkGuardType(val, typeId);
+    }
+
+    private static boolean checkGuardType(Object val, int typeId) {
+        if (val == null) return false;
+        return switch (typeId) {
+            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short || val instanceof Byte;
+            case IRFormat.T_LONG   -> val instanceof Long;
+            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float;
+            case IRFormat.T_BOOL   -> val instanceof Boolean;
+            case IRFormat.T_STRING -> val instanceof String;
+            default -> true;
+        };
     }
 
     private void emitPush(InstructionView v) {

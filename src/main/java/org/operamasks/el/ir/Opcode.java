@@ -122,9 +122,11 @@ public final class Opcode {
     public static final int CONTAINS       = 0x7F;
 
     // ── Type guards (0x80-0x8F) ──
+    // GUARD_TYPE typeId, deoptBlockId: check stack top type.
+    //   Match → continue. Mismatch → jump to deoptBlockId.
+    //   deoptBlockId == STRICT_GUARD (0xFFFF): throw TypeMismatchError instead of deopt.
     public static final int GUARD_TYPE      = 0x80;
-    public static final int GUARD_NONNULL   = 0x81;
-    public static final int DEOPT           = 0x82;
+    public static final int STRICT_GUARD    = 0xFFFF;  // sentinel: throw error on mismatch
 
     // ── Concatenation (0x90-0x91) ──
     public static final int CAT    = 0x90;
@@ -149,7 +151,7 @@ public final class Opcode {
     public static boolean isDynamicArith(int op) { return op >= 0x25 && op <= 0x2B; }
     public static boolean isJump(int op) { return op >= 0x54 && op <= 0x58; }
     public static boolean isComparison(int op) { return (op >= 0x40 && op <= 0x4F) || (op >= 0x50 && op <= 0x53) || (op >= 0x5A && op <= 0x5B); }
-    public static boolean isGuard(int op) { return op >= 0x80 && op <= 0x82; }
+    public static boolean isGuard(int op) { return op == GUARD_TYPE; }
 
     /** Human-readable name for debugging. */
     public static String name(int op) {
@@ -223,8 +225,6 @@ public final class Opcode {
             case ITER_DONE:      return "ITER_DONE";
             case CONTAINS:       return "CONTAINS";
             case GUARD_TYPE:    return "GUARD_TYPE";
-            case GUARD_NONNULL: return "GUARD_NONNULL";
-            case DEOPT:         return "DEOPT";
             case CAT:    return "CAT";
             case DYNCAT: return "DYNCAT";
             case NOT: return "NOT";
