@@ -70,6 +70,9 @@ public class ELProgram implements Serializable
      */
     static boolean STRICT_BYTECODE = Boolean.getBoolean("elite.strict");
 
+    /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
+    static final boolean DEBUG = Boolean.getBoolean("elite.debug");
+
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
     /** @return the list of expression/statement nodes */
@@ -189,14 +192,13 @@ public class ELProgram implements Serializable
             case 2: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
                 if (irFn.hasUnsupportedOps()) {
-                    System.err.println("[elite] IR has unsupported ops, using AST");
+                    if (DEBUG) System.err.println("[elite] IR has unsupported ops, using AST");
                     return evaluateAST(exps, frame, env);
                 }
                 try {
                     return new IRInterpreter(elctx, irFn, env).execute(null);
                 } catch (Exception e) {
-                    // IR interpreter bug or limitation — fall back to AST
-                    System.err.println("[elite] IR fallback: " + e.getMessage());
+                    if (DEBUG) System.err.println("[elite] IR fallback: " + e.getMessage());
                     return evaluateAST(exps, frame, env);
                 }
             }
@@ -209,13 +211,12 @@ public class ELProgram implements Serializable
                     IRBytecodeCompiler.setCallerELCtx(elctx);
                     return cf.execute(null);
                 } catch (CompilationError e) {
-                    System.err.println("[elite] bytecode fallback: " + e.getMessage());
-                    // Fall back to IR, then AST
+                    if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
                     if (!irFn.hasUnsupportedOps()) {
                         try {
                             return new IRInterpreter(elctx, irFn, env).execute(null);
                         } catch (Exception irErr) {
-                            System.err.println("[elite] IR fallback: " + irErr.getMessage());
+                            if (DEBUG) System.err.println("[elite] IR fallback: " + irErr.getMessage());
                         }
                     }
                     return evaluateAST(exps, frame, env);
