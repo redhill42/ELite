@@ -22,6 +22,8 @@ public class IRSpeclializer implements IRPass {
     private int[] varTypes;    // tracked types for local variables
     private int[] typeStack;   // simulated stack: type ID for each slot
     private boolean[] explicitStack; // whether each stack slot has explicit type
+    private int[] varSrcStack; // which variable each stack slot came from (-1 = not from var)
+    private boolean[] varGuarded; // per-variable: has been type-guarded since last store
     private int sp;            // stack pointer
     private Object[] pool;
     private IRFunction fn;     // current function being specialized
@@ -52,6 +54,8 @@ public class IRSpeclializer implements IRPass {
         this.pool = fn.constantPool();
         this.typeStack = new int[64];
         this.explicitStack = new boolean[64];
+        this.varSrcStack = new int[64];
+        this.varGuarded = new boolean[Math.max(argTypes.length, 32)];
         this.sp = 0;
 
         boolean changed = false;
@@ -101,31 +105,32 @@ public class IRSpeclializer implements IRPass {
                     int varIdx = v.varIndex();
                     int t = varIdx < varTypes.length ? varTypes[varIdx] : -1;
                     boolean expl = fn.isExplicitParamType(varIdx);
-                    pushType(t, expl);
+                    pushType(t, expl, varIdx);
                     copyInst(out, code, v);
                 }
-                case PUSH_TRUE, PUSH_FALSE -> { pushType(T_BOOL, false); copyInst(out, code, v); }
-                case PUSH_NULL -> { pushType(-1, false); copyInst(out, code, v); }
+                case PUSH_TRUE, PUSH_FALSE -> { pushType(T_BOOL, false, -1); copyInst(out, code, v); }
+                case PUSH_NULL -> { pushType(-1, false, -1); copyInst(out, code, v); }
 
-                // Typed arithmetic: pop 2, push result type
-                case IADD, ISUB, IMUL, IDIV, IREM -> { pop2(); pushType(T_INT, false); copyInst(out, code, v); }
-                case LADD, LSUB, LMUL, LDIV, LREM -> { pop2(); pushType(T_LONG, false); copyInst(out, code, v); }
-                case DADD, DSUB, DMUL, DDIV ->     { pop2(); pushType(T_DOUBLE, false); copyInst(out, code, v); }
-                case INEG -> { pop1(); pushType(T_INT, false); copyInst(out, code, v); }
-                case LNEG -> { pop1(); pushType(T_LONG, false); copyInst(out, code, v); }
-                case DNEG -> { pop1(); pushType(T_DOUBLE, false); copyInst(out, code, v); }
+                // Typed arithmetic: pop 2, push result type (never from a variable)
+                case IADD, ISUB, IMUL, IDIV, IREM -> { pop2(); pushType(T_INT, false, -1); copyInst(out, code, v); }
+                case LADD, LSUB, LMUL, LDIV, LREM -> { pop2(); pushType(T_LONG, false, -1); copyInst(out, code, v); }
+                case DADD, DSUB, DMUL, DDIV ->     { pop2(); pushType(T_DOUBLE, false, -1); copyInst(out, code, v); }
+                case INEG -> { pop1(); pushType(T_INT, false, -1); copyInst(out, code, v); }
+                case LNEG -> { pop1(); pushType(T_LONG, false, -1); copyInst(out, code, v); }
+                case DNEG -> { pop1(); pushType(T_DOUBLE, false, -1); copyInst(out, code, v); }
 
                 // Dynamic ops: check if we can specialize
                 case DYNADD, DYNSUB, DYNMUL, DYNDIV, DYNREM -> {
+                    int s2 = varSrcAt(0), s1 = varSrcAt(1);
                     boolean e2 = explicitAt(0), e1 = explicitAt(1);
                     int t2 = popType(), t1 = popType();
                     int wider = wider(t1, t2);
                     if (t1 >= 0 && t2 >= 0) {
                         int newOp = mapBinaryOp(op, wider);
                         if (newOp >= 0) {
-                            // Emit guards for explicit-type operands
-                            if (e1) emitGuard(out, t1);
-                            if (e2) emitGuard(out, t2);
+                            // Emit guards for explicit-type operands (skip if already guarded)
+                            if (e1) emitGuardIfNeeded(out, t1, s1);
+                            if (e2) emitGuardIfNeeded(out, t2, s2);
                             out.add(pack1(newOp, K_PRIM, wider));
                             changed = true;
                         } else {
@@ -134,15 +139,16 @@ public class IRSpeclializer implements IRPass {
                     } else {
                         copyInst(out, code, v);
                     }
-                    pushType(wider >= 0 ? wider : wider(t1, t2), e1 || e2);
+                    pushType(wider >= 0 ? wider : wider(t1, t2), false, -1); // result is never explicit
                 }
                 case DYNNEG -> {
+                    int s = varSrcAt(0);
                     boolean e = explicitAt(0);
                     int t = popType();
                     if (t >= 0) {
                         int newOp = mapNegOp(t);
                         if (newOp >= 0) {
-                            if (e) emitGuard(out, t);
+                            if (e) emitGuardIfNeeded(out, t, s);
                             out.add(pack1(newOp, K_PRIM, t));
                             changed = true;
                         } else {
@@ -151,31 +157,36 @@ public class IRSpeclializer implements IRPass {
                     } else {
                         copyInst(out, code, v);
                     }
-                    pushType(t, e);
+                    pushType(t, false, -1); // result is never explicit
                 }
 
-                // Comparisons
-                case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL, false); copyInst(out, code, v); }
-                case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL, false); copyInst(out, code, v); }
-                case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL, false); copyInst(out, code, v); }
+                // Comparisons (results are booleans, not from variables)
+                case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
+                case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
+                case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
                 case DYNEQ, DYNLT, DYNLE -> {
+                    int s2 = varSrcAt(0), s1 = varSrcAt(1);
                     boolean e2 = explicitAt(0), e1 = explicitAt(1);
                     int t2 = popType(), t1 = popType();
                     int newOp = specializeCmpOp(op, t1, t2);
                     if (newOp >= 0) {
-                        if (e1) emitGuard(out, t1);
-                        if (e2) emitGuard(out, t2);
+                        if (e1) emitGuardIfNeeded(out, t1, s1);
+                        if (e2) emitGuardIfNeeded(out, t2, s2);
                         out.add(pack1(newOp, K_BOOL, 0));
                         changed = true;
                     } else {
                         copyInst(out, code, v);
                     }
-                    pushType(T_BOOL, e1 || e2);
+                    pushType(T_BOOL, false, -1); // boolean result is never explicit
                 }
 
+                // Function calls: clear all guarded state (calls can modify any variable)
+                case INVOKE_DIRECT, INVOKE_DYN, INVOKE, INVOKE_TAIL -> {
+                    Arrays.fill(varGuarded, false);
+                    copyInst(out, code, v);
+                }
                 // Ops that don't need type-stack tracking: copy as-is
-                case INVOKE_DIRECT, INVOKE_DYN, INVOKE, INVOKE_TAIL,
-                     JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE, JUMP_IF_NULL, JUMP_IF_NONNULL,
+                case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE, JUMP_IF_NULL, JUMP_IF_NONNULL,
                      LOAD_PROPERTY, STORE_PROPERTY,
                      NEW_LIST, NEW_MAP, NEW_TUPLE, NEW_RANGE,
                      GET_ITER, ITER_NEXT, ITER_DONE,
@@ -185,23 +196,26 @@ public class IRSpeclializer implements IRPass {
                      CAT, CONTAINS, IPOW, LPOW, DPOW,
                      GUARD_TYPE, NOP -> copyInst(out, code, v);
 
-                case NOT -> { pop1(); pushType(T_BOOL, false); copyInst(out, code, v); }
-                case DUP -> { boolean e = peekExplicit(); pushType(peekType(), e); copyInst(out, code, v); }
+                case NOT -> { pop1(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
+                case DUP -> {
+                    boolean e = peekExplicit(); int s = varSrcAt(0);
+                    pushType(peekType(), e, s); copyInst(out, code, v);
+                }
                 case POP -> { pop1(); copyInst(out, code, v); }
                 case POP_N -> { for (int i=0; i<v.payload(); i++) pop1(); copyInst(out, code, v); }
 
                 case RETURN, RETURN_VOID -> copyInst(out, code, v);
                 case STORE_VAR -> {
-                    int t = peekType();
-                    boolean e = peekExplicit();
+                    int t = peekType(); boolean e = peekExplicit(); int s = varSrcAt(0);
                     int varIdx = v.payload() & 0xFFFF;
                     if (varIdx < varTypes.length) varTypes[varIdx] = t;
-                    pop1(); pushType(t, e);
+                    if (varIdx < varGuarded.length) varGuarded[varIdx] = false; // invalidate guard
+                    pop1(); pushType(t, e, s);
                     copyInst(out, code, v);
                 }
                 case STORE_GLOBAL -> {
                     int t = peekType(); boolean e = peekExplicit();
-                    pop1(); pushType(t, e);
+                    pop1(); pushType(t, e, -1);
                     copyInst(out, code, v);
                 }
                 default -> copyInst(out, code, v);
@@ -209,6 +223,26 @@ public class IRSpeclializer implements IRPass {
             v.advance();
         }
         return changed ? out : null;
+    }
+
+    /** Get var source at stack offset (0=top, 1=below top), without popping. */
+    private int varSrcAt(int offset) {
+        int idx = sp - 1 - offset;
+        return idx >= 0 && idx < varSrcStack.length ? varSrcStack[idx] : -1;
+    }
+
+    /** Emit a guard only if the value needs it (not already guarded). */
+    private void emitGuardIfNeeded(IntList out, int typeId, int varSrc) {
+        if (varSrc >= 0 && varSrc < varGuarded.length && varGuarded[varSrc]) {
+            return; // already guarded, skip
+        }
+        emitGuard(out, typeId);
+        if (varSrc >= 0) {
+            if (varSrc >= varGuarded.length) {
+                varGuarded = Arrays.copyOf(varGuarded, varSrc + 16);
+            }
+            varGuarded[varSrc] = true;
+        }
     }
 
     /** Emit a strict (throw-on-fail) guard for the given type. */
@@ -232,13 +266,16 @@ public class IRSpeclializer implements IRPass {
 
     // ── Type stack helpers ──
 
-    private void pushType(int t, boolean explicit) {
+    private void pushType(int t, boolean explicit) { pushType(t, explicit, -1); }
+    private void pushType(int t, boolean explicit, int varSrc) {
         if (sp >= typeStack.length) {
             typeStack = Arrays.copyOf(typeStack, typeStack.length * 2);
             explicitStack = Arrays.copyOf(explicitStack, explicitStack.length * 2);
+            varSrcStack = Arrays.copyOf(varSrcStack, varSrcStack.length * 2);
         }
         typeStack[sp] = t;
         explicitStack[sp] = explicit;
+        varSrcStack[sp] = varSrc;
         sp++;
     }
     private int popType() { return sp > 0 ? typeStack[--sp] : -1; }

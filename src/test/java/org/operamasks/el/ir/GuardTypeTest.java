@@ -2,13 +2,11 @@ package org.operamasks.el.ir;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import org.operamasks.el.parser.Parser;
-import org.operamasks.el.parser.ELNode;
 
 class GuardTypeTest {
 
-    /** Build a lambda body IRFunction directly with param flags. */
-    private static IRFunction buildTypedLambda(String name, String[] params,
-                                               int[] flags, String body) {
+    static IRFunction buildTypedLambda(String name, String[] params,
+                                        int[] flags, String body) {
         IRBuilder b = new IRBuilder();
         b.lambdaName = name;
         b.inTailPosition = true;
@@ -22,52 +20,66 @@ class GuardTypeTest {
         IRFunction fn = buildTypedLambda("add", new String[]{"x"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE}, "x + 1");
         IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
-        assertTrue(scanOp(spec, Opcode.GUARD_TYPE),
-            "Explicit param should get GUARD_TYPE");
+        assertTrue(scanOp(spec, Opcode.GUARD_TYPE));
     }
 
     @Test void inferredParamNoGuard() {
         IRFunction fn = IRBuilder.compileLambda("add",
             new String[]{"x"}, Parser.parseExpression("x + 1"));
-        IRFunction spec = IRSpeclializer.specialize(fn,
-            new int[]{IRFormat.T_INT});
-        assertFalse(scanOp(spec, Opcode.GUARD_TYPE),
-            "Inferred param should NOT get GUARD_TYPE (yet)");
-        assertFalse(scanOp(spec, Opcode.DYNADD),
-            "Inferred param should still be specialized");
+        IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
+        assertFalse(scanOp(spec, Opcode.GUARD_TYPE));
+        assertFalse(scanOp(spec, Opcode.DYNADD));
     }
 
     @Test void guardWithStrictSentinel() {
         IRFunction fn = buildTypedLambda("sq", new String[]{"x"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE}, "x * x");
         IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
-        assertTrue(scanOpWithPayload(spec, Opcode.GUARD_TYPE, Opcode.STRICT_GUARD),
-            "Explicit param guard should use STRICT_GUARD sentinel");
+        assertTrue(scanOpWithPayload(spec, Opcode.GUARD_TYPE, Opcode.STRICT_GUARD));
     }
 
-    @Test void guardTypeInInterpreterPassesForCorrectType() {
+    @Test void guardPassesForCorrectType() {
         try {
-            javax.script.ScriptEngine engine =
+            javax.script.ScriptEngine e =
                 new javax.script.ScriptEngineManager().getEngineByName("ELite");
-            Object r = engine.eval("(\\x::Integer => x + 2)(40)");
-            assertEquals(42L, ((Number)r).longValue());
-        } catch (javax.script.ScriptException e) {
-            throw new RuntimeException(e);
+            assertEquals(42L, ((Number)e.eval("(\\x::Integer => x + 2)(40)")).longValue());
+        } catch (javax.script.ScriptException ex) {
+            throw new RuntimeException(ex);
         }
     }
 
-    @Test void guardTypeInInterpreterThrowsForWrongType() {
+    @Test void guardThrowsForWrongType() {
         try {
-            javax.script.ScriptEngine engine =
+            javax.script.ScriptEngine e =
                 new javax.script.ScriptEngineManager().getEngineByName("ELite");
-            engine.eval("(\\x::Integer => x + 2)(3.14)");
-            fail("Should have thrown for type mismatch");
-        } catch (javax.script.ScriptException e) {
-            String msg = e.getMessage() != null ? e.getMessage() :
-                (e.getCause() != null ? e.getCause().getMessage() : "");
-            assertTrue(msg.contains("mismatch") || msg.contains("Type"),
-                "Error should mention type mismatch: " + msg);
+            e.eval("(\\x::Integer => x + 2)(3.14)");
+            fail("Should throw");
+        } catch (javax.script.ScriptException ex) {
+            String m = ex.getMessage() != null ? ex.getMessage() : "";
+            assertTrue(m.contains("mismatch") || m.contains("Type"), m);
         }
+    }
+
+    @Test void guardEliminationForRepeatedUse() {
+        IRFunction fn = buildTypedLambda("f",
+            new String[]{"x", "y"},
+            new int[]{IRFunction.PARAM_EXPLICIT_TYPE, IRFunction.PARAM_EXPLICIT_TYPE},
+            "x + y + x");
+        IRFunction spec = IRSpeclializer.specialize(fn,
+            new int[]{IRFormat.T_INT, IRFormat.T_INT});
+        int n = countOp(spec, Opcode.GUARD_TYPE);
+        assertTrue(n <= 2, "Redundant guard not eliminated: " + n);
+    }
+
+    @Test void guardEliminationWithTwoParams() {
+        IRFunction fn = buildTypedLambda("f",
+            new String[]{"x", "y"},
+            new int[]{IRFunction.PARAM_EXPLICIT_TYPE, IRFunction.PARAM_EXPLICIT_TYPE},
+            "x + y + x");
+        IRFunction spec = IRSpeclializer.specialize(fn,
+            new int[]{IRFormat.T_INT, IRFormat.T_INT});
+        int n = countOp(spec, Opcode.GUARD_TYPE);
+        assertEquals(2, n, "Only x and y should be guarded once each");
     }
 
     static boolean scanOp(IRFunction fn, int target) {
@@ -93,5 +105,18 @@ class GuardTypeTest {
             }
         }
         return false;
+    }
+
+    static int countOp(IRFunction fn, int target) {
+        int count = 0;
+        for (int b = 0; b < fn.blockCount(); b++) {
+            InstructionView v = new InstructionView(fn.code(), fn.blockStart(b));
+            int end = (b+1 < fn.blockCount()) ? fn.blockStart(b+1) : fn.code().length;
+            while (v.inBounds() && v.offset() < end) {
+                if (v.opcode() == target) count++;
+                v.advance();
+            }
+        }
+        return count;
     }
 }
