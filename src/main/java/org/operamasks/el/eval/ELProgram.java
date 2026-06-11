@@ -148,9 +148,9 @@ public class ELProgram implements Serializable
 
             // 3) execute statements (bytecode → IR → AST fallback chain)
             Object result = null;
+            Throwable lastIRFailure = null;
 
             if (useIREvaluation && !exps.isEmpty()) {
-                Throwable lastIRFailure = null;
                 try {
                     IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
                     // Try JVM bytecode compilation first
@@ -169,17 +169,18 @@ public class ELProgram implements Serializable
                     lastIRFailure = e;
                     System.err.println("[elite] IR fallback: " + e.getMessage());
                 }
-                // All IR paths failed
-                if (STRICT_BYTECODE && lastIRFailure != null) {
-                    if (lastIRFailure instanceof RuntimeException re) throw re;
-                    throw new RuntimeException("All evaluation paths failed", lastIRFailure);
-                }
             }
 
-            // AST tree-walking fallback
+            // AST tree-walking fallback (last resort)
             for (ELNode node : exps) {
                 frame.setPos(node.pos);
                 result = node.getValue(env);
+            }
+
+            // All paths (bytecode + IR + AST) failed
+            if (STRICT_BYTECODE && lastIRFailure != null) {
+                if (lastIRFailure instanceof RuntimeException re) throw re;
+                throw new RuntimeException("All evaluation paths failed", lastIRFailure);
             }
             return result;
         } finally {

@@ -166,7 +166,11 @@ public class IRSpeclializer implements IRPass {
                     if (explicitAt(i)) allInferred = false;
                     if (typeStack[sp - 1 - i] >= 0) anyTyped = true;
                 }
-                if (anyTyped && allInferred) {
+                boolean allKnown = true;
+                for (int i = 0; i < argc; i++) {
+                    if (sp <= i || typeStack[sp - 1 - i] < 0) { allKnown = false; break; }
+                }
+                if (anyTyped && allInferred && allKnown) {
                     hasInferred = true;
                     if (firstDyn == null) firstDyn = v.dup();
                 }
@@ -202,7 +206,11 @@ public class IRSpeclializer implements IRPass {
                 for (int i = 0; i < argc; i++) {
                     if (sp <= i || explicitAt(i)) { allInferred = false; break; }
                 }
-                if (allInferred && sp >= argc) {
+                boolean allKnown = true;
+                for (int i = 0; i < argc; i++) {
+                    if (sp <= i || typeStack[sp - 1 - i] < 0) { allKnown = false; break; }
+                }
+                if (allInferred && allKnown && sp >= argc) {
                     if (argc == 2) {
                         int t2 = typeStack[sp-1], t1 = typeStack[sp-2];
                         int wider = wider(t1, t2);
