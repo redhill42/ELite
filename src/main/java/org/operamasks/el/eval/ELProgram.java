@@ -220,6 +220,15 @@ public class ELProgram implements Serializable
                         }
                     }
                     return evaluateAST(exps, frame, env);
+                } catch (RuntimeException e) {
+                    // Bytecode executed but threw — fall back to IR, then AST
+                    if (DEBUG) System.err.println("[elite] bytecode runtime fallback: " + e.getMessage());
+                    if (!irFn.hasUnsupportedOps()) {
+                        try {
+                            return new IRInterpreter(elctx, irFn, env).execute(null);
+                        } catch (Exception irErr) { /* fall through to AST */ }
+                    }
+                    return evaluateAST(exps, frame, env);
                 }
                 // VerifyError and other Errors propagate — they're compiler bugs
             }

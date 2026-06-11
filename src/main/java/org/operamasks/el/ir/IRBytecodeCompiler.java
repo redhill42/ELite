@@ -84,7 +84,7 @@ public class IRBytecodeCompiler {
             String methodDesc = desc != null ? desc : EXECUTE_DESC;
             java.lang.reflect.Method m = c.getMethod("execute",
                 desc != null ? typeParamClasses(argTypes) : new Class[]{Object[].class});
-            return new CompiledFunction(m, bc, name, argTypes);
+            return new CompiledFunction(m, bc, name, argTypes, fn.maxLocalCount());
         } catch (Exception e) {
             throw new RuntimeException("Bytecode compile failed", e);
         }
@@ -443,13 +443,27 @@ public class IRBytecodeCompiler {
                 int poolIdx = v.constPoolIndex();
                 int argc = v.opCount() > 0 ? v.operand(0) : 0;
                 Object method = fn.constantPool()[poolIdx];
-                mv.visitLdcInsn(method);
-                emitPackArgsAndCall(argc, false, null);
-                // Stack after packing: [argsArray]. Load method, swap, call.
+                // Pack base + args into Object[argc+1]
+                int totalArgs = argc + 1; // include base
+                if (totalArgs == 0) {
+                    mv.visitInsn(A_ICONST_0);
+                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+                } else {
+                    int[] ts = new int[totalArgs];
+                    for (int i = 0; i < totalArgs; i++) ts[i] = i + 1;
+                    for (int i = totalArgs - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, ts[i]);
+                    emitIntConst(totalArgs);
+                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+                    for (int i = 0; i < totalArgs; i++) {
+                        mv.visitInsn(A_DUP); emitIntConst(i);
+                        mv.visitVarInsn(A_ALOAD, ts[i]); mv.visitInsn(A_AASTORE);
+                    }
+                }
+                // Stack: [argsArray]. Push Method, swap, call.
                 mv.visitLdcInsn(method);
                 mv.visitInsn(A_SWAP);
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-                    "invokeMethodBC", "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
+                    "invokeMethodBC", "([Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/Object;", false);
             }
 
             // Setter call: base below, value on top. Push Method from pool.
@@ -873,9 +887,8 @@ public class IRBytecodeCompiler {
         catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
     }
 
-    /** Invoke a method via reflection — args are (argsArray, method). */
+    /** Invoke a method via reflection — args = (argsArray, method), argsArray[0] = base. */
     public static Object invokeMethodBC(Object[] args, java.lang.reflect.Method m) {
-        // The target (base) is the first element of args, the rest are method args
         if (args == null || args.length == 0) throw new RuntimeException("Method call with no base");
         Object base = args[0];
         Object[] methodArgs = new Object[args.length - 1];
@@ -1178,16 +1191,23 @@ public class IRBytecodeCompiler {
         private final byte[] bytecode;
         private final String className;
         private final int[] argTypes;
+        private final int maxLocals;
 
         CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className,
-                         int[] argTypes) {
+                         int[] argTypes, int maxLocals) {
             this.method = m; this.className = className; this.bytecode = bc;
-            this.argTypes = argTypes;
+            this.argTypes = argTypes; this.maxLocals = maxLocals;
         }
 
         public Object execute(Object[] locals) {
+            if (locals == null) locals = new Object[maxLocals];
+            else if (locals.length < maxLocals) {
+                Object[] expanded = new Object[maxLocals];
+                System.arraycopy(locals, 0, expanded, 0, locals.length);
+                locals = expanded;
+            }
             try {
-                return method.invoke(null, (Object) (locals != null ? locals : new Object[0]));
+                return method.invoke(null, (Object) locals);
             } catch (java.lang.reflect.InvocationTargetException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException re) throw re;
