@@ -158,7 +158,16 @@ public class IRBuilder {
             java.lang.Class<?> javaClass = resolveJavaClass(baseType);
 
             if (javaClass != null && fieldName != null) {
-                // 1) Check for public field (fastest path)
+                // 1) Check for JavaBean getter: getXxx() or isXxx() (primary Java interface)
+                java.lang.reflect.Method getter = resolveGetter(javaClass, fieldName);
+                if (getter != null) {
+                    build(node.right); // push base
+                    int methodIdx = putConstant(getter);
+                    current.emit2(0xE1 /* OP_INVOKE_GETTER */, K_FN, methodIdx, 0);
+                    return;
+                }
+
+                // 2) Check for public field (fallback)
                 try {
                     java.lang.reflect.Field field = javaClass.getField(fieldName);
                     if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
@@ -169,17 +178,8 @@ public class IRBuilder {
                     }
                 } catch (NoSuchFieldException e) { /* fall through */ }
 
-                // 2) Check for JavaBean getter: getXxx() or isXxx()
-                java.lang.reflect.Method getter = resolveGetter(javaClass, fieldName);
-                if (getter != null) {
-                    build(node.right); // push base
-                    int methodIdx = putConstant(getter);
-                    current.emit2(0xE1 /* OP_INVOKE_GETTER */, K_FN, methodIdx, 0);
-                    return;
-                }
-
-                // 3) Neither field nor getter — fall back to ELResolver
-                // (could be a method, static member, or nested class)
+                // 3) Neither getter nor field — fall back to ELResolver
+                // (could be a method reference, static member, or nested class)
             }
 
             build(node.right);   // base object
@@ -551,7 +551,16 @@ public class IRBuilder {
             org.operamasks.el.types.Type baseType = access.right != null ? access.right.inferredType : null;
             java.lang.Class<?> javaClass = resolveJavaClass(baseType);
             if (javaClass != null && fieldName != null) {
-                // 1) Check for public field
+                // 1) Check for JavaBean setter: setXxx(type) (primary Java interface)
+                java.lang.reflect.Method setter = resolveSetter(javaClass, fieldName);
+                if (setter != null) {
+                    build(access.right); // base below value: [value, base]
+                    int methodIdx = putConstant(setter);
+                    current.emit2(INVOKE_SETTER, K_FN, methodIdx, 0);
+                    return;
+                }
+
+                // 2) Check for public field (fallback)
                 try {
                     java.lang.reflect.Field field = javaClass.getField(fieldName);
                     if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
@@ -561,15 +570,6 @@ public class IRBuilder {
                         return;
                     }
                 } catch (NoSuchFieldException e) { /* fall through */ }
-
-                // 2) Check for JavaBean setter: setXxx(type)
-                java.lang.reflect.Method setter = resolveSetter(javaClass, fieldName);
-                if (setter != null) {
-                    build(access.right); // base below value: [value, base]
-                    int methodIdx = putConstant(setter);
-                    current.emit2(INVOKE_SETTER, K_FN, methodIdx, 0);
-                    return;
-                }
             }
             build(access.right); // base
             build(access.index); // key
