@@ -260,6 +260,18 @@ public class IREmitter {
         return emit1(STORE_PROPERTY, K_DYN, 0);
     }
 
+    /** Direct field load: pops base, pushes field value. Field name in constant pool. */
+    public IREmitter emitLoadField(int fieldNameIdx) {
+        if (fits16(fieldNameIdx)) return emit1(LOAD_FIELD, K_NONE, fieldNameIdx);
+        else return emit2(LOAD_FIELD, K_NONE, fieldNameIdx >>> 16, fieldNameIdx & 0xFFFF);
+    }
+
+    /** Direct field store: pops value then base, pushes value. Field name in pool. */
+    public IREmitter emitStoreField(int fieldNameIdx) {
+        if (fits16(fieldNameIdx)) return emit1(STORE_FIELD, K_NONE, fieldNameIdx);
+        else return emit2(STORE_FIELD, K_NONE, fieldNameIdx >>> 16, fieldNameIdx & 0xFFFF);
+    }
+
     /** Pop value, store to global variable (name in constant pool). */
     public IREmitter emitStoreGlobal(int namePoolIndex) {
         if (fits16(namePoolIndex)) return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);

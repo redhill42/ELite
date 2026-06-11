@@ -151,14 +151,50 @@ public class IRBuilder {
     private void buildConst(Object value) { emitPushConst(K_NONE, value); }
     private void buildAccess(ELNode.ACCESS node) {
         // For simple keys (identifiers, numbers, strings), use native LOAD_PROPERTY
-        // For complex keys (ranges, expressions), fall back to trampoline
         if (isSimpleKey(node.index)) {
+            // Try to resolve field access at compile time for known Java types
+            String fieldName = getKeyName(node.index);
+            org.operamasks.el.types.Type baseType = node.right != null ? node.right.inferredType : null;
+            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
+
+            if (javaClass != null && fieldName != null) {
+                // Check for public field
+                try {
+                    java.lang.reflect.Field field = javaClass.getField(fieldName);
+                    if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
+                        build(node.right); // base
+                        int nameIdx = putConstant(fieldName);
+                        current.emitLoadField(nameIdx);
+                        return;
+                    }
+                } catch (NoSuchFieldException e) {
+                    // Not a field — try JavaBean property via LOAD_PROPERTY fallback
+                }
+                // Field not found or not public — this is a compile-time error
+                // for known types (unless it's a JavaBean property, handled by LOAD_PROPERTY)
+            }
+
             build(node.right);   // base object
             build(node.index);   // key
             current.emitLoadProperty();
         } else {
             buildTrampoline(node);
         }
+    }
+
+    /** Resolve a Type to a concrete Java Class, or null if unknown. */
+    private static java.lang.Class<?> resolveJavaClass(org.operamasks.el.types.Type type) {
+        if (type instanceof org.operamasks.el.types.ClassType ct) {
+            return ct.javaClass;
+        }
+        return null;
+    }
+
+    /** Extract the key name from a simple key node. */
+    private static String getKeyName(ELNode key) {
+        if (key instanceof ELNode.IDENT ident) return ident.id;
+        if (key instanceof ELNode.STRINGVAL s) return s.value;
+        return null;
     }
 
     private static boolean isSimpleKey(ELNode key) {
@@ -471,7 +507,7 @@ public class IRBuilder {
 
     // ── Assign/Define ──
     private void buildAssign(ELNode.ASSIGN node) {
-        build(node.right);
+        build(node.right); // value to assign
         if (node.left instanceof ELNode.IDENT ident) {
             // Store locally (if the variable is in local scope) AND globally
             int idx = varIndex.getOrDefault(ident.id, -1);
@@ -479,6 +515,25 @@ public class IRBuilder {
             if (idx >= 0) current.emitStoreVar(idx);  // local
             int nameIdx = putConstant(ident.id);
             current.emitStoreGlobal(nameIdx);           // global
+        } else if (node.left instanceof ELNode.ACCESS access && isSimpleKey(access.index)) {
+            // obj.prop = value — try direct field store for known Java types
+            String fieldName = getKeyName(access.index);
+            org.operamasks.el.types.Type baseType = access.right != null ? access.right.inferredType : null;
+            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
+            if (javaClass != null && fieldName != null) {
+                try {
+                    java.lang.reflect.Field field = javaClass.getField(fieldName);
+                    if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
+                        build(access.right); // base below value: [value, base]
+                        int nameIdx = putConstant(fieldName);
+                        current.emitStoreField(nameIdx); // pops [value, base], pushes value
+                        return;
+                    }
+                } catch (NoSuchFieldException e) { /* fall through to property */ }
+            }
+            build(access.right); // base
+            build(access.index); // key
+            current.emitStoreProperty();
         } else buildTrampoline(node);
     }
     private void buildDefine(ELNode.DEFINE node) {

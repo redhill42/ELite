@@ -334,6 +334,26 @@ public class IRBytecodeCompiler {
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> emitCall2("loadProp");
             case STORE_PROPERTY -> emitCall3("storeProp");
+            case LOAD_FIELD -> {
+                int idx = v.payload();
+                String name = (String) fn.constantPool()[idx];
+                mv.visitLdcInsn(name);
+                mv.visitInsn(A_SWAP); // name, base → base, name
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "loadField", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
+            case STORE_FIELD -> {
+                int idx = v.payload();
+                String name = (String) fn.constantPool()[idx];
+                // Stack: [value, base]. Push name → [value, base, name].
+                mv.visitLdcInsn(name);
+                // Need [base, name, value] for storeField(base, name, value).
+                // SWAP: [value, base, name] → [value, name, base]
+                mv.visitInsn(A_SWAP);
+                // DUP_X2 is complex. Use a helper with different arg order: storeField(value, base, name)
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
             case PUSH_GLOBAL -> emitCall1("pushGlobal", v);
             case STORE_GLOBAL -> {
                 int idx = v.payload();
@@ -731,6 +751,33 @@ public class IRBytecodeCompiler {
     public static Object bitShr(Object a, Object b) { return ((Number)a).longValue() >> ((Number)b).longValue(); }
     public static Object bitUshr(Object a, Object b){ return ((Number)a).longValue() >>> ((Number)b).longValue(); }
     public static Object bitNot(Object a) { return ~((Number)a).longValue(); }
+
+    /** Direct field load for known Java types. */
+    public static Object loadField(Object base, String name) {
+        if (base == null) throw new NullPointerException("Cannot read field '" + name + "' from null");
+        try {
+            java.lang.reflect.Field f = base.getClass().getField(name);
+            return f.get(base);
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Cannot access field: " + name, e);
+        }
+    }
+
+    /** Direct field store — args are in bytecode stack order (value, base, name). */
+    public static Object storeFieldBC(Object value, Object base, String name) {
+        if (base == null) throw new NullPointerException("Cannot write field '" + name + "' to null");
+        try {
+            java.lang.reflect.Field f = base.getClass().getField(name);
+            f.set(base, value);
+            return value;
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Cannot access field: " + name, e);
+        }
+    }
 
     /** Dynamic call: delegate to ELEngine.invokeTarget. */
     public static Object invokeDyn(Object target, Object[] args) {

@@ -307,6 +307,23 @@ public class IRInterpreter {
                     break;
                 }
 
+                // ============ Direct field access ============
+                case LOAD_FIELD: {
+                    Object base = pop();
+                    String fieldName = (String) constantPool[pl];
+                    push(loadField(base, fieldName));
+                    ip += 1 + oc;
+                    break;
+                }
+                case STORE_FIELD: {
+                    Object value = pop();
+                    Object base = pop();
+                    String fieldName = (String) constantPool[pl];
+                    push(storeField(base, fieldName, value));
+                    ip += 1 + oc;
+                    break;
+                }
+
                 // ============ Collections ============
                 case NEW_LIST: {
                     int count = pl;
@@ -615,6 +632,33 @@ public class IRInterpreter {
     private void storeGlobal(String name, Object value) {
         evalContext.setVariable(name,
             new org.operamasks.el.eval.closure.LiteralClosure(value));
+    }
+
+    // ── Direct field access ──
+
+    private Object loadField(Object base, String fieldName) {
+        if (base == null) throw new NullPointerException("Cannot read field '" + fieldName + "' from null");
+        try {
+            java.lang.reflect.Field f = base.getClass().getField(fieldName);
+            return f.get(base);
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException("Field not found: " + fieldName + " on " + base.getClass().getName());
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Cannot access field: " + fieldName, e);
+        }
+    }
+
+    private Object storeField(Object base, String fieldName, Object value) {
+        if (base == null) throw new NullPointerException("Cannot write field '" + fieldName + "' to null");
+        try {
+            java.lang.reflect.Field f = base.getClass().getField(fieldName);
+            f.set(base, value);
+            return value; // assignment returns the value
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException("Field not found: " + fieldName + " on " + base.getClass().getName());
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Cannot access field: " + fieldName, e);
+        }
     }
 
     // ── Property / index access ──
