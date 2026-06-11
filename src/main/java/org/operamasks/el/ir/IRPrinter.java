@@ -127,7 +127,7 @@ public final class IRPrinter {
                 }
             }
             case Opcode.PUSH_VAR -> sb.append(" v").append(v.varIndex());
-            case Opcode.PUSH_GLOBAL, Opcode.PUSH_GLOBAL_N -> {
+            case Opcode.PUSH_GLOBAL -> {
                 int idx = v.constPoolIndex();
                 sb.append(" #").append(idx);
                 if (idx < fn.constantPool().length) {

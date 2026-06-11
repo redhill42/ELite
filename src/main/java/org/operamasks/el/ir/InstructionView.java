@@ -59,6 +59,11 @@ public class InstructionView {
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
 
+    /** Get the full 32-bit index split across payload (hi16) and operand(0) (lo16). */
+    public int splitIndex() {
+        return (IRFormat.payload(code[offset]) << 16) | (code[offset + 1] & 0xFFFF);
+    }
+
     /** Get the variable index from a PUSH_VAR instruction. */
     public int varIndex() {
         return IRFormat.payload(code[offset]) & 0xFF;

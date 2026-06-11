@@ -330,7 +330,7 @@ public class IRBytecodeCompiler {
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> emitCall2("loadProp");
             case STORE_PROPERTY -> emitCall3("storeProp");
-            case PUSH_GLOBAL, PUSH_GLOBAL_N -> emitCall1("pushGlobal", v);
+            case PUSH_GLOBAL -> emitCall1("pushGlobal", v);
             case STORE_GLOBAL -> {
                 int idx = v.payload();
                 String name = (String) fn.constantPool()[idx];

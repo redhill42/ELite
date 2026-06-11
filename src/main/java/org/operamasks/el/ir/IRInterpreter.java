@@ -118,7 +118,6 @@ public class IRInterpreter {
                 case IDIV: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l/r); ip+=1; break; }
                 case IREM: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l%r); ip+=1; break; }
                 case INEG: { int v=((Number)pop()).intValue(); push(-v); ip+=1; break; }
-                case IPOS: { ip+=1; break; } // int pos is nop
 
                 // ============ Typed long arithmetic ============
                 case LADD: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l+r); ip+=1; break; }

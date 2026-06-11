@@ -222,12 +222,12 @@ public class ConstantFolder implements IRPass {
     private int ensureInPool(Object value) {
         // Search existing pool
         for (int i = 0; i < pool.length; i++) {
-            if (pool[i] != null && pool[i].equals(value)) return i;
+            if (java.util.Objects.equals(pool[i], value)) return i;
         }
         // Search added constants
         if (addedConstants != null) {
             for (int i = 0; i < addedConstants.size(); i++) {
-                if (addedConstants.get(i).equals(value)) return pool.length + i;
+                if (java.util.Objects.equals(addedConstants.get(i), value)) return pool.length + i;
             }
         }
         // Add to extended pool

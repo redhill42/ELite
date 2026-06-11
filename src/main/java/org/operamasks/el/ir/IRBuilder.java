@@ -181,7 +181,7 @@ public class IRBuilder {
     }
 
     // ── Apply ──
-        private void buildApply(ELNode.APPLY node) {
+    private void buildApply(ELNode.APPLY node) {
         // Determine if this will use direct call or TCO (avoids pushing target)
         boolean isTail = inTailPosition && lambdaName != null
             && node.right instanceof ELNode.IDENT
@@ -218,7 +218,9 @@ public class IRBuilder {
         for (ELNode arg : node.args) build(arg);
         inTailPosition = prev;
         current.emitInvokeDyn(node.args.length);
-    }    // ── Literals: list, map, tuple, range ──
+    }
+
+    // ── Literals: list, map, tuple, range ──
 
     private void buildCons(ELNode.CONS node) {
         // Walk the CONS chain, count and emit elements, then NEW_LIST
@@ -265,13 +267,14 @@ public class IRBuilder {
     private void buildRange(ELNode.RANGE node) {
         build(node.begin);
         if (node.exclude) {
-            // exclusive range: [begin..<end), emit end - 1 for inclusive
+            // Exclusive range [begin..<end): push end-1 for inclusive range end
             build(node.end);
-            current.emitNewRange();
+            emitPushConst(T_INT, 1L);
+            current.emitDynSub();
         } else {
             build(node.end);
-            current.emitNewRange();
         }
+        current.emitNewRange();
     }
 
     private void buildInstanceOf(ELNode.INSTANCEOF node) {
@@ -345,6 +348,7 @@ public class IRBuilder {
             case Token.MUL -> current.emitDynMul(); case Token.DIV -> current.emitDynDiv();
             case Token.REM -> current.emitDynRem(); case Token.NEG -> current.emitDynNeg();
             case Token.POW -> current.emitDynPow();
+            case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
             // Bitwise: emit typed (int) by default for dynamic path
             case Token.BITOR  -> current.emit1(Opcode.IOR, IRFormat.K_PRIM, IRFormat.T_INT);
             case Token.BITAND -> current.emit1(Opcode.IAND, IRFormat.K_PRIM, IRFormat.T_INT);
@@ -353,7 +357,8 @@ public class IRBuilder {
             case Token.SHR    -> current.emit1(Opcode.ISHR, IRFormat.K_PRIM, IRFormat.T_INT);
             case Token.USHR   -> current.emit1(Opcode.IUSHR, IRFormat.K_PRIM, IRFormat.T_INT);
             case Token.BITNOT -> current.emit1(Opcode.IBITNOT, IRFormat.K_PRIM, IRFormat.T_INT);
-            default -> current.emitDynAdd();
+            default -> throw new UnsupportedOperationException(
+                "Unsupported dynamic op: " + op);
         }
     }
 

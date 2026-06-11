@@ -24,7 +24,6 @@ public final class Opcode {
     public static final int IDIV = 0x13;
     public static final int IREM = 0x14;
     public static final int INEG = 0x15;
-    public static final int IPOS = 0x16;
 
     public static final int LADD = 0x17;  // long add
     public static final int LSUB = 0x18;
@@ -80,7 +79,7 @@ public final class Opcode {
 
     public static final int DEQ = 0x4C;  public static final int DNE = 0x4D;
     public static final int DLT = 0x4E;  public static final int DLE = 0x4F;
-    public static final int DGT = 0xB3;  public static final int DGE = 0xB4;
+    public static final int DGT = 0x5A;  public static final int DGE = 0x5B;
 
     // ── Dynamic comparisons (0x50-0x53) ──
     public static final int DYNEQ = 0x50;
@@ -116,7 +115,6 @@ public final class Opcode {
     public static final int NEW_RANGE      = 0x77;
     public static final int LOAD_PROPERTY  = 0x78;  // pops key, base → base[key]
     public static final int STORE_PROPERTY = 0x79;  // pops val, key, base → base[key]=val
-    public static final int PUSH_GLOBAL_N  = 0x7A;  // global variable (name in pool)
     public static final int STORE_GLOBAL   = 0x7B;  // store to global
     public static final int GET_ITER       = 0x7C;
     public static final int ITER_NEXT      = 0x7D;
@@ -134,10 +132,8 @@ public final class Opcode {
 
     // ── Unary (0xA0-0xAF) ──
     public static final int NOT = 0xA0;
-    public static final int POS = 0xA1;
-    public static final int NEG = 0xA2;
-    public static final int INC = 0xA3;
-    public static final int DEC = 0xA4;
+    public static final int INC = 0xA3;  // increment (to implement)
+    public static final int DEC = 0xA4;  // decrement (to implement)
 
     // ── Boolean constants (0xB0-0xB1) ──
     public static final int PUSH_TRUE  = 0xB0;
@@ -152,7 +148,7 @@ public final class Opcode {
     public static boolean isTypedArith(int op) { return op >= 0x10 && op <= 0x24; }
     public static boolean isDynamicArith(int op) { return op >= 0x25 && op <= 0x2B; }
     public static boolean isJump(int op) { return op >= 0x54 && op <= 0x58; }
-    public static boolean isComparison(int op) { return (op >= 0x40 && op <= 0x53) || op == DGT || op == DGE; }
+    public static boolean isComparison(int op) { return (op >= 0x40 && op <= 0x4F) || (op >= 0x50 && op <= 0x53) || (op >= 0x5A && op <= 0x5B); }
     public static boolean isGuard(int op) { return op >= 0x80 && op <= 0x82; }
 
     /** Human-readable name for debugging. */
@@ -167,7 +163,6 @@ public final class Opcode {
             case IADD: return "IADD"; case ISUB: return "ISUB";
             case IMUL: return "IMUL"; case IDIV: return "IDIV";
             case IREM: return "IREM"; case INEG: return "INEG";
-            case IPOS: return "IPOS";
             case LADD: return "LADD"; case LSUB: return "LSUB";
             case LMUL: return "LMUL"; case LDIV: return "LDIV";
             case LREM: return "LREM"; case LNEG: return "LNEG";
@@ -222,7 +217,6 @@ public final class Opcode {
             case NEW_RANGE:      return "NEW_RANGE";
             case LOAD_PROPERTY:  return "LOAD_PROPERTY";
             case STORE_PROPERTY: return "STORE_PROPERTY";
-            case PUSH_GLOBAL_N:  return "PUSH_GLOBAL";
             case STORE_GLOBAL:   return "STORE_GLOBAL";
             case GET_ITER:       return "GET_ITER";
             case ITER_NEXT:      return "ITER_NEXT";
@@ -234,7 +228,6 @@ public final class Opcode {
             case CAT:    return "CAT";
             case DYNCAT: return "DYNCAT";
             case NOT: return "NOT";
-            case POS: return "POS"; case NEG: return "NEG";
             case INC: return "INC"; case DEC: return "DEC";
             case PUSH_TRUE:  return "PUSH_TRUE";
             case PUSH_FALSE: return "PUSH_FALSE";

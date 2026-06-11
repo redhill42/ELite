@@ -38,7 +38,8 @@ public class InlinePass implements IRPass {
             collectTargets(oldCode, start, end, pool, inlineTargets, extraConstants);
         }
 
-        if (inlineTargets.isEmpty()) return input; // nothing to inline
+        if (inlineTargets.isEmpty())
+            return input; // nothing to inline
 
         // Build merged pool
         this.mergedPool = new Object[pool.length + extraConstants.size()];
@@ -63,7 +64,8 @@ public class InlinePass implements IRPass {
             }
         }
 
-        if (!changed) return input;
+        if (!changed)
+            return input;
 
         // Rebuild function
         IntList merged = new IntList();
@@ -78,18 +80,27 @@ public class InlinePass implements IRPass {
                 input.varNames(), input.sourcePositions());
     }
 
+    /** Get the full function pool index from an INVOKE_DIRECT instruction. */
+    private static int directFuncIdx(InstructionView v) {
+        // emit2: opCount=1, full idx in payload (fits 16 bits)
+        // emit3: opCount=2, idx = (payload << 16) | operand(0)
+        if (v.opCount() <= 1) return v.payload();
+        return (v.payload() << 16) | (v.operand(0) & 0xFFFF);
+    }
+
     /** Pass 1: scan a block for inline targets and collect their constants. */
     private void collectTargets(int[] code, int start, int end, Object[] pool,
-                                 Set<IRFunction> targets, List<Object> extra) {
+            Set<IRFunction> targets, List<Object> extra) {
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             if (v.opcode() == INVOKE_DIRECT && canInlineTarget(code, v, pool)) {
-                IRFunction callee = (IRFunction) pool[v.payload()];
+                IRFunction callee = (IRFunction) pool[directFuncIdx(v)];
                 if (targets.add(callee)) {
                     // First time seeing this callee: add its constants to extra pool
                     int base = pool.length + extra.size();
                     poolBaseMap.put(callee, base);
-                    for (Object c : callee.constantPool()) extra.add(c);
+                    for (Object c : callee.constantPool())
+                        extra.add(c);
                 }
             }
             v.advance();
@@ -103,18 +114,20 @@ public class InlinePass implements IRPass {
         InstructionView scan = new InstructionView(code, start);
         while (scan.inBounds() && scan.offset() < end) {
             if (scan.opcode() == INVOKE_DIRECT
-                && poolBaseMap.containsKey(callerPool[scan.payload()])) {
-                hasInline = true; break;
+                    && poolBaseMap.containsKey(callerPool[directFuncIdx(scan)])) {
+                hasInline = true;
+                break;
             }
             scan.advance();
         }
-        if (!hasInline) return null;
+        if (!hasInline)
+            return null;
 
         IntList out = new IntList();
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             if (v.opcode() == INVOKE_DIRECT) {
-                IRFunction callee = (IRFunction) callerPool[v.payload()];
+                IRFunction callee = (IRFunction) callerPool[directFuncIdx(v)];
                 Integer base = poolBaseMap.get(callee);
                 if (base != null) {
                     int argc = v.opCount() > 0 ? code[v.offset() + 1] : 0;
@@ -126,29 +139,34 @@ public class InlinePass implements IRPass {
             }
             // Copy as-is
             int w = v.totalWords();
-            for (int i = 0; i < w; i++) out.add(code[v.offset() + i]);
+            for (int i = 0; i < w; i++)
+                out.add(code[v.offset() + i]);
             v.advance();
         }
         return out.toArray();
     }
 
     private boolean canInlineTarget(int[] code, InstructionView v, Object[] pool) {
-        int funcIdx = v.payload();
-        if (funcIdx >= pool.length) return false;
+        int funcIdx = directFuncIdx(v);
+        if (funcIdx >= pool.length)
+            return false;
         return pool[funcIdx] instanceof IRFunction fn && canInline(fn);
     }
 
     private static boolean canInline(IRFunction callee) {
-        if (callee.blockCount() != 1) return false;
+        if (callee.blockCount() != 1)
+            return false;
         int[] body = callee.code();
         int count = 0;
         InstructionView v = new InstructionView(body, 0);
         while (v.inBounds()) {
             count++;
-            if (count > MAX_INLINE_SIZE) return false;
+            if (count > MAX_INLINE_SIZE)
+                return false;
             int op = v.opcode();
             if (op == INVOKE_DIRECT || op == INVOKE_DYN || op == INVOKE
-                || Opcode.isJump(op) || op == INVOKE_TAIL) return false;
+                    || Opcode.isJump(op) || op == INVOKE_TAIL)
+                return false;
             v.advance();
         }
         return count <= MAX_INLINE_SIZE;
@@ -160,7 +178,8 @@ public class InlinePass implements IRPass {
         int off = callOffset;
         for (int i = argc - 1; i >= 0; i--) {
             off = prevInst(code, blockStart, off);
-            if (off < 0) break;
+            if (off < 0)
+                break;
             int op = IRFormat.opcode(code[off]);
             types[i] = switch (op) {
                 case PUSH_TRUE, PUSH_FALSE -> T_BOOL;
@@ -174,13 +193,16 @@ public class InlinePass implements IRPass {
 
     private static int prevInst(int[] code, int blockStart, int beforeOffset) {
         int off = blockStart, prev = -1;
-        while (off < beforeOffset) { prev = off; off += IRFormat.totalWords(code[off]); }
+        while (off < beforeOffset) {
+            prev = off;
+            off += IRFormat.totalWords(code[off]);
+        }
         return prev;
     }
 
     /** Emit inlined body with remapped pool indices. */
     private void emitInlinedBody(IntList out, IRFunction callee, int argc,
-                                  int[] argTypes, int poolBase) {
+            int[] argTypes, int poolBase) {
         IRFunction body = IRSpeclializer.specialize(callee, argTypes);
         int baseSlot = 8;
 
@@ -204,13 +226,14 @@ public class InlinePass implements IRPass {
                 int callerIdx = poolBase + calleeIdx;
                 int kind = bv.kind();
                 out.add(pack1(PUSH_CONST, kind, callerIdx & 0xFFFF));
-            } else if (op == PUSH_GLOBAL || op == PUSH_GLOBAL_N || op == STORE_GLOBAL) {
+            } else if (op == PUSH_GLOBAL || op == STORE_GLOBAL) {
                 int calleeIdx = bv.constPoolIndex();
                 int callerIdx = poolBase + calleeIdx;
                 out.add(pack1(op, K_NONE, callerIdx & 0xFFFF));
             } else if (op != RETURN && op != RETURN_VOID) {
                 int w = bv.totalWords();
-                for (int i = 0; i < w; i++) out.add(bodyCode[bv.offset() + i]);
+                for (int i = 0; i < w; i++)
+                    out.add(bodyCode[bv.offset() + i]);
             }
             bv.advance();
         }
