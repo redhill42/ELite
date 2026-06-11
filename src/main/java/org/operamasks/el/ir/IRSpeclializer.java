@@ -68,6 +68,7 @@ public class IRSpeclializer implements IRPass {
         for (int b = 0; b < fn.blockCount(); b++) {
             int start = fn.blockStart(b);
             int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : oldCode.length;
+
             newBlocks[b] = specializeBlockSimple(oldCode, start, end);
             if (newBlocks[b] != null) changed = true;
         }
@@ -106,21 +107,20 @@ public class IRSpeclializer implements IRPass {
      * [prefix, deopt, suffix] blocks. Returns null if no deopt possible.
      */
     private List<IntList> tryDeoptSplit(int[] code, int start, int end) {
-        return null; // TODO: enable when deopt splitting is stable
-        // Find the last dynamic op before the terminator
+        // Find the last specializable dynamic op before the terminator.
+        // Only deopt if it's the ONLY non-terminator in the block.
+        int dynCount = 0;
         int deoptPos = -1, deoptArgc = 0;
         InstructionView deoptV = null;
-        InstructionView lastNonTerm = null;
 
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             int op = v.opcode();
             if (op != RETURN && op != RETURN_VOID && !Opcode.isJump(op)
                 && op != GUARD_TYPE && op != NOP) {
-                lastNonTerm = v.dup();
+                dynCount++;
                 if (op == DYNADD || op == DYNSUB || op == DYNMUL
-                    || op == DYNDIV || op == DYNREM || op == DYNNEG
-                    || op == DYNEQ || op == DYNLT || op == DYNLE) {
+                    || op == DYNDIV || op == DYNREM || op == DYNNEG) {
                     deoptV = v.dup();
                     deoptPos = v.offset();
                 }
@@ -128,60 +128,57 @@ public class IRSpeclializer implements IRPass {
             v.advance();
         }
 
-        if (deoptV == null) return null;
+        // Only deopt if exactly one dynamic op in the block
+        if (deoptV == null || dynCount != 1) return null;
 
-        // Check if any operand has inferred (non-explicit) type
-        boolean hasInferred = false;
         int op = deoptV.opcode();
         deoptArgc = (op == DYNNEG) ? 1 : 2;
-        // We need to re-simulate the stack up to deoptPos to check types
-        // For now, only deopt if the block ends with this op and RETURN/RETURN_VOID
-        if (lastNonTerm == null || lastNonTerm.offset() != deoptPos) return null;
 
-        // Simple heuristic: the op is the last non-terminator, try deopt
-        // Re-simulate to get actual types at this point
+        // Re-simulate stack to check types at deopt point
         sp = 0;
         InstructionView sv = new InstructionView(code, start);
         while (sv.inBounds() && sv.offset() < deoptPos) {
-            simulateStackForType(code, sv, false);
+            simulateStackForType(code, sv, true);
             sv.advance();
         }
 
-        boolean e2 = explicitAt(0), e1 = deoptArgc > 1 ? explicitAt(1) : false;
-        int t2 = peekType(), t1 = deoptArgc > 1 ? typeStack[sp-2] : -1;
-        hasInferred = (t2 >= 0 && !e2) || (t1 >= 0 && !e1);
+        // Only deopt if all typed operands are inferred (not explicit)
+        boolean allInferred = true;
+        boolean anyTyped = false;
+        for (int i = 0; i < deoptArgc; i++) {
+            int t = sp > i ? typeStack[sp - 1 - i] : -1;
+            boolean e = explicitAt(i);
+            if (t >= 0 && !e) anyTyped = true;
+            if (e) allInferred = false;
+        }
+        if (!anyTyped || !allInferred) return null;
 
-        if (!hasInferred) return null;
-
-        // Build the split blocks
+        // Compute specialized op
         int newOp = -1, resultType = -1;
         if (deoptArgc == 2) {
+            int t2 = peekType(), t1 = typeStack[sp-2];
             int wider = wider(t1, t2);
             newOp = mapBinaryOp(op, wider);
             resultType = wider;
         } else {
-            newOp = mapNegOp(t2);
-            resultType = t2;
+            int t = popType();
+            newOp = mapNegOp(t);
+            resultType = t;
+            pushType(t, false, -1); // restore
         }
         if (newOp < 0) return null;
 
-        // Block 0: prefix up to deopt + guards + typed op + JUMP
+        // Block 0: prefix — instructions before deopt + guard + typed op + JUMP
         IntList prefix = new IntList();
         sv = new InstructionView(code, start);
         while (sv.inBounds() && sv.offset() < deoptPos) {
             copyInst(prefix, code, sv);
             sv.advance();
         }
-        // Guards with deopt block ID (placeholder patched by transform)
-        int deoptBlockPlaceholder = DEOPT_PLACEHOLDER;
-        if (deoptArgc == 2) {
-            if (e2) emitGuardDeopt(prefix, t2, deoptBlockPlaceholder);
-            if (e1) emitGuardDeopt(prefix, t1, deoptBlockPlaceholder);
-        } else {
-            if (e2) emitGuardDeopt(prefix, t2, deoptBlockPlaceholder);
-        }
+        // Emit one guard for the top-of-stack (GUARD_TYPE peeks, so one guard covers
+        // both operands for binary ops since types are widened to compatible type)
+        emitGuardDeopt(prefix, resultType, DEOPT_PLACEHOLDER);
         prefix.add(pack1(newOp, K_PRIM, resultType));
-        // JUMP to suffix (placeholder, patched by transform)
         prefix.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
 
         // Block 1: deopt — original dynamic op + JUMP to suffix
@@ -189,10 +186,10 @@ public class IRSpeclializer implements IRPass {
         copyInst(deopt, code, deoptV);
         deopt.add(pack1(JUMP, K_NONE, DEOPT_PLACEHOLDER));
 
-        // Block 2: suffix — everything after deopt op
+        // Block 2: suffix — instructions after deopt op (terminator)
         IntList suffix = new IntList();
         sv = new InstructionView(code, deoptPos);
-        sv.advance(); // skip the dynamic op
+        sv.advance(); // skip dynamic op
         while (sv.inBounds() && sv.offset() < end) {
             copyInst(suffix, code, sv);
             sv.advance();
