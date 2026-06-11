@@ -323,8 +323,12 @@ public class IRBytecodeCompiler {
                     emitPackArgsAndCall(argc, true, funcId);
                 }
             }
-            case INVOKE_DYN, INVOKE -> {
-                int argc = oc == 0 ? pl : v.operand(0);
+            case INVOKE_DYN -> {
+                int argc = pl; // emitInvokeDyn stores argCount in payload
+                emitPackArgsAndCall(argc, false, null);
+            }
+            case INVOKE -> {
+                int argc = oc == 0 ? pl : v.operand(0); // emitInvoke stores argCount in operand(0)
                 emitPackArgsAndCall(argc, false, null);
             }
             // ─── Property access, globals ───
