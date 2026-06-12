@@ -30,8 +30,10 @@ import org.operamasks.el.shell.command.Command;
 import org.operamasks.el.shell.command.CommandProvider;
 import org.operamasks.el.parser.IncompleteException;
 import org.operamasks.el.parser.Position;
+import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 import org.operamasks.el.ir.IRPrinter;
+import org.operamasks.el.parser.ASTDumper;
 import org.operamasks.el.eval.StackTrace;
 import static org.operamasks.el.resources.Resources.*;
 import elite.lang.Builtin;
@@ -43,6 +45,7 @@ public class Main
     private String script;
     private String filename;
     private boolean dumpIR = false;
+    private boolean dumpAST = false;
     private boolean dumpBC = false;
 
     public Main() {
@@ -76,10 +79,18 @@ public class Main
                     dumpProgramIR(filename);
                     return 0;
                 }
+                if (dumpAST) {
+                    dumpProgramAST(filename);
+                    return 0;
+                }
                 status = CommandProvider.exec(shellContext, filename);
             } else if (script != null) {
                 if (dumpIR) {
                     System.out.println(IRPrinter.dumpProgram(script));
+                    return 0;
+                }
+                if (dumpAST) {
+                    System.out.println(dumpAST(script));
                     return 0;
                 }
                 status = exec_script(engine, script);
@@ -113,6 +124,8 @@ public class Main
                     shellContext.setInteractive(true);
                 } else if (args[argIndex].equals("--dump-ir")) {
                     dumpIR = true;
+                } else if (args[argIndex].equals("--dump-ast")) {
+                    dumpAST = true;
                 } else if (args[argIndex].equals("--bc")) {
                     dumpBC = true;
                 } else if (args[argIndex].startsWith("-")) {
@@ -226,6 +239,21 @@ public class Main
         String source = new String(java.nio.file.Files.readAllBytes(
             java.nio.file.Paths.get(filename)));
         System.out.println(IRPrinter.dumpProgram(source));
+    }
+
+    private static void dumpProgramAST(String filename) throws IOException {
+        String source = new String(java.nio.file.Files.readAllBytes(
+            java.nio.file.Paths.get(filename)));
+        System.out.println(dumpAST(source));
+    }
+
+    private static String dumpAST(String script) {
+        Parser parser = new Parser(script);
+        org.operamasks.el.eval.ELProgram program = parser.parse();
+        java.util.List<ELNode> all = new java.util.ArrayList<>();
+        all.addAll(program.getDefinitions());
+        all.addAll(program.getExpressions());
+        return ASTDumper.dump(all);
     }
 
     private ScriptEngine createScriptEngine(String[] args) {
