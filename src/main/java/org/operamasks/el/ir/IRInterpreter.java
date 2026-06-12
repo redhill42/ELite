@@ -484,8 +484,14 @@ public class IRInterpreter {
                     Object[] args = new Object[argc];
                     for (int i = argc - 1; i >= 0; i--) args[i] = pop();
                     Object base = pop();
-                    try { push(m.invoke(base, args)); }
-                    catch (Exception e) { throw new RuntimeException("method invoke failed", e); }
+                    try {
+                        // Coerce args to match method's parameter types
+                        java.lang.Class<?>[] paramTypes = m.getParameterTypes();
+                        for (int i = 0; i < argc && i < paramTypes.length; i++) {
+                            args[i] = coerceArg(args[i], paramTypes[i]);
+                        }
+                        push(m.invoke(base, args));
+                    } catch (Exception e) { throw new RuntimeException("method invoke failed", e); }
                     ip += 1 + oc;
                     break;
                 }
@@ -712,6 +718,27 @@ public class IRInterpreter {
         return true;
     }
 
+    /** Coerce a method argument to the expected Java parameter type. */
+    private static Object coerceArg(Object arg, Class<?> paramType) {
+        if (arg == null) return null;
+        if (paramType.isInstance(arg)) return arg;
+        if (arg instanceof Number n) {
+            if (paramType == int.class || paramType == Integer.class)
+                return n.intValue();
+            if (paramType == long.class || paramType == Long.class)
+                return n.longValue();
+            if (paramType == double.class || paramType == Double.class)
+                return n.doubleValue();
+            if (paramType == float.class || paramType == Float.class)
+                return n.floatValue();
+            if (paramType == short.class || paramType == Short.class)
+                return n.shortValue();
+            if (paramType == byte.class || paramType == Byte.class)
+                return n.byteValue();
+        }
+        return arg;
+    }
+
     /** Check if a runtime value matches the expected primitive type ID. */
     private static boolean checkType(Object val, int typeId) {
         if (val == null) return false;
@@ -740,8 +767,10 @@ public class IRInterpreter {
     private Object loadField(Object base, String fieldName) {
         if (base == null) throw new NullPointerException("Cannot read field '" + fieldName + "' from null");
         try {
-            java.lang.reflect.Field f = base.getClass().getField(fieldName);
-            return f.get(base);
+            Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
+            java.lang.reflect.Field f = cls.getField(fieldName);
+            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
+            return f.get(target);
         } catch (NoSuchFieldException e) {
             throw new RuntimeException("Field not found: " + fieldName + " on " + base.getClass().getName());
         } catch (IllegalAccessException e) {

@@ -152,8 +152,10 @@ public final class Runtime {
         if (base == null)
             throw new NullPointerException("Cannot read field '" + name + "' from null");
         try {
-            java.lang.reflect.Field f = base.getClass().getField(name);
-            return f.get(base);
+            Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
+            java.lang.reflect.Field f = cls.getField(name);
+            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
+            return f.get(target);
         } catch (NoSuchFieldException e) {
             throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());
         } catch (IllegalAccessException e) {
@@ -165,8 +167,10 @@ public final class Runtime {
         if (base == null)
             throw new NullPointerException("Cannot write field '" + name + "' to null");
         try {
-            java.lang.reflect.Field f = base.getClass().getField(name);
-            f.set(base, value);
+            Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
+            java.lang.reflect.Field f = cls.getField(name);
+            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
+            f.set(target, value);
             return value;
         } catch (NoSuchFieldException e) {
             throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());

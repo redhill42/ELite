@@ -255,6 +255,9 @@ public class IRBuilder {
         if (type instanceof org.operamasks.el.types.ClassType ct) {
             return ct.javaClass;
         }
+        if (type instanceof org.operamasks.el.types.PrimitiveType pt) {
+            return pt.javaClass;
+        }
         return null;
     }
 
