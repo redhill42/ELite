@@ -86,7 +86,7 @@ public class BeanPropertyELResolver extends ELResolver
             BeanProperty bp = getBeanProperty(base.getClass(), property);
             if (bp != null) {
                 if (bp.getReadMethod() == null) {
-                    throw new PropertyNotFoundException();
+                    throw new PropertyNotFoundException("Property not found: " + property);
                 } else {
                     context.setPropertyResolved(true);
                     return bp.getType();
@@ -120,7 +120,7 @@ public class BeanPropertyELResolver extends ELResolver
             }
         }
 
-        throw new PropertyNotFoundException();
+        throw new PropertyNotFoundException("Property not found");
     }
 
     public Object getValue(ELContext context, Object base, Object property) {
@@ -158,7 +158,7 @@ public class BeanPropertyELResolver extends ELResolver
             BeanProperty bp = getBeanProperty(base.getClass(), property);
             if (bp != null) {
                 if (bp.getReadMethod() == null) {
-                    throw new PropertyNotFoundException();
+                    throw new PropertyNotFoundException("Property not found: " + property);
                 } else {
                     Object value = getPropertyValue(bp.getReadMethod(), base);
                     context.setPropertyResolved(true);
@@ -195,7 +195,7 @@ public class BeanPropertyELResolver extends ELResolver
             }
         }
 
-        throw new PropertyNotFoundException();
+        throw new PropertyNotFoundException("Property '" + property + "' not found");
     }
 
     public void setValue(ELContext context, Object base, Object property, Object value) {
@@ -271,7 +271,7 @@ public class BeanPropertyELResolver extends ELResolver
             }
         }
 
-        throw new PropertyNotFoundException();
+        throw new PropertyNotFoundException("Property not found");
     }
 
     public boolean isReadOnly(ELContext context, Object base, Object property) {
@@ -332,7 +332,7 @@ public class BeanPropertyELResolver extends ELResolver
             }
         }
 
-        throw new PropertyNotFoundException();
+        throw new PropertyNotFoundException("Property not found");
     }
 
     public Iterator<FeatureDescriptor> getFeatureDescriptors(ELContext context, Object base) {
