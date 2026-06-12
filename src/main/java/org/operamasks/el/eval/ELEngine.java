@@ -504,6 +504,18 @@ public final class ELEngine
             throw new EvaluationException(elctx, new NullPointerException());
         } else if (target instanceof Closure) {
             return ((Closure)target).invoke(elctx, args);
+        } else if (target instanceof org.operamasks.el.ir.IRFunction irFn) {
+            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, null)
+                .execute(getArgValues(elctx, args));
+        } else if (target instanceof org.operamasks.el.ir.IRClosure closure) {
+            org.operamasks.el.ir.IRFunction irFn = closure.getFunction();
+            int paramCount = irFn.paramCount();
+            int captureCount = irFn.captureCount();
+            Object[] expandedArgs = new Object[paramCount + captureCount];
+            Object[] callArgs = getArgValues(elctx, args);
+            System.arraycopy(callArgs, 0, expandedArgs, 0, Math.min(callArgs.length, paramCount));
+            System.arraycopy(closure.getCaptured(), 0, expandedArgs, paramCount, captureCount);
+            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, null).execute(expandedArgs);
         } else if (target instanceof Class) {
             return invokeClass(elctx, (Class)target, args);
         } else if (target instanceof ClosureObject) {

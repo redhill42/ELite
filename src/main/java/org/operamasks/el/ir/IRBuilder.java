@@ -301,6 +301,12 @@ public class IRBuilder {
 
     // ── Apply ──
     private void buildApply(ELNode.APPLY node) {
+        // List comprehensions [expr | x <- list] and XFORM — fall back to AST
+        if (node.right instanceof ELNode.FOREACH || node.right instanceof ELNode.FOR
+            || node.right instanceof ELNode.XFORM) {
+            buildTrampoline(node);
+            return;
+        }
         // Determine if this will use direct call or TCO (avoids pushing target)
         boolean isTail = inTailPosition && lambdaName != null
             && node.right instanceof ELNode.IDENT
@@ -354,9 +360,14 @@ public class IRBuilder {
         }
         // Fallback: dynamic invoke. Build target first, then args,
         // so stack is [target, arg0, ..., argN].
-        // For 0-arg ACCESS (e.g. .size()), the ACCESS is a property load,
-        // not a callable. Just leave the result on stack.
-        if (node.args.length == 0 && node.right instanceof ELNode.ACCESS) {
+        // For unresolved ACCESS with args (e.g. .map(fn) on dynamic type),
+        // the ACCESS compiles as LOAD_PROPERTY which can't find methods.
+        // Fall back to AST which resolves methods at runtime.
+        if (node.right instanceof ELNode.ACCESS && node.args.length > 0) {
+            buildTrampoline(node);
+        } else if (node.args.length == 0 && node.right instanceof ELNode.ACCESS) {
+            // For 0-arg ACCESS (e.g. .size()), the ACCESS is a property load,
+            // not a callable. Just leave the result on stack.
             build(node.right);
         } else {
             boolean prev = inTailPosition;

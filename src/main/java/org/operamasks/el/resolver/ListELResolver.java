@@ -67,13 +67,13 @@ public class ListELResolver extends ELResolver
             if ("length".equals(property) || "size".equals(property)) {
                 result = list.size();
                 context.setPropertyResolved(true);
-            } else if ("first".equals(property)) {
+            } else if ("first".equals(property) || "head".equals(property)) {
                 result = list.isEmpty() ? null : list.get(0);
                 context.setPropertyResolved(true);
             } else if ("last".equals(property)) {
                 result = list.isEmpty() ? null : list.get(list.size()-1);
                 context.setPropertyResolved(true);
-            } else if ("rest".equals(property)) {
+            } else if ("rest".equals(property) || "tail".equals(property)) {
                 result = list.isEmpty() ? list : list.subList(1, list.size());
                 context.setPropertyResolved(true);
             }
@@ -111,9 +111,9 @@ public class ListELResolver extends ELResolver
         List list = (List)base;
 
         if (property instanceof String) {
-            if ("length".equals(property) || "size".equals(property) || "rest".equals(property)) {
+            if ("length".equals(property) || "size".equals(property) || "rest".equals(property) || "tail".equals(property)) {
                 throw new PropertyNotWritableException(property.toString());
-            } else if ("first".equals(property)) {
+            } else if ("first".equals(property) || "head".equals(property)) {
                 set(list, 0, value);
                 context.setPropertyResolved(true);
             } else if ("last".equals(property)) {
