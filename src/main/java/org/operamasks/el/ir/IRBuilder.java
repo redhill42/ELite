@@ -354,12 +354,18 @@ public class IRBuilder {
         }
         // Fallback: dynamic invoke. Build target first, then args,
         // so stack is [target, arg0, ..., argN].
-        boolean prev = inTailPosition;
-        inTailPosition = false;
-        build(node.right);
-        for (ELNode arg : node.args) build(arg);
-        inTailPosition = prev;
-        current.emitInvokeDyn(node.args.length);
+        // For 0-arg ACCESS (e.g. .size()), the ACCESS is a property load,
+        // not a callable. Just leave the result on stack.
+        if (node.args.length == 0 && node.right instanceof ELNode.ACCESS) {
+            build(node.right);
+        } else {
+            boolean prev = inTailPosition;
+            inTailPosition = false;
+            build(node.right);
+            for (ELNode arg : node.args) build(arg);
+            inTailPosition = prev;
+            current.emitInvokeDyn(node.args.length);
+        }
     }
 
     // ── Literals: list, map, tuple, range ──
