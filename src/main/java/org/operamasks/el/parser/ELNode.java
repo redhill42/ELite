@@ -1428,23 +1428,8 @@ public abstract class ELNode implements Serializable
                 return ((MethodResolvable)base).invoke(elctx, name, args);
             }
 
-            // Invoke on global closure object
-            if (!(base instanceof ClosureObject)) {
-                Object target = resolveGlobalMethod(elctx, name);
-                if (target != null) {
-                    try {
-                        Closure[] callArgs = new Closure[args.length + 1];
-                        callArgs[0] = new LiteralClosure(base);
-                        System.arraycopy(args, 0, callArgs, 1, args.length);
-                        return ELEngine.invokeTarget(elctx, target, callArgs);
-                    } catch (MethodNotFoundException ex) {
-                        throw methodNotFound(elctx, target, name, ex);
-                    } catch (RuntimeException ex) {
-                        throw runtimeError(elctx, ex);
-                    }
-                }
-            }
-
+            // Method not found — no longer falls back to global functions.
+            // Use pipe syntax (val -> func) for global function dispatch.
             throw methodNotFound(elctx, base, name, null);
         }
 

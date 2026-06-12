@@ -394,7 +394,6 @@ class ELIntegrationTest extends EliteTestBase {
     @Test
     void helloWorldStyles() {
         exec("print(\"Hello, World!\")");
-        exec("\"Hello, World!\".print()");
         exec("\"Hello, World!\" -> print");
     }
 }

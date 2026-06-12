@@ -102,8 +102,7 @@ inv.invokeFunction("add", 10, 20);           // 30L
 System.out.println("Hello, World!")    // Java interop
 stdout << "Hello, World!" << endl      // C++ stream style
 print("Hello, World!")                 // functional
-"Hello, World!".print()                // method chaining
-"Hello, World!" -> print               // message-passing
+"Hello, World!" -> print               // pipe / message-passing
 ```
 
 ## License
