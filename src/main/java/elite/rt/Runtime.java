@@ -194,8 +194,20 @@ public final class Runtime {
 
     // ── Closures ──
 
+    private static final ThreadLocal<Object[]> funcPool =
+        ThreadLocal.withInitial(() -> new Object[0]);
+
+    /** Register constant pool for closure creation via funcIdx. */
+    public static void setFuncPool(Object[] pool) { funcPool.set(pool); }
+    public static void clearFuncPool() { funcPool.remove(); }
+
     public static IRClosure createClosure(IRFunction fn, Object[] captured) {
         return new IRClosure(fn, captured);
+    }
+
+    /** Create closure by pool index (for bytecode — LDC can't embed IRFunction). */
+    public static IRClosure createClosureById(int funcIdx, Object[] captured) {
+        return new IRClosure((IRFunction) funcPool.get()[funcIdx], captured);
     }
 
     // ── Locals / IncDec ──

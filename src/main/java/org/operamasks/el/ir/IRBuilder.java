@@ -473,6 +473,10 @@ public class IRBuilder {
     // ── Binary arithmetic ──
     private void buildBinaryOp(ELNode node) {
         if (!(node instanceof ELNode.Binary bin)) { buildTrampoline(node); return; }
+        // User-defined class instances may have custom operators — trampoline to AST
+        if (isNonNumericClassType(bin.left) || isNonNumericClassType(bin.right)) {
+            buildTrampoline(node); return;
+        }
         int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
         boolean prev = inTailPosition;
         inTailPosition = false; // sub-expressions of binary ops are NOT in tail position
@@ -480,6 +484,12 @@ public class IRBuilder {
         inTailPosition = prev;
         if (l >= 0 && r >= 0) emitTypedOp(node.op, widerType(l, r));
         else emitDynamicOp(node.op);
+    }
+    private static boolean isNonNumericClassType(ELNode node) {
+        if (node == null || node.inferredType == null) return false;
+        return node.inferredType instanceof org.operamasks.el.types.ClassType ct
+            && !Number.class.isAssignableFrom(ct.javaClass)
+            && !String.class.isAssignableFrom(ct.javaClass);
     }
     /** Expand ++x / x++ / --x / x-- for local variables. */
     private void buildIncDec(ELNode node) {
@@ -911,12 +921,9 @@ public class IRBuilder {
         int poolIdx = putConstant(fn);
         registerFunction(node.name, poolIdx);
 
-        // Emit: push captured values, then CLOSURE (or PUSH_CONST if no captures)
-        if (nested.capturedVars.isEmpty()) {
-            int kind = K_NONE;
-            if (poolIdx < 0x10000) current.emit1(PUSH_CONST, kind, poolIdx);
-            else current.emit2(PUSH_CONST, kind, poolIdx >>> 16, poolIdx & 0xFFFF);
-        } else {
+        // Emit CLOSURE opcode (even for 0-capture lambdas — PUSH_CONST
+        // can't embed IRFunction via LDC in bytecode mode).
+        if (!nested.capturedVars.isEmpty()) {
             // Push outer values of captured variables onto stack
             for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
                 Integer outerIdx = varIndex.get(e.getKey());
@@ -924,8 +931,8 @@ public class IRBuilder {
                     current.emitPushVar(outerIdx, T_INT);
                 }
             }
-            current.emitClosure(poolIdx, nested.capturedVars.size());
         }
+        current.emitClosure(poolIdx, nested.capturedVars.size());
     }
 
     // ── Trampoline ──

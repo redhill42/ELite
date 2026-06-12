@@ -86,6 +86,8 @@ public class IRBytecodeCompiler {
     public static CompiledFunction compileWithTypes(IRFunction fn, int[] argTypes) {
         String name = "ELiteCompiled$" + CLASS_COUNTER.incrementAndGet();
         String desc = typeDescriptor(argTypes);
+        // Register IRFunction constant pool so CLOSURE bytecode can look up via funcIdx
+        elite.rt.Runtime.setFuncPool(fn.constantPool());
         byte[] bc = new IRBytecodeCompiler(fn, name, desc, argTypes).compileBytecode();
         try {
             Class<?> c = LOADER.define(name, bc);
@@ -462,12 +464,12 @@ public class IRBytecodeCompiler {
                     mv.visitInsn(A_ICONST_0);
                     mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
                 }
-                Object fnObj = fn.constantPool()[funcIdx];
-                mv.visitLdcInsn(fnObj);
-                mv.visitInsn(A_SWAP);
+                // Push funcIdx as int (not IRFunction via LDC — ASM doesn't support it)
+                emitIntConst(funcIdx);
+                mv.visitInsn(A_SWAP);  // [capturedArray, int] → [int, capturedArray]
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                    "createClosure",
-                    "(Lorg/operamasks/el/ir/IRFunction;[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
+                    "createClosureById",
+                    "(I[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
             }
 
             case INVOKE_METHOD -> {
