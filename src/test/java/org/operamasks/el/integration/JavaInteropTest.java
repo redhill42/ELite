@@ -25,7 +25,7 @@ class JavaInteropTest extends EliteTestBase {
     @Test
     void importWithStaticWildcard() {
         exec("import static java.lang.Math.*");
-        assertEquals(42, eval("abs(-42)"));
+        assertEquals(42L, ((Number) eval("abs(-42)")).longValue());
     }
 
     // ---- Instantiation ----

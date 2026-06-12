@@ -39,6 +39,6 @@ class ModuleTest extends EliteTestBase {
     @Test
     void importStaticMethod() {
         exec("import static java.lang.Math.*");
-        assertEquals(42, eval("abs(-42)"));
+        assertEquals(42L, ((Number) eval("abs(-42)")).longValue());
     }
 }

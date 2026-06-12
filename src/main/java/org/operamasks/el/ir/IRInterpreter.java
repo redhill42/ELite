@@ -22,6 +22,8 @@ import java.math.BigInteger;
 
 import org.operamasks.el.eval.*;
 import org.operamasks.el.parser.ELNode;
+import org.operamasks.el.parser.Position;
+import org.operamasks.el.parser.Token;
 import elite.lang.Rational;
 import elite.lang.Decimal;
 
@@ -579,6 +581,11 @@ public class IRInterpreter {
     private Object dynamicOp(int irOpcode) {
         Object rhs = pop();
         Object lhs = pop();
+        // For non-Number operands (e.g. ClosureObject from user-defined classes),
+        // delegate to AST operator resolution via trampoline node.
+        if (needsTrampolineDispatch(lhs, rhs)) {
+            return trampolineBinaryOp(irOpcode, lhs, rhs);
+        }
         return switch (irOpcode) {
             case DYNADD -> dynamicAdd(lhs, rhs);
             case DYNSUB -> dynamicSub(lhs, rhs);
@@ -593,6 +600,26 @@ public class IRInterpreter {
             case DYNLE  -> dynamicLe(lhs, rhs);
             default -> dynamicAdd(lhs, rhs); // fallback
         };
+    }
+    private static boolean needsTrampolineDispatch(Object lhs, Object rhs) {
+        return (lhs instanceof org.operamasks.el.eval.closure.ClosureObject
+             || rhs instanceof org.operamasks.el.eval.closure.ClosureObject);
+    }
+    private Object trampolineBinaryOp(int irOpcode, Object lhs, Object rhs) {
+        int tokenOp = switch (irOpcode) {
+            case DYNADD -> Token.ADD; case DYNSUB -> Token.SUB;
+            case DYNMUL -> Token.MUL; case DYNDIV -> Token.DIV;
+            case DYNREM -> Token.REM;
+            case DYNPOW -> Token.POW; case DYNCAT -> Token.CAT;
+            case DYNEQ  -> Token.EQ;  case DYNLT  -> Token.LT;
+            case DYNLE  -> Token.LE;
+            default -> Token.ADD;
+        };
+        int pos = org.operamasks.el.parser.Position.make(0, 0);
+        var leftC  = new org.operamasks.el.parser.ELNode.CONST(pos, lhs);
+        var rightC = new org.operamasks.el.parser.ELNode.CONST(pos, rhs);
+        var infix = new org.operamasks.el.parser.ELNode.INFIX(pos, Token.opNames[tokenOp], 100, leftC, rightC);
+        return infix.getValue(evalContext);
     }
 
     // Simplified dynamic dispatch — mirrors ELNode.Arithmetic.evaluate()
