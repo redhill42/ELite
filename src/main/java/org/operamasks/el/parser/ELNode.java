@@ -4925,12 +4925,7 @@ public abstract class ELNode implements Serializable
                     if (result == NO_RESULT) {
                         throw ex;
                     }
-                } catch (RuntimeException ex) {
-                    result = handle(context, f, ex);
-                    if (result == NO_RESULT) {
-                        throw ex;
-                    }
-                } catch (Error ex) {
+                } catch (RuntimeException | Error ex) {
                     result = handle(context, f, ex);
                     if (result == NO_RESULT) {
                         throw ex;

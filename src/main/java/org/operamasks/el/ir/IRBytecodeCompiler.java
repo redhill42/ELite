@@ -827,41 +827,40 @@ public class IRBytecodeCompiler {
         // Stack: [Object(value)]
     }
 
-    /** Emit a direct invokevirtual/interface call for a method with argc args.
-     *  Stack in: [argN, ..., arg2, arg1, Object(base)] — last arg on top.
+    /** Emit a direct invoke for a method with argc args.
+     *  Stack in (instance): [argN, ..., arg1, Object(base)].
+     *  Stack in (static):   [argN, ..., arg1] — no receiver.
      *  Stack out: [Object(result)]. */
     private void emitDirectMethod(java.lang.reflect.Method m, int argc) {
         Class<?> ownerClass = m.getDeclaringClass();
         String owner = Type.getInternalName(ownerClass);
         String name = m.getName();
         String desc = Type.getMethodDescriptor(m);
+        boolean isStatic = java.lang.reflect.Modifier.isStatic(m.getModifiers());
         boolean isInterface = ownerClass.isInterface();
         Class<?>[] paramTypes = m.getParameterTypes();
         Class<?> returnType = m.getReturnType();
-        int invokeOp = isInterface ? A_INVOKEINTERFACE : A_INVOKEVIRTUAL;
 
-        // Save args from top to bottom: argN → slot argc, ..., arg1 → slot 1
+        // Save args from top to bottom
         for (int i = argc; i >= 1; i--) {
-            mv.visitVarInsn(A_ASTORE, S_TMP + i - 1);  // save arg[i-1]
+            mv.visitVarInsn(A_ASTORE, S_TMP + i - 1);
         }
-        // Stack: [Object(base)]
 
-        mv.visitTypeInsn(A_CHECKCAST, owner);
-        // Stack: [Owner(base)]
+        if (!isStatic) {
+            mv.visitTypeInsn(A_CHECKCAST, owner);
+        }
 
-        // Load args in order: arg1, arg2, ..., argN, narrow/unbox each
+        // Load args in order, narrow/unbox each
         for (int i = 0; i < argc; i++) {
-            mv.visitVarInsn(A_ALOAD, S_TMP + i);  // load arg[i]
-            // Stack: [Owner(base), ...prev-args..., Object(arg[i])]
+            mv.visitVarInsn(A_ALOAD, S_TMP + i);
             emitUnboxIfPrimitive(paramTypes[i]);
-            // Stack: [Owner(base), ...prev-args..., ParamType(arg[i])]
         }
-        // Stack: [Owner(base), T0(arg1), ..., TN(argN)] — ready for invoke
 
+        int invokeOp = isStatic ? A_INVOKESTATIC
+                     : isInterface ? A_INVOKEINTERFACE
+                     : A_INVOKEVIRTUAL;
         mv.visitMethodInsn(invokeOp, owner, name, desc, isInterface);
-        // Stack: [result] — may be primitive
         emitBoxIfPrimitive(returnType);
-        // Stack: [Object(result)]
     }
 
     /** Box a primitive return value on the stack into its wrapper type. */
@@ -891,26 +890,26 @@ public class IRBytecodeCompiler {
     /** Emit unbox + checkcast for a method parameter: [Object] → [primitive]. */
     private void emitUnboxIfPrimitive(Class<?> type) {
         if (type == int.class) {
-            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Integer");
-            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
         } else if (type == long.class) {
-            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Long");
-            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Long", "longValue", "()J", false);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
         } else if (type == double.class) {
-            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Double");
-            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Double", "doubleValue", "()D", false);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
         } else if (type == float.class) {
-            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Float");
-            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Float", "floatValue", "()F", false);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
         } else if (type == boolean.class) {
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Boolean");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
         } else if (type == short.class) {
-            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Short");
-            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Short", "shortValue", "()S", false);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "shortValue", "()S", false);
         } else if (type == byte.class) {
-            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Byte");
-            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Byte", "byteValue", "()B", false);
+            mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "byteValue", "()B", false);
         } else if (type == char.class) {
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Character");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);

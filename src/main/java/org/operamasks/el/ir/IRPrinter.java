@@ -75,13 +75,9 @@ public final class IRPrinter {
 
         if (!exps.isEmpty()) {
             sb.append("; combined\n");
-            try {
-                IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
-                sb.append(formatIR(fn));
-                sb.append(dumpBytecode(fn));
-            } catch (Exception e) {
-                sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");
-            }
+            IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
+            sb.append(formatIR(fn));
+            sb.append(dumpBytecode(fn));
         }
 
         return sb.toString();
@@ -96,8 +92,9 @@ public final class IRPrinter {
         try {
             IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
             return cf.bytecodeAsString();
-        } catch (Exception e) {
-            return "[bytecode compile failed: " + e.getMessage() + "]";
+        } catch (CompilationError e) {
+            // Cannot compiler to byte code, silently return empty string
+            return "";
         }
     }
 

@@ -69,8 +69,13 @@ public class InstructionView {
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
 
-    /** Get the pool index from a PUSH_CONST instruction. */
+    /** Get the pool index from a PUSH_CONST instruction.
+     *  For K_FN kind (function references), the pool index is always
+     *  stored in the 16-bit payload field, not in the operand word. */
     public int constPoolIndex() {
+        if (IRFormat.kind(code[offset]) == IRFormat.K_FN) {
+            return IRFormat.payload(code[offset]);
+        }
         return IRFormat.opCount(code[offset]) == 0
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
