@@ -21,8 +21,7 @@ import java.util.List;
 /**
  * The sequence interface.
  */
-public interface Seq extends List
-{
+public interface Seq extends List {
     /**
      * Get the data element.
      */

@@ -699,20 +699,6 @@ public class IRBytecodeCompiler {
         }
     }
 
-    // Thread-local state to avoid shared mutable state across tests
-    private static final ThreadLocal<javax.el.ELContext> localELCtx =
-        ThreadLocal.withInitial(() -> org.operamasks.el.eval.ELEngine.createELContext());
-
-    // Optional caller ELContext (set by ELProgram; used for global variable access)
-    private static final ThreadLocal<javax.el.ELContext> callerELCtx = new ThreadLocal<>();
-
-    /** Set the caller's ELContext for global variable resolution.
-     *  @deprecated ELContext is now passed directly to {@link CompiledFunction#execute}. */
-    @Deprecated
-    public static void setCallerELCtx(javax.el.ELContext ctx) {
-        callerELCtx.set(ctx);
-    }
-
     private static final ThreadLocal<java.util.Map<Integer, IRFunction>> funcRegistry =
         ThreadLocal.withInitial(java.util.HashMap::new);
     private static final ThreadLocal<AtomicInteger> funcIdCounter =
@@ -720,12 +706,9 @@ public class IRBytecodeCompiler {
 
     /** Clear all thread-local state. Call before each program execution. */
     public static void resetState() {
-        localELCtx.remove();
         funcRegistry.remove();
         funcIdCounter.remove();
     }
-
-    private static javax.el.ELContext elctx() { return localELCtx.get(); }
     private static java.util.Map<Integer, IRFunction> funcRegistry() { return funcRegistry.get(); }
 
     // registerFunction removed — use compileOrGet + calleeCache instead
@@ -772,22 +755,9 @@ public class IRBytecodeCompiler {
         mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
-    private void emitCall3(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-            method, "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
-    }
     private void emitCall1Obj(String method) {
         mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/Object;)Ljava/lang/Object;", false);
-    }
-    private void emitCall1(String method, InstructionView v) {
-        // Stack has the value to store. For storeGlobal: pop value.
-        // For pushGlobal: just call helper with name from pool.
-        int idx = v.constPoolIndex();
-        String name = (String) fn.constantPool()[idx];
-        mv.visitLdcInsn(name);
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-            method, "(Ljava/lang/String;)Ljava/lang/Object;", false);
     }
     private void emitCallN(String method, int count) {
         // Pop count values from stack, pack into Object[], call helper
@@ -950,181 +920,6 @@ public class IRBytecodeCompiler {
         }
     }
 
-    // ── Property, global, collection helpers ──
-
-    public static Object storeProp(Object base, Object key, Object value) {
-        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-        c.getELResolver().setValue(c, base, key, value);
-        return value;
-    }
-
-    public static Object intPow(Object x, Object y) { return (long)Math.pow(((Number)x).intValue(), ((Number)y).intValue()); }
-    public static Object longPow(Object x, Object y) { return (long)Math.pow(((Number)x).longValue(), ((Number)y).longValue()); }
-    public static Object doublePow(Object x, Object y) { return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue()); }
-
-    /** Trampoline: evaluate an ELNode via AST interpreter (for try/catch/throw etc.). */
-    public static Object trampoline(Object nodeObj) {
-        org.operamasks.el.parser.ELNode node = (org.operamasks.el.parser.ELNode) nodeObj;
-        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-        return node.getValue(new org.operamasks.el.eval.EvaluationContext(c));
-    }
-
-    public static Object loadProp(Object base, Object key) {
-        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-        c.setPropertyResolved(false);
-        Object r = c.getELResolver().getValue(c, base, key);
-        if (!c.isPropertyResolved()) throw new RuntimeException("Property not found: " + key);
-        return r;
-    }
-    public static Object pushGlobal(String name) {
-        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-        javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
-        if (ve != null) return ve.getValue(c);
-        c.setPropertyResolved(false);
-        Object r = c.getELResolver().getValue(c, null, name);
-        if (c.isPropertyResolved()) return r;
-        throw new RuntimeException("Undefined: " + name);
-    }
-    public static Object storeGlobal(String name, Object value) {
-        javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-        c.getVariableMapper().setVariable(name,
-            new org.operamasks.el.eval.closure.LiteralClosure(value));
-        return value;
-    }
-    public static Object newList(Object[] elems) { return java.util.Arrays.asList(elems); }
-    public static Object newMap(Object[] kvs) {
-        java.util.LinkedHashMap<Object,Object> m = new java.util.LinkedHashMap<>();
-        for (int i = 0; i < kvs.length; i += 2) m.put(kvs[i], kvs[i+1]);
-        return m;
-    }
-    public static Object newTuple(Object[] elems) { return elems; }
-    public static Object newRange(Object begin, Object end) {
-        return org.operamasks.el.eval.Ranges.createRange(
-            ((Number)begin).longValue(), ((Number)end).longValue(), 1);
-    }
-    public static Object contains(Object coll, Object elem) {
-        if (coll instanceof java.util.Collection<?> c) return c.contains(elem);
-        if (coll instanceof Object[] a) {
-            for (Object o : a) if (java.util.Objects.equals(o, elem)) return true;
-            return false;
-        }
-        if (coll instanceof elite.lang.Seq seq) {
-            while (!seq.isEmpty()) {
-                if (java.util.Objects.equals(seq.head(), elem)) return true;
-                seq = seq.tail();
-            }
-        }
-        return false;
-    }
-    public static Object getIter(Object coll) { return IRInterpreter.getIterator(coll); }
-    public static Object iterNext(Object it) {
-        java.util.Iterator<?> iter = (java.util.Iterator<?>) it;
-        return iter.hasNext() ? iter.next() : null;
-    }
-    public static Object bitAnd(Object a, Object b) { return ((Number)a).longValue() & ((Number)b).longValue(); }
-    public static Object bitOr(Object a, Object b)  { return ((Number)a).longValue() | ((Number)b).longValue(); }
-    public static Object bitXor(Object a, Object b) { return ((Number)a).longValue() ^ ((Number)b).longValue(); }
-    public static Object bitShl(Object a, Object b) { return ((Number)a).longValue() << ((Number)b).longValue(); }
-    public static Object bitShr(Object a, Object b) { return ((Number)a).longValue() >> ((Number)b).longValue(); }
-    public static Object bitUshr(Object a, Object b){ return ((Number)a).longValue() >>> ((Number)b).longValue(); }
-    public static Object bitNot(Object a) { return ~((Number)a).longValue(); }
-
-    /** Increment local variable by 1, return new value. */
-    public static Object incLocal(Object[] locals, int idx) {
-        Object val = locals[idx];
-        if (val instanceof Long l) val = l + 1;
-        else if (val instanceof Integer i) val = i + 1;
-        else if (val instanceof Double d) val = d + 1.0;
-        else val = ((Number) val).longValue() + 1;
-        locals[idx] = val;
-        return val;
-    }
-
-    /** Decrement local variable by 1, return new value. */
-    public static Object decLocal(Object[] locals, int idx) {
-        Object val = locals[idx];
-        if (val instanceof Long l) val = l - 1;
-        else if (val instanceof Integer i) val = i - 1;
-        else if (val instanceof Double d) val = d - 1.0;
-        else val = ((Number) val).longValue() - 1;
-        locals[idx] = val;
-        return val;
-    }
-
-    /** Invoke a getter Method on a base object. */
-    public static Object invokeGetter(Object base, java.lang.reflect.Method m) {
-        try { return m.invoke(base); }
-        catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
-    }
-
-    /** Invoke a method via reflection — args = (argsArray, method), argsArray[0] = base. */
-    public static Object invokeMethodBC(Object[] args, java.lang.reflect.Method m) {
-        if (args == null || args.length == 0) throw new RuntimeException("Method call with no base");
-        Object base = args[0];
-        Object[] methodArgs = new Object[args.length - 1];
-        System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
-        try { return m.invoke(base, methodArgs); }
-        catch (Exception e) { throw new RuntimeException("method invoke failed", e); }
-    }
-
-    /** Invoke a setter — args are (value, base, method) from bytecode stack order. */
-    public static Object invokeSetterBC(Object value, Object base, java.lang.reflect.Method m) {
-        try { m.invoke(base, value); return value; }
-        catch (Exception e) { throw new RuntimeException("setter invoke failed", e); }
-    }
-
-    /** Direct field load for known Java types. */
-    public static Object loadField(Object base, String name) {
-        if (base == null) throw new NullPointerException("Cannot read field '" + name + "' from null");
-        try {
-            java.lang.reflect.Field f = base.getClass().getField(name);
-            return f.get(base);
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException("Cannot access field: " + name, e);
-        }
-    }
-
-    /** Direct field store — args are in bytecode stack order (value, base, name). */
-    public static Object storeFieldBC(Object value, Object base, String name) {
-        if (base == null) throw new NullPointerException("Cannot write field '" + name + "' to null");
-        try {
-            java.lang.reflect.Field f = base.getClass().getField(name);
-            f.set(base, value);
-            return value;
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException("Cannot access field: " + name, e);
-        }
-    }
-
-    /** Create a closure from IRFunction + captured values. */
-    public static IRClosure createClosure(IRFunction fn, Object[] captured) {
-        return new IRClosure(fn, captured);
-    }
-
-    /** Dynamic call: delegate to ELEngine.invokeTarget. */
-    public static Object invokeDyn(Object target, Object[] args) {
-        // Handle IRFunction target (from inline lambda): execute via IR interpreter
-        if (target instanceof IRFunction irFn) {
-            javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-            return new IRInterpreter(c, irFn, null).execute(args);
-        }
-        // Handle IRClosure target: expand args with captured values
-        if (target instanceof IRClosure closure) {
-            javax.el.ELContext c = callerELCtx.get() != null ? callerELCtx.get() : elctx();
-            IRFunction irFn = closure.function;
-            Object[] expandedArgs = new Object[irFn.paramCount() + irFn.captureCount()];
-            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length, irFn.paramCount()));
-            System.arraycopy(closure.captured, 0, expandedArgs, irFn.paramCount(), irFn.captureCount());
-            return new IRInterpreter(c, irFn, null).execute(expandedArgs);
-        }
-        elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
-        return org.operamasks.el.eval.ELEngine.invokeTarget(elctx(), target, closures);
-    }
-
     /** Unbox top-of-stack Object to primitive based on type. */
     private void compileUnbox(int typeId) {
         switch (typeId) {
@@ -1240,89 +1035,6 @@ public class IRBytecodeCompiler {
             method, desc, false);
     }
 
-    // ── Dynamic operation helpers (called from compiled bytecode) ──
-
-    public static Object dynAdd(Object x, Object y) {
-        return ((Number)x).doubleValue() + ((Number)y).doubleValue();
-    }
-    public static Object dynSub(Object x, Object y) {
-        return ((Number)x).doubleValue() - ((Number)y).doubleValue();
-    }
-    public static Object dynMul(Object x, Object y) {
-        return ((Number)x).doubleValue() * ((Number)y).doubleValue();
-    }
-    public static Object dynDiv(Object x, Object y) {
-        if (x instanceof Long xl && y instanceof Long yl) {
-            if (yl == 0) throw new ArithmeticException("/ by zero");
-            return (xl % yl == 0) ? xl / yl : (double)xl / (double)yl;
-        }
-        if (x instanceof Integer xi && y instanceof Integer yi) {
-            if (yi == 0) throw new ArithmeticException("/ by zero");
-            return (xi % yi == 0) ? xi / yi : (double)xi / (double)yi;
-        }
-        return ((Number)x).doubleValue() / ((Number)y).doubleValue();
-    }
-    public static Object dynRem(Object x, Object y) {
-        return ((Number)x).doubleValue() % ((Number)y).doubleValue();
-    }
-    public static Object dynNeg(Object x) {
-        return -((Number)x).doubleValue();
-    }
-    public static Object dynPow(Object x, Object y) {
-        return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
-    }
-    public static Object dynCat(Object x, Object y) {
-        return String.valueOf(x) + String.valueOf(y);
-    }
-    public static Object dynEq(Object x, Object y) {
-        return java.util.Objects.equals(x, y);
-    }
-    @SuppressWarnings({"unchecked","rawtypes"})
-    public static Object dynLt(Object x, Object y) {
-        if (x instanceof Comparable a && y instanceof Comparable b) return a.compareTo(b) < 0;
-        return String.valueOf(x).compareTo(String.valueOf(y)) < 0;
-    }
-    @SuppressWarnings({"unchecked","rawtypes"})
-    public static Object dynLe(Object x, Object y) {
-        if (x instanceof Comparable a && y instanceof Comparable b) return a.compareTo(b) <= 0;
-        return String.valueOf(x).compareTo(String.valueOf(y)) <= 0;
-    }
-    public static Object dynIn(Object x, Object y) {
-        if (y instanceof java.util.Collection<?> c) return c.contains(x);
-        return false;
-    }
-
-    // ── Type guard helpers ──
-
-    /** Check if value matches type, throw TypeMismatchError if not. */
-    public static void guardTypeStrict(Object val, int typeId) {
-        if (!checkGuardType(val, typeId)) {
-            String expected = IRFormat.primTypeName(typeId);
-            String actual = val == null ? "null" : val.getClass().getName();
-            throw new RuntimeException(
-                "Type mismatch: expected " + expected + ", got " + actual);
-        }
-    }
-
-    /** Check if value matches type, return boolean. */
-    public static boolean guardTypeCheck(Object val, int typeId) {
-        return checkGuardType(val, typeId);
-    }
-
-    private static boolean checkGuardType(Object val, int typeId) {
-        if (val == null) return false;
-        return switch (typeId) {
-            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short
-                                   || val instanceof Byte || val instanceof Long;
-            case IRFormat.T_LONG   -> val instanceof Long || val instanceof Integer
-                                   || val instanceof Short || val instanceof Byte;
-            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float
-                                   || val instanceof Long || val instanceof Integer;
-            case IRFormat.T_BOOL   -> val instanceof Boolean;
-            case IRFormat.T_STRING -> val instanceof String;
-            default -> true;
-        };
-    }
 
     private void emitPush(InstructionView v) {
         Object val = fn.constantPool()[v.constPoolIndex()];

@@ -31,29 +31,32 @@ import org.operamasks.el.ir.IRInterpreter;
  */
 public final class Runtime {
 
-    private Runtime() {}
+    private Runtime() {
+    }
 
     // ── ELContext-dependent helpers ──
 
     public static Object pushGlobal(ELContext c, String name) {
         javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
-        if (ve != null) return ve.getValue(c);
+        if (ve != null)
+            return ve.getValue(c);
         c.setPropertyResolved(false);
         Object r = c.getELResolver().getValue(c, null, name);
-        if (c.isPropertyResolved()) return r;
+        if (c.isPropertyResolved())
+            return r;
         throw new RuntimeException("Undefined: " + name);
     }
 
     public static Object storeGlobal(ELContext c, String name, Object value) {
-        c.getVariableMapper().setVariable(name,
-            new org.operamasks.el.eval.closure.LiteralClosure(value));
+        c.getVariableMapper().setVariable(name, new org.operamasks.el.eval.closure.LiteralClosure(value));
         return value;
     }
 
     public static Object loadProp(ELContext c, Object base, Object key) {
         c.setPropertyResolved(false);
         Object r = c.getELResolver().getValue(c, base, key);
-        if (!c.isPropertyResolved()) throw new RuntimeException("Property not found: " + key);
+        if (!c.isPropertyResolved())
+            throw new RuntimeException("Property not found: " + key);
         return r;
     }
 
@@ -86,32 +89,49 @@ public final class Runtime {
 
     // ── Collections ──
 
-    public static Object newList(Object[] elems) { return java.util.Arrays.asList(elems); }
+    public static Object newList(Object[] elems) {
+        return java.util.Arrays.asList(elems);
+    }
+
     public static Object newMap(Object[] kvs) {
         java.util.LinkedHashMap<Object, Object> m = new java.util.LinkedHashMap<>();
-        for (int i = 0; i < kvs.length; i += 2) m.put(kvs[i], kvs[i + 1]);
+        for (int i = 0; i < kvs.length; i += 2)
+            m.put(kvs[i], kvs[i + 1]);
         return m;
     }
-    public static Object newTuple(Object[] elems) { return elems; }
+
+    public static Object newTuple(Object[] elems) {
+        return elems;
+    }
+
     public static Object newRange(Object begin, Object end) {
         return org.operamasks.el.eval.Ranges.createRange(
-            ((Number) begin).longValue(), ((Number) end).longValue(), 1);
+                ((Number)begin).longValue(), ((Number)end).longValue(), 1);
     }
+
     public static Object contains(Object coll, Object elem) {
-        if (coll instanceof java.util.Collection<?> c) return c.contains(elem);
+        if (coll instanceof java.util.Collection<?> c)
+            return c.contains(elem);
         if (coll instanceof Object[] a) {
-            for (Object o : a) if (java.util.Objects.equals(o, elem)) return true;
+            for (Object o : a)
+                if (java.util.Objects.equals(o, elem))
+                    return true;
             return false;
         }
         if (coll instanceof Seq seq) {
             while (!seq.isEmpty()) {
-                if (java.util.Objects.equals(seq.head(), elem)) return true;
+                if (java.util.Objects.equals(seq.head(), elem))
+                    return true;
                 seq = seq.tail();
             }
         }
         return false;
     }
-    public static Object getIter(Object coll) { return IRInterpreter.getIterator(coll); }
+
+    public static Object getIter(Object coll) {
+        return IRInterpreter.getIterator(coll);
+    }
+
     public static Object iterNext(Object it) {
         java.util.Iterator<?> iter = (java.util.Iterator<?>) it;
         return iter.hasNext() ? iter.next() : null;
@@ -120,7 +140,8 @@ public final class Runtime {
     // ── Field access ──
 
     public static Object loadField(Object base, String name) {
-        if (base == null) throw new NullPointerException("Cannot read field '" + name + "' from null");
+        if (base == null)
+            throw new NullPointerException("Cannot read field '" + name + "' from null");
         try {
             java.lang.reflect.Field f = base.getClass().getField(name);
             return f.get(base);
@@ -132,7 +153,8 @@ public final class Runtime {
     }
 
     public static Object storeFieldBC(Object value, Object base, String name) {
-        if (base == null) throw new NullPointerException("Cannot write field '" + name + "' to null");
+        if (base == null)
+            throw new NullPointerException("Cannot write field '" + name + "' to null");
         try {
             java.lang.reflect.Field f = base.getClass().getField(name);
             f.set(base, value);
@@ -154,76 +176,141 @@ public final class Runtime {
 
     public static Object incLocal(Object[] locals, int idx) {
         Object val = locals[idx];
-        if (val instanceof Long l) val = l + 1;
-        else if (val instanceof Integer i) val = i + 1;
-        else if (val instanceof Double d) val = d + 1.0;
-        else val = ((Number) val).longValue() + 1;
+        if (val instanceof Long l)
+            val = l + 1;
+        else if (val instanceof Integer i)
+            val = i + 1;
+        else if (val instanceof Double d)
+            val = d + 1.0;
+        else
+            val = ((Number) val).longValue() + 1;
         locals[idx] = val;
         return val;
     }
 
     public static Object decLocal(Object[] locals, int idx) {
         Object val = locals[idx];
-        if (val instanceof Long l) val = l - 1;
-        else if (val instanceof Integer i) val = i - 1;
-        else if (val instanceof Double d) val = d - 1.0;
-        else val = ((Number) val).longValue() - 1;
+        if (val instanceof Long l)
+            val = l - 1;
+        else if (val instanceof Integer i)
+            val = i - 1;
+        else if (val instanceof Double d)
+            val = d - 1.0;
+        else
+            val = ((Number) val).longValue() - 1;
         locals[idx] = val;
         return val;
     }
 
     // ── Math ──
 
-    public static Object intPow(Object x, Object y) { return (long) Math.pow(((Number) x).intValue(), ((Number) y).intValue()); }
-    public static Object longPow(Object x, Object y) { return (long) Math.pow(((Number) x).longValue(), ((Number) y).longValue()); }
-    public static Object doublePow(Object x, Object y) { return Math.pow(((Number) x).doubleValue(), ((Number) y).doubleValue()); }
+    public static Object intPow(Object x, Object y) {
+        return (long) Math.pow(((Number) x).intValue(), ((Number) y).intValue());
+    }
+
+    public static Object longPow(Object x, Object y) {
+        return (long) Math.pow(((Number) x).longValue(), ((Number) y).longValue());
+    }
+
+    public static Object doublePow(Object x, Object y) {
+        return Math.pow(((Number) x).doubleValue(), ((Number) y).doubleValue());
+    }
 
     // ── Bitwise ──
 
-    public static Object bitAnd(Object a, Object b) { return ((Number) a).longValue() & ((Number) b).longValue(); }
-    public static Object bitOr(Object a, Object b)  { return ((Number) a).longValue() | ((Number) b).longValue(); }
-    public static Object bitXor(Object a, Object b) { return ((Number) a).longValue() ^ ((Number) b).longValue(); }
-    public static Object bitShl(Object a, Object b) { return ((Number) a).longValue() << ((Number) b).longValue(); }
-    public static Object bitShr(Object a, Object b) { return ((Number) a).longValue() >> ((Number) b).longValue(); }
-    public static Object bitUshr(Object a, Object b){ return ((Number) a).longValue() >>> ((Number) b).longValue(); }
-    public static Object bitNot(Object a) { return ~((Number) a).longValue(); }
+    public static Object bitAnd(Object a, Object b) {
+        return ((Number) a).longValue() & ((Number) b).longValue();
+    }
+
+    public static Object bitOr(Object a, Object b) {
+        return ((Number) a).longValue() | ((Number) b).longValue();
+    }
+
+    public static Object bitXor(Object a, Object b) {
+        return ((Number) a).longValue() ^ ((Number) b).longValue();
+    }
+
+    public static Object bitShl(Object a, Object b) {
+        return ((Number) a).longValue() << ((Number) b).longValue();
+    }
+
+    public static Object bitShr(Object a, Object b) {
+        return ((Number) a).longValue() >> ((Number) b).longValue();
+    }
+
+    public static Object bitUshr(Object a, Object b) {
+        return ((Number) a).longValue() >>> ((Number) b).longValue();
+    }
+
+    public static Object bitNot(Object a) {
+        return ~((Number) a).longValue();
+    }
 
     // ── Dynamic ops ──
 
-    public static Object dynAdd(Object x, Object y) { return ((Number) x).doubleValue() + ((Number) y).doubleValue(); }
-    public static Object dynSub(Object x, Object y) { return ((Number) x).doubleValue() - ((Number) y).doubleValue(); }
-    public static Object dynMul(Object x, Object y) { return ((Number) x).doubleValue() * ((Number) y).doubleValue(); }
+    public static Object dynAdd(Object x, Object y) {
+        return ((Number) x).doubleValue() + ((Number) y).doubleValue();
+    }
+
+    public static Object dynSub(Object x, Object y) {
+        return ((Number) x).doubleValue() - ((Number) y).doubleValue();
+    }
+
+    public static Object dynMul(Object x, Object y) {
+        return ((Number) x).doubleValue() * ((Number) y).doubleValue();
+    }
+
     public static Object dynDiv(Object x, Object y) {
         if (x instanceof Long xl && y instanceof Long yl) {
-            if (yl == 0) throw new ArithmeticException("/ by zero");
+            if (yl == 0)
+                throw new ArithmeticException("/ by zero");
             return (xl % yl == 0) ? xl / yl : (double) xl / (double) yl;
         }
         if (x instanceof Integer xi && y instanceof Integer yi) {
-            if (yi == 0) throw new ArithmeticException("/ by zero");
+            if (yi == 0)
+                throw new ArithmeticException("/ by zero");
             return (xi % yi == 0) ? xi / yi : (double) xi / (double) yi;
         }
         return ((Number) x).doubleValue() / ((Number) y).doubleValue();
     }
-    public static Object dynRem(Object x, Object y) { return ((Number) x).doubleValue() % ((Number) y).doubleValue(); }
-    public static Object dynNeg(Object x) { return -((Number) x).doubleValue(); }
-    public static Object dynPow(Object x, Object y) { return Math.pow(((Number) x).doubleValue(), ((Number) y).doubleValue()); }
-    public static Object dynCat(Object x, Object y) { return String.valueOf(x) + String.valueOf(y); }
-    public static Object dynEq(Object x, Object y) { return java.util.Objects.equals(x, y); }
+
+    public static Object dynRem(Object x, Object y) {
+        return ((Number) x).doubleValue() % ((Number) y).doubleValue();
+    }
+
+    public static Object dynNeg(Object x) {
+        return -((Number) x).doubleValue();
+    }
+
+    public static Object dynPow(Object x, Object y) {
+        return Math.pow(((Number) x).doubleValue(), ((Number) y).doubleValue());
+    }
+
+    public static Object dynCat(Object x, Object y) {
+        return String.valueOf(x) + String.valueOf(y);
+    }
+
+    public static Object dynEq(Object x, Object y) {
+        return java.util.Objects.equals(x, y);
+    }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static Object dynLt(Object x, Object y) {
-        if (x instanceof Comparable a && y instanceof Comparable b) return a.compareTo(b) < 0;
+        if (x instanceof Comparable a && y instanceof Comparable b)
+            return a.compareTo(b) < 0;
         return String.valueOf(x).compareTo(String.valueOf(y)) < 0;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static Object dynLe(Object x, Object y) {
-        if (x instanceof Comparable a && y instanceof Comparable b) return a.compareTo(b) <= 0;
+        if (x instanceof Comparable a && y instanceof Comparable b)
+            return a.compareTo(b) <= 0;
         return String.valueOf(x).compareTo(String.valueOf(y)) <= 0;
     }
 
     public static Object dynIn(Object x, Object y) {
-        if (y instanceof java.util.Collection<?> c) return c.contains(x);
+        if (y instanceof java.util.Collection<?> c)
+            return c.contains(x);
         return false;
     }
 
@@ -233,21 +320,21 @@ public final class Runtime {
         if (!checkGuardType(val, typeId)) {
             String expected = IRFormat.primTypeName(typeId);
             String actual = val == null ? "null" : val.getClass().getName();
-            throw new RuntimeException(
-                "Type mismatch: expected " + expected + ", got " + actual);
+            throw new RuntimeException("Type mismatch: expected " + expected + ", got " + actual);
         }
     }
 
     private static boolean checkGuardType(Object val, int typeId) {
-        if (val == null) return false;
+        if (val == null)
+            return false;
         return switch (typeId) {
-            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short
-                                   || val instanceof Byte || val instanceof Long;
-            case IRFormat.T_LONG   -> val instanceof Long || val instanceof Integer
-                                   || val instanceof Short || val instanceof Byte;
-            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float
-                                   || val instanceof Long || val instanceof Integer;
-            case IRFormat.T_BOOL   -> val instanceof Boolean;
+            case IRFormat.T_INT ->
+                    val instanceof Integer || val instanceof Short || val instanceof Byte || val instanceof Long;
+            case IRFormat.T_LONG ->
+                    val instanceof Long || val instanceof Integer || val instanceof Short || val instanceof Byte;
+            case IRFormat.T_DOUBLE ->
+                    val instanceof Double || val instanceof Float || val instanceof Long || val instanceof Integer;
+            case IRFormat.T_BOOL -> val instanceof Boolean;
             case IRFormat.T_STRING -> val instanceof String;
             default -> true;
         };
