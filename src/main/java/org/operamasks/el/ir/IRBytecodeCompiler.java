@@ -232,19 +232,19 @@ public class IRBytecodeCompiler {
             case IREM -> { emitUnboxInt(2); mv.visitInsn(A_IREM); emitBoxInt(); }
             case INEG -> { emitUnboxInt(1); mv.visitInsn(A_INEG); emitBoxInt(); }
             case IPOW -> emitCall2("intPow");
-            case LADD -> emitDynCall("dynAdd", 2);
-            case LSUB -> emitDynCall("dynSub", 2);
-            case LMUL -> emitDynCall("dynMul", 2);
-            case LDIV -> emitDynCall("dynDiv", 2);
-            case LREM -> emitDynCall("dynRem", 2);
-            case LNEG -> emitDynCall("dynNeg", 1);
-            case LPOW -> emitDynCall("dynPow", 2);
-            case DADD -> emitDynCall("dynAdd", 2);
-            case DSUB -> emitDynCall("dynSub", 2);
-            case DMUL -> emitDynCall("dynMul", 2);
-            case DDIV -> emitDynCall("dynDiv", 2);
-            case DNEG -> emitDynCall("dynNeg", 1);
-            case DPOW -> emitDynCall("dynPow", 2);
+            case LADD -> { emitUnboxLong(2); mv.visitInsn(A_LADD); emitBoxLong(); }
+            case LSUB -> { emitUnboxLong(2); mv.visitInsn(A_LSUB); emitBoxLong(); }
+            case LMUL -> { emitUnboxLong(2); mv.visitInsn(A_LMUL); emitBoxLong(); }
+            case LDIV -> { emitUnboxLong(2); mv.visitInsn(A_LDIV); emitBoxLong(); }
+            case LREM -> { emitUnboxLong(2); mv.visitInsn(A_LREM); emitBoxLong(); }
+            case LNEG -> { emitUnboxLong(1); mv.visitInsn(A_LNEG); emitBoxLong(); }
+            case LPOW -> emitCall2("longPow");
+            case DADD -> { emitUnboxDouble(2); mv.visitInsn(A_DADD); emitBoxDouble(); }
+            case DSUB -> { emitUnboxDouble(2); mv.visitInsn(A_DSUB); emitBoxDouble(); }
+            case DMUL -> { emitUnboxDouble(2); mv.visitInsn(A_DMUL); emitBoxDouble(); }
+            case DDIV -> { emitUnboxDouble(2); mv.visitInsn(A_DDIV); emitBoxDouble(); }
+            case DNEG -> { emitUnboxDouble(1); mv.visitInsn(A_DNEG); emitBoxDouble(); }
+            case DPOW -> emitCall2("doublePow");
 
             case IEQ -> { emitUnboxInt(2); emitICmp(A_IF_ICMPEQ); }
             case INE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPNE); }
@@ -391,6 +391,8 @@ public class IRBytecodeCompiler {
                 // Pop next_value, jump to exit if null
                 mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL → done
             }
+
+            case CONTAINS -> emitCall2("contains");
 
             // ─── Bitwise (via helpers) ───
             case IAND, LAND -> emitCall2("bitAnd");
@@ -948,6 +950,20 @@ public class IRBytecodeCompiler {
         return org.operamasks.el.eval.Ranges.createRange(
             ((Number)begin).longValue(), ((Number)end).longValue(), 1);
     }
+    public static Object contains(Object coll, Object elem) {
+        if (coll instanceof java.util.Collection<?> c) return c.contains(elem);
+        if (coll instanceof Object[] a) {
+            for (Object o : a) if (java.util.Objects.equals(o, elem)) return true;
+            return false;
+        }
+        if (coll instanceof elite.lang.Seq seq) {
+            while (!seq.isEmpty()) {
+                if (java.util.Objects.equals(seq.head(), elem)) return true;
+                seq = seq.tail();
+            }
+        }
+        return false;
+    }
     public static Object getIter(Object coll) { return IRInterpreter.getIterator(coll); }
     public static Object iterNext(Object it) {
         java.util.Iterator<?> iter = (java.util.Iterator<?>) it;
@@ -1112,13 +1128,17 @@ public class IRBytecodeCompiler {
 
     private void emitUnboxDouble(int count) {
         if (count == 2) {
-            mv.visitInsn(A_SWAP);
+            // Store both to temp slots to avoid SWAP issues with double (cat 2)
+            mv.visitVarInsn(A_ASTORE, 3);  // rhs → slot 3
+            mv.visitVarInsn(A_ASTORE, 2);  // lhs → slot 2
+            // Load and unbox lhs (slot 2)
+            mv.visitVarInsn(A_ALOAD, 2);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-            mv.visitInsn(A_SWAP);
+            // Load and unbox rhs (slot 3)
+            mv.visitVarInsn(A_ALOAD, 3);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-            mv.visitInsn(A_SWAP);
         } else {
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);

@@ -150,8 +150,8 @@ public final class Opcode {
 
     // ── Unary (0xA0-0xAF) ──
     public static final int NOT = 0xA0;
-    public static final int INC = 0xA3;  // increment (to implement)
-    public static final int DEC = 0xA4;  // decrement (to implement)
+    public static final int INC = 0xA3;  // increment local variable
+    public static final int DEC = 0xA4;  // decrement local variable
 
     // ── Boolean constants (0xB0-0xB1) ──
     public static final int PUSH_TRUE  = 0xB0;
