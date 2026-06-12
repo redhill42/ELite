@@ -170,13 +170,26 @@ public final class Runtime {
             Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
             java.lang.reflect.Field f = cls.getField(name);
             Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
-            f.set(target, value);
+            f.set(target, coerceArg(value, f.getType()));
             return value;
         } catch (NoSuchFieldException e) {
             throw new RuntimeException("Field not found: " + name + " on " + base.getClass().getName());
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Cannot access field: " + name, e);
         }
+    }
+
+    private static Object coerceArg(Object arg, Class<?> paramType) {
+        if (arg == null || paramType.isInstance(arg)) return arg;
+        if (arg instanceof Number n) {
+            if (paramType == int.class || paramType == Integer.class) return n.intValue();
+            if (paramType == long.class || paramType == Long.class) return n.longValue();
+            if (paramType == double.class || paramType == Double.class) return n.doubleValue();
+            if (paramType == float.class || paramType == Float.class) return n.floatValue();
+            if (paramType == short.class || paramType == Short.class) return n.shortValue();
+            if (paramType == byte.class || paramType == Byte.class) return n.byteValue();
+        }
+        return arg;
     }
 
     // ── Closures ──

@@ -347,6 +347,9 @@ public class IRBuilder {
                     current.emitInvokeMethod(methodIdx, node.args.length);
                     return;
                 }
+                // Method not uniquely resolvable (ambiguous overloads) — trampoline
+                buildTrampoline(node);
+                return;
             }
         }
         // Fallback: dynamic invoke. Build target first, then args,
