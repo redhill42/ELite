@@ -48,8 +48,15 @@ public class IRBytecodeCompiler {
     private static final int A_DUP_X1 = 90, A_ANEWARRAY = 189;
 
     private static final AtomicInteger CLASS_COUNTER = new AtomicInteger();
+    private static final String ELCTX_DESC = "Ljavax/el/ELContext;";
     private static final String LOCALS_DESC = "[Ljava/lang/Object;";
-    private static final String EXECUTE_DESC = "(" + LOCALS_DESC + ")Ljava/lang/Object;";
+    private static final String EXECUTE_DESC = "(" + ELCTX_DESC + LOCALS_DESC + ")Ljava/lang/Object;";
+    /** Slot for ELContext (first parameter of generated execute). */
+    private static final int S_CTX = 0;
+    /** Slot for locals array. */
+    private static final int S_LOCALS = 1;
+    /** First slot available for temporary values. */
+    private static final int S_TMP = 2;
 
     private final IRFunction fn;
     private final ClassWriter cw;
@@ -84,7 +91,7 @@ public class IRBytecodeCompiler {
             Class<?> c = LOADER.define(name, bc);
             String methodDesc = desc != null ? desc : EXECUTE_DESC;
             java.lang.reflect.Method m = c.getMethod("execute",
-                desc != null ? typeParamClasses(argTypes) : new Class[]{Object[].class});
+                desc != null ? typeParamClasses(argTypes) : new Class[]{javax.el.ELContext.class, Object[].class});
             return new CompiledFunction(m, bc, name, argTypes, fn.maxLocalCount());
         } catch (Exception e) {
             throw new RuntimeException("Bytecode compile failed", e);
@@ -100,7 +107,7 @@ public class IRBytecodeCompiler {
     /** Build JVM type descriptor from arg types, e.g. "(II)Ljava/lang/Object;". */
     static String typeDescriptor(int[] argTypes) {
         if (argTypes == null || !allKnown(argTypes)) return null;
-        StringBuilder sb = new StringBuilder("(");
+        StringBuilder sb = new StringBuilder("(Ljavax/el/ELContext;"); // ELContext first
         for (int t : argTypes) {
             sb.append(switch (t) {
                 case IRFormat.T_INT, IRFormat.T_BOOL -> "I";
@@ -114,10 +121,11 @@ public class IRBytecodeCompiler {
     }
 
     private static Class<?>[] typeParamClasses(int[] argTypes) {
-        if (argTypes == null) return new Class[]{Object[].class};
-        Class<?>[] cs = new Class[argTypes.length];
+        if (argTypes == null) return new Class[]{javax.el.ELContext.class, Object[].class};
+        Class<?>[] cs = new Class[argTypes.length + 1];
+        cs[0] = javax.el.ELContext.class;
         for (int i = 0; i < argTypes.length; i++) {
-            cs[i] = switch (argTypes[i]) {
+            cs[i + 1] = switch (argTypes[i]) {
                 case IRFormat.T_INT, IRFormat.T_BOOL -> int.class;
                 case IRFormat.T_LONG -> long.class;
                 case IRFormat.T_DOUBLE -> double.class;
@@ -141,7 +149,7 @@ public class IRBytecodeCompiler {
 
         MethodVisitor cm = cw.visitMethod(1, "<init>", "()V", null, null);
         cm.visitCode();
-        cm.visitVarInsn(A_ALOAD, 0);
+        cm.visitVarInsn(A_ALOAD, 0); // this
         cm.visitMethodInsn(A_INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
         cm.visitInsn(A_RETURN);
         cm.visitMaxs(1, 1);
@@ -151,16 +159,16 @@ public class IRBytecodeCompiler {
         mv = cw.visitMethod(1 | 8, "execute", methodDesc, null, null);
         // In typed mode: box params into Object[] locals array at entry
         if (typedMode && argTypeIds != null) {
-            // Compute total JVM slots used by params
-            int totalSlots = 0;
+            // Compute total JVM slots used by params (slot 0 = ELContext)
+            int totalSlots = 1; // ELContext in slot 0
             for (int t : argTypeIds) totalSlots += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
-            int arrSlot = totalSlots; // put locals array after all params
+            int arrSlot = totalSlots; // put locals array after all params + ELContext
             // Create Object[paramCount]
             emitIntConst(argTypeIds.length);
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
             mv.visitVarInsn(A_ASTORE, arrSlot); // locals array in safe slot
             // Box each param into locals[i]
-            int jvmSlot = 0;
+            int jvmSlot = 1; // start after ELContext
             for (int i = 0; i < argTypeIds.length; i++) {
                 mv.visitVarInsn(A_ALOAD, arrSlot); // locals array
                 emitIntConst(i);
@@ -187,7 +195,7 @@ public class IRBytecodeCompiler {
             // which loads from locals array at slot 0. We need to remap slot 0 → arrSlot.
             // Copy array to slot 0 for body's Object[]-based PUSH_VAR/STORE_VAR
             mv.visitVarInsn(A_ALOAD, arrSlot);
-            mv.visitVarInsn(A_ASTORE, 0);
+            mv.visitVarInsn(A_ASTORE, S_LOCALS);
             // Body uses Object[] access, not typed access
             this.typedMode = false;
         }
@@ -268,7 +276,7 @@ public class IRBytecodeCompiler {
                 if (typedMode && v.varIndex() < argTypeIds.length) {
                     emitTypedLoad(v.varIndex());
                 } else {
-                    mv.visitVarInsn(A_ALOAD, 0);
+                    mv.visitVarInsn(A_ALOAD, S_LOCALS);
                     emitIntConst(v.varIndex());
                     mv.visitInsn(A_AALOAD);
                 }
@@ -280,7 +288,7 @@ public class IRBytecodeCompiler {
                     // Store typed value AND keep on stack (assignment returns value)
                     emitTypedStore(varIdx, t);
                 } else {
-                    mv.visitVarInsn(A_ALOAD, 0);
+                    mv.visitVarInsn(A_ALOAD, S_LOCALS);
                     mv.visitInsn(A_SWAP);
                     emitIntConst(varIdx);
                     mv.visitInsn(A_SWAP);
@@ -308,7 +316,7 @@ public class IRBytecodeCompiler {
                 // Pop args, store to locals, jump to entry block
                 int argc = pl;
                 for (int i = argc - 1; i >= 0; i--) {
-                    mv.visitVarInsn(A_ALOAD, 0);  // locals array
+                    mv.visitVarInsn(A_ALOAD, S_LOCALS);  // locals array
                     mv.visitInsn(A_SWAP);          // val, array → array, val
                     emitIntConst(i);
                     mv.visitInsn(A_SWAP);
@@ -349,17 +357,26 @@ public class IRBytecodeCompiler {
                 emitPackArgsAndCall(argc, false, null);
             }
             // ─── Property access, globals ───
-            case LOAD_PROPERTY -> emitCall2("loadProp");
-            case STORE_PROPERTY -> {
-                // Stack: [value, base, key] — need [base, key, value] for storeProp
-                mv.visitVarInsn(A_ASTORE, 3);  // key → slot 3
-                mv.visitVarInsn(A_ASTORE, 2);  // base → slot 2
-                mv.visitVarInsn(A_ASTORE, 1);  // value → slot 1
-                mv.visitVarInsn(A_ALOAD, 2);   // base
-                mv.visitVarInsn(A_ALOAD, 3);   // key
-                mv.visitVarInsn(A_ALOAD, 1);   // value
+            case LOAD_PROPERTY -> {
+                // Stack: [base, key]. Need [ctx, base, key].
+                mv.visitVarInsn(A_ASTORE, S_TMP);      // key → temp
+                mv.visitVarInsn(A_ALOAD, S_CTX);        // [base, ctx]
+                mv.visitInsn(A_SWAP);                    // [ctx, base]
+                mv.visitVarInsn(A_ALOAD, S_TMP);        // [ctx, base, key]
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                    "storeProp", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    "loadProp", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
+            case STORE_PROPERTY -> {
+                // Stack: [value, base, key]. Need [ctx, base, key, value].
+                mv.visitVarInsn(A_ASTORE, S_TMP + 2);  // key
+                mv.visitVarInsn(A_ASTORE, S_TMP + 1);  // base
+                mv.visitVarInsn(A_ASTORE, S_TMP);      // value
+                mv.visitVarInsn(A_ALOAD, S_CTX);
+                mv.visitVarInsn(A_ALOAD, S_TMP + 1);   // base
+                mv.visitVarInsn(A_ALOAD, S_TMP + 2);   // key
+                mv.visitVarInsn(A_ALOAD, S_TMP);       // value
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                    "storeProp", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case LOAD_FIELD -> {
                 int idx = v.payload();
@@ -377,14 +394,24 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
-            case PUSH_GLOBAL -> emitCall1("pushGlobal", v);
+            case PUSH_GLOBAL -> {
+                int idx = v.payload();
+                String name = (String) fn.constantPool()[idx];
+                mv.visitVarInsn(A_ALOAD, S_CTX);    // ctx
+                mv.visitLdcInsn(name);               // name
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                    "pushGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
             case STORE_GLOBAL -> {
                 int idx = v.payload();
                 String name = (String) fn.constantPool()[idx];
-                mv.visitLdcInsn(name);
-                mv.visitInsn(A_SWAP);
+                // Stack: [value]. Need [ctx, name, value].
+                mv.visitVarInsn(A_ASTORE, S_TMP);    // save value
+                mv.visitVarInsn(A_ALOAD, S_CTX);     // ctx
+                mv.visitLdcInsn(name);                // name
+                mv.visitVarInsn(A_ALOAD, S_TMP);     // value
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                    "storeGlobal", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    "storeGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
 
             // ─── Collections ───
@@ -423,7 +450,7 @@ public class IRBytecodeCompiler {
                 // Pack captureCount values from stack into Object[]
                 if (captureCount > 0) {
                     int[] ts = new int[captureCount];
-                    for (int i = 0; i < captureCount; i++) ts[i] = i + 1;
+                    for (int i = 0; i < captureCount; i++) ts[i] = i + S_TMP;
                     for (int i = captureCount - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, ts[i]);
                     emitIntConst(captureCount);
                     mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
@@ -471,14 +498,14 @@ public class IRBytecodeCompiler {
             }
             case INC -> {
                 int varIdx = pl;
-                mv.visitVarInsn(A_ALOAD, 0);
+                mv.visitVarInsn(A_ALOAD, S_LOCALS);
                 emitIntConst(varIdx);
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "incLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
             }
             case DEC -> {
                 int varIdx = pl;
-                mv.visitVarInsn(A_ALOAD, 0);
+                mv.visitVarInsn(A_ALOAD, S_LOCALS);
                 emitIntConst(varIdx);
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "decLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
@@ -576,7 +603,7 @@ public class IRBytecodeCompiler {
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
         } else {
             int[] tempSlots = new int[argc];
-            for (int i = 0; i < argc; i++) tempSlots[i] = i + 1;
+            for (int i = 0; i < argc; i++) tempSlots[i] = i + S_TMP;
             for (int i = argc - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, tempSlots[i]);
             emitIntConst(argc);
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
@@ -585,11 +612,13 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, tempSlots[i]); mv.visitInsn(A_AASTORE);
             }
         }
-        // Push funcId and call invokeDirect
-        emitIntConst(funcId);
-        mv.visitInsn(A_SWAP);
+        // Stack: [argsArray]. Need [ELContext, funcId, argsArray].
+        mv.visitVarInsn(A_ALOAD, S_CTX);          // [argsArray, ctx]
+        mv.visitInsn(A_SWAP);                      // [ctx, argsArray]
+        emitIntConst(funcId);                      // [ctx, argsArray, int]
+        mv.visitInsn(A_SWAP);                      // [ctx, int, argsArray]
         mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
-            "invokeDirect", "(I[Ljava/lang/Object;)Ljava/lang/Object;", false);
+            "invokeDirect", "(Ljavax/el/ELContext;I[Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
 
     /** Pack args from stack into Object[] and call helper. */
@@ -600,7 +629,7 @@ public class IRBytecodeCompiler {
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
         } else {
             int[] tempSlots = new int[argc];
-            for (int i = 0; i < argc; i++) tempSlots[i] = i + 1;
+            for (int i = 0; i < argc; i++) tempSlots[i] = i + S_TMP;
             for (int i = argc - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, tempSlots[i]);
             emitIntConst(argc);
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
@@ -614,17 +643,16 @@ public class IRBytecodeCompiler {
         if (direct && cf != null) {
             String desc = cf.methodDescriptor();
             if (desc != null && cf.argTypes() != null && argc > 0) {
-                // Typed call: unbox args, store to temps, reload in order, call directly
+                // Typed call with ELContext: push ctx, unbox args, store to temps, reload in order
+                mv.visitVarInsn(A_ALOAD, S_CTX);   // ELContext is first typed param
                 int[] types = cf.argTypes();
                 int[] slots = new int[argc];
-                int nextSlot = 4; // start after locals param slot
+                int nextSlot = S_TMP + 2; // after ctx + locals
                 // Step 1: pop args in reverse, unbox, store to temp slots
                 for (int i = argc - 1; i >= 0; i--) {
                     int t = types[i];
                     slots[i] = nextSlot;
-                    // Unbox: stack top = arg_i (boxed Object)
                     compileUnbox(t);
-                    // Store to temp slot
                     switch (t) {
                         case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(54 /* ISTORE */, nextSlot);
                         case IRFormat.T_LONG -> mv.visitVarInsn(55 /* LSTORE */, nextSlot);
@@ -643,21 +671,31 @@ public class IRBytecodeCompiler {
                         default -> mv.visitVarInsn(A_ALOAD, slots[i]);
                     }
                 }
-                // Step 3: call typed method
+                // Step 3: call typed method (desc already includes ELContext prefix)
                 mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute", desc, false);
             } else {
-                // Generic Object[] call
+                // Generic Object[] call with ELContext
+                mv.visitVarInsn(A_ALOAD, S_CTX);
                 mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute",
-                    "([Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
         } else if (direct) {
-            // No compiled function available — use helper
+            // No compiled function — invokeDyn with ELContext from slot 0
+            // Stack: [target, argsArray]. Need [ctx, target, argsArray].
+            mv.visitVarInsn(A_ASTORE, S_TMP);      // args → temp
+            mv.visitVarInsn(A_ALOAD, S_CTX);        // ctx
+            mv.visitInsn(A_SWAP);                    // target, ctx → ctx, target
+            mv.visitVarInsn(A_ALOAD, S_TMP);        // args
             mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+                "invokeDyn", "(Ljavax/el/ELContext;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         } else {
-            // Stack is [target, argsArray] — correct order for invokeDyn(target, args)
+            // Stack: [target, argsArray]. Need [ctx, target, argsArray].
+            mv.visitVarInsn(A_ASTORE, S_TMP);       // args → temp
+            mv.visitVarInsn(A_ALOAD, S_CTX);         // ctx
+            mv.visitInsn(A_SWAP);                     // ctx, target → target, ctx
+            mv.visitVarInsn(A_ALOAD, S_TMP);         // args
             mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+                "invokeDyn", "(Ljavax/el/ELContext;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
     }
 
@@ -668,10 +706,11 @@ public class IRBytecodeCompiler {
     // Optional caller ELContext (set by ELProgram; used for global variable access)
     private static final ThreadLocal<javax.el.ELContext> callerELCtx = new ThreadLocal<>();
 
-    /** Set the caller's ELContext for global variable resolution. */
+    /** Set the caller's ELContext for global variable resolution.
+     *  @deprecated ELContext is now passed directly to {@link CompiledFunction#execute}. */
+    @Deprecated
     public static void setCallerELCtx(javax.el.ELContext ctx) {
         callerELCtx.set(ctx);
-        elite.rt.Runtime.setCallerELCtx(ctx);
     }
 
     private static final ThreadLocal<java.util.Map<Integer, IRFunction>> funcRegistry =
@@ -684,7 +723,6 @@ public class IRBytecodeCompiler {
         localELCtx.remove();
         funcRegistry.remove();
         funcIdCounter.remove();
-        elite.rt.Runtime.resetState();
     }
 
     private static javax.el.ELContext elctx() { return localELCtx.get(); }
@@ -697,7 +735,7 @@ public class IRBytecodeCompiler {
         ThreadLocal.withInitial(java.util.HashMap::new);
 
     /** Direct call: use compiled version if available, specialize on first call. */
-    public static Object invokeDirect(int funcId, Object[] args) {
+    public static Object invokeDirect(javax.el.ELContext elctx, int funcId, Object[] args) {
         IRFunction fn = funcRegistry().get(funcId);
         if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
         // Check cache first
@@ -708,7 +746,7 @@ public class IRBytecodeCompiler {
             cf = compile(specialized);  // generic Object[] version
             compiledCache.get().put(fn, cf);
         }
-        return cf.execute(args);
+        return cf.execute(elctx, args);
     }
 
     private static int[] inferTypes(Object[] args) {
@@ -758,7 +796,7 @@ public class IRBytecodeCompiler {
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
         } else {
             int[] slots = new int[count];
-            for (int i = 0; i < count; i++) slots[i] = i + 1;
+            for (int i = 0; i < count; i++) slots[i] = i + S_TMP;
             for (int i = count - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, slots[i]);
             emitIntConst(count);
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
@@ -802,11 +840,11 @@ public class IRBytecodeCompiler {
         int invokeOp = isInterface ? A_INVOKEINTERFACE : A_INVOKEVIRTUAL;
 
         // Stack: [Object(value), Object(base)]
-        mv.visitVarInsn(A_ASTORE, 1);  // save original value → slot 1
+        mv.visitVarInsn(A_ASTORE, S_TMP);  // save original value → slot 1
         // Stack: [Object(base)]
         mv.visitTypeInsn(A_CHECKCAST, owner);
         // Stack: [Owner(base)]
-        mv.visitVarInsn(A_ALOAD, 1);  // load value
+        mv.visitVarInsn(A_ALOAD, S_TMP);  // load value
         // Stack: [Owner(base), Object(value)]
 
         // Narrow/unbox value to match setter parameter type
@@ -815,7 +853,7 @@ public class IRBytecodeCompiler {
 
         mv.visitMethodInsn(invokeOp, owner, name, desc, isInterface);
         // Stack: [] (void return from setter)
-        mv.visitVarInsn(A_ALOAD, 1);  // push original value as result
+        mv.visitVarInsn(A_ALOAD, S_TMP);  // push original value as result
         // Stack: [Object(value)]
     }
 
@@ -834,7 +872,7 @@ public class IRBytecodeCompiler {
 
         // Save args from top to bottom: argN → slot argc, ..., arg1 → slot 1
         for (int i = argc; i >= 1; i--) {
-            mv.visitVarInsn(A_ASTORE, i);  // save arg[i-1]
+            mv.visitVarInsn(A_ASTORE, S_TMP + i - 1);  // save arg[i-1]
         }
         // Stack: [Object(base)]
 
@@ -843,7 +881,7 @@ public class IRBytecodeCompiler {
 
         // Load args in order: arg1, arg2, ..., argN, narrow/unbox each
         for (int i = 0; i < argc; i++) {
-            mv.visitVarInsn(A_ALOAD, i + 1);  // load arg[i]
+            mv.visitVarInsn(A_ALOAD, S_TMP + i);  // load arg[i]
             // Stack: [Owner(base), ...prev-args..., Object(arg[i])]
             emitUnboxIfPrimitive(paramTypes[i]);
             // Stack: [Owner(base), ...prev-args..., ParamType(arg[i])]
@@ -1118,14 +1156,14 @@ public class IRBytecodeCompiler {
     private void emitUnboxLong(int count) {
         if (count == 2) {
             // Store both to temp slots to avoid SWAP issues with long (cat 2)
-            mv.visitVarInsn(A_ASTORE, 3);  // rhs → slot 3
-            mv.visitVarInsn(A_ASTORE, 2);  // lhs → slot 2
+            mv.visitVarInsn(A_ASTORE, S_TMP + 1);  // rhs → slot 3
+            mv.visitVarInsn(A_ASTORE, S_TMP);  // lhs → slot 2
             // Load and unbox lhs (slot 2)
-            mv.visitVarInsn(A_ALOAD, 2);
+            mv.visitVarInsn(A_ALOAD, S_TMP);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
             // Load and unbox rhs (slot 3)
-            mv.visitVarInsn(A_ALOAD, 3);
+            mv.visitVarInsn(A_ALOAD, S_TMP + 1);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
         } else {
@@ -1143,14 +1181,14 @@ public class IRBytecodeCompiler {
     private void emitUnboxDouble(int count) {
         if (count == 2) {
             // Store both to temp slots to avoid SWAP issues with double (cat 2)
-            mv.visitVarInsn(A_ASTORE, 3);  // rhs → slot 3
-            mv.visitVarInsn(A_ASTORE, 2);  // lhs → slot 2
+            mv.visitVarInsn(A_ASTORE, S_TMP + 1);  // rhs → slot 3
+            mv.visitVarInsn(A_ASTORE, S_TMP);  // lhs → slot 2
             // Load and unbox lhs (slot 2)
-            mv.visitVarInsn(A_ALOAD, 2);
+            mv.visitVarInsn(A_ALOAD, S_TMP);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
             // Load and unbox rhs (slot 3)
-            mv.visitVarInsn(A_ALOAD, 3);
+            mv.visitVarInsn(A_ALOAD, S_TMP + 1);
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
         } else {
@@ -1186,7 +1224,7 @@ public class IRBytecodeCompiler {
 
     /** Compute JVM local var slot from IR var index (accounting for category-2 types). */
     private int typedSlot(int varIdx) {
-        int slot = 0;
+        int slot = 1; // offset for ELContext in slot 0
         for (int i = 0; i < varIdx; i++) {
             int t = argTypeIds[i];
             slot += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
@@ -1335,7 +1373,7 @@ public class IRBytecodeCompiler {
             this.argTypes = argTypes; this.maxLocals = maxLocals;
         }
 
-        public Object execute(Object[] locals) {
+        public Object execute(javax.el.ELContext elctx, Object[] locals) {
             if (locals == null) locals = new Object[maxLocals];
             else if (locals.length < maxLocals) {
                 Object[] expanded = new Object[maxLocals];
@@ -1343,7 +1381,7 @@ public class IRBytecodeCompiler {
                 locals = expanded;
             }
             try {
-                return method.invoke(null, (Object) locals);
+                return method.invoke(null, elctx, locals);
             } catch (java.lang.reflect.InvocationTargetException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException re) throw re;

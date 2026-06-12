@@ -2,17 +2,22 @@ package org.operamasks.el.ir;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import javax.el.ELContext;
+
 import org.junit.jupiter.api.Test;
+import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 
 class BytecodeCompilerTest {
 
+    private static final ELContext elctx = ELEngine.createELContext();
+
     private Object bcEval(String expr) {
         ELNode node = Parser.parseExpression(expr);
         IRFunction fn = IRBuilder.compile(node);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-        return cf.execute(null);
+        return cf.execute(elctx, null);
     }
 
     @Test void intAdd()  { assertEquals(30L, ((Number)bcEval("10 + 20")).longValue()); }
@@ -54,7 +59,7 @@ class BytecodeCompilerTest {
         var prog = p.parse();
         IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-        assertEquals(7L, ((Number)cf.execute(null)).longValue());
+        assertEquals(7L, ((Number)cf.execute(elctx, null)).longValue());
     }
 
     @Test void callWithSingleArg() {
@@ -62,6 +67,6 @@ class BytecodeCompilerTest {
         var prog = p.parse();
         IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-        assertEquals(25L, ((Number)cf.execute(null)).longValue());
+        assertEquals(25L, ((Number)cf.execute(elctx, null)).longValue());
     }
 }

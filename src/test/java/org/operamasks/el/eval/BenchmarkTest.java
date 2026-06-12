@@ -381,11 +381,10 @@ class BenchmarkTest {
     private static double benchBC(String label, String expr, int warmup, int iters,
                                    javax.el.ELContext ectx, org.operamasks.el.eval.EvaluationContext evalCtx) {
         IRFunction fn = IRBuilder.compile(Parser.parseExpression(expr));
-        IRBytecodeCompiler.setCallerELCtx(ectx);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-        for (int i = 0; i < warmup; i++) cf.execute(null);
+        for (int i = 0; i < warmup; i++) cf.execute(ectx, null);
         long start = System.nanoTime();
-        for (int i = 0; i < iters; i++) cf.execute(null);
+        for (int i = 0; i < iters; i++) cf.execute(ectx, null);
         long elapsed = System.nanoTime() - start;
         double opsPerSec = iters / (elapsed / 1_000_000_000.0);
         System.out.printf("  %-40s %10d iters  %12.0f ops/s  (%6.1f ns/op)  [BC]%n",

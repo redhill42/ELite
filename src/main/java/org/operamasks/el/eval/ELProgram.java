@@ -224,8 +224,7 @@ public class ELProgram implements Serializable
                 try {
                     IRBytecodeCompiler.CompiledFunction cf =
                         IRBytecodeCompiler.compile(irFn);
-                    IRBytecodeCompiler.setCallerELCtx(elctx);
-                    return cf.execute(null);
+                    return cf.execute(elctx, null);
                 } catch (CompilationError e) {
                     if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
                     if (!irFn.hasUnsupportedOps()) {

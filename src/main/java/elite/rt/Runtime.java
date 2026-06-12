@@ -33,23 +33,9 @@ public final class Runtime {
 
     private Runtime() {}
 
-    // ── ThreadLocal ELContext ──
-
-    private static final ThreadLocal<ELContext> callerELCtx = new ThreadLocal<>();
-    private static final ThreadLocal<ELContext> localELCtx =
-        ThreadLocal.withInitial(() -> ELEngine.createELContext());
-
-    public static void setCallerELCtx(ELContext ctx) { callerELCtx.set(ctx); }
-    public static void resetState() { localELCtx.remove(); }
-    static ELContext elctx() {
-        ELContext c = callerELCtx.get();
-        return c != null ? c : localELCtx.get();
-    }
-
     // ── ELContext-dependent helpers ──
 
-    public static Object pushGlobal(String name) {
-        ELContext c = elctx();
+    public static Object pushGlobal(ELContext c, String name) {
         javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
         if (ve != null) return ve.getValue(c);
         c.setPropertyResolved(false);
@@ -58,36 +44,32 @@ public final class Runtime {
         throw new RuntimeException("Undefined: " + name);
     }
 
-    public static Object storeGlobal(String name, Object value) {
-        ELContext c = elctx();
+    public static Object storeGlobal(ELContext c, String name, Object value) {
         c.getVariableMapper().setVariable(name,
             new org.operamasks.el.eval.closure.LiteralClosure(value));
         return value;
     }
 
-    public static Object loadProp(Object base, Object key) {
-        ELContext c = elctx();
+    public static Object loadProp(ELContext c, Object base, Object key) {
         c.setPropertyResolved(false);
         Object r = c.getELResolver().getValue(c, base, key);
         if (!c.isPropertyResolved()) throw new RuntimeException("Property not found: " + key);
         return r;
     }
 
-    public static Object storeProp(Object base, Object key, Object value) {
-        ELContext c = elctx();
+    public static Object storeProp(ELContext c, Object base, Object key, Object value) {
         c.getELResolver().setValue(c, base, key, value);
         return value;
     }
 
-    public static Object trampoline(Object nodeObj) {
-        ELContext c = elctx();
+    public static Object trampoline(ELContext c, Object nodeObj) {
         org.operamasks.el.parser.ELNode node = (org.operamasks.el.parser.ELNode) nodeObj;
         return node.getValue(new org.operamasks.el.eval.EvaluationContext(c));
     }
 
-    public static Object invokeDyn(Object target, Object[] args) {
+    public static Object invokeDyn(ELContext c, Object target, Object[] args) {
         if (target instanceof IRFunction irFn) {
-            return new IRInterpreter(elctx(), irFn, null).execute(args);
+            return new IRInterpreter(c, irFn, null).execute(args);
         }
         if (target instanceof IRClosure closure) {
             IRFunction irFn = closure.getFunction();
@@ -96,10 +78,10 @@ public final class Runtime {
             Object[] expandedArgs = new Object[paramCount + captureCount];
             System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length, paramCount));
             System.arraycopy(closure.getCaptured(), 0, expandedArgs, paramCount, captureCount);
-            return new IRInterpreter(elctx(), irFn, null).execute(expandedArgs);
+            return new IRInterpreter(c, irFn, null).execute(expandedArgs);
         }
         Closure[] closures = ELEngine.getCallArgs(args);
-        return ELEngine.invokeTarget(elctx(), target, closures);
+        return ELEngine.invokeTarget(c, target, closures);
     }
 
     // ── Collections ──
