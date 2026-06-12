@@ -359,10 +359,26 @@ public class IRBuilder {
     // ── Literals: list, map, tuple, range ──
 
     private void buildCons(ELNode.CONS node) {
-        // Walk the CONS chain, count and emit elements, then NEW_LIST
+        // For delayed (lazy) sequences or dotted-pair tails, fall back to AST.
+        // The AST evaluator handles DelayCons and proper Cons cell construction.
+        if (hasDelayOrDottedTail(node)) {
+            buildTrampoline(node);
+            return;
+        }
+        // Simple list cons: [a, b, c] → NEW_LIST
         int count = countCons(node);
         emitConsElements(node);
         current.emitNewList(count);
+    }
+
+    /** Check if any CONS in the chain has delay=true or a non-CONS/non-NIL tail. */
+    private static boolean hasDelayOrDottedTail(ELNode.CONS node) {
+        ELNode cur = node;
+        while (cur instanceof ELNode.CONS c) {
+            if (c.delay) return true;
+            cur = c.tail;
+        }
+        return cur != null && cur.op != Token.NIL;
     }
 
     private static int countCons(ELNode.CONS node) {
