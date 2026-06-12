@@ -346,6 +346,15 @@ public class IRInterpreter {
                     ip += 1;
                     break;
                 }
+                case STORE_PROPERTY: {
+                    Object key = pop();
+                    Object base = pop();
+                    Object value = pop();
+                    storeProperty(base, key, value);
+                    push(value);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Direct field access ============
                 case LOAD_FIELD: {
@@ -764,6 +773,11 @@ public class IRInterpreter {
             throw new RuntimeException("Property not found: " + key + " on " + base.getClass().getName());
         }
         return result;
+    }
+
+    private void storeProperty(Object base, Object key, Object value) {
+        javax.el.ELContext elctx = evalContext.getELContext();
+        elctx.getELResolver().setValue(elctx, base, key, value);
     }
 
     // ── Global variable resolution ──

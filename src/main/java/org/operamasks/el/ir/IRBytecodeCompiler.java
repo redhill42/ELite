@@ -350,7 +350,17 @@ public class IRBytecodeCompiler {
             }
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> emitCall2("loadProp");
-            case STORE_PROPERTY -> emitCall3("storeProp");
+            case STORE_PROPERTY -> {
+                // Stack: [value, base, key] — need [base, key, value] for storeProp
+                mv.visitVarInsn(A_ASTORE, 3);  // key → slot 3
+                mv.visitVarInsn(A_ASTORE, 2);  // base → slot 2
+                mv.visitVarInsn(A_ASTORE, 1);  // value → slot 1
+                mv.visitVarInsn(A_ALOAD, 2);   // base
+                mv.visitVarInsn(A_ALOAD, 3);   // key
+                mv.visitVarInsn(A_ALOAD, 1);   // value
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                    "storeProp", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
             case LOAD_FIELD -> {
                 int idx = v.payload();
                 String name = (String) fn.constantPool()[idx];

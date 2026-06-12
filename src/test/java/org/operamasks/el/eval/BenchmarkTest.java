@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.operamasks.el.ir.IRBuilder;
 import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.ir.IRInterpreter;
+import org.operamasks.el.ir.IRBytecodeCompiler;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 
@@ -317,5 +318,177 @@ class BenchmarkTest {
 
         double speedup = irTotal / astTotal;
         System.out.printf("%n=== IR/AST speedup: %.2fx ===%n", speedup);
+    }
+
+    // ==================== Java Interop ====================
+
+    /** Test bean with getter, setter, and public field. */
+    public static class Person {
+        private String name;
+        private int age;
+        public String city;
+        public Person(String name, int age, String city) {
+            this.name = name; this.age = age; this.city = city;
+        }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public int getAge() { return age; }
+        public void setAge(int age) { this.age = age; }
+    }
+
+    private static final Person PERSON = new Person("Alice", 30, "Beijing");
+    private static final java.util.List<String> LIST = java.util.List.of("a", "b", "c", "d", "e");
+    private static final java.util.Map<String, Object> MAP = java.util.Map.of("name", "Alice", "age", 30);
+
+    private static void setupInteropVars(ScriptEngine eng) {
+        eng.put("p",  PERSON);
+        eng.put("list", LIST);
+        eng.put("m",  MAP);
+    }
+
+    // ---- O0 / O2 / O3 helpers ----
+
+    /** Benchmark using low-level AST evaluation. */
+    private static double benchAST(String label, String expr, int warmup, int iters,
+                                    org.operamasks.el.eval.EvaluationContext evalCtx) {
+        ELNode node = Parser.parseExpression(expr);
+        for (int i = 0; i < warmup; i++) node.getValue(evalCtx);
+        long start = System.nanoTime();
+        for (int i = 0; i < iters; i++) node.getValue(evalCtx);
+        long elapsed = System.nanoTime() - start;
+        double opsPerSec = iters / (elapsed / 1_000_000_000.0);
+        System.out.printf("  %-40s %10d iters  %12.0f ops/s  (%6.1f ns/op)  [AST]%n",
+                label, iters, opsPerSec, elapsed / (double) iters);
+        return opsPerSec;
+    }
+
+    /** Benchmark using IR interpreter (O2 path). */
+    private static double benchIR2(String label, String expr, int warmup, int iters,
+                                    javax.el.ELContext ectx, org.operamasks.el.eval.EvaluationContext evalCtx) {
+        IRFunction fn = IRBuilder.compile(Parser.parseExpression(expr));
+        IRInterpreter interp = new IRInterpreter(ectx, fn, evalCtx);
+        for (int i = 0; i < warmup; i++) interp.execute(null);
+        long start = System.nanoTime();
+        for (int i = 0; i < iters; i++) interp.execute(null);
+        long elapsed = System.nanoTime() - start;
+        double opsPerSec = iters / (elapsed / 1_000_000_000.0);
+        System.out.printf("  %-40s %10d iters  %12.0f ops/s  (%6.1f ns/op)  [IR]%n",
+                label, iters, opsPerSec, elapsed / (double) iters);
+        return opsPerSec;
+    }
+
+    /** Benchmark using bytecode compiler (O3 path). */
+    private static double benchBC(String label, String expr, int warmup, int iters,
+                                   javax.el.ELContext ectx, org.operamasks.el.eval.EvaluationContext evalCtx) {
+        IRFunction fn = IRBuilder.compile(Parser.parseExpression(expr));
+        IRBytecodeCompiler.setCallerELCtx(ectx);
+        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        for (int i = 0; i < warmup; i++) cf.execute(null);
+        long start = System.nanoTime();
+        for (int i = 0; i < iters; i++) cf.execute(null);
+        long elapsed = System.nanoTime() - start;
+        double opsPerSec = iters / (elapsed / 1_000_000_000.0);
+        System.out.printf("  %-40s %10d iters  %12.0f ops/s  (%6.1f ns/op)  [BC]%n",
+                label, iters, opsPerSec, elapsed / (double) iters);
+        return opsPerSec;
+    }
+
+    // ==================== Java Interop Benchmarks ====================
+
+    @Test
+    void benchJavaInteropComparison() {
+        System.out.println("\n==============================================");
+        System.out.println("  Java Interop: O0 (AST) vs O2 (IR) vs O3 (BC)");
+        System.out.println("==============================================");
+
+        setupInteropVars(engine);
+        javax.el.ELContext ectx = (javax.el.ELContext) engine.get(ELContext.class.getName());
+        org.operamasks.el.eval.EvaluationContext evalCtx =
+            new org.operamasks.el.eval.EvaluationContext(ectx,
+                ectx.getFunctionMapper(), ectx.getVariableMapper());
+
+        int warmup = 100;
+        int iters  = 10_000;
+        int itersHeavy = iters / 10; // for expressions with side effects (setter) or contains
+
+        String[][] interopTests = {
+            // {label, expr, itersOverride}
+            // Getter: INVOKE_GETTER
+            {"getter (p.name)",              "p.name",              String.valueOf(iters)},
+            {"prim getter (p.age)",          "p.age",               String.valueOf(iters)},
+            // Setter: INVOKE_SETTER
+            {"setter (p.name = \"X\")",      "p.name = \"X\"",     String.valueOf(itersHeavy)},
+            {"prim setter (p.age=0)",        "p.age = 0",          String.valueOf(itersHeavy)},
+            // Field load/store: LOAD_FIELD / STORE_FIELD
+            {"field load (p.city)",          "p.city",              String.valueOf(iters)},
+            {"field store (p.city=\"X\")",   "p.city = \"X\"",     String.valueOf(itersHeavy)},
+            // Map access: LOAD_PROPERTY
+            {"map get (m.name)",             "m.name",              String.valueOf(iters)},
+            // List contains: CONTAINS
+            {"contains (elem in list)",      "\"c\" in list",       String.valueOf(iters)},
+            // List index
+            {"list index (list[2])",         "list[2]",             String.valueOf(iters)},
+        };
+
+        double totalO0 = 0, totalO2 = 0, totalO3 = 0;
+
+        for (String[] t : interopTests) {
+            String label = t[0];
+            String expr  = t[1];
+            int n = Integer.parseInt(t[2]);
+
+            System.out.println("\n  " + label + ":");
+            totalO0 += benchAST(label, expr, warmup, n, evalCtx);
+            totalO2 += benchIR2(label, expr, warmup, n, ectx, evalCtx);
+            totalO3 += benchBC(label, expr, warmup, n, ectx, evalCtx);
+        }
+
+        System.out.printf("%n=== Overall interop scores ===%n");
+        System.out.printf("  O0 (AST):  %,.0f%n", totalO0);
+        System.out.printf("  O2 (IR):   %,.0f  (%.2fx vs AST)%n", totalO2, totalO2 / totalO0);
+        System.out.printf("  O3 (BC):   %,.0f  (%.2fx vs AST, %.2fx vs IR)%n",
+                totalO3, totalO3 / totalO0, totalO3 / totalO2);
+    }
+
+    @Test
+    void benchArithmeticComparison() {
+        System.out.println("\n==============================================");
+        System.out.println("  Arithmetic: O0 (AST) vs O2 (IR) vs O3 (BC)");
+        System.out.println("==============================================");
+
+        javax.el.ELContext ectx = (javax.el.ELContext) engine.get(ELContext.class.getName());
+        org.operamasks.el.eval.EvaluationContext evalCtx =
+            new org.operamasks.el.eval.EvaluationContext(ectx,
+                ectx.getFunctionMapper(), ectx.getVariableMapper());
+
+        int warmup = 200;
+        int iters  = 10_000;
+
+        String[][] tests = {
+            {"int add 10+20",           "10 + 20"},
+            {"int mul 7*8",             "7 * 8"},
+            {"int complex 1+2*3+4*5",   "1 + 2 * 3 + 4 * 5"},
+            {"double add 3.14+2.72",    "3.14 + 2.72"},
+            {"double div 100.0/3.0",    "100.0 / 3.0"},
+            {"long add big",            "5000000000 + 7000000000"},
+            {"compare 100==100",        "100 == 100"},
+            {"compare str \"a\"==\"a\"", "\"a\" == \"a\""},
+            {"ternary true?100:200",    "true ? 100 : 200"},
+        };
+
+        double totalO0 = 0, totalO2 = 0, totalO3 = 0;
+
+        for (String[] t : tests) {
+            System.out.println("\n  " + t[0] + ":");
+            totalO0 += benchAST(t[0], t[1], warmup, iters, evalCtx);
+            totalO2 += benchIR2(t[0], t[1], warmup, iters, ectx, evalCtx);
+            totalO3 += benchBC(t[0], t[1], warmup, iters, ectx, evalCtx);
+        }
+
+        System.out.printf("%n=== Overall arithmetic scores ===%n");
+        System.out.printf("  O0 (AST):  %,.0f%n", totalO0);
+        System.out.printf("  O2 (IR):   %,.0f  (%.2fx vs AST)%n", totalO2, totalO2 / totalO0);
+        System.out.printf("  O3 (BC):   %,.0f  (%.2fx vs AST, %.2fx vs IR)%n",
+                totalO3, totalO3 / totalO0, totalO3 / totalO2);
     }
 }
