@@ -92,9 +92,6 @@ inv.invokeFunction("add", 10, 20);           // 30L
 | [DSL & Grammar](docs/spec/dsl-grammar-guide.md) | User-extensible syntax |
 | [Pattern Matching](docs/spec/pattern-matching-guide.md) | match/case, guards, destructuring |
 | [Closure & Lazy Eval](docs/spec/closure-guide.md) | Closures, lazy sequences, TCO |
-| [Architecture Analysis](docs/design/ANALYSIS.md) | Internal architecture and code quality |
-| [IR Opcode Plan](docs/design/ir-opcode-implementation-plan.md) | IR instruction implementation status |
-| [Bytecode Gaps](docs/design/bytecode-compiler-gaps.md) | -O3 compiler known gaps |
 
 ## Hello World (5 styles)
 

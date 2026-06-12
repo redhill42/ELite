@@ -18,4 +18,5 @@
 |------|------|
 | [Project Analysis](design/ANALYSIS.md) | 项目架构、代码质量评估、改进路线图（2026-06-09） |
 | [IR Opcode Implementation Plan](design/ir-opcode-implementation-plan.md) | IR 操作码实现计划和完成状态 |
+| [IR Fallback Strategy Removal](design/ir-fallback-strategy-removal.md) | IR 回退策略移除：从 46→0 失败，设计决策（2026-06-12） |
 | [Bytecode Compiler Gaps](design/bytecode-compiler-gaps.md) | `-O3` 字节码编译器缺陷和待修复项（2026-06-12） |
