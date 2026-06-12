@@ -378,7 +378,7 @@ public class IRBytecodeCompiler {
 
             // ─── Collections ───
             case NEW_LIST  -> emitCallN("newList", pl);
-            case NEW_MAP   -> emitCallN("newMap", pl);
+            case NEW_MAP   -> emitCallN("newMap", pl * 2); // pl = pair count, 2 stack values per pair
             case NEW_TUPLE -> emitCallN("newTuple", pl);
             case NEW_RANGE -> emitCall2("newRange");
 

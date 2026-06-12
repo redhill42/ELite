@@ -1054,6 +1054,11 @@ public class IRBuilder {
     }
 
     public static IRFunction compile(ELNode node) {
+        return compile(node, true);
+    }
+
+    /** Compile a single expression, optionally applying optimization passes. */
+    public static IRFunction compile(ELNode node, boolean optimize) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();
         IRBuilder b = new IRBuilder();
@@ -1062,8 +1067,7 @@ public class IRBuilder {
             int typeId = b.typeIdFromNode(node);
             b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
         }
-        IRFunction fn = FOLDER.transform(b.finish("<expr>", 0));
-        return IRSpeclializer.specialize(fn, new int[0]);
+        return finishIR(b.finish("<expr>", 0), 0, optimize, false);
     }
 
     public static IRFunction compile(List<ELNode> expressions) {
@@ -1072,6 +1076,18 @@ public class IRBuilder {
 
     /** Compile expressions with prior function definitions for direct call optimization. */
     public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> expressions) {
+        return compileWithDefs(defs, expressions, true);
+    }
+
+    /**
+     * Compile expressions with optional optimization passes.
+     * <p>
+     * When {@code optimize} is false, constant folding and type specialization
+     * (GUARD_TYPE, DEOPT splitting) are skipped. This is used by opt level 1
+     * to produce conservative IR for comparison with optimized IR.
+     */
+    public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> expressions,
+                                              boolean optimize) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry per compilation
         IRBuilder b = new IRBuilder();
@@ -1079,7 +1095,7 @@ public class IRBuilder {
         // Pre-register function definitions for direct call optimization
         if (defs != null) {
             for (ELNode def : defs) {
-                registerDef(b, def);
+                registerDef(b, def, optimize);
             }
         }
 
@@ -1095,12 +1111,22 @@ public class IRBuilder {
                 b.current.emitReturn(t >= 0 ? t : T_INT);
             }
         }
-        IRFunction fn = FOLDER.transform(b.finish("<program>", 0));
-        return IRSpeclializer.specialize(fn, new int[0]);
+        return finishIR(b.finish("<program>", 0), 0, optimize, false);
+    }
+
+    /** Apply (or skip) optimization passes to a finished IR function. */
+    private static IRFunction finishIR(IRFunction fn, int paramCount,
+                                        boolean optimize, boolean isLambda) {
+        if (optimize) {
+            fn = FOLDER.transform(fn);
+            fn = IRSpeclializer.specialize(fn, new int[paramCount]);
+            if (isLambda) fn = FOLDER.transform(fn);  // fold constants in specialized code
+        }
+        return fn;
     }
 
     /** Pre-compile a function definition and register it for direct calls. */
-    private static void registerDef(IRBuilder b, ELNode def) {
+    private static void registerDef(IRBuilder b, ELNode def, boolean optimize) {
         if (def instanceof ELNode.DEFINE d && d.expr instanceof ELNode.LAMBDA lam) {
             String name = lam.name != null ? lam.name : d.id;
             IRBuilder nested = new IRBuilder(b);  // share parent pool
@@ -1115,10 +1141,8 @@ public class IRBuilder {
                 int t = nested.typeIdFromNode(lam.body);
                 nested.current.emitReturn(t >= 0 ? t : T_INT);
             }
-            IRFunction fn = nested.finish(name, lam.vars.length);
-            // Apply specialization based on local variable types
-            fn = IRSpeclializer.specialize(fn, new int[lam.vars.length]);
-            fn = FOLDER.transform(fn);  // fold constants in specialized code
+            IRFunction fn = finishIR(nested.finish(name, lam.vars.length),
+                                      lam.vars.length, optimize, true);
             int poolIdx = b.putConstant(fn);
             b.registerFunction(name, poolIdx);
         }

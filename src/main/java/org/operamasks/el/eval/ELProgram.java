@@ -56,7 +56,8 @@ public class ELProgram implements Serializable
      * Optimization level for expression evaluation.
      * <ul>
      *   <li>0 — AST interpreter only (for parser/AST validation)</li>
-     *   <li>2 — IR interpreter (fall back to AST for unsupported ops)</li>
+     *   <li>1 — IR interpreter, no optimization passes (conservative IR)</li>
+     *   <li>2 — IR interpreter with optimizations (default; fall back to AST)</li>
      *   <li>3 — JVM bytecode (fall back to IR for unsupported ops)</li>
      * </ul>
      * Read from system property {@code elite.opt.level}; defaults to 2 (IR).
@@ -188,6 +189,21 @@ public class ELProgram implements Serializable
         switch (OPT_LEVEL) {
             case 0:
                 return evaluateAST(exps, frame, env);
+
+            case 1: {
+                // Conservative IR — no optimization passes (constant folding, type specialization skipped)
+                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, false);
+                if (irFn.hasUnsupportedOps()) {
+                    if (DEBUG) System.err.println("[elite] IR has unsupported ops, using AST");
+                    return evaluateAST(exps, frame, env);
+                }
+                try {
+                    return new IRInterpreter(elctx, irFn, env).execute(null);
+                } catch (Exception e) {
+                    if (DEBUG) System.err.println("[elite] IR fallback: " + e.getMessage());
+                    return evaluateAST(exps, frame, env);
+                }
+            }
 
             case 2: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
