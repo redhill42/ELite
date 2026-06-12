@@ -126,6 +126,16 @@ public class Main
                     dumpIR = true;
                 } else if (args[argIndex].equals("--dump-ast")) {
                     dumpAST = true;
+                } else if (args[argIndex].startsWith("-O")) {
+                    // Optimization level: -O0, -O1, -O2, -O3
+                    String level = args[argIndex].substring(2);
+                    if (level.matches("[0-3]")) {
+                        System.setProperty("elite.opt.level", level);
+                    } else {
+                        System.err.println("Invalid optimization level: " + args[argIndex] + " (use -O0, -O1, -O2, -O3)");
+                        printUsage();
+                        return false;
+                    }
                 } else if (args[argIndex].equals("--bc")) {
                     dumpBC = true;
                 } else if (args[argIndex].startsWith("-")) {
