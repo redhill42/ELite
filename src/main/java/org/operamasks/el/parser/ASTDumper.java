@@ -119,15 +119,6 @@ public final class ASTDumper {
             Object nm = nameField.get(node);
             if (nm != null) sb.append(" name='").append(nm).append("'");
         } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
-        // op field (display operator name)
-        try {
-            Field opField = ELNode.class.getDeclaredField("op");
-            opField.setAccessible(true);
-            int op = opField.getInt(node);
-            if (op > 0 && op < Token.opNames.length && Token.opNames[op] != null) {
-                sb.append(" op=").append(Token.opNames[op]);
-            }
-        } catch (Exception e) { /* skip */ }
 
         // type annotation
         try {
