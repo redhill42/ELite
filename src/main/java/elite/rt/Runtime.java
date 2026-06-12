@@ -40,6 +40,15 @@ public final class Runtime {
         javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
         if (ve != null)
             return ve.getValue(c);
+        // Check FunctionMapper for global/imported functions
+        org.operamasks.el.resolver.MethodResolver mr =
+            org.operamasks.el.resolver.MethodResolver.getInstance(c);
+        if (mr != null) {
+            org.operamasks.el.eval.closure.MethodClosure mc =
+                mr.resolveGlobalMethod(c.getFunctionMapper(), name);
+            if (mc != null)
+                return mc;
+        }
         c.setPropertyResolved(false);
         Object r = c.getELResolver().getValue(c, null, name);
         if (c.isPropertyResolved())

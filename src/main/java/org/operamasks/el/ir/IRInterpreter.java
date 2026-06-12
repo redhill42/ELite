@@ -785,13 +785,22 @@ public class IRInterpreter {
     private Object resolveGlobal(String name) {
         javax.el.ELContext elctx = evalContext.getELContext();
 
-        // First: check the EvaluationContext's own variable resolution chain
+        // 1) Check the EvaluationContext's own variable resolution chain
         javax.el.ValueExpression ve = evalContext.resolveVariable(name);
         if (ve != null) {
             return ve.getValue(elctx);
         }
 
-        // Try ELResolver chain
+        // 2) Check the FunctionMapper for global/imported functions
+        org.operamasks.el.resolver.MethodResolver mr =
+            org.operamasks.el.resolver.MethodResolver.getInstance(elctx);
+        if (mr != null) {
+            org.operamasks.el.eval.closure.MethodClosure mc =
+                mr.resolveGlobalMethod(elctx.getFunctionMapper(), name);
+            if (mc != null) return mc;
+        }
+
+        // 3) Try ELResolver chain
         elctx.setPropertyResolved(false);
         Object result = elctx.getELResolver().getValue(elctx, null, name);
         if (elctx.isPropertyResolved()) return result;

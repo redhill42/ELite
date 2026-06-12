@@ -173,13 +173,14 @@ public class ELProgram implements Serializable
      * Execute expressions using the selected optimization level.
      * <p>
      * Level 0 (AST): always use AST interpreter.
-     * Level 2 (IR):  use IR interpreter; fall back to AST on IR failure.
-     * Level 3 (BC):  compile to JVM bytecode; on CompilationError,
-     *                fall back to IR, then to AST if IR also fails.
+     * Level 1 (IR):  use unoptimized IR interpreter.
+     * Level 2 (IR):  use optimized IR interpreter.
+     * Level 3 (BC):  compile to JVM bytecode; on CompilationError, fall back to IR.
      * <p>
-     * Exceptions from the selected level are user program errors.
-     * Exceptions from fallback indicate the primary level cannot handle
-     * the code and are logged (not propagated).
+     * If an IR function has unsupported ops (trampolines), it falls back
+     * to AST. Exceptions during execution propagate directly — they are
+     * either user program errors or IR/BC interpreter bugs that should
+     * be fixed (not silently absorbed).
      */
     private Object evaluate(List<ELNode> defs, List<ELNode> exps,
                             EvaluationContext env, javax.el.ELContext elctx,
@@ -197,12 +198,7 @@ public class ELProgram implements Serializable
                     if (DEBUG) System.err.println("[elite] IR has unsupported ops, using AST");
                     return evaluateAST(exps, frame, env);
                 }
-                try {
-                    return new IRInterpreter(elctx, irFn, env).execute(null);
-                } catch (Exception e) {
-                    if (DEBUG) System.err.println("[elite] IR fallback: " + e.getMessage());
-                    return evaluateAST(exps, frame, env);
-                }
+                return new IRInterpreter(elctx, irFn, env).execute(null);
             }
 
             case 2: {
@@ -211,12 +207,7 @@ public class ELProgram implements Serializable
                     if (DEBUG) System.err.println("[elite] IR has unsupported ops, using AST");
                     return evaluateAST(exps, frame, env);
                 }
-                try {
-                    return new IRInterpreter(elctx, irFn, env).execute(null);
-                } catch (Exception e) {
-                    if (DEBUG) System.err.println("[elite] IR fallback: " + e.getMessage());
-                    return evaluateAST(exps, frame, env);
-                }
+                return new IRInterpreter(elctx, irFn, env).execute(null);
             }
 
             case 3: default: {
@@ -227,23 +218,7 @@ public class ELProgram implements Serializable
                     return cf.execute(elctx, null);
                 } catch (CompilationError e) {
                     if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
-                    if (!irFn.hasUnsupportedOps()) {
-                        try {
-                            return new IRInterpreter(elctx, irFn, env).execute(null);
-                        } catch (Exception irErr) {
-                            if (DEBUG) System.err.println("[elite] IR fallback: " + irErr.getMessage());
-                        }
-                    }
-                    return evaluateAST(exps, frame, env);
-                } catch (RuntimeException e) {
-                    // Bytecode executed but threw — fall back to IR, then AST
-                    if (DEBUG) System.err.println("[elite] bytecode runtime fallback: " + e.getMessage());
-                    if (!irFn.hasUnsupportedOps()) {
-                        try {
-                            return new IRInterpreter(elctx, irFn, env).execute(null);
-                        } catch (Exception irErr) { /* fall through to AST */ }
-                    }
-                    return evaluateAST(exps, frame, env);
+                    return new IRInterpreter(elctx, irFn, env).execute(null);
                 }
                 // VerifyError and other Errors propagate — they're compiler bugs
             }
