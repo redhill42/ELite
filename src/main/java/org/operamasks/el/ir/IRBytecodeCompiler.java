@@ -358,7 +358,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, 2);   // base
                 mv.visitVarInsn(A_ALOAD, 3);   // key
                 mv.visitVarInsn(A_ALOAD, 1);   // value
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "storeProp", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case LOAD_FIELD -> {
@@ -366,7 +366,7 @@ public class IRBytecodeCompiler {
                 String name = (String) fn.constantPool()[idx];
                 // Stack: [base]. LDC name → [base, name] — name on top (2nd param ✓)
                 mv.visitLdcInsn(name);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "loadField", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case STORE_FIELD -> {
@@ -374,7 +374,7 @@ public class IRBytecodeCompiler {
                 String name = (String) fn.constantPool()[idx];
                 // Stack: [value, base]. LDC name → [value, base, name] — name on top (3rd param ✓)
                 mv.visitLdcInsn(name);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case PUSH_GLOBAL -> emitCall1("pushGlobal", v);
@@ -383,7 +383,7 @@ public class IRBytecodeCompiler {
                 String name = (String) fn.constantPool()[idx];
                 mv.visitLdcInsn(name);
                 mv.visitInsn(A_SWAP);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "storeGlobal", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
 
@@ -438,7 +438,7 @@ public class IRBytecodeCompiler {
                 Object fnObj = fn.constantPool()[funcIdx];
                 mv.visitLdcInsn(fnObj);
                 mv.visitInsn(A_SWAP);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "createClosure",
                     "(Lorg/operamasks/el/ir/IRFunction;[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
             }
@@ -466,21 +466,21 @@ public class IRBytecodeCompiler {
                 // interpreter, which handles deopt correctly.
                 mv.visitInsn(A_DUP);
                 emitIntConst(typeId);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
             }
             case INC -> {
                 int varIdx = pl;
                 mv.visitVarInsn(A_ALOAD, 0);
                 emitIntConst(varIdx);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "incLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
             }
             case DEC -> {
                 int varIdx = pl;
                 mv.visitVarInsn(A_ALOAD, 0);
                 emitIntConst(varIdx);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "decLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
             }
             case NOP -> {}
@@ -652,11 +652,11 @@ public class IRBytecodeCompiler {
             }
         } else if (direct) {
             // No compiled function available — use helper
-            mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                 "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         } else {
             // Stack is [target, argsArray] — correct order for invokeDyn(target, args)
-            mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+            mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                 "invokeDyn", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
     }
@@ -669,7 +669,10 @@ public class IRBytecodeCompiler {
     private static final ThreadLocal<javax.el.ELContext> callerELCtx = new ThreadLocal<>();
 
     /** Set the caller's ELContext for global variable resolution. */
-    public static void setCallerELCtx(javax.el.ELContext ctx) { callerELCtx.set(ctx); }
+    public static void setCallerELCtx(javax.el.ELContext ctx) {
+        callerELCtx.set(ctx);
+        elite.rt.Runtime.setCallerELCtx(ctx);
+    }
 
     private static final ThreadLocal<java.util.Map<Integer, IRFunction>> funcRegistry =
         ThreadLocal.withInitial(java.util.HashMap::new);
@@ -681,6 +684,7 @@ public class IRBytecodeCompiler {
         localELCtx.remove();
         funcRegistry.remove();
         funcIdCounter.remove();
+        elite.rt.Runtime.resetState();
     }
 
     private static javax.el.ELContext elctx() { return localELCtx.get(); }
@@ -727,15 +731,15 @@ public class IRBytecodeCompiler {
     // ── Simple call helpers (1-2 args popped from stack) ──
 
     private void emitCall2(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCall3(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCall1Obj(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCall1(String method, InstructionView v) {
@@ -744,7 +748,7 @@ public class IRBytecodeCompiler {
         int idx = v.constPoolIndex();
         String name = (String) fn.constantPool()[idx];
         mv.visitLdcInsn(name);
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/String;)Ljava/lang/Object;", false);
     }
     private void emitCallN(String method, int count) {
@@ -763,7 +767,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, slots[i]); mv.visitInsn(A_AASTORE);
             }
         }
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "([Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
 
@@ -1194,7 +1198,7 @@ public class IRBytecodeCompiler {
         String desc = argCount == 2
             ? "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
             : "(Ljava/lang/Object;)Ljava/lang/Object;";
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/ir/IRBytecodeCompiler",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, desc, false);
     }
 

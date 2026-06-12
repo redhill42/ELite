@@ -21,11 +21,14 @@ package org.operamasks.el.ir;
  * Created by the CLOSURE opcode at runtime.
  */
 public class IRClosure {
-    final IRFunction function;
-    final Object[] captured;
+    public final IRFunction function;
+    public final Object[] captured;
 
     public IRClosure(IRFunction function, Object[] captured) {
         this.function = function;
         this.captured = captured;
     }
+
+    public IRFunction getFunction() { return function; }
+    public Object[] getCaptured() { return captured; }
 }
