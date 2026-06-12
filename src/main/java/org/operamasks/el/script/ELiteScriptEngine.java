@@ -78,9 +78,10 @@ class ELiteScriptEngine extends AbstractScriptEngine
     public Object eval(String script, ScriptContext ctx)
         throws ScriptException
     {
+        ELContext elctx = null;
         try {
             ELProgram program = parse(script);
-            ELContext elctx = getELContext(ctx);
+            elctx = getELContext(ctx);
 
             // ---- Type checking pass ----
             String filename = (String)get(ScriptEngine.FILENAME);
@@ -109,6 +110,8 @@ class ELiteScriptEngine extends AbstractScriptEngine
             throw ex2;
         } catch (ELException ex) {
             throw new ScriptException(ex);
+        } catch (RuntimeException ex) {
+            throw new ScriptException(new org.operamasks.el.eval.EvaluationException(elctx, ex));
         }
     }
 
