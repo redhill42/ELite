@@ -491,7 +491,7 @@ public class IRBytecodeCompiler {
 
             // Trampoline: evaluate AST node via Runtime helper.
             // TRY nodes fall back to AST evaluation (JVM exception tables not yet implemented).
-            case 0xE0 -> {
+            case TRAMPOLINE -> {
                 int poolIdx = v.constPoolIndex();
                 Object nodeObj = fn.constantPool()[poolIdx];
                 if (nodeObj instanceof TryDescriptor td) {

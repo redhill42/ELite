@@ -19,6 +19,8 @@ package org.operamasks.el.ir;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.operamasks.el.ir.Opcode.TRAMPOLINE;
+
 /**
  * A compiled function in IR form.
  *
@@ -121,8 +123,8 @@ public class IRFunction {
             InstructionView v = new InstructionView(code, start);
             while (v.inBounds() && v.offset() < end) {
                 int op = v.opcode();
-                // Trampoline ops (0xE0) require AST evaluation — IR can't handle
-                if (op == 0xE0) return true;
+                // Trampoline ops (TRAMPOLINE) require AST evaluation — IR can't handle
+                if (op == TRAMPOLINE) return true;
                 v.advance();
             }
         }

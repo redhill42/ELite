@@ -145,6 +145,10 @@ public final class Opcode {
     public static final int GUARD_TYPE      = 0x80;
     public static final int STRICT_GUARD    = 0xFFFF;  // sentinel: throw error on mismatch
 
+    // ── Trampoline (0xE0) ──
+    /** Evaluate an AST node directly (for features not yet compiled to IR). */
+    public static final int TRAMPOLINE = 0xE0;
+
     // ── Concatenation (0x90-0x91) ──
     public static final int CAT    = 0x90;
     public static final int DYNCAT = 0x91;
@@ -258,6 +262,7 @@ public final class Opcode {
             case INVOKE_GETTER: return "INVOKE_GETTER";
             case INVOKE_SETTER: return "INVOKE_SETTER";
             case INVOKE_METHOD: return "INVOKE_METHOD";
+            case TRAMPOLINE: return "TRAMPOLINE";
             case NOP: return "NOP";
             default: return "UNKNOWN(" + op + ")";
         }

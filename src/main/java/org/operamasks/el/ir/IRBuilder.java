@@ -458,7 +458,7 @@ public class IRBuilder {
         build(node.right);  // evaluate the expression
         // Put type name in constant pool, emit INSTANCEOF trampoline
         int typeIdx = putConstant(node.type);
-        current.emit2(0xE0, K_DYN, typeIdx, node.negative ? 1 : 0);
+        current.emit2(TRAMPOLINE, K_DYN, typeIdx, node.negative ? 1 : 0);
     }
 
     private void buildContains(ELNode node) {
@@ -912,7 +912,7 @@ public class IRBuilder {
     private void buildTry(ELNode.TRY node) {
         // Compile try body, catch handlers, and finally block as nested IR functions.
         // Bytecode compiler uses these to generate JVM exception tables.
-        // IR interpreter falls back to AST trampoline (via 0xE0).
+        // IR interpreter falls back to AST trampoline (via TRAMPOLINE).
 
         IRFunction tryBody = compileSubtree(node.body, null);
         int handlerCount = node.handlers != null ? node.handlers.length : 0;
@@ -931,7 +931,7 @@ public class IRBuilder {
         TryDescriptor td = new TryDescriptor(node, tryBody, catchTypes, catchVars,
                                               catchBodies, finallyBlock);
         int poolIdx = putConstant(td);
-        current.emit2(0xE0 /* OP_INTERP_TRAMPOLINE */, K_DYN, poolIdx, 0);
+        current.emit2(TRAMPOLINE, K_DYN, poolIdx, 0);
     }
 
     /** Compile a single ELNode subtree into a standalone IRFunction. */
@@ -984,7 +984,7 @@ public class IRBuilder {
     // ── Trampoline ──
     private void buildTrampoline(ELNode node) {
         int poolIdx = putConstant(node);
-        current.emit2(0xE0 /* OP_INTERP_TRAMPOLINE */, K_DYN, poolIdx, 0);
+        current.emit2(TRAMPOLINE, K_DYN, poolIdx, 0);
     }
 
     // ── Block management ──

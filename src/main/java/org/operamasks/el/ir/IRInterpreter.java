@@ -37,7 +37,7 @@ import static org.operamasks.el.ir.Opcode.*;
  * AST evaluator.
  *
  * <p>Dynamically-typed operations and complex features delegate to the
- * existing AST evaluator via the "trampoline" mechanism (opcode 0xE0).
+ * existing AST evaluator via the "trampoline" mechanism (opcode 0xE0 (TRAMPOLINE)).
  * As more operations are specialized, fewer trampolines are needed.
  */
 public class IRInterpreter {
@@ -520,7 +520,7 @@ public class IRInterpreter {
                 }
 
                 // ============ Trampoline to AST evaluator ============
-                case 0xE0: { // OP_INTERP_TRAMPOLINE
+                case TRAMPOLINE: { // OP_TRAMPOLINE
                     int poolIdx = oc == 0 ? pl : code[ip + 1];
                     Object obj = constantPool[poolIdx];
                     // TryDescriptor wraps pre-compiled IR blocks; evaluate the original TRY node
