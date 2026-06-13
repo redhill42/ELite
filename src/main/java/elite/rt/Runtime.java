@@ -528,13 +528,72 @@ public final class Runtime {
         catch (Exception e) { return v; }
     }
 
+    /** Equality comparison following ELNode.Equality.evaluate() type resolution. */
     public static Object dynEq(Object x, Object y) {
-        if (x == y) return true;
-        if (x == null || y == null) return false;
-        if (x instanceof Number && y instanceof Number) {
-            return ((Number)x).doubleValue() == ((Number)y).doubleValue();
+        return equality(x, y, true);
+    }
+    public static Object dynNe(Object x, Object y) {
+        return equality(x, y, false);
+    }
+    private static boolean equality(Object x, Object y, boolean isEq) {
+        if (x == y) return isEq;
+        if (x == null || y == null) return !isEq;
+
+        Class<?> xc = x.getClass(), yc = y.getClass();
+        if (xc == yc) {
+            if (x instanceof Number) return isEq == numEq((Number)x, (Number)y);
+            if (x instanceof Object[]) return isEq == arrayEq((Object[])x, (Object[])y);
+            return isEq == x.equals(y);
         }
-        return java.util.Objects.equals(x, y);
+
+        if (x instanceof Number && y instanceof Number) {
+            if (x instanceof org.operamasks.el.eval.closure.ClosureObject) return isEq == x.equals(y);
+            if (x instanceof java.math.BigDecimal || y instanceof java.math.BigDecimal)
+                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToBigDecimal(x),
+                                    org.operamasks.el.eval.TypeCoercion.coerceToBigDecimal(y));
+            if (x instanceof elite.lang.Decimal || y instanceof elite.lang.Decimal)
+                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToDecimal(x),
+                                    org.operamasks.el.eval.TypeCoercion.coerceToDecimal(y));
+            if (x instanceof Float || y instanceof Float || x instanceof Double || y instanceof Double)
+                return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToDouble(x)
+                             == org.operamasks.el.eval.TypeCoercion.coerceToDouble(y));
+            if (x instanceof elite.lang.Rational || y instanceof elite.lang.Rational)
+                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToRational(x),
+                                    org.operamasks.el.eval.TypeCoercion.coerceToRational(y));
+            if (x instanceof java.math.BigInteger || y instanceof java.math.BigInteger)
+                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToBigInteger(x),
+                                    org.operamasks.el.eval.TypeCoercion.coerceToBigInteger(y));
+            return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToLong(x)
+                         == org.operamasks.el.eval.TypeCoercion.coerceToLong(y));
+        }
+
+        if (x instanceof Boolean || y instanceof Boolean)
+            return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToBoolean(x)
+                         == org.operamasks.el.eval.TypeCoercion.coerceToBoolean(y));
+        if (x instanceof Enum || y instanceof Enum) {
+            if (!(x instanceof Enum)) x = org.operamasks.el.eval.TypeCoercion.coerceToEnum(x, ((Enum<?>)y).getClass());
+            if (!(y instanceof Enum)) y = org.operamasks.el.eval.TypeCoercion.coerceToEnum(y, ((Enum<?>)x).getClass());
+            return isEq == x.equals(y);
+        }
+        if (x instanceof String || y instanceof String)
+            return isEq == x.toString().equals(y.toString());
+        if (x instanceof Object[] && y instanceof Object[])
+            return isEq == arrayEq((Object[])x, (Object[])y);
+        if (x instanceof Character && y instanceof Number
+            || x instanceof Number && y instanceof Character)
+            return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToCharacter(x)
+                         == org.operamasks.el.eval.TypeCoercion.coerceToCharacter(y));
+        return isEq == x.equals(y);
+    }
+    private static boolean numEq(Number x, Number y) {
+        return x.doubleValue() == y.doubleValue();
+    }
+    private static boolean arrayEq(Object[] x, Object[] y) {
+        if (x.length != y.length) return false;
+        for (int i = 0; i < x.length; i++) {
+            if (!equality(x[i], y[i], true)) return false;
+        }
+        return true;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
