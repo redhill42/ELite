@@ -462,7 +462,66 @@ public final class Runtime {
     }
 
     public static Object dynCat(Object x, Object y) {
-        return String.valueOf(x) + String.valueOf(y);
+        if (x == null) x = "null";
+        if (y == null) y = "null";
+
+        if (x instanceof Closure && y instanceof Closure) {
+            return ((Closure)x).compose((Closure)y);
+        }
+        if (x instanceof Seq sx) {
+            return y instanceof java.util.Collection<?> cy
+                ? sx.append(coerceToSeq(cy)) : sx.append(org.operamasks.el.eval.seq.Cons.make(y));
+        }
+        if (x instanceof java.util.Collection<?> cx) {
+            java.util.ArrayList<Object> result = new java.util.ArrayList<>(cx);
+            if (y instanceof java.util.Collection<?> cy) result.addAll(cy);
+            else result.add(y);
+            return result;
+        }
+        if (x.getClass().isArray()) {
+            Class<?> ct = x.getClass().getComponentType();
+            int xlen = java.lang.reflect.Array.getLength(x);
+            if (y.getClass() == x.getClass()) {
+                int ylen = java.lang.reflect.Array.getLength(y);
+                Object a = java.lang.reflect.Array.newInstance(ct, xlen + ylen);
+                System.arraycopy(x, 0, a, 0, xlen);
+                System.arraycopy(y, 0, a, xlen, ylen);
+                return a;
+            } else if (y.getClass().isArray()) {
+                int ylen = java.lang.reflect.Array.getLength(y);
+                Object[] a = new Object[xlen + ylen];
+                for (int i = 0; i < xlen; i++) a[i] = java.lang.reflect.Array.get(x, i);
+                for (int i = 0; i < ylen; i++) a[xlen + i] = java.lang.reflect.Array.get(y, i);
+                return a;
+            } else {
+                Object a = java.lang.reflect.Array.newInstance(ct, xlen + 1);
+                System.arraycopy(x, 0, a, 0, xlen);
+                java.lang.reflect.Array.set(a, xlen, y);
+                return a;
+            }
+        }
+        if (y instanceof Seq sy) {
+            return new org.operamasks.el.eval.seq.Cons(x, sy);
+        }
+        if (y instanceof java.util.Collection<?> cy) {
+            java.util.ArrayList<Object> result = new java.util.ArrayList<>();
+            result.add(x);
+            result.addAll(cy);
+            return result;
+        }
+        if (y.getClass().isArray()) {
+            Class<?> ct = y.getClass().getComponentType();
+            int len = java.lang.reflect.Array.getLength(y);
+            Object a = java.lang.reflect.Array.newInstance(ct, len + 1);
+            java.lang.reflect.Array.set(a, 0, x);
+            System.arraycopy(y, 0, a, 1, len);
+            return a;
+        }
+        return new StringBuilder().append(x).append(y).toString();
+    }
+    private static Seq coerceToSeq(java.util.Collection<?> c) {
+        if (c instanceof Seq s) return s;
+        return org.operamasks.el.eval.seq.Cons.make(c.toArray());
     }
 
     public static Object dynEq(Object x, Object y) {
