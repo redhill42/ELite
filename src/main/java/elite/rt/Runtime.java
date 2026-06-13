@@ -143,21 +143,36 @@ public final class Runtime {
                 ((Number)begin).longValue(), ((Number)end).longValue(), 1);
     }
 
+    /** 'in' operator following ELNode.IN.eval() logic. */
     public static Object dynIn(Object coll, Object elem) {
-        if (coll instanceof java.util.Collection<?> c)
-            return c.contains(elem);
+        if (coll == null || elem == null) return false;
+
         if (coll instanceof Object[] a) {
-            for (Object o : a)
-                if (java.util.Objects.equals(o, elem))
-                    return true;
+            for (Object o : a) if (equality(elem, o, true)) return true;
             return false;
         }
-        if (coll instanceof Seq seq) {
-            while (!seq.isEmpty()) {
-                if (java.util.Objects.equals(seq.head(), elem))
-                    return true;
-                seq = seq.tail();
+        if (coll.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(coll);
+            Class<?> ct = coll.getClass().getComponentType();
+            elem = tryCoerce(null, elem, ct);
+            for (int i = 0; i < len; i++) {
+                if (equality(elem, java.lang.reflect.Array.get(coll, i), true)) return true;
             }
+            return false;
+        }
+        if (coll instanceof java.util.Collection<?> c) {
+            if (elem instanceof java.util.Collection) return c.containsAll((java.util.Collection<?>)elem);
+            if (c instanceof java.util.Set || c instanceof elite.lang.Range) return c.contains(elem);
+            if (c instanceof Seq seq) {
+                while (!seq.isEmpty()) {
+                    if (equality(elem, seq.head(), true)) return true;
+                    seq = seq.tail();
+                }
+                return false;
+            }
+            // Generic collection: iterate with equality comparison
+            for (Object o : c) if (equality(elem, o, true)) return true;
+            return false;
         }
         return false;
     }
