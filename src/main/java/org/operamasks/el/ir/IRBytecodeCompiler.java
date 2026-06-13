@@ -95,7 +95,8 @@ public class IRBytecodeCompiler {
             String methodDesc = desc != null ? desc : EXECUTE_DESC;
             java.lang.reflect.Method m = c.getMethod("execute",
                 desc != null ? typeParamClasses(argTypes) : new Class[]{javax.el.ELContext.class, Object[].class});
-            return new CompiledFunction(m, bc, name, argTypes, fn.maxLocalCount());
+            return new CompiledFunction(m, bc, name, argTypes, fn.maxLocalCount(),
+                fn.defaultValues());
         } catch (Exception e) {
             throw new RuntimeException("Bytecode compile failed", e);
         }
@@ -192,8 +193,10 @@ public class IRBytecodeCompiler {
             int totalSlots = 1; // ELContext in slot 0
             for (int t : argTypeIds) totalSlots += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
             int arrSlot = totalSlots; // put locals array after all params + ELContext
-            // Create Object[paramCount]
-            emitIntConst(argTypeIds.length);
+            // Create Object[maxLocals] — use maxLocalCount so there is room
+            // for default parameter values beyond the explicitly passed args.
+            int maxLoc = Math.max(argTypeIds.length, fn.maxLocalCount());
+            emitIntConst(maxLoc);
             mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
             mv.visitVarInsn(A_ASTORE, arrSlot); // locals array in safe slot
             // Box each param into locals[i]
@@ -1269,11 +1272,13 @@ public class IRBytecodeCompiler {
         private final String className;
         private final int[] argTypes;
         private final int maxLocals;
+        private final Object[] defaultValues;
 
         CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className,
-                         int[] argTypes, int maxLocals) {
+                         int[] argTypes, int maxLocals, Object[] defaultValues) {
             this.method = m; this.className = className; this.bytecode = bc;
             this.argTypes = argTypes; this.maxLocals = maxLocals;
+            this.defaultValues = defaultValues;
         }
 
         public Object execute(javax.el.ELContext elctx, Object[] locals) {
@@ -1282,6 +1287,14 @@ public class IRBytecodeCompiler {
                 Object[] expanded = new Object[maxLocals];
                 System.arraycopy(locals, 0, expanded, 0, locals.length);
                 locals = expanded;
+            }
+            // Apply default parameter values for missing args
+            if (defaultValues != null) {
+                int provided = 0;
+                while (provided < locals.length && locals[provided] != null) provided++;
+                for (int i = provided; i < defaultValues.length && i < locals.length; i++) {
+                    if (defaultValues[i] != null) locals[i] = defaultValues[i];
+                }
             }
             try {
                 return method.invoke(null, elctx, locals);

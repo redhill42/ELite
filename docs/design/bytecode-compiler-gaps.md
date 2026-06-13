@@ -129,10 +129,26 @@ public static final int DEC = 0xA4;  // decrement (to implement)
 
 INC 和 DEC 已在 IR 解释器（`IRInterpreter.java` 行 318-339）和字节码编译器（`IRBytecodeCompiler.java` 行 460-473）中完整实现。`(to implement)` 注释过时。
 
+## 🟡 O3 默认参数 + TCO：NegativeArraySizeException（2026-06-13 新增）
+
+**影响**：O3 — 带默认参数的递归函数（使用 TCO/INVOKE_TAIL）在字节码执行时抛 `NegativeArraySizeException: -2`。
+
+**复现**：`define fib(n, a=1, b=1) => n <= 2 ? b : fib(n-1, b, a+b); fib(1)` — 即使 n=1 不触发递归也失败。
+
+**已确认**：简单默认参数（`define add(a, b=10) => a+b; add(5)` → 15）在 O3 正确，说明基础的默认参数字节码生成是正常的。问题专门出现在包含 `INVOKE_TAIL` 操作码的函数中，即使该操作码在运行时未被实际执行。
+
+**初步分析**：`invokeDirect` 调用链中，specialized function 被编译为字节码。编译过程中 `<clinit>` 生成 `$varNames` 静态字段，`compileBytecode()` 在函数入口生成了默认值填充代码。`INVOKE_TAIL` 的 GOTO 跳转到 `blockLabels[0]`，可能与入口处的默认值代码产生非预期的字节码交互。需进一步用 ASM ClassReader 检查生成的字节码。
+
+**修复方向**：
+1. 检查 `INVOKE_TAIL` 的 GOTO 目标是否跳过了默认值初始化
+2. 或改为在 `<init>` 时创建扩大的 locals 数组（而非 bytecode 中检查 null）
+3. 或将默认值填充代码移到 blockLabels[0] 之后的一个独立前导块中
+
 ## 六、修复优先级
 
 | 优先级 | 项目 | 投入 | 收益 |
 |--------|------|:--:|------|
+| 🟡 | O3 默认参数+TCO NegativeArraySizeException | 中（需字节码级调试） | 递归函数+默认参数的 O3 支持 |
 | P1 | Long/Double 类型化算术 | 中（12条指令 + unbox/box） | 消除 12 条指令的运行时动态分派 |
 | P2 | GUARD_TYPE deopt | 高（需要重构字节码生成架构） | guard 失败时局部回退而非全局回退 |
 | P3 | 清理过时注释和死指令 | 极低 | 代码可维护性 |
