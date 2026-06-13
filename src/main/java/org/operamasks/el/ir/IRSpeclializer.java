@@ -208,6 +208,18 @@ public class IRSpeclializer implements IRPass {
 
         if (!hasInferred || firstDyn == null) return null;
 
+        // Do not split blocks containing INVOKE_TAIL — the tail-call jump
+        // makes any code after it unreachable (e.g. SCOPE_EXIT, JUMP suffix).
+        // The deopt split would place INVOKE_TAIL before the suffix jump,
+        // breaking the scope stack balance.
+        {
+            InstructionView scan = new InstructionView(code, start);
+            while (scan.inBounds() && scan.offset() < end) {
+                if (scan.opcode() == Opcode.INVOKE_TAIL) return null;
+                scan.advance();
+            }
+        }
+
         // Build prefix: copy all instructions, replacing inferred dynamic ops
         // with guards + typed op. Build deopt: copy all instructions as-is.
         sp = 0;
