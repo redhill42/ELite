@@ -737,15 +737,10 @@ public class IRInterpreter {
     // ── Global variable storage ──
 
     private void storeGlobal(String name, Object value) {
-        if (!scopeStack.isEmpty()) {
-            // Inside a SCOPE_ENTER block: write to evalContext head (scoped, temporary)
-            evalContext.setVariable(name,
-                new org.operamasks.el.eval.closure.LiteralClosure(value));
-        } else {
-            // Top-level: write to ELContext VariableMapper (persistent across evals)
-            elctx.getVariableMapper().setVariable(name,
-                new org.operamasks.el.eval.closure.LiteralClosure(value));
-        }
+        // Always write to the persistent VariableMapper. Scoped defines use
+        // STORE_VAR (not STORE_GLOBAL) to create temporary shadow variables.
+        elctx.getVariableMapper().setVariable(name,
+            new org.operamasks.el.eval.closure.LiteralClosure(value));
     }
 
     // ── Direct field access ──
