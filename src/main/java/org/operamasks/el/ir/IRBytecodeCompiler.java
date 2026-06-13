@@ -302,6 +302,12 @@ public class IRBytecodeCompiler {
             case POP_N -> { for (int i=0; i<pl; i++) mv.visitInsn(A_POP); }
             case RETURN -> { mv.visitInsn(A_ARETURN); }  // already boxed
             case RETURN_VOID -> { mv.visitInsn(A_ACONST_NULL); mv.visitInsn(A_ARETURN); }
+            case THROW -> {
+                // Wrap non-RuntimeException in UserException, then throw
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                    "wrapThrow", "(Ljava/lang/Object;)Ljava/lang/RuntimeException;", false);
+                mv.visitInsn(191); // ATHROW
+            }
             // ─── Control flow ───
             case JUMP -> mv.visitJumpInsn(A_GOTO, blockLabels[v.jumpTarget()]);
             case JUMP_IF_TRUE -> {
@@ -483,9 +489,20 @@ public class IRBytecodeCompiler {
                 emitDirectSetter(m);
             }
 
-            // Trampoline: AST-dependent ops that bytecode cannot compile
-            case 0xE0 -> throw new CompilationError(
-                "Trampoline op not supported in bytecode: " + fn.constantPool()[v.constPoolIndex()]);
+            // Trampoline: evaluate AST node via Runtime helper.
+            // TRY nodes are compiled inline using JVM exception tables.
+            case 0xE0 -> {
+                int poolIdx = v.constPoolIndex();
+                Object nodeObj = fn.constantPool()[poolIdx];
+                if (nodeObj instanceof org.operamasks.el.parser.ELNode.TRY tryNode) {
+                    emitTryCatch(tryNode);
+                } else {
+                    mv.visitVarInsn(A_ALOAD, S_CTX);
+                    mv.visitLdcInsn(poolIdx);
+                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                        "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
+                }
+            }
             case GUARD_TYPE -> {
                 int typeId = v.payload() & 0xFF;
                 int deoptBlockId = v.opCount() > 0 ? v.operand(0) : 0;

@@ -79,6 +79,21 @@ public final class Runtime {
         return node.getValue(new org.operamasks.el.eval.EvaluationContext(c));
     }
 
+    /** Evaluate a trampoline node by pool index (for bytecode — LDC can't embed ELNode). */
+    public static Object trampolineById(ELContext c, int poolIdx) {
+        return trampoline(c, funcPool.get()[poolIdx]);
+    }
+
+    /** Wrap a throwable value as RuntimeException for ATHROW bytecode. */
+    public static RuntimeException wrapThrow(Object cause) {
+        if (cause instanceof RuntimeException re) return re;
+        if (cause instanceof Throwable t)
+            return new org.operamasks.el.eval.UserException(null, t);
+        if (cause instanceof String s)
+            return new org.operamasks.el.eval.UserException(null, s);
+        return new org.operamasks.el.eval.UserException(null);
+    }
+
     public static Object invokeDyn(ELContext c, Object target, Object[] args) {
         if (target instanceof IRFunction irFn) {
             return new IRInterpreter(c, irFn, null).execute(args);

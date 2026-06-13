@@ -221,6 +221,11 @@ public class IREmitter {
         return emit1(RETURN_VOID, K_NONE, 0);
     }
 
+    /** Pop value from stack and throw (wrapping as UserException if needed). */
+    public IREmitter emitThrow() {
+        return emit1(THROW, K_NONE, 0);
+    }
+
     public IREmitter emitInvoke(int funcIndex, int argCount) {
         return emit2(INVOKE, K_FN, funcIndex & 0xFFFF, argCount);
     }

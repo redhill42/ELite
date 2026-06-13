@@ -139,6 +139,7 @@ public class IRBuilder {
             case Token.BREAK: buildBreak(); break;
             case Token.CONTINUE: buildContinue(); break;
             case Token.RETURN: buildReturn((ELNode.RETURN) node); break;
+            case Token.THROW:  buildThrow((ELNode.THROW) node); break;
             case Token.LAMBDA: buildLambda((ELNode.LAMBDA) node); break;
 
             case Token.CONS:      buildCons((ELNode.CONS) node); break;
@@ -900,6 +901,11 @@ public class IRBuilder {
     private void buildReturn(ELNode.RETURN node) {
         if (node.right != null) { build(node.right); int t = typeIdFromNode(node.right); current.emitReturn(t >= 0 ? t : T_INT); }
         else current.emitReturnVoid();
+    }
+
+    private void buildThrow(ELNode.THROW node) {
+        build(node.cause);
+        current.emitThrow();
     }
 
     // ── Lambda ──

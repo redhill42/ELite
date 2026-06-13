@@ -288,6 +288,15 @@ public class IRInterpreter {
                 case RETURN_VOID: {
                     return null;
                 }
+                case THROW: {
+                    Object cause = pop();
+                    if (cause instanceof RuntimeException re) throw re;
+                    if (cause instanceof Throwable t)
+                        throw new org.operamasks.el.eval.UserException(elctx, t);
+                    if (cause instanceof String s)
+                        throw new org.operamasks.el.eval.UserException(elctx, s);
+                    throw new org.operamasks.el.eval.UserException(elctx);
+                }
 
                 // ============ Memory / variables ============
                 case STORE_VAR: {
