@@ -137,7 +137,7 @@ public final class Opcode {
     public static final int GET_ITER       = 0x7C;
     public static final int ITER_NEXT      = 0x7D;
     public static final int ITER_DONE      = 0x7E;
-    public static final int DYNIN          = 0x7F;  // 'in' operator (was CONTAINS)
+    public static final int DYNIN          = 0x7F;  // 'in' operator
 
     // ── Type guards (0x80-0x8F) ──
     // GUARD_TYPE typeId, deoptBlockId: check stack top type.

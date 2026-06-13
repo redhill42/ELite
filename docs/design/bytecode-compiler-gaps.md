@@ -40,38 +40,18 @@
 
 IR 共定义 85 个 opcode（不含 `NOP`），在 `-O3` 字节码编译器中的处理情况：
 
-## 一、指令覆盖总览
-
-IR 共定义 85 个 opcode（不含 `NOP`），在 `-O3` 字节码编译器中的处理情况：
-
 | 分类 | 数量 | 说明 |
 |------|:--:|------|
 | 纯 JVM 字节码 | ~40 | 直接映射到 JVM 指令（ADD, CMP, JUMP, RETURN 等） |
 | 静态辅助方法 | ~30 | 调用 `IRBytecodeCompiler` 的静态 helper（`pushGlobal`, `invokeDyn`, `loadProp` 等） |
 | 直接 invokevirtual | 3 | `INVOKE_GETTER`/`SETTER`/`METHOD` — checkcast + invoke |
 | CompilationError 回退 | 1 | `0xE0` trampoline — AST 依赖，永久无法编译 |
-| **缺失** | **1** | `CONTAINS` (0x7F) — 应当修复 |
 | **退化** | **12** | Long/Double 类型化算术 — 应生成原生 JVM 指令 |
 | 死指令 | 3 | `TABLE_SWITCH`, `CAPTURE`, `CAT` — 从未被 IRBuilder 发射 |
 
 ## 二、已知缺陷
 
-### 缺陷 1：CONTAINS 缺失（严重）
-
-**文件**：`IRBytecodeCompiler.java` — `compileInst()` 的 default 分支
-
-`in` 操作符（`x in [1,2,3]`）在 IRBuilder 中发射 `CONTAINS` 指令，IR 解释器正确处理，但字节码编译器没有 `case CONTAINS`，导致 `default → UnsupportedOperationException("BC: CONTAINS")`。
-
-**回退路径**：`UnsupportedOperationException`（`RuntimeException` 子类）→ `ELProgram.evaluate()` case 3 的 `catch (RuntimeException)` → IR 解释器 → 返回正确结果。每次 `in` 操作都触发完整回退链。
-
-**验证**（`-Delite.debug=true -Delite.opt.level=3`）：
-```
-[elite] bytecode runtime fallback: BC: CONTAINS
-```
-
-**修复**：添加 `case CONTAINS -> emitCall2("contains")` 和静态方法 `contains(Object container, Object element)`。
-
-### 缺陷 2：Long/Double 类型化算术退化（中等）
+### 缺陷 1：Long/Double 类型化算术退化（中等）
 
 **文件**：`IRBytecodeCompiler.java` 行 235-247
 
@@ -92,7 +72,7 @@ case DADD -> emitDynCall("dynAdd", 2);  // 同上
 
 **对比**：`LEQ`-`LGE` 比较指令**已**正确使用原生 `lcmp`（行 256-258），`DEQ`-`DGE` 已使用 `dcmpg`（行 260-265）。同样类型的算术指令却没有对应实现，不一致。
 
-### 缺陷 3：GUARD_TYPE deopt 不支持（架构限制）
+### 缺陷 2：GUARD_TYPE deopt 不支持（架构限制）
 
 **文件**：`IRBytecodeCompiler.java` 行 448-459
 
@@ -153,7 +133,6 @@ INC 和 DEC 已在 IR 解释器（`IRInterpreter.java` 行 318-339）和字节�
 
 | 优先级 | 项目 | 投入 | 收益 |
 |--------|------|:--:|------|
-| P0 | CONTAINS 缺失 | 极低（~5行代码） | 消除 `in` 操作符的 -O3 回退 |
 | P1 | Long/Double 类型化算术 | 中（12条指令 + unbox/box） | 消除 12 条指令的运行时动态分派 |
 | P2 | GUARD_TYPE deopt | 高（需要重构字节码生成架构） | guard 失败时局部回退而非全局回退 |
 | P3 | 清理过时注释和死指令 | 极低 | 代码可维护性 |
