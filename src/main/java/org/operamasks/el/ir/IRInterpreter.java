@@ -534,7 +534,9 @@ public class IRInterpreter {
 
                 // ============ Trampoline to AST evaluator ============
                 case TRAMPOLINE: { // OP_TRAMPOLINE
-                    int poolIdx = oc == 0 ? pl : code[ip + 1];
+                    // Pool index is in payload for both 1-word (oc=0) and 2-word (oc>0).
+                    // The operand word for 2-word TRAMPOLINE is always 0 (unused).
+                    int poolIdx = pl;
                     Object obj = constantPool[poolIdx];
                     // TryDescriptor wraps pre-compiled IR blocks; evaluate the original TRY node
                     if (obj instanceof TryDescriptor td) {
