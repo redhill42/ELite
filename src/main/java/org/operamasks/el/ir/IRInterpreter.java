@@ -624,7 +624,7 @@ public class IRInterpreter {
             case DYNREM -> elite.rt.Runtime.dynRem(lhs, rhs);
             case DYNNEG -> elite.rt.Runtime.dynNeg(lhs);
             case DYNPOW -> elite.rt.Runtime.dynPow(lhs, rhs);
-            case DYNCAT -> elite.rt.Runtime.dynCat(lhs, rhs);
+            case DYNCAT -> elite.rt.Runtime.dynCat(elctx, lhs, rhs);
             case DYNEQ  -> elite.rt.Runtime.dynEq(lhs, rhs);
             case DYNLT  -> elite.rt.Runtime.dynLt(lhs, rhs);
             case DYNLE  -> elite.rt.Runtime.dynLe(lhs, rhs);

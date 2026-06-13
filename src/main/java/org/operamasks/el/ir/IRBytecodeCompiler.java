@@ -539,7 +539,17 @@ public class IRBytecodeCompiler {
             case DYNREM -> emitDynCall("dynRem", 2);
             case DYNNEG -> emitDynCall("dynNeg", 1);
             case DYNPOW -> emitDynCall("dynPow", 2);
-            case DYNCAT -> emitDynCall("dynCat", 2);
+            case DYNCAT -> {
+                // dynCat needs ELContext for TypeCoercion.coerce on array ops.
+                // Stack: [x, y]. Need [ctx, x, y].
+                mv.visitVarInsn(A_ASTORE, S_TMP + 1);  // y → temp
+                mv.visitVarInsn(A_ASTORE, S_TMP);      // x → temp
+                mv.visitVarInsn(A_ALOAD, S_CTX);        // ctx
+                mv.visitVarInsn(A_ALOAD, S_TMP);        // x
+                mv.visitVarInsn(A_ALOAD, S_TMP + 1);    // y
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                    "dynCat", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
             case DYNEQ  -> emitDynCall("dynEq", 2);
             case DYNLT  -> emitDynCall("dynLt", 2);
             case DYNLE  -> emitDynCall("dynLe", 2);

@@ -462,15 +462,19 @@ public final class Runtime {
     }
 
     public static Object dynCat(Object x, Object y) {
+        return dynCat(null, x, y);
+    }
+    public static Object dynCat(ELContext c, Object x, Object y) {
         if (x == null) x = "null";
         if (y == null) y = "null";
 
-        if (x instanceof Closure && y instanceof Closure) {
-            return ((Closure)x).compose((Closure)y);
+        if (x instanceof Closure cx && y instanceof Closure cy) {
+            return cx.compose(cy);
         }
         if (x instanceof Seq sx) {
             return y instanceof java.util.Collection<?> cy
-                ? sx.append(coerceToSeq(cy)) : sx.append(org.operamasks.el.eval.seq.Cons.make(y));
+                ? sx.append(org.operamasks.el.eval.TypeCoercion.coerceToSeq(cy))
+                : sx.append(org.operamasks.el.eval.seq.Cons.make(y));
         }
         if (x instanceof java.util.Collection<?> cx) {
             java.util.ArrayList<Object> result = new java.util.ArrayList<>(cx);
@@ -496,7 +500,7 @@ public final class Runtime {
             } else {
                 Object a = java.lang.reflect.Array.newInstance(ct, xlen + 1);
                 System.arraycopy(x, 0, a, 0, xlen);
-                java.lang.reflect.Array.set(a, xlen, y);
+                java.lang.reflect.Array.set(a, xlen, tryCoerce(c, y, ct));
                 return a;
             }
         }
@@ -513,15 +517,15 @@ public final class Runtime {
             Class<?> ct = y.getClass().getComponentType();
             int len = java.lang.reflect.Array.getLength(y);
             Object a = java.lang.reflect.Array.newInstance(ct, len + 1);
-            java.lang.reflect.Array.set(a, 0, x);
+            java.lang.reflect.Array.set(a, 0, tryCoerce(c, x, ct));
             System.arraycopy(y, 0, a, 1, len);
             return a;
         }
         return new StringBuilder().append(x).append(y).toString();
     }
-    private static Seq coerceToSeq(java.util.Collection<?> c) {
-        if (c instanceof Seq s) return s;
-        return org.operamasks.el.eval.seq.Cons.make(c.toArray());
+    private static Object tryCoerce(ELContext c, Object v, Class<?> t) {
+        try { return c != null ? org.operamasks.el.eval.TypeCoercion.coerce(c, v, t) : v; }
+        catch (Exception e) { return v; }
     }
 
     public static Object dynEq(Object x, Object y) {
