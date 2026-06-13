@@ -56,6 +56,13 @@ public class IRBuilder {
     private record LoopTargets(int continueBlock, int breakBlock) {}
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
+    // ── Scope tracking (compile-time slot allocation for O3) ──
+    // Each scope is a map from variable name → slot index.
+    // Pushed on SCOPE_ENTER, popped on SCOPE_EXIT.
+    private final Deque<Map<String, Integer>> scopeStack = new ArrayDeque<>();
+    private void enterScope() { scopeStack.push(new LinkedHashMap<>()); current.emitScopeEnter(); }
+    private void leaveScope() { scopeStack.pop(); current.emitScopeExit(); }
+
     // ── Tail-call optimization ──
     String lambdaName = null;
     boolean inTailPosition = false;
@@ -279,19 +286,28 @@ public class IRBuilder {
 
     // ── Identifiers ──
     private void buildIdent(ELNode.IDENT node) {
+        // 1) Check scope chain from innermost to outermost (compile-time scoping)
+        for (Map<String, Integer> scope : scopeStack) {
+            Integer idx = scope.get(node.id);
+            if (idx != null) {
+                int t = typeIdFromNode(node);
+                current.emitPushVar(idx, t >= 0 ? t : T_INT);
+                return;
+            }
+        }
+        // 2) Check top-level varIndex
         Integer idx = varIndex.get(node.id);
         if (idx != null) {
             int t = typeIdFromNode(node);
             current.emitPushVar(idx, t >= 0 ? t : T_INT);
         } else if (parent != null && parent.varIndex.containsKey(node.id)) {
             // Free variable captured from enclosing scope
-            // capturedVars tracks capture order; varIndex gives actual slot
             Integer captureIdx = capturedVars.get(node.id);
             if (captureIdx == null) {
                 capturedVars.put(node.id, capturedVars.size());
-                captureIdx = ensureVar(node.id, 0); // adds to varIndex, returns slot
+                captureIdx = ensureVar(node.id, 0);
             }
-            idx = varIndex.get(node.id); // use actual varIndex slot
+            idx = varIndex.get(node.id);
             int t = typeIdFromNode(node);
             current.emitPushVar(idx, t >= 0 ? t : T_INT);
         } else {
@@ -631,10 +647,10 @@ public class IRBuilder {
         current.emitJump(elseB);
         // Both branches introduce a new scope
         startBlock(thenB);
-        current.emitScopeEnter(); buildTail(node.left); current.emitScopeExit();
+        enterScope(); buildTail(node.left); leaveScope();
         current.emitJump(mergeB);
         startBlock(elseB);
-        current.emitScopeEnter(); buildTail(node.right); current.emitScopeExit();
+        enterScope(); buildTail(node.right); leaveScope();
         current.emitJump(mergeB);
         startBlock(mergeB);
     }
@@ -731,10 +747,22 @@ public class IRBuilder {
     private void buildDefine(ELNode.DEFINE node) {
         if (node.expr != null) {
             build(node.expr);
-            // STORE_GLOBAL pops and pushes the value (stack depth unchanged).
-            // No DUP needed — we no longer store to both STORE_VAR and STORE_GLOBAL.
-            int nameIdx = putConstant(node.id);
-            current.emitStoreGlobal(nameIdx);
+            if (!scopeStack.isEmpty()) {
+                // Scoped define: allocate a new unique slot via ensureVar with a
+                // mangled name (e.g. "$0$s") to avoid reusing the top-level slot.
+                String scopedName = "$" + scopeStack.size() + "$" + node.id;
+                int idx = ensureVar(scopedName);
+                current.emitDup();
+                current.emitStoreVar(idx);
+                scopeStack.peek().put(node.id, idx);
+            } else {
+                // Top-level: STORE_VAR + STORE_GLOBAL (persistent across evals)
+                int idx = ensureVar(node.id);
+                current.emitDup();
+                current.emitStoreVar(idx);
+                int nameIdx = putConstant(node.id);
+                current.emitStoreGlobal(nameIdx);
+            }
         }
     }
 
@@ -769,7 +797,7 @@ public class IRBuilder {
         loopStack.push(new LoopTargets(header, exit));
         current.emitJump(header);
         startBlock(header); build(node.cond); current.emitJumpIfTrue(body); current.emitJump(exit);
-        startBlock(body);   current.emitScopeEnter(); build(node.body); current.emitScopeExit(); current.emitPop(); current.emitJump(header);
+        startBlock(body);   enterScope(); build(node.body); leaveScope(); current.emitPop(); current.emitJump(header);
         startBlock(exit);   emitPushNull();
         // Exit block falls through to next — add RETURN at toplevel by caller
         loopStack.pop();
@@ -785,7 +813,7 @@ public class IRBuilder {
         if (node.cond != null) { build(node.cond); current.emitJumpIfTrue(body); } else current.emitJump(body);
         current.emitJump(exit);
         startBlock(body);
-        if (node.body != null) { current.emitScopeEnter(); build(node.body); current.emitScopeExit(); current.emitPop(); }
+        if (node.body != null) { enterScope(); build(node.body); leaveScope(); current.emitPop(); }
         if (node.step != null) for (ELNode e : node.step) { build(e); current.emitPop(); }
         current.emitJump(header);
         startBlock(exit); emitPushNull();
@@ -826,7 +854,7 @@ public class IRBuilder {
         current.emitJump(body);
 
         startBlock(body);
-        current.emitScopeEnter(); build(node.body); current.emitScopeExit();
+        enterScope(); build(node.body); leaveScope();
         current.emitPop();
         current.emitJump(header);
 
@@ -879,7 +907,7 @@ public class IRBuilder {
 
         // Body: execute, then increment
         startBlock(body);
-        current.emitScopeEnter(); build(node.body); current.emitScopeExit();
+        enterScope(); build(node.body); leaveScope();
         current.emitPop();                // discard body result
         // i = i + 1
         current.emitPushVar(varIdx, T_INT);
