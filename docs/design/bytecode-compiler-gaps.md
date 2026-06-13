@@ -1,8 +1,31 @@
 # Bytecode Compiler Gaps
 
-> 分析日期：2026-06-12
+> 更新日期：2026-06-13
 
-本文档记录 IR 字节码编译器（`IRBytecodeCompiler.compileInst()`）相对于 IR 解释器的能力差距。这些差距导致 `-O3` 下需要回退到 IR 解释器。
+本文档记录 IR 字节码编译器（`IRBytecodeCompiler.compileInst()`）相对于 IR 解释器的能力差距，以及 IR builder 的已知缺陷。
+
+## 🔴 P0：IRBuilder 条件块重复（块管理 bug）
+
+**影响**：O2/O3 — 动态比较（如 `i % 2 == 0`）在 `if` 条件中时，生成的 IR 包含重复条件块，导致 `JUMP_IF_TRUE` 不可达，条件分支始终走 else。
+
+**现象**：
+```
+B0: 条件计算 → JUMP B4 (else)
+B1: 条件计算 → JUMP B4 (else)  ← 重复块，不可达
+B2: JUMP_IF_TRUE B3, JUMP B4     ← 条件跳转，不可达
+```
+
+**复现**：`if (i % 2 == 0) { i *= 5 }` — `define i = 2` 后 `i` 仍为 2。
+
+**根因分析**：`build(node.cond)` 对动态比较（`buildComparison` → `emitDynamicCmp`）在 IR builder 的块管理中生成了两个相同内容的块。常量比较（如 `1 == 1`）无此问题。需要深入调试 `IRBuilder.finish()` 的块汇编逻辑和 `startBlock`/`allocBlockId` 的块 ID 分配。
+
+**修复方向**：重写 IR builder 的块管理，或为条件块引入显式的块合并机制。
+
+---
+
+## 一、指令覆盖总览
+
+IR 共定义 85 个 opcode（不含 `NOP`），在 `-O3` 字节码编译器中的处理情况：
 
 ## 一、指令覆盖总览
 
