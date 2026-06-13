@@ -46,7 +46,7 @@ public class Main
     private String filename;
     private boolean dumpIR = false;
     private boolean dumpAST = false;
-    private boolean dumpBC = false;
+    private boolean dumpBC  = false;
 
     public Main() {
         this.shellContext = new ShellContext();
@@ -75,22 +75,16 @@ public class Main
             int status = 0;
 
             if (filename != null) {
-                if (dumpIR) {
-                    dumpProgramIR(filename);
-                    return 0;
-                }
-                if (dumpAST) {
-                    dumpProgramAST(filename);
+                if (dumpAST || dumpIR || dumpBC) {
+                    String source = new String(java.nio.file.Files.readAllBytes(
+                        java.nio.file.Paths.get(filename)));
+                    dumpWithFlags(source);
                     return 0;
                 }
                 status = CommandProvider.exec(shellContext, filename);
             } else if (script != null) {
-                if (dumpIR) {
-                    System.out.println(IRPrinter.dumpProgram(script));
-                    return 0;
-                }
-                if (dumpAST) {
-                    System.out.println(dumpAST(script));
+                if (dumpAST || dumpIR || dumpBC) {
+                    dumpWithFlags(script);
                     return 0;
                 }
                 status = exec_script(engine, script);
@@ -124,6 +118,8 @@ public class Main
                     shellContext.setInteractive(true);
                 } else if (args[argIndex].equals("--dump-ir")) {
                     dumpIR = true;
+                } else if (args[argIndex].equals("--dump-bc")) {
+                    dumpBC = true;
                 } else if (args[argIndex].equals("--dump-ast")) {
                     dumpAST = true;
                 } else if (args[argIndex].startsWith("-O")) {
@@ -136,8 +132,6 @@ public class Main
                         printUsage();
                         return false;
                     }
-                } else if (args[argIndex].equals("--bc")) {
-                    dumpBC = true;
                 } else if (args[argIndex].startsWith("-")) {
                     printUsage();
                     return false;
@@ -245,16 +239,28 @@ public class Main
         return 0;
     }
 
-    private static void dumpProgramIR(String filename) throws IOException {
-        String source = new String(java.nio.file.Files.readAllBytes(
-            java.nio.file.Paths.get(filename)));
-        System.out.println(IRPrinter.dumpProgram(source));
-    }
+    private static final String DUMP_SEPARATOR =
+        "\n" + "═".repeat(60) + "\n";
 
-    private static void dumpProgramAST(String filename) throws IOException {
-        String source = new String(java.nio.file.Files.readAllBytes(
-            java.nio.file.Paths.get(filename)));
-        System.out.println(dumpAST(source));
+    private void dumpWithFlags(String source) throws IOException {
+        int count = 0;
+        if (dumpAST) count++;
+        if (dumpIR)  count++;
+        if (dumpBC)  count++;
+
+        int emitted = 0;
+        if (dumpAST) {
+            System.out.print(dumpAST(source));
+            if (++emitted < count) System.out.print(DUMP_SEPARATOR);
+        }
+        if (dumpIR) {
+            System.out.print(IRPrinter.dumpProgramIR(source));
+            if (++emitted < count) System.out.print(DUMP_SEPARATOR);
+        }
+        if (dumpBC) {
+            System.out.print(IRPrinter.dumpProgramBC(source));
+            if (++emitted < count) System.out.print(DUMP_SEPARATOR);
+        }
     }
 
     private static String dumpAST(String script) {

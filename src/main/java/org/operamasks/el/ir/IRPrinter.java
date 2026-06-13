@@ -37,7 +37,8 @@ public final class IRPrinter {
         return format(fn, source);
     }
 
-    public static String dumpProgram(String source) {
+    /** Dump full program IR (definitions + expressions + combined). */
+    public static String dumpProgramIR(String source) {
         Parser parser = new Parser(source);
         var program = parser.parse();
         List<ELNode> defs = program.getDefinitions();
@@ -52,7 +53,6 @@ public final class IRPrinter {
                 try {
                     IRFunction fn = IRBuilder.compile(def);
                     sb.append(formatIR(fn));
-                    // If the definition wraps a lambda, also dump the lambda body IR
                     dumpLambdaBody(sb, def);
                 } catch (Exception e) {
                     sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");
@@ -77,9 +77,24 @@ public final class IRPrinter {
             sb.append("; combined\n");
             IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
             sb.append(formatIR(fn));
-            sb.append(dumpBytecode(fn));
         }
 
+        return sb.toString();
+    }
+
+    /** Dump JVM bytecode for a full program. */
+    public static String dumpProgramBC(String source) {
+        Parser parser = new Parser(source);
+        var program = parser.parse();
+        List<ELNode> defs = program.getDefinitions();
+        List<ELNode> exps = program.getExpressions();
+
+        if (exps.isEmpty() && defs.isEmpty()) return "";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("; bytecode\n");
+        IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
+        sb.append(dumpBytecode(fn));
         return sb.toString();
     }
 

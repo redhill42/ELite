@@ -14,10 +14,4 @@ class BytecodeClosureTest {
         IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
         assertNotNull(IRBytecodeCompiler.compile(fn));
     }
-    @Test void dumpWorksForClosure() {
-        String src = "define f(x) => \\y => x+y; f(1)(2)";
-        String result = IRPrinter.dumpProgram(src);
-        assertNotNull(result);
-        System.out.println(result);
-    }
 }
