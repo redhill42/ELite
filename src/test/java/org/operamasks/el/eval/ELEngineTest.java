@@ -189,6 +189,46 @@ class ELEngineTest extends EliteTestBase {
         assertEquals(12L, evalL("x"));
     }
 
+    @Test
+    void compoundAssignSameUnit() {
+        // Multiple reads/writes in a single compilation unit — verifies that
+        // compound assignment updates local variable slots (STORE_VAR), not
+        // just global storage (STORE_GLOBAL).
+        exec("define compoundTest() { define x = 2; define a = x; x *= 5; define b = x; [a, b] }");
+        assertEquals("[2, 10]", eval("compoundTest()").toString());
+    }
+
+    @Test
+    void compoundAssignWithIntermediateRead() {
+        // Read variable before and after compound assignment in same block.
+        // This forces the IR to use PUSH_VAR (local slot) for the second read.
+        exec("define test() { define x = 3; define before = x; x *= 4; define after = x; [before, after] }");
+        assertEquals("[3, 12]", eval("test()").toString());
+    }
+
+    @Test
+    void compoundAssignAllOpsSameUnit() {
+        // Test all compound assignment operators in one function.
+        exec("define allOps() { define x = 10; x += 5; x -= 3; x *= 2; x /= 4; [x] }");
+        assertEquals("[6]", eval("allOps()").toString());
+    }
+
+    @Test
+    void compoundAssignWithIfCondition() {
+        // Compound assignment inside if-then with dynamic modulo condition.
+        // This exercises deopt splitting with compound assignment in then block.
+        exec("define condOp(x) { if (x % 2 == 0) { x *= 5 }; x }");
+        assertEquals(10L, evalL("condOp(2)"));
+        assertEquals(3L, evalL("condOp(3)"));
+    }
+
+    @Test
+    void compoundAssignWithForLoop() {
+        // Accumulator pattern with compound assignment in loop.
+        exec("define loopSum(n) { define s = 0; for (i in [1..n]) { s += i }; s }");
+        assertEquals(55L, evalL("loopSum(10)"));
+    }
+
     // ---- Error cases ----
 
     @Test
