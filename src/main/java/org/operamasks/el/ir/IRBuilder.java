@@ -700,9 +700,11 @@ public class IRBuilder {
             } else {
                 emitDynamicOp(node.binary.op);
             }
-            // Store result back
-            int nameIdx = putConstant(ident.id);
+            // Store result back — locally AND globally (matches buildAssign)
+            int idx = varIndex.getOrDefault(ident.id, -1);
             current.emitDup();
+            if (idx >= 0) current.emitStoreVar(idx);
+            int nameIdx = putConstant(ident.id);
             current.emitStoreGlobal(nameIdx);
         } else {
             buildTrampoline(node);

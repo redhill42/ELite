@@ -4,22 +4,35 @@
 
 本文档记录 IR 字节码编译器（`IRBytecodeCompiler.compileInst()`）相对于 IR 解释器的能力差距，以及 IR builder 的已知缺陷。
 
-## 🔴 P0：IRBuilder 条件块重复（块管理 bug）
+## ✅ P0 已修复：IRBuilder 条件块重复（IRSpeclializer 比较检测不一致）
 
-**影响**：O2/O3 — 动态比较（如 `i % 2 == 0`）在 `if` 条件中时，生成的 IR 包含重复条件块，导致 `JUMP_IF_TRUE` 不可达，条件分支始终走 else。
+**修复日期**：2026-06-13
 
-**现象**：
-```
-B0: 条件计算 → JUMP B4 (else)
-B1: 条件计算 → JUMP B4 (else)  ← 重复块，不可达
-B2: JUMP_IF_TRUE B3, JUMP B4     ← 条件跳转，不可达
-```
+**根因**：`IRSpeclializer.tryDeoptSplit()` 检测扫描包含了 `DYNEQ/DYNLT/DYNLE`，但构建扫描不处理这些比较操作码。导致只包含动态比较的块被无用地拆分为 `[prefix, deopt, suffix]` 三块（prefix 和 deopt 完全相同），且阻止了 `specializeBlockSimple` 对比较的内联特化。
 
-**复现**：`if (i % 2 == 0) { i *= 5 }` — `define i = 2` 后 `i` 仍为 2。
+同时，`specializeBlockSimple` 对 `NEW_LIST`、`NEW_MAP`、`NEW_TUPLE`、`LOAD_PROPERTY` 等操作的栈效应未做模拟（直接 `copyInst` 不跟踪类型栈），导致在这些操作后类型栈与实际操作数栈不同步，可能对后续动态操作生成错误的 `GUARD_TYPE`。此缺陷之前被 `tryDeoptSplit` 拦截掩盖。
 
-**根因分析**：`build(node.cond)` 对动态比较（`buildComparison` → `emitDynamicCmp`）在 IR builder 的块管理中生成了两个相同内容的块。常量比较（如 `1 == 1`）无此问题。需要深入调试 `IRBuilder.finish()` 的块汇编逻辑和 `startBlock`/`allocBlockId` 的块 ID 分配。
+**修复内容**（2 处改动）：
 
-**修复方向**：重写 IR builder 的块管理，或为条件块引入显式的块合并机制。
+1. **`IRSpeclializer.java` 行 175-177**：从 `tryDeoptSplit` 检测扫描中移除 `DYNEQ/DYNLT/DYNLE`
+   - 比较操作不需要 deopt — `specializeBlockSimple` 用 STRICT_GUARD 处理即可
+   - 同一块中如有算术操作，算术操作仍会触发正确的 deopt 拆分
+   
+2. **`IRSpeclializer.java` 行 421-430**：为 `specializeBlockSimple` 中所有先前未跟踪的操
+   作添加正确的栈效应模拟
+   - `NEW_LIST(n)`: pop n, push unknown
+   - `NEW_MAP(n)`: pop 2n, push unknown
+   - `NEW_TUPLE(n)`: pop n, push unknown
+   - `LOAD_PROPERTY`: pop 2, push unknown
+   - `STORE_PROPERTY`: pop 3, push unknown
+   - `GET_ITER`, `ITER_NEXT`: pop 1, push unknown
+   - `ITER_DONE`: pop 1
+   - `DYNCAT`: pop 2, push T_STRING
+   - `DYNPOW`: pop 2, push unknown
+   - `DYNIN`: pop 2, push T_BOOL
+   - 位运算、POW 等：各自正确的栈效应
+
+**验证**：全量 569 测试 × 4 优化级别，0 失败 0 错误。
 
 ---
 

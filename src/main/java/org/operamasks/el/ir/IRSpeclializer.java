@@ -111,7 +111,13 @@ public class IRSpeclializer implements IRPass {
 
         if (!changed) return fn;
 
-        // Patch placeholders and remap JUMP targets for expanded blocks
+        // 1) Remap JUMP targets from old block IDs to new positions first.
+        //    At this point prefix/deopt blocks still carry DEOPT_PLACEHOLDER
+        //    (0xFFFE >= oldCount), so they are left untouched.
+        remapAllJumps(allBlocks, oldToNew, origBlockCount);
+
+        // 2) Now patch DEOPT_PLACEHOLDER → real suffix/deopt indices.
+        //    These indices may alias old block IDs, but remapAllJumps already ran.
         for (int b = 0; b < origBlockCount; b++) {
             if (extraBlocks[b] > 0) {
                 int prefixIdx = oldToNew[b];
@@ -121,7 +127,6 @@ public class IRSpeclializer implements IRPass {
                 patchPlaceholders(allBlocks.get(deoptIdx), suffixIdx, deoptIdx);
             }
         }
-        remapAllJumps(allBlocks, oldToNew, origBlockCount);
 
         // Rebuild function
         IntList merged = new IntList();
@@ -172,9 +177,13 @@ public class IRSpeclializer implements IRPass {
         while (v.inBounds() && v.offset() < end) {
             int op = v.opcode();
             // Check types BEFORE simulation (stack has operands before op executes)
+            // Note: DYNEQ/DYNLT/DYNLE are intentionally NOT included here.
+            // Comparisons are specialized inline by specializeBlockSimple rather
+            // than via deopt-split — a type mismatch in a comparison throws
+            // STRICT_GUARD and falls back to the IR interpreter, which is
+            // sufficient for these simple operations.
             if (op == DYNADD || op == DYNSUB || op == DYNMUL
-                || op == DYNDIV || op == DYNREM || op == DYNNEG
-                || op == DYNEQ || op == DYNLT || op == DYNLE) {
+                || op == DYNDIV || op == DYNREM || op == DYNNEG) {
                 int argc = (op == DYNNEG) ? 1 : 2;
                 boolean allInferred = true, anyTyped = false;
                 for (int i = 0; i < argc; i++) {
@@ -414,16 +423,35 @@ public class IRSpeclializer implements IRPass {
                     Arrays.fill(varGuarded, false);
                     copyInst(out, code, v);
                 }
-                // Ops that don't need type-stack tracking: copy as-is
+                // Ops with stack effects that need type-stack tracking.
+                // Previously these were untracked, causing the simulated stack
+                // to drift out of sync with the real operand stack. This masked
+                // a bug where specializeBlockSimple would emit GUARD_TYPE for
+                // list/range/string comparisons (stack had stale INT types from
+                // the element pushes before NEW_LIST/NEW_MAP).
+                case NEW_LIST    -> { int n = v.payload(); popN(n); pushType(-1, false, -1); copyInst(out, code, v); }
+                case NEW_MAP     -> { int n = v.payload(); popN(n * 2); pushType(-1, false, -1); copyInst(out, code, v); }
+                case NEW_TUPLE   -> { int n = v.payload(); popN(n); pushType(-1, false, -1); copyInst(out, code, v); }
+                case NEW_RANGE   -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }
+                case LOAD_PROPERTY  -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }
+                case STORE_PROPERTY -> { pop3(); pushType(-1, false, -1); copyInst(out, code, v); }
+                case GET_ITER    -> { pop1(); pushType(-1, false, -1); copyInst(out, code, v); }
+                case ITER_NEXT   -> { pop1(); pushType(-1, false, -1); copyInst(out, code, v); }
+                case ITER_DONE   -> { pop1(); copyInst(out, code, v); }
+                case DYNCAT      -> { pop2(); pushType(T_STRING, false, -1); copyInst(out, code, v); }
+                case DYNPOW      -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }
+                case DYNIN       -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
+                case CAT         -> { pop2(); pushType(T_STRING, false, -1); copyInst(out, code, v); }
+                case IPOW, LPOW  -> { pop2(); pushType(T_INT, false, -1); copyInst(out, code, v); }
+                case DPOW        -> { pop2(); pushType(T_DOUBLE, false, -1); copyInst(out, code, v); }
+                case IAND, IOR, IXOR, ISHL, ISHR, IUSHR -> { pop2(); pushType(T_INT, false, -1); copyInst(out, code, v); }
+                case IBITNOT     -> { pop1(); pushType(T_INT, false, -1); copyInst(out, code, v); }
+                case LAND, LOR, LXOR, LSHL, LSHR, LUSHR -> { pop2(); pushType(T_LONG, false, -1); copyInst(out, code, v); }
+                case LBITNOT     -> { pop1(); pushType(T_LONG, false, -1); copyInst(out, code, v); }
+                case GUARD_TYPE  -> { pop1(); pushType(-1, false, -1); copyInst(out, code, v); }
+                // Control flow: no stack effect
                 case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE, JUMP_IF_NULL, JUMP_IF_NONNULL,
-                     LOAD_PROPERTY, STORE_PROPERTY,
-                     NEW_LIST, NEW_MAP, NEW_TUPLE, NEW_RANGE,
-                     GET_ITER, ITER_NEXT, ITER_DONE,
-                     IAND, IOR, IXOR, ISHL, ISHR, IUSHR, IBITNOT,
-                     LAND, LOR, LXOR, LSHL, LSHR, LUSHR, LBITNOT,
-                     DYNPOW, DYNCAT, DYNIN,
-                     CAT, IPOW, LPOW, DPOW,
-                     GUARD_TYPE, NOP -> copyInst(out, code, v);
+                     NOP -> copyInst(out, code, v);
 
                 case NOT -> { pop1(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
                 case DUP -> {
@@ -539,6 +567,8 @@ public class IRSpeclializer implements IRPass {
     private boolean peekExplicit() { return explicitAt(0); }
     private void pop1() { popType(); }
     private void pop2() { popType(); popType(); }
+    private void pop3() { popType(); popType(); popType(); }
+    private void popN(int n) { for (int i = 0; i < n; i++) popType(); }
 
     private static int typeOf(Object val) {
         if (val instanceof Integer || val instanceof Short || val instanceof Byte) return T_INT;
