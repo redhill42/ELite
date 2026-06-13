@@ -490,12 +490,16 @@ public class IRBytecodeCompiler {
             }
 
             // Trampoline: evaluate AST node via Runtime helper.
-            // TRY nodes are compiled inline using JVM exception tables.
+            // TRY nodes fall back to AST evaluation (JVM exception tables not yet implemented).
             case 0xE0 -> {
                 int poolIdx = v.constPoolIndex();
                 Object nodeObj = fn.constantPool()[poolIdx];
-                if (nodeObj instanceof org.operamasks.el.parser.ELNode.TRY tryNode) {
-                    emitTryCatch(tryNode);
+                if (nodeObj instanceof org.operamasks.el.parser.ELNode.TRY) {
+                    // TODO: generate JVM exception tables for TRY/CATCH/FINALLY
+                    mv.visitVarInsn(A_ALOAD, S_CTX);
+                    mv.visitLdcInsn(poolIdx);
+                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                        "trampolineTry", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
                 } else {
                     mv.visitVarInsn(A_ALOAD, S_CTX);
                     mv.visitLdcInsn(poolIdx);

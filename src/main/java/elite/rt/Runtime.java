@@ -84,6 +84,11 @@ public final class Runtime {
         return trampoline(c, funcPool.get()[poolIdx]);
     }
 
+    /** Evaluate a TRY node via AST (placeholder until JVM exception table support). */
+    public static Object trampolineTry(ELContext c, int poolIdx) {
+        return trampoline(c, funcPool.get()[poolIdx]);
+    }
+
     /** Wrap a throwable value as RuntimeException for ATHROW bytecode. */
     public static RuntimeException wrapThrow(Object cause) {
         if (cause instanceof RuntimeException re) return re;
