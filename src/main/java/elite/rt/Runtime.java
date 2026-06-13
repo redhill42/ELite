@@ -416,7 +416,49 @@ public final class Runtime {
         return -((Number)x).doubleValue();
     }
     public static Object dynPow(Object x, Object y) {
-        return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
+        if (x == null || y == null) return null;
+        if (!(x instanceof Number) || !(y instanceof Number))
+            return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
+        return pow((Number)x, (Number)y);
+    }
+    private static Number pow(Number x, Number y) {
+        if (y instanceof Long) {
+            long n = y.longValue();
+            if ((int)n == n) return pow(x, (int)n);
+            else return Math.pow(x.doubleValue(), n);
+        }
+        if (y instanceof Integer || y instanceof Short || y instanceof Byte)
+            return pow(x, y.intValue());
+        return Math.pow(x.doubleValue(), y.doubleValue());
+    }
+    private static Number pow(Number x, int n) {
+        if (x instanceof java.math.BigInteger bi) {
+            if (n == 0) return 1;
+            if (n == 1) return bi;
+            if (n > 0) return bi.pow(n);
+            return Math.pow(bi.doubleValue(), n);
+        }
+        if (x instanceof Long || x instanceof Integer || x instanceof Short || x instanceof Byte) {
+            long m = x.longValue();
+            if (n == 0) return 1;
+            if (n == 1) return m;
+            if (n > 0) {
+                java.math.BigInteger z = java.math.BigInteger.valueOf(m).pow(n);
+                return z.bitLength() < 32 ? z.intValue()
+                     : z.bitLength() < 64 ? z.longValue() : z;
+            }
+            return Math.pow(x.doubleValue(), n);
+        }
+        if (x instanceof java.math.BigDecimal bd) {
+            return bd.pow(n);
+        }
+        if (x instanceof elite.lang.Decimal d) {
+            return elite.lang.Decimal.valueOf(d.toBigDecimal().pow(n));
+        }
+        if (x instanceof elite.lang.Rational r) {
+            return r.pow(n).reduce();
+        }
+        return Math.pow(x.doubleValue(), n);
     }
 
     public static Object dynCat(Object x, Object y) {
