@@ -310,42 +310,113 @@ public final class Runtime {
 
     // ── Dynamic ops ──
 
+    // ── Type-resolution framework matching ELNode.Arithmetic.evaluate() ──
+
+    @FunctionalInterface
+    private interface NumOp { Object eval(long x, long y); }
+
+    /** Shared type resolver for binary arithmetic. Matches AST's Arithmetic.evaluate(). */
+    private static Object resolveBinOp(Object x, Object y, String op,
+                                        NumOp longOp, java.util.function.DoubleBinaryOperator doubleOp,
+                                        NumOp bigIntOp, NumOp bigDecOp, NumOp rationalOp, NumOp decimalOp) {
+        if (x == null || y == null) throw new NullPointerException("Null operand in " + op);
+        Class<?> xc = x.getClass(), yc = y.getClass();
+        if (xc == yc) {
+            if (x instanceof Long)       return longOp.eval((Long)x, (Long)y);
+            if (x instanceof Integer)    return longOp.eval((Integer)x, (Integer)y);
+            if (x instanceof Double)     return doubleOp.applyAsDouble((Double)x, (Double)y);
+            if (x instanceof Float)      return doubleOp.applyAsDouble((Float)x, (Float)y);
+            if (x instanceof Short)      return longOp.eval((Short)x, (Short)y);
+            if (x instanceof Byte)       return longOp.eval((Byte)x, (Byte)y);
+            if (x instanceof elite.lang.Decimal dx && y instanceof elite.lang.Decimal dy) return decimalOp.eval(0,0);
+            if (x instanceof elite.lang.Rational rx && y instanceof elite.lang.Rational ry) return rationalOp.eval(0,0);
+            if (x instanceof java.math.BigInteger bx && y instanceof java.math.BigInteger by) return bigIntOp.eval(0,0);
+            if (x instanceof java.math.BigDecimal bx && y instanceof java.math.BigDecimal by) return bigDecOp.eval(0,0);
+        }
+        if (x instanceof java.math.BigDecimal || y instanceof java.math.BigDecimal)
+            return bigDecOp.eval(0,0);
+        if (x instanceof elite.lang.Decimal || y instanceof elite.lang.Decimal)
+            return decimalOp.eval(0,0);
+        if (x instanceof Float || x instanceof Double || y instanceof Float || y instanceof Double
+            || looksLikeFloat(x) || looksLikeFloat(y))
+            return doubleOp.applyAsDouble(((Number)x).doubleValue(), ((Number)y).doubleValue());
+        if (x instanceof elite.lang.Rational || y instanceof elite.lang.Rational)
+            return rationalOp.eval(0,0);
+        if (x instanceof java.math.BigInteger || y instanceof java.math.BigInteger)
+            return bigIntOp.eval(0,0);
+        if (x instanceof Long || y instanceof Long)
+            return longOp.eval(((Number)x).longValue(), ((Number)y).longValue());
+        return longOp.eval(((Number)x).intValue(), ((Number)y).intValue());
+    }
+    private static boolean looksLikeFloat(Object v) {
+        if (!(v instanceof Number n)) return false;
+        if (n instanceof Float || n instanceof Double) return true;
+        String s = n.toString();
+        return s.indexOf('.') >= 0 || s.indexOf('e') >= 0 || s.indexOf('E') >= 0;
+    }
+
     public static Object dynAdd(Object x, Object y) {
-        return ((Number) x).doubleValue() + ((Number) y).doubleValue();
+        return resolveBinOp(x, y, "+",
+            (a,b)->a+b, (a,b)->a+b,
+            (a,b)->((java.math.BigInteger)x).add((java.math.BigInteger)y),
+            (a,b)->((java.math.BigDecimal)x).add((java.math.BigDecimal)y),
+            (a,b)->((elite.lang.Rational)x).add((elite.lang.Rational)y).reduce(),
+            (a,b)->((elite.lang.Decimal)x).add((elite.lang.Decimal)y));
     }
-
     public static Object dynSub(Object x, Object y) {
-        return ((Number) x).doubleValue() - ((Number) y).doubleValue();
+        return resolveBinOp(x, y, "-",
+            (a,b)->a-b, (a,b)->a-b,
+            (a,b)->((java.math.BigInteger)x).subtract((java.math.BigInteger)y),
+            (a,b)->((java.math.BigDecimal)x).subtract((java.math.BigDecimal)y),
+            (a,b)->((elite.lang.Rational)x).subtract((elite.lang.Rational)y).reduce(),
+            (a,b)->((elite.lang.Decimal)x).subtract((elite.lang.Decimal)y));
     }
-
     public static Object dynMul(Object x, Object y) {
-        return ((Number) x).doubleValue() * ((Number) y).doubleValue();
+        return resolveBinOp(x, y, "*",
+            (a,b)->a*b, (a,b)->a*b,
+            (a,b)->((java.math.BigInteger)x).multiply((java.math.BigInteger)y),
+            (a,b)->((java.math.BigDecimal)x).multiply((java.math.BigDecimal)y),
+            (a,b)->((elite.lang.Rational)x).multiply((elite.lang.Rational)y).reduce(),
+            (a,b)->((elite.lang.Decimal)x).multiply((elite.lang.Decimal)y));
     }
-
     public static Object dynDiv(Object x, Object y) {
-        if (x instanceof Long xl && y instanceof Long yl) {
-            if (yl == 0)
-                throw new ArithmeticException("/ by zero");
-            return (xl % yl == 0) ? xl / yl : (double) xl / (double) yl;
-        }
         if (x instanceof Integer xi && y instanceof Integer yi) {
-            if (yi == 0)
-                throw new ArithmeticException("/ by zero");
-            return (xi % yi == 0) ? xi / yi : (double) xi / (double) yi;
+            if (yi==0) throw new ArithmeticException("/ by zero");
+            return (xi % yi == 0) ? xi / yi : (double)xi / (double)yi;
         }
-        return ((Number) x).doubleValue() / ((Number) y).doubleValue();
+        if (x instanceof Long xl && y instanceof Long yl) {
+            if (yl==0) throw new ArithmeticException("/ by zero");
+            return (xl % yl == 0) ? xl / yl : (double)xl / (double)yl;
+        }
+        return resolveBinOp(x, y, "/",
+            (a,b)->{throw new UnsupportedOperationException();},
+            (a,b)->a/b,
+            (a,b)->((java.math.BigInteger)x).divide((java.math.BigInteger)y),
+            (a,b)->((java.math.BigDecimal)x).divide((java.math.BigDecimal)y, java.math.MathContext.DECIMAL128),
+            (a,b)->((elite.lang.Rational)x).divide((elite.lang.Rational)y).reduce(),
+            (a,b)->((elite.lang.Decimal)x).divide((elite.lang.Decimal)y));
     }
-
     public static Object dynRem(Object x, Object y) {
-        return ((Number) x).doubleValue() % ((Number) y).doubleValue();
+        return resolveBinOp(x, y, "%",
+            (a,b)->a%b, (a,b)->a%b,
+            (a,b)->((java.math.BigInteger)x).remainder((java.math.BigInteger)y),
+            (a,b)->((java.math.BigDecimal)x).remainder((java.math.BigDecimal)y),
+            (a,b)->null, // Rational doesn't support rem
+            (a,b)->((elite.lang.Decimal)x).remainder((elite.lang.Decimal)y));
     }
-
     public static Object dynNeg(Object x) {
-        return -((Number) x).doubleValue();
+        if (x instanceof Integer) return -((Integer)x);
+        if (x instanceof Long) return -((Long)x);
+        if (x instanceof Double) return -((Double)x);
+        if (x instanceof Float) return -((Float)x).doubleValue();
+        if (x instanceof java.math.BigDecimal bd) return bd.negate();
+        if (x instanceof java.math.BigInteger bi) return bi.negate();
+        if (x instanceof elite.lang.Rational r) return r.negate();
+        if (x instanceof elite.lang.Decimal d) return d.negate();
+        return -((Number)x).doubleValue();
     }
-
     public static Object dynPow(Object x, Object y) {
-        return Math.pow(((Number) x).doubleValue(), ((Number) y).doubleValue());
+        return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
     }
 
     public static Object dynCat(Object x, Object y) {

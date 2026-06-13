@@ -615,19 +615,20 @@ public class IRInterpreter {
         if (needsTrampolineDispatch(lhs, rhs)) {
             return trampolineBinaryOp(irOpcode, lhs, rhs);
         }
+        // Delegate to Runtime for type-resolved arithmetic (shared with bytecode path)
         return switch (irOpcode) {
-            case DYNADD -> dynamicAdd(lhs, rhs);
-            case DYNSUB -> dynamicSub(lhs, rhs);
-            case DYNMUL -> dynamicMul(lhs, rhs);
-            case DYNDIV -> dynamicDiv(lhs, rhs);
-            case DYNREM -> dynamicRem(lhs, rhs);
-            case DYNNEG -> dynamicNeg(lhs);
-            case DYNPOW -> dynamicPow(lhs, rhs);
-            case DYNCAT -> dynamicCat(lhs, rhs);
-            case DYNEQ  -> dynamicEq(lhs, rhs);
-            case DYNLT  -> dynamicLt(lhs, rhs);
-            case DYNLE  -> dynamicLe(lhs, rhs);
-            default -> dynamicAdd(lhs, rhs); // fallback
+            case DYNADD -> elite.rt.Runtime.dynAdd(lhs, rhs);
+            case DYNSUB -> elite.rt.Runtime.dynSub(lhs, rhs);
+            case DYNMUL -> elite.rt.Runtime.dynMul(lhs, rhs);
+            case DYNDIV -> elite.rt.Runtime.dynDiv(lhs, rhs);
+            case DYNREM -> elite.rt.Runtime.dynRem(lhs, rhs);
+            case DYNNEG -> elite.rt.Runtime.dynNeg(lhs);
+            case DYNPOW -> elite.rt.Runtime.dynPow(lhs, rhs);
+            case DYNCAT -> elite.rt.Runtime.dynCat(lhs, rhs);
+            case DYNEQ  -> elite.rt.Runtime.dynEq(lhs, rhs);
+            case DYNLT  -> elite.rt.Runtime.dynLt(lhs, rhs);
+            case DYNLE  -> elite.rt.Runtime.dynLe(lhs, rhs);
+            default -> elite.rt.Runtime.dynAdd(lhs, rhs);
         };
     }
     private static boolean needsTrampolineDispatch(Object lhs, Object rhs) {
@@ -651,166 +652,7 @@ public class IRInterpreter {
         return infix.getValue(evalContext);
     }
 
-    // Simplified dynamic dispatch — mirrors ELNode.Arithmetic.evaluate()
-    // ── Dynamic arithmetic type resolution ──
-
-    /** Type resolver for binary operations. Follows ELNode.Arithmetic.evaluate(). */
-    @FunctionalInterface
-    private interface BinOp {
-        Number eval(long x, long y);
-        default Number eval(int x, int y)    { return eval((long)x, (long)y); }
-        default Number eval(double x, double y) { return (Number)(double)eval((long)(long)x, (long)(long)y); } // overridden
-    }
-    private interface DoubleBinOp { double eval(double x, double y); }
-
-    /** Resolve operand types and dispatch to the appropriate eval method, matching AST semantics. */
-    private Number dynamicBinOp(Object x, Object y, String opName,
-                                BinOp intLongOp, DoubleBinOp doubleOp,
-                                BinOp bigIntOp, BinOp bigDecOp,
-                                BinOp rationalOp, BinOp decimalOp) {
-        if (x == null || y == null) throw new NullPointerException("Null operand in " + opName);
-        // 1) Same type
-        if (x.getClass() == y.getClass()) {
-            if (x instanceof Long lx) return intLongOp.eval(lx, ((Long)y).longValue());
-            if (x instanceof Integer ix) return intLongOp.eval(ix, ((Integer)y).intValue());
-            if (x instanceof Double dx) return doubleOp.eval(dx, ((Double)y).doubleValue());
-            if (x instanceof Float fx) return doubleOp.eval(fx, ((Float)y).doubleValue());
-            if (x instanceof Short sx) return intLongOp.eval((long)sx, (long)(Short)y);
-            if (x instanceof Byte bx)   return intLongOp.eval((long)bx, (long)(Byte)y);
-            if (x instanceof Decimal dx) return decimalOp.eval((long)0, (long)0); // Decimal has its own ops
-            if (x instanceof Rational rx) return rationalOp.eval((long)0, (long)0);
-            if (x instanceof BigInteger bx) return bigIntOp.eval((long)0, (long)0);
-            if (x instanceof BigDecimal bx) return bigDecOp.eval((long)0, (long)0);
-        }
-        // 2) BigDecimal
-        if (x instanceof BigDecimal || y instanceof BigDecimal)
-            return bigDecOp.eval((long)0, (long)0);
-        // 3) Decimal
-        if (x instanceof Decimal || y instanceof Decimal)
-            return decimalOp.eval((long)0, (long)0);
-        // 4) Float/Double
-        if (x instanceof Float || x instanceof Double || y instanceof Float || y instanceof Double
-            || looksLikeFloat(x) || looksLikeFloat(y))
-            return doubleOp.eval(coerceToDouble(x), coerceToDouble(y));
-        // 5) Rational
-        if (x instanceof Rational || y instanceof Rational)
-            return rationalOp.eval((long)0, (long)0);
-        // 6) BigInteger
-        if (x instanceof BigInteger || y instanceof BigInteger)
-            return bigIntOp.eval((long)0, (long)0);
-        // 7) Long
-        if (x instanceof Long || y instanceof Long)
-            return intLongOp.eval(coerceToLong(x), coerceToLong(y));
-        // 8) Int fallback
-        return intLongOp.eval(coerceToInt(x), coerceToInt(y));
-    }
-
-    private Number dynamicAdd(Object x, Object y) {
-        return dynamicBinOp(x, y, "+",
-            (a,b)->a+b, (a,b)->a+b,
-            (a,b)->{return ((BigInteger)x).add((BigInteger)y);},
-            (a,b)->{return ((BigDecimal)x).add((BigDecimal)y);},
-            (a,b)->{return ((Rational)x).add((Rational)y).reduce();},
-            (a,b)->{return ((Decimal)x).add((Decimal)y);});
-    }
-    private Number dynamicSub(Object x, Object y) {
-        return dynamicBinOp(x, y, "-",
-            (a,b)->a-b, (a,b)->a-b,
-            (a,b)->{return ((BigInteger)x).subtract((BigInteger)y);},
-            (a,b)->{return ((BigDecimal)x).subtract((BigDecimal)y);},
-            (a,b)->{return ((Rational)x).subtract((Rational)y).reduce();},
-            (a,b)->{return ((Decimal)x).subtract((Decimal)y);});
-    }
-    private Number dynamicMul(Object x, Object y) {
-        return dynamicBinOp(x, y, "*",
-            (a,b)->a*b, (a,b)->a*b,
-            (a,b)->{return ((BigInteger)x).multiply((BigInteger)y);},
-            (a,b)->{return ((BigDecimal)x).multiply((BigDecimal)y);},
-            (a,b)->{return ((Rational)x).multiply((Rational)y).reduce();},
-            (a,b)->{return ((Decimal)x).multiply((Decimal)y);});
-    }
-    private Number dynamicDiv(Object x, Object y) {
-        // ELite / semantics: exact division for evenly-divisible integers, float otherwise
-        if (x instanceof Integer xi && y instanceof Integer yi) {
-            if (yi==0) throw new ArithmeticException("Division by zero");
-            return (xi % yi == 0) ? xi / yi : (double)xi / (double)yi;
-        }
-        if (x instanceof Long xl && y instanceof Long yl) {
-            if (yl==0) throw new ArithmeticException("Division by zero");
-            return (xl % yl == 0) ? xl / yl : (double)xl / (double)yl;
-        }
-        return dynamicBinOp(x, y, "/",
-            (a,b)->{throw new UnsupportedOperationException();}, // handled above
-            (a,b)->a/b,
-            (a,b)->{return ((BigInteger)x).divide((BigInteger)y);},
-            (a,b)->{return ((BigDecimal)x).divide((BigDecimal)y, java.math.MathContext.DECIMAL128);},
-            (a,b)->{return ((Rational)x).divide((Rational)y).reduce();},
-            (a,b)->{return ((Decimal)x).divide((Decimal)y);});
-    }
-    private Number dynamicRem(Object x, Object y) {
-        return dynamicBinOp(x, y, "%",
-            (a,b)->a%b, (a,b)->a%b,
-            (a,b)->{return ((BigInteger)x).remainder((BigInteger)y);},
-            (a,b)->{return ((BigDecimal)x).remainder((BigDecimal)y);},
-            (a,b)->{return null;}, // Rational doesn't support rem
-            (a,b)->{return ((Decimal)x).remainder((Decimal)y);});
-    }
-    private Number dynamicNeg(Object x) {
-        if (x instanceof Integer) return -((Integer)x);
-        if (x instanceof Long) return -((Long)x);
-        if (x instanceof Double) return -((Double)x);
-        if (x instanceof Float) return -((Float)x).doubleValue();
-        if (x instanceof BigDecimal) return ((BigDecimal)x).negate();
-        if (x instanceof BigInteger) return ((BigInteger)x).negate();
-        if (x instanceof Rational) return ((Rational)x).negate();
-        if (x instanceof Decimal) return ((Decimal)x).negate();
-        return -((Number)x).doubleValue();
-    }
-    private Number dynamicPow(Object x, Object y) {
-        // Pow always promotes to double
-        return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue());
-    }
-
-    // Coercion helpers matching ELNode.Arithmetic
-    private static boolean looksLikeFloat(Object x) {
-        if (!(x instanceof Number)) return false;
-        if (x instanceof Float || x instanceof Double) return true;
-        String s = x.toString();
-        return s.indexOf('.') >= 0 || s.indexOf('e') >= 0 || s.indexOf('E') >= 0;
-    }
-    private static double coerceToDouble(Object x) { return ((Number)x).doubleValue(); }
-    private static long coerceToLong(Object x) { return ((Number)x).longValue(); }
-    private static int coerceToInt(Object x) { return ((Number)x).intValue(); }
-
-    private String dynamicCat(Object x, Object y) {
-        return String.valueOf(x) + String.valueOf(y);
-    }
-
-    @SuppressWarnings({"unchecked","rawtypes"})
-    private boolean dynamicLt(Object x, Object y) {
-        if (x instanceof Comparable && y instanceof Comparable) {
-            return ((Comparable)x).compareTo(y) < 0;
-        }
-        return String.valueOf(x).compareTo(String.valueOf(y)) < 0;
-    }
-
-    @SuppressWarnings({"unchecked","rawtypes"})
-    private boolean dynamicLe(Object x, Object y) {
-        if (x instanceof Comparable && y instanceof Comparable) {
-            return ((Comparable)x).compareTo(y) <= 0;
-        }
-        return String.valueOf(x).compareTo(String.valueOf(y)) <= 0;
-    }
-    private boolean dynamicEq(Object x, Object y) {
-        if (x == y) return true;
-        if (x == null || y == null) return false;
-        // Cross-numeric-type comparison (e.g. Double(0.0) == Long(0))
-        if (x instanceof Number && y instanceof Number) {
-            return ((Number)x).doubleValue() == ((Number)y).doubleValue();
-        }
-        return x.equals(y);
-    }
-
+    // ── Dynamic invocation ──
     // ── Dynamic invocation ──
 
     private Object dynamicInvoke(int argCount) {
