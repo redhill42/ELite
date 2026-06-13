@@ -2145,10 +2145,11 @@ public abstract class ELNode implements Serializable
 
         public Object getValue(EvaluationContext context) {
             Frame f = context.getFrame();
+            EvaluationContext env = context.pushContext();
             if (cond.pos(f).getBoolean(context)) {
-                return left.pos(f).getValue(context);
+                return left.pos(f).getValue(env);
             } else {
-                return right.pos(f).getValue(context);
+                return right.pos(f).getValue(env);
             }
         }
 
