@@ -970,9 +970,17 @@ public class IRBuilder {
         current.emit2(TRAMPOLINE, K_DYN, poolIdx, 0);
     }
 
-    /** Compile a single ELNode subtree into a standalone IRFunction. */
+    /** Compile a single ELNode subtree into a standalone IRFunction.
+     *  Does NOT capture variables from the enclosing scope — all external
+     *  variable references use PUSH_GLOBAL/STORE_GLOBAL.  This is correct for
+     *  try/catch bodies and finally blocks (they are not closures).  */
     private IRFunction compileSubtree(ELNode node, String varToBind) {
-        IRBuilder nested = new IRBuilder(this);  // share parent pool
+        // No parent → no variable capture from enclosing scope.
+        // External variables fall through to PUSH_GLOBAL/STORE_GLOBAL.
+        IRBuilder nested = new IRBuilder(null);
+        // Still share the constant pool so pool indices are consistent.
+        nested.constants = this.constants;
+        nested.constIndex = this.constIndex;
         nested.inTailPosition = true;
         if (varToBind != null) {
             nested.ensureVar(varToBind);  // locals[0] = caught exception

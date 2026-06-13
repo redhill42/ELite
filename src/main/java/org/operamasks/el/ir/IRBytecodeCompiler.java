@@ -46,6 +46,7 @@ public class IRBytecodeCompiler {
     private static final int A_CHECKCAST = 192, A_AALOAD = 50, A_AASTORE = 83;
     private static final int A_DUP = 89, A_POP = 87, A_SWAP = 95, A_GOTO = 167;
     private static final int A_DUP_X1 = 90, A_ANEWARRAY = 189;
+    private static final int A_GETSTATIC = 178, A_PUTSTATIC = 179;
 
     private static final AtomicInteger CLASS_COUNTER = new AtomicInteger();
     private static final String ELCTX_DESC = "Ljavax/el/ELContext;";
@@ -148,6 +149,32 @@ public class IRBytecodeCompiler {
 
         cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         cw.visit(61, 1 | 0x20, internalName, null, "java/lang/Object", null);
+
+        // Store varNames as static field for trampoline→locals sync
+        String[] names = fn.varNames();
+        if (names != null && names.length > 0) {
+            cw.visitField(1 | 8 | 16, "$varNames", "[Ljava/lang/String;", null, null);
+            MethodVisitor cl = cw.visitMethod(1 | 8, "<clinit>", "()V", null, null);
+            cl.visitCode();
+            // Build String[] with varNames — emit int consts inline (mv is final)
+            int n = names.length;
+            if (n >= -1 && n <= 5) cl.visitInsn(A_ICONST_0 + n);
+            else if (n <= Byte.MAX_VALUE) cl.visitIntInsn(A_BIPUSH, n);
+            else cl.visitIntInsn(A_SIPUSH, n);
+            cl.visitTypeInsn(A_ANEWARRAY, "java/lang/String");
+            for (int i = 0; i < n; i++) {
+                cl.visitInsn(A_DUP);
+                if (i >= -1 && i <= 5) cl.visitInsn(A_ICONST_0 + i);
+                else if (i <= Byte.MAX_VALUE) cl.visitIntInsn(A_BIPUSH, i);
+                else cl.visitIntInsn(A_SIPUSH, i);
+                cl.visitLdcInsn(names[i]);
+                cl.visitInsn(A_AASTORE);
+            }
+            cl.visitFieldInsn(A_PUTSTATIC, internalName, "$varNames", "[Ljava/lang/String;");
+            cl.visitInsn(A_RETURN);
+            cl.visitMaxs(4, 1);
+            cl.visitEnd();
+        }
 
         MethodVisitor cm = cw.visitMethod(1, "<init>", "()V", null, null);
         cm.visitCode();
@@ -490,17 +517,29 @@ public class IRBytecodeCompiler {
             }
 
             // Trampoline: evaluate AST node via Runtime helper.
-            // TRY nodes fall back to AST evaluation (JVM exception tables not yet implemented).
+            // Both paths go through AST evaluation (trampolineById or trampolineTry).
+            // After AST eval, sync globals back to locals so PUSH_VAR sees updates.
             case TRAMPOLINE -> {
                 int poolIdx = v.constPoolIndex();
                 Object nodeObj = fn.constantPool()[poolIdx];
-                if (nodeObj instanceof TryDescriptor td) {
-                    emitTryCatch(td);
+                if (nodeObj instanceof TryDescriptor) {
+                    mv.visitVarInsn(A_ALOAD, S_CTX);
+                    mv.visitLdcInsn(poolIdx);
+                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                        "trampolineTry", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
                 } else {
                     mv.visitVarInsn(A_ALOAD, S_CTX);
                     mv.visitLdcInsn(poolIdx);
                     mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                         "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
+                }
+                // Sync globals → locals after AST evaluation
+                if (fn.varNames() != null && fn.varNames().length > 0) {
+                    mv.visitVarInsn(A_ALOAD, S_CTX);       // ctx
+                    mv.visitVarInsn(A_ALOAD, S_LOCALS);    // locals[]
+                    mv.visitFieldInsn(A_GETSTATIC, internalName, "$varNames", "[Ljava/lang/String;");
+                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                        "syncLocals", "(Ljavax/el/ELContext;[Ljava/lang/Object;[Ljava/lang/String;)V", false);
                 }
             }
             case GUARD_TYPE -> {

@@ -94,6 +94,22 @@ public final class Runtime {
         return trampoline(c, obj);
     }
 
+    /**
+     * After a TRAMPOLINE causes AST evaluation (which may modify global variables
+     * through the VariableMapper), sync those changes back to the local slots
+     * so subsequent PUSH_VAR instructions see updated values.
+     */
+    public static void syncLocals(javax.el.ELContext ctx, Object[] locals, String[] varNames) {
+        if (locals == null || varNames == null) return;
+        javax.el.VariableMapper vm = ctx.getVariableMapper();
+        for (int i = 0; i < varNames.length && i < locals.length; i++) {
+            javax.el.ValueExpression ve = vm.resolveVariable(varNames[i]);
+            if (ve != null) {
+                locals[i] = ve.getValue(ctx);
+            }
+        }
+    }
+
     /** Wrap a throwable value as RuntimeException for ATHROW bytecode. */
     public static RuntimeException wrapThrow(Object cause) {
         if (cause instanceof RuntimeException re) return re;
