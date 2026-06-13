@@ -731,10 +731,9 @@ public class IRBuilder {
     private void buildDefine(ELNode.DEFINE node) {
         if (node.expr != null) {
             build(node.expr);
-            // Store via STORE_GLOBAL only — the VariableMapper handles scope chains.
-            // STORE_VAR uses flat local slots which don't respect scoping.
+            // STORE_GLOBAL pops and pushes the value (stack depth unchanged).
+            // No DUP needed — we no longer store to both STORE_VAR and STORE_GLOBAL.
             int nameIdx = putConstant(node.id);
-            current.emitDup();
             current.emitStoreGlobal(nameIdx);
         }
     }
