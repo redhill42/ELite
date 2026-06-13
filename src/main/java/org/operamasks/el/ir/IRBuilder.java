@@ -140,6 +140,7 @@ public class IRBuilder {
             case Token.CONTINUE: buildContinue(); break;
             case Token.RETURN: buildReturn((ELNode.RETURN) node); break;
             case Token.THROW:  buildThrow((ELNode.THROW) node); break;
+            case Token.TRY:    buildTry((ELNode.TRY) node); break;
             case Token.LAMBDA: buildLambda((ELNode.LAMBDA) node); break;
 
             case Token.CONS:      buildCons((ELNode.CONS) node); break;
@@ -906,6 +907,45 @@ public class IRBuilder {
     private void buildThrow(ELNode.THROW node) {
         build(node.cause);
         current.emitThrow();
+    }
+
+    private void buildTry(ELNode.TRY node) {
+        // Compile try body, catch handlers, and finally block as nested IR functions.
+        // Bytecode compiler uses these to generate JVM exception tables.
+        // IR interpreter falls back to AST trampoline (via 0xE0).
+
+        IRFunction tryBody = compileSubtree(node.body, null);
+        int handlerCount = node.handlers != null ? node.handlers.length : 0;
+        String[] catchTypes = new String[handlerCount];
+        String[] catchVars  = new String[handlerCount];
+        IRFunction[] catchBodies = new IRFunction[handlerCount];
+        for (int i = 0; i < handlerCount; i++) {
+            catchTypes[i] = node.handlers[i].type;  // null = any exception
+            catchVars[i]  = node.handlers[i].id;
+            // Register catch variable so handler body can PUSH_VAR it
+            catchBodies[i] = compileSubtree(node.handlers[i].expr, catchVars[i]);
+        }
+        IRFunction finallyBlock = node.finalizer != null
+            ? compileSubtree(node.finalizer, null) : null;
+
+        TryDescriptor td = new TryDescriptor(node, tryBody, catchTypes, catchVars,
+                                              catchBodies, finallyBlock);
+        int poolIdx = putConstant(td);
+        current.emit2(0xE0 /* OP_INTERP_TRAMPOLINE */, K_DYN, poolIdx, 0);
+    }
+
+    /** Compile a single ELNode subtree into a standalone IRFunction. */
+    private IRFunction compileSubtree(ELNode node, String varToBind) {
+        IRBuilder nested = new IRBuilder(this);  // share parent pool
+        nested.inTailPosition = true;
+        if (varToBind != null) {
+            nested.ensureVar(varToBind);  // locals[0] = caught exception
+        }
+        nested.build(node);
+        if (!endsWithReturn(nested)) {
+            nested.current.emitReturnVoid();
+        }
+        return nested.finish("<try_block>", varToBind != null ? 1 : 0);
     }
 
     // ── Lambda ──

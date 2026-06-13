@@ -84,9 +84,13 @@ public final class Runtime {
         return trampoline(c, funcPool.get()[poolIdx]);
     }
 
-    /** Evaluate a TRY node via AST (placeholder until JVM exception table support). */
+    /** Evaluate a TRY node via AST (using TryDescriptor's original TRY node). */
     public static Object trampolineTry(ELContext c, int poolIdx) {
-        return trampoline(c, funcPool.get()[poolIdx]);
+        Object obj = funcPool.get()[poolIdx];
+        if (obj instanceof org.operamasks.el.ir.TryDescriptor td) {
+            return trampoline(c, td.tryNode);
+        }
+        return trampoline(c, obj);
     }
 
     /** Wrap a throwable value as RuntimeException for ATHROW bytecode. */

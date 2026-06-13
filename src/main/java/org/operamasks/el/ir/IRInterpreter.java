@@ -522,7 +522,12 @@ public class IRInterpreter {
                 // ============ Trampoline to AST evaluator ============
                 case 0xE0: { // OP_INTERP_TRAMPOLINE
                     int poolIdx = oc == 0 ? pl : code[ip + 1];
-                    ELNode node = (ELNode) constantPool[poolIdx];
+                    Object obj = constantPool[poolIdx];
+                    // TryDescriptor wraps pre-compiled IR blocks; evaluate the original TRY node
+                    if (obj instanceof TryDescriptor td) {
+                        obj = td.tryNode;
+                    }
+                    ELNode node = (ELNode) obj;
                     Object result = node.getValue(evalContext);
                     push(result);
                     ip += 1 + oc;

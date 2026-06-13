@@ -494,12 +494,8 @@ public class IRBytecodeCompiler {
             case 0xE0 -> {
                 int poolIdx = v.constPoolIndex();
                 Object nodeObj = fn.constantPool()[poolIdx];
-                if (nodeObj instanceof org.operamasks.el.parser.ELNode.TRY) {
-                    // TODO: generate JVM exception tables for TRY/CATCH/FINALLY
-                    mv.visitVarInsn(A_ALOAD, S_CTX);
-                    mv.visitLdcInsn(poolIdx);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                        "trampolineTry", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
+                if (nodeObj instanceof TryDescriptor td) {
+                    emitTryCatch(td);
                 } else {
                     mv.visitVarInsn(A_ALOAD, S_CTX);
                     mv.visitLdcInsn(poolIdx);
@@ -1057,6 +1053,94 @@ public class IRBytecodeCompiler {
             method, desc, false);
     }
 
+
+    /** Generate JVM exception table bytecode from a TryDescriptor. */
+    private void emitTryCatch(TryDescriptor td) {
+        // Compile each sub-function to bytecode
+        CompiledFunction tryCF = compile(td.tryBody);
+        CompiledFunction[] catchCFs = new CompiledFunction[td.catchBodies.length];
+        for (int i = 0; i < catchCFs.length; i++) {
+            catchCFs[i] = compile(td.catchBodies[i]);
+        }
+        CompiledFunction finallyCF = td.finallyBlock != null
+            ? compile(td.finallyBlock) : null;
+
+        // Resolve catch types
+        String[] catchTypes = new String[td.catchTypes.length];
+        for (int i = 0; i < catchTypes.length; i++) {
+            if (td.catchTypes[i] != null) {
+                catchTypes[i] = td.catchTypes[i].replace('.', '/');
+            }
+        }
+
+        // Labels
+        Label tryStart = new Label();
+        Label tryEnd = new Label();
+        Label finallyStart = new Label();
+        Label[] handlerStarts = new Label[catchCFs.length];
+        for (int i = 0; i < handlerStarts.length; i++) handlerStarts[i] = new Label();
+
+        // --- Try body ---
+        mv.visitLabel(tryStart);
+        mv.visitVarInsn(A_ALOAD, S_CTX);  // ELContext for execute()
+        mv.visitInsn(A_ACONST_NULL);       // locals array = null
+        mv.visitMethodInsn(A_INVOKESTATIC, tryCF.internalName(), "execute",
+            "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitInsn(A_POP);  // discard result
+        mv.visitLabel(tryEnd);
+
+        // --- Go to finally if no exception ---
+        if (finallyCF != null) {
+            mv.visitJumpInsn(A_GOTO, finallyStart);
+        } else {
+            mv.visitInsn(A_ACONST_NULL);
+            mv.visitInsn(A_ARETURN);
+        }
+
+        // --- Catch handlers ---
+        for (int i = 0; i < catchCFs.length; i++) {
+            mv.visitLabel(handlerStarts[i]);
+            // Exception is on JVM stack. Save it.
+            int exSlot = S_TMP + 2;
+            mv.visitVarInsn(A_ASTORE, exSlot);
+            // Call handler CF with exception as locals[0]
+            mv.visitVarInsn(A_ALOAD, S_CTX);    // ELContext
+            mv.visitInsn(A_ICONST_1);
+            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
+            mv.visitInsn(A_DUP);
+            mv.visitInsn(A_ICONST_0);
+            mv.visitVarInsn(A_ALOAD, exSlot);    // exception
+            mv.visitInsn(A_AASTORE);              // locals[0] = exception
+            mv.visitMethodInsn(A_INVOKESTATIC, catchCFs[i].internalName(), "execute",
+                "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitInsn(A_POP);
+            if (finallyCF != null) {
+                mv.visitJumpInsn(A_GOTO, finallyStart);
+            } else {
+                mv.visitInsn(A_ACONST_NULL);
+                mv.visitInsn(A_ARETURN);
+            }
+        }
+
+        // --- Finally ---
+        if (finallyCF != null) {
+            mv.visitLabel(finallyStart);
+            mv.visitVarInsn(A_ALOAD, S_CTX);
+            mv.visitInsn(A_ACONST_NULL);
+            mv.visitMethodInsn(A_INVOKESTATIC, finallyCF.internalName(), "execute",
+                "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitInsn(A_POP);  // discard finally result
+            mv.visitInsn(A_ACONST_NULL);
+            mv.visitInsn(A_ARETURN);
+        }
+
+        // --- Exception table ---
+        for (int i = 0; i < catchCFs.length; i++) {
+            String catchType = catchTypes[i];
+            if (catchType == null) catchType = "java/lang/Exception";
+            mv.visitTryCatchBlock(tryStart, tryEnd, handlerStarts[i], catchType);
+        }
+    }
 
     private void emitPush(InstructionView v) {
         Object val = fn.constantPool()[v.constPoolIndex()];
