@@ -232,6 +232,42 @@ public class IRBytecodeCompiler {
 
     private byte[] compileBytecode() {
         mv.visitCode();
+
+        // Apply default parameter values for missing args
+        Object[] defs = fn.defaultValues();
+        if (defs != null) {
+            for (int i = 0; i < fn.paramCount() && i < defs.length; i++) {
+                if (defs[i] != null) {
+                    mv.visitVarInsn(A_ALOAD, S_LOCALS);  // locals array
+                    emitIntConst(i);                      // index
+                    mv.visitInsn(A_AALOAD);               // locals[i]
+                    Label hasVal = new Label();
+                    mv.visitJumpInsn(198, hasVal);        // IFNONNULL → has value
+                    mv.visitVarInsn(A_ALOAD, S_LOCALS);   // locals array
+                    emitIntConst(i);                      // index
+                    // Push default value
+                    Object dv = defs[i];
+                    if (dv instanceof Integer ii) {
+                        emitIntConst(ii);
+                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                    } else if (dv instanceof Long l) {
+                        emitLongConst(l);
+                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                    } else if (dv instanceof Double d) {
+                        emitDoubleConst(d);
+                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                    } else if (dv instanceof Boolean b) {
+                        mv.visitInsn(b ? A_ICONST_1 : A_ICONST_0);
+                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                    } else {
+                        mv.visitLdcInsn(dv);
+                    }
+                    mv.visitInsn(A_AASTORE);              // locals[i] = defs[i]
+                    mv.visitLabel(hasVal);
+                }
+            }
+        }
+
         // Allocate labels for all blocks first (for forward references)
         for (int b = 0; b < fn.blockCount(); b++) {
             blockLabels[b] = new Label();

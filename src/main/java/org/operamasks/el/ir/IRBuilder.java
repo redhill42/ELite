@@ -1006,8 +1006,9 @@ public class IRBuilder {
             int t = nested.typeIdFromNode(node.body);
             nested.current.emitReturn(t >= 0 ? t : T_INT);
         }
-        IRFunction fn = nested.finish(node.name != null ? node.name : "lambda",
+        IRFunction rawFn = nested.finish(node.name != null ? node.name : "lambda",
                                        node.vars.length, nested.capturedVars);
+        IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
         registerFunction(node.name, poolIdx);
 
@@ -1157,6 +1158,40 @@ public class IRBuilder {
     private void emitPushFalse() { current.emitPushFalse(); }
     private void emitPushNull()  { current.emitPushNull(); }
 
+    /** Extract default parameter values from lambda definitions. */
+    private static Object[] extractDefaults(ELNode.DEFINE[] vars) {
+        boolean hasDefault = false;
+        for (ELNode.DEFINE v : vars) if (v.expr != null) { hasDefault = true; break; }
+        if (!hasDefault) return null;
+
+        Object[] defs = new Object[vars.length];
+        for (int i = 0; i < vars.length; i++) {
+            defs[i] = vars[i].expr != null ? literalValue(vars[i].expr) : null;
+        }
+        return defs;
+    }
+
+    /** Extract a literal value from an ELNode, or null if non-literal. */
+    private static Object literalValue(ELNode node) {
+        if (node instanceof ELNode.NUMBER n) return n.value;
+        if (node instanceof ELNode.STRINGVAL s) return s.value;
+        if (node instanceof ELNode.CHARVAL c) return c.value;
+        if (node.op == Token.NULL) return null;
+        if (node.op == Token.TRUE) return Boolean.TRUE;
+        if (node.op == Token.FALSE) return Boolean.FALSE;
+        if (node.op == Token.SYMBOL && node instanceof ELNode.SYMBOL s) return s.value;
+        // Negative number: (- literal)
+        if (node.op == Token.NEG && node instanceof ELNode.Unary u
+            && u.right instanceof ELNode.NUMBER n) {
+            Number v = n.value;
+            if (v instanceof Integer) return -v.intValue();
+            if (v instanceof Long) return -v.longValue();
+            if (v instanceof Double) return -v.doubleValue();
+            return v;
+        }
+        return null; // complex expression
+    }
+
     // ── Function registry for direct calls ──
     private static final ThreadLocal<Map<String, Integer>> knownFunctions =
         ThreadLocal.withInitial(HashMap::new);
@@ -1277,8 +1312,9 @@ public class IRBuilder {
                 int t = nested.typeIdFromNode(lam.body);
                 nested.current.emitReturn(t >= 0 ? t : T_INT);
             }
-            IRFunction fn = finishIR(nested.finish(name, lam.vars.length),
-                                      lam.vars.length, optimize, true);
+            IRFunction rawFn = nested.finish(name, lam.vars.length);
+            rawFn = rawFn.withDefaults(extractDefaults(lam.vars));
+            IRFunction fn = finishIR(rawFn, lam.vars.length, optimize, true);
             int poolIdx = b.putConstant(fn);
             b.registerFunction(name, poolIdx);
         }

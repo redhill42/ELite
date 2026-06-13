@@ -56,12 +56,19 @@ public class IRFunction {
      */
     private final int[] paramFlags;
 
+    /**
+     * Default parameter values (parallel to params; null entries = no default).
+     * Simple literals are evaluated at compile time; null for complex expressions.
+     * Applied in execute() when caller provides fewer args than paramCount.
+     */
+    private final Object[] defaultValues;
+
     IRFunction(String name, int paramCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions) {
         this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             sourcePositions, null);
+             sourcePositions, null, null);
     }
 
     IRFunction(String name, int paramCount,
@@ -69,13 +76,32 @@ public class IRFunction {
                Object[] constantPool, String[] varNames,
                int[] sourcePositions, int[] paramFlags) {
         this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             sourcePositions, paramFlags);
+             sourcePositions, paramFlags, null);
+    }
+
+    // For ConstantFolder which passes defaultValues as last arg
+    IRFunction(String name, int paramCount,
+               int[] code, int[] blockOffsets,
+               Object[] constantPool, String[] varNames,
+               int[] sourcePositions, int[] paramFlags,
+               Object[] defaultValues) {
+        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
+             sourcePositions, paramFlags, defaultValues);
     }
 
     IRFunction(String name, int paramCount, int captureCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions, int[] paramFlags) {
+        this(name, paramCount, captureCount, code, blockOffsets, constantPool, varNames,
+             sourcePositions, paramFlags, null);
+    }
+
+    IRFunction(String name, int paramCount, int captureCount,
+               int[] code, int[] blockOffsets,
+               Object[] constantPool, String[] varNames,
+               int[] sourcePositions, int[] paramFlags,
+               Object[] defaultValues) {
         this.name = name;
         this.paramCount = paramCount;
         this.captureCount = captureCount;
@@ -85,6 +111,7 @@ public class IRFunction {
         this.varNames = varNames;
         this.sourcePositions = sourcePositions;
         this.paramFlags = paramFlags;
+        this.defaultValues = defaultValues;
     }
 
     public String name()       { return name; }
@@ -108,6 +135,19 @@ public class IRFunction {
     public boolean isExplicitParamType(int paramIdx) {
         return paramFlags != null && paramIdx < paramFlags.length
             && (paramFlags[paramIdx] & PARAM_EXPLICIT_TYPE) != 0;
+    }
+
+    /** Default parameter values (null = no default). */
+    public Object[] defaultValues() { return defaultValues; }
+
+    /** Return a copy of this function with the given default parameter values. */
+    public IRFunction withDefaults(Object[] defs) {
+        if (defs == null) return this;
+        for (Object d : defs) if (d != null) {
+            return new IRFunction(name, paramCount, captureCount, code, blockOffsets,
+                    constantPool, varNames, sourcePositions, paramFlags, defs);
+        }
+        return this; // all null — no defaults to apply
     }
 
     /** Maximum local variable index (params + define'd vars). */

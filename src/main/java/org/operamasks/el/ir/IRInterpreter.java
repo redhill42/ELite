@@ -93,6 +93,14 @@ public class IRInterpreter {
                 locals[i] = args[i];
             }
         }
+        // Fill missing parameters with default values
+        Object[] defs = function.defaultValues();
+        if (defs != null) {
+            int provided = args != null ? args.length : 0;
+            for (int i = provided; i < function.paramCount() && i < locals.length; i++) {
+                if (defs[i] != null) locals[i] = defs[i];
+            }
+        }
 
         // Start at first block
         ip = blockOffsets.length > 0 ? blockOffsets[0] : 0;

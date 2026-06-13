@@ -137,7 +137,8 @@ public class IRSpeclializer implements IRPass {
         }
         return new IRFunction(fn.name(), fn.paramCount(), fn.captureCount(),
                 merged.toArray(), newOffsets, fn.constantPool(),
-                fn.varNames(), fn.sourcePositions(), fn.paramFlags());
+                fn.varNames(), fn.sourcePositions(), fn.paramFlags(),
+                fn.defaultValues());
     }
 
     /** Remap all JUMP-type instruction targets from old to new block IDs. */

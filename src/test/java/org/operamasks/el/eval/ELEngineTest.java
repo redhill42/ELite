@@ -229,6 +229,26 @@ class ELEngineTest extends EliteTestBase {
         assertEquals(55L, evalL("loopSum(10)"));
     }
 
+    // ---- Default parameter values ----
+
+    @Test
+    void defaultParametersInIR() {
+        // Regression: default parameter values were not applied in IR mode
+        // (INVOKE_DIRECT doesn't fill in defaults). The locals array must
+        // be populated with default values for missing arguments.
+        exec("define fib(n, a = 1, b = 1) => n <= 2 ? b : fib(n-1, b, a+b)");
+        assertEquals(144L, evalL("fib(12)"));
+        assertEquals(1L, evalL("fib(1)"));
+        assertEquals(2L, evalL("fib(3)"));
+    }
+
+    @Test
+    void defaultParametersSimpleFunction() {
+        exec("define add(a, b = 10) => a + b");
+        assertEquals(15L, evalL("add(5)"));
+        assertEquals(7L, evalL("add(5, 2)"));
+    }
+
     // ---- Error cases ----
 
     @Test
