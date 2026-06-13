@@ -629,9 +629,13 @@ public class IRBuilder {
         int thenB = allocBlockId(), elseB = allocBlockId(), mergeB = allocBlockId();
         current.emitJumpIfTrue(thenB);
         current.emitJump(elseB);
-        // Both branches are in tail position if the conditional is
-        startBlock(thenB); buildTail(node.left);  current.emitJump(mergeB);
-        startBlock(elseB); buildTail(node.right); current.emitJump(mergeB);
+        // Both branches introduce a new scope
+        startBlock(thenB);
+        current.emitScopeEnter(); buildTail(node.left); current.emitScopeExit();
+        current.emitJump(mergeB);
+        startBlock(elseB);
+        current.emitScopeEnter(); buildTail(node.right); current.emitScopeExit();
+        current.emitJump(mergeB);
         startBlock(mergeB);
     }
 
@@ -738,10 +742,7 @@ public class IRBuilder {
     // ── Sequential ──
     private void buildThen(ELNode.THEN node) {
         build(node.left); current.emitPop();
-        // right side introduces a new scope
-        current.emitScopeEnter();
         buildTail(node.right);
-        current.emitScopeExit();
     }
     private void buildExpr(ELNode.EXPR node) { build(node.right); }
     private void buildCompound(ELNode.COMPOUND node) {
