@@ -177,10 +177,9 @@ public class ELProgram implements Serializable
      * Level 2 (IR):  use optimized IR interpreter.
      * Level 3 (BC):  compile to JVM bytecode; on CompilationError, fall back to IR.
      * <p>
-     * If an IR function has unsupported ops (trampolines), it falls back
-     * to AST. Exceptions during execution propagate directly — they are
-     * either user program errors or IR/BC interpreter bugs that should
-     * be fixed (not silently absorbed).
+     * TRAMPOLINE opcodes are handled inline by the IR interpreter and bytecode
+     * compiler (calling back to AST for individual expressions), so there is
+     * no full-program fallback. Exceptions during execution propagate directly.
      */
     private Object evaluate(List<ELNode> defs, List<ELNode> exps,
                             EvaluationContext env, javax.el.ELContext elctx,
@@ -193,20 +192,14 @@ public class ELProgram implements Serializable
 
             case 1: {
                 // Conservative IR — no optimization passes (constant folding, type specialization skipped)
+                // The IR interpreter handles TRAMPOLINE opcodes inline via AST evaluation,
+                // so there is no need for a full-program fallback.
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, false);
-                if (irFn.hasUnsupportedOps()) {
-                    if (DEBUG) System.err.println("[elite] IR has unsupported ops, using AST");
-                    return evaluateAST(exps, frame, env);
-                }
                 return new IRInterpreter(elctx, irFn, env).execute(null);
             }
 
             case 2: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
-                if (irFn.hasUnsupportedOps()) {
-                    if (DEBUG) System.err.println("[elite] IR has unsupported ops, using AST");
-                    return evaluateAST(exps, frame, env);
-                }
                 return new IRInterpreter(elctx, irFn, env).execute(null);
             }
 
