@@ -641,18 +641,24 @@ public class IRBuilder {
 
     // ── Conditional (if/else / ?:) ──
     private void buildConditional(ELNode.COND node) {
-        build(node.cond);
         int thenB = allocBlockId(), elseB = allocBlockId(), mergeB = allocBlockId();
+        build(node.cond);
+        // Ensure jumps are in the same block as condition
         current.emitJumpIfTrue(thenB);
         current.emitJump(elseB);
-        // Both branches introduce a new scope
-        startBlock(thenB);
+        sealAndStart(thenB);
         enterScope(); buildTail(node.left); leaveScope();
         current.emitJump(mergeB);
-        startBlock(elseB);
+        sealAndStart(elseB);
         enterScope(); buildTail(node.right); leaveScope();
         current.emitJump(mergeB);
-        startBlock(mergeB);
+        sealAndStart(mergeB);
+    }
+    /** Seal current block into blockMap and start a new block with the given ID. */
+    private void sealAndStart(int blockId) {
+        blockMap.put(currentBlockId, current.toArray());
+        current.clear();
+        currentBlockId = blockId;
     }
 
     // ── Coalesce ──
