@@ -226,6 +226,16 @@ public class IREmitter {
         return emit1(THROW, K_NONE, 0);
     }
 
+    /** Push a new EvaluationContext scope (for scoped variable shadowing). */
+    public IREmitter emitScopeEnter() {
+        return emit1(SCOPE_ENTER, K_NONE, 0);
+    }
+
+    /** Pop the current EvaluationContext scope. */
+    public IREmitter emitScopeExit() {
+        return emit1(SCOPE_EXIT, K_NONE, 0);
+    }
+
     public IREmitter emitInvoke(int funcIndex, int argCount) {
         return emit2(INVOKE, K_FN, funcIndex & 0xFFFF, argCount);
     }

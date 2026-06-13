@@ -17,6 +17,7 @@
 package org.operamasks.el.ir;
 
 import javax.el.ELContext;
+import java.util.ArrayDeque;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
@@ -61,6 +62,7 @@ public class IRInterpreter {
 
     // ── Trampoline support ──
     private EvaluationContext evalContext;
+    private final ArrayDeque<EvaluationContext> scopeStack = new ArrayDeque<>();
 
     public IRInterpreter(ELContext elctx, IRFunction function) {
         this(elctx, function, null);
@@ -287,6 +289,17 @@ public class IRInterpreter {
                 }
                 case RETURN_VOID: {
                     return null;
+                }
+                case SCOPE_ENTER: {
+                    scopeStack.push(evalContext);
+                    evalContext = evalContext.pushContext();
+                    ip += 1;
+                    break;
+                }
+                case SCOPE_EXIT: {
+                    evalContext = scopeStack.pop();
+                    ip += 1;
+                    break;
                 }
                 case THROW: {
                     Object cause = pop();
@@ -799,8 +812,15 @@ public class IRInterpreter {
     // ── Global variable storage ──
 
     private void storeGlobal(String name, Object value) {
-        evalContext.setVariable(name,
-            new org.operamasks.el.eval.closure.LiteralClosure(value));
+        if (!scopeStack.isEmpty()) {
+            // Inside a SCOPE_ENTER block: write to evalContext head (scoped, temporary)
+            evalContext.setVariable(name,
+                new org.operamasks.el.eval.closure.LiteralClosure(value));
+        } else {
+            // Top-level: write to ELContext VariableMapper (persistent across evals)
+            elctx.getVariableMapper().setVariable(name,
+                new org.operamasks.el.eval.closure.LiteralClosure(value));
+        }
     }
 
     // ── Direct field access ──

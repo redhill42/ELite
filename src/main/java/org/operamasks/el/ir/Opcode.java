@@ -120,6 +120,8 @@ public final class Opcode {
     public static final int RETURN        = 0x64;
     public static final int RETURN_VOID   = 0x65;
     public static final int THROW         = 0x66;  // pop value, wrap as UserException, throw
+    public static final int SCOPE_ENTER   = 0x67;  // push new EvaluationContext scope
+    public static final int SCOPE_EXIT    = 0x68;  // pop EvaluationContext scope
 
     // ── Memory / allocation (0x70-0x7F) ──
     public static final int STORE_VAR      = 0x70;
@@ -236,6 +238,8 @@ public final class Opcode {
             case RETURN:       return "RETURN";
             case RETURN_VOID:  return "RETURN_VOID";
             case THROW:        return "THROW";
+            case SCOPE_ENTER:  return "SCOPE_ENTER";
+            case SCOPE_EXIT:   return "SCOPE_EXIT";
             case STORE_VAR:      return "STORE_VAR";
             case LOAD_FIELD:     return "LOAD_FIELD";
             case STORE_FIELD:    return "STORE_FIELD";

@@ -727,12 +727,10 @@ public class IRBuilder {
     private void buildDefine(ELNode.DEFINE node) {
         if (node.expr != null) {
             build(node.expr);
-            // Store as local variable (for IR function scope)
-            int idx = ensureVar(node.id);
-            current.emitDup();
-            current.emitStoreVar(idx);
-            // Also store as global (for persistence across eval calls)
+            // Store via STORE_GLOBAL only — the VariableMapper handles scope chains.
+            // STORE_VAR uses flat local slots which don't respect scoping.
             int nameIdx = putConstant(node.id);
+            current.emitDup();
             current.emitStoreGlobal(nameIdx);
         }
     }
@@ -740,8 +738,10 @@ public class IRBuilder {
     // ── Sequential ──
     private void buildThen(ELNode.THEN node) {
         build(node.left); current.emitPop();
-        // right side is in tail position if the THEN is
+        // right side introduces a new scope
+        current.emitScopeEnter();
         buildTail(node.right);
+        current.emitScopeExit();
     }
     private void buildExpr(ELNode.EXPR node) { build(node.right); }
     private void buildCompound(ELNode.COMPOUND node) {
@@ -769,7 +769,7 @@ public class IRBuilder {
         loopStack.push(new LoopTargets(header, exit));
         current.emitJump(header);
         startBlock(header); build(node.cond); current.emitJumpIfTrue(body); current.emitJump(exit);
-        startBlock(body);   build(node.body); current.emitPop(); current.emitJump(header);
+        startBlock(body);   current.emitScopeEnter(); build(node.body); current.emitScopeExit(); current.emitPop(); current.emitJump(header);
         startBlock(exit);   emitPushNull();
         // Exit block falls through to next — add RETURN at toplevel by caller
         loopStack.pop();
@@ -785,7 +785,7 @@ public class IRBuilder {
         if (node.cond != null) { build(node.cond); current.emitJumpIfTrue(body); } else current.emitJump(body);
         current.emitJump(exit);
         startBlock(body);
-        if (node.body != null) { build(node.body); current.emitPop(); }
+        if (node.body != null) { current.emitScopeEnter(); build(node.body); current.emitScopeExit(); current.emitPop(); }
         if (node.step != null) for (ELNode e : node.step) { build(e); current.emitPop(); }
         current.emitJump(header);
         startBlock(exit); emitPushNull();
@@ -826,7 +826,7 @@ public class IRBuilder {
         current.emitJump(body);
 
         startBlock(body);
-        build(node.body);
+        current.emitScopeEnter(); build(node.body); current.emitScopeExit();
         current.emitPop();
         current.emitJump(header);
 
@@ -879,7 +879,7 @@ public class IRBuilder {
 
         // Body: execute, then increment
         startBlock(body);
-        build(node.body);
+        current.emitScopeEnter(); build(node.body); current.emitScopeExit();
         current.emitPop();                // discard body result
         // i = i + 1
         current.emitPushVar(varIdx, T_INT);
