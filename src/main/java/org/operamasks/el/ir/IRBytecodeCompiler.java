@@ -437,7 +437,7 @@ public class IRBytecodeCompiler {
                 mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL → done
             }
 
-            case CONTAINS -> emitCall2("contains");
+            case DYNIN -> emitCall2("dynIn");
 
             // ─── Bitwise (via helpers) ───
             case IAND, LAND -> emitCall2("bitAnd");
@@ -553,7 +553,6 @@ public class IRBytecodeCompiler {
             case DYNEQ  -> emitDynCall("dynEq", 2);
             case DYNLT  -> emitDynCall("dynLt", 2);
             case DYNLE  -> emitDynCall("dynLe", 2);
-            case DYNIN  -> emitDynCall("dynIn", 2);
             default -> throw new UnsupportedOperationException("BC: " + Opcode.name(op));
         }
     }

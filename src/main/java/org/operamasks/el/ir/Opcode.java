@@ -97,11 +97,10 @@ public final class Opcode {
     public static final int DLT = 0x4E;  public static final int DLE = 0x4F;
     public static final int DGT = 0x5A;  public static final int DGE = 0x5B;
 
-    // ── Dynamic comparisons (0x50-0x53) ──
+    // ── Dynamic comparisons (0x50-0x52) ──
     public static final int DYNEQ = 0x50;
     public static final int DYNLT = 0x51;
     public static final int DYNLE = 0x52;
-    public static final int DYNIN = 0x53;
 
     // ── Control flow (0x54-0x5F) ──
     public static final int JUMP            = 0x54;
@@ -138,7 +137,7 @@ public final class Opcode {
     public static final int GET_ITER       = 0x7C;
     public static final int ITER_NEXT      = 0x7D;
     public static final int ITER_DONE      = 0x7E;
-    public static final int CONTAINS       = 0x7F;
+    public static final int DYNIN          = 0x7F;  // 'in' operator (was CONTAINS)
 
     // ── Type guards (0x80-0x8F) ──
     // GUARD_TYPE typeId, deoptBlockId: check stack top type.
@@ -223,7 +222,7 @@ public final class Opcode {
             case DLT: return "DLT"; case DLE: return "DLE";
             case DGT: return "DGT"; case DGE: return "DGE";
             case DYNEQ: return "DYNEQ"; case DYNLT: return "DYNLT";
-            case DYNLE: return "DYNLE"; case DYNIN: return "DYNIN";
+            case DYNLE: return "DYNLE";
             case JUMP:            return "JUMP";
             case JUMP_IF_TRUE:    return "JUMP_IF_TRUE";
             case JUMP_IF_FALSE:   return "JUMP_IF_FALSE";
@@ -254,7 +253,7 @@ public final class Opcode {
             case GET_ITER:       return "GET_ITER";
             case ITER_NEXT:      return "ITER_NEXT";
             case ITER_DONE:      return "ITER_DONE";
-            case CONTAINS:       return "CONTAINS";
+            case DYNIN:          return "DYNIN";
             case GUARD_TYPE:    return "GUARD_TYPE";
             case CAT:    return "CAT";
             case DYNCAT: return "DYNCAT";

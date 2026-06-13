@@ -481,7 +481,7 @@ public class IRBuilder {
         if (node instanceof ELNode.IN in) {
             build(in.right);  // container
             build(in.left);   // element
-            current.emitContains();
+            current.emitDynIn();
             if (in.negative) {
                 current.emitNot();
             }

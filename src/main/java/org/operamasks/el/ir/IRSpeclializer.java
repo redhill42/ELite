@@ -422,7 +422,7 @@ public class IRSpeclializer implements IRPass {
                      IAND, IOR, IXOR, ISHL, ISHR, IUSHR, IBITNOT,
                      LAND, LOR, LXOR, LSHL, LSHR, LUSHR, LBITNOT,
                      DYNPOW, DYNCAT, DYNIN,
-                     CAT, CONTAINS, IPOW, LPOW, DPOW,
+                     CAT, IPOW, LPOW, DPOW,
                      GUARD_TYPE, NOP -> copyInst(out, code, v);
 
                 case NOT -> { pop1(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }

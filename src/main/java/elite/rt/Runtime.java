@@ -143,7 +143,7 @@ public final class Runtime {
                 ((Number)begin).longValue(), ((Number)end).longValue(), 1);
     }
 
-    public static Object contains(Object coll, Object elem) {
+    public static Object dynIn(Object coll, Object elem) {
         if (coll instanceof java.util.Collection<?> c)
             return c.contains(elem);
         if (coll instanceof Object[] a) {
@@ -645,12 +645,6 @@ public final class Runtime {
             case Token.GE -> c >= 0;
             default -> false;
         };
-    }
-
-    public static Object dynIn(Object x, Object y) {
-        if (y instanceof java.util.Collection<?> c)
-            return c.contains(x);
-        return false;
     }
 
     // ── Type guard ──

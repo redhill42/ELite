@@ -181,7 +181,7 @@ public class IRInterpreter {
                 case DYNADD: case DYNSUB: case DYNMUL: case DYNDIV:
                 case DYNREM: case DYNNEG: case DYNPOW:
                 case DYNCAT:
-                case DYNEQ: case DYNLT: case DYNLE: case DYNIN: {
+                case DYNEQ: case DYNLT: case DYNLE: {
                     push(dynamicOp(op));
                     ip += 1;
                     break;
@@ -460,11 +460,11 @@ public class IRInterpreter {
                     break;
                 }
 
-                // ============ Contains ============
-                case CONTAINS: {
+                // ============ DynIn ============
+                case DYNIN: {
                     Object elem = pop();
                     Object coll = pop();
-                    push(contains(coll, elem));
+                    push(elite.rt.Runtime.dynIn(coll, elem));
                     ip += 1;
                     break;
                 }
@@ -847,21 +847,4 @@ public class IRInterpreter {
         throw new RuntimeException("Cannot iterate over: " + coll.getClass().getName());
     }
 
-    // ── Contains helper ──
-
-    private static boolean contains(Object coll, Object elem) {
-        if (coll instanceof java.util.Collection) return ((java.util.Collection<?>) coll).contains(elem);
-        if (coll instanceof Object[]) {
-            for (Object o : (Object[]) coll) if (java.util.Objects.equals(o, elem)) return true;
-            return false;
-        }
-        if (coll instanceof elite.lang.Seq seq) {
-            while (!seq.isEmpty()) {
-                if (java.util.Objects.equals(seq.head(), elem)) return true;
-                seq = seq.tail();
-            }
-            return false;
-        }
-        return false;
-    }
 }

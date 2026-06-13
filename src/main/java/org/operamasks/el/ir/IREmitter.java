@@ -335,7 +335,7 @@ public class IREmitter {
     }
 
     /** Pop container, element → push boolean (element in container). */
-    public IREmitter emitContains() { return emit1(CONTAINS, K_BOOL, 0); }
+    public IREmitter emitDynIn() { return emit1(DYNIN, K_BOOL, 0); }
 
     // ── Type guards ──
 
