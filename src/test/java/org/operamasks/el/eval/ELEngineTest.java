@@ -249,6 +249,32 @@ class ELEngineTest extends EliteTestBase {
         assertEquals(7L, evalL("add(5, 2)"));
     }
 
+    @Test
+    void defaultParametersMultipleDefaults() {
+        exec("define f(a, b = 10, c = 100) => [a, b, c]");
+        assertEquals("[1, 10, 100]", eval("f(1)").toString());
+        assertEquals("[1, 2, 100]", eval("f(1, 2)").toString());
+        assertEquals("[1, 2, 3]", eval("f(1, 2, 3)").toString());
+    }
+
+    @Test
+    void defaultParametersWithControlFlow() {
+        // Default params with recursion and INVOKE_TAIL (TCO) in the else branch.
+        // Exercises IRSpeclializer deopt splitting around tail-call instructions.
+        exec("define sum(n, acc = 0) => n <= 0 ? acc : sum(n-1, acc+n)");
+        assertEquals(55L, evalL("sum(10)"));
+        assertEquals(0L, evalL("sum(0)"));
+        assertEquals(15L, evalL("sum(5)"));
+    }
+
+    @Test
+    void defaultParameterZeroValue() {
+        // Zero is a valid default — must not be confused with null/missing
+        exec("define inc(a, delta = 0) => a + delta");
+        assertEquals(5L, evalL("inc(5)"));
+        assertEquals(7L, evalL("inc(5, 2)"));
+    }
+
     // ---- Error cases ----
 
     @Test
