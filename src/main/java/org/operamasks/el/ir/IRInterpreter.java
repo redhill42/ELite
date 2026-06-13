@@ -624,7 +624,7 @@ public class IRInterpreter {
             case DYNNEG -> dynamicNeg(lhs);
             case DYNPOW -> dynamicPow(lhs, rhs);
             case DYNCAT -> dynamicCat(lhs, rhs);
-            case DYNEQ  -> lhs == null ? rhs == null : lhs.equals(rhs);
+            case DYNEQ  -> dynamicEq(lhs, rhs);
             case DYNLT  -> dynamicLt(lhs, rhs);
             case DYNLE  -> dynamicLe(lhs, rhs);
             default -> dynamicAdd(lhs, rhs); // fallback
@@ -728,6 +728,15 @@ public class IRInterpreter {
             return ((Comparable)x).compareTo(y) <= 0;
         }
         return String.valueOf(x).compareTo(String.valueOf(y)) <= 0;
+    }
+    private boolean dynamicEq(Object x, Object y) {
+        if (x == y) return true;
+        if (x == null || y == null) return false;
+        // Cross-numeric-type comparison (e.g. Double(0.0) == Long(0))
+        if (x instanceof Number && y instanceof Number) {
+            return ((Number)x).doubleValue() == ((Number)y).doubleValue();
+        }
+        return x.equals(y);
     }
 
     // ── Dynamic invocation ──

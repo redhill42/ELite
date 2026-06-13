@@ -353,6 +353,11 @@ public final class Runtime {
     }
 
     public static Object dynEq(Object x, Object y) {
+        if (x == y) return true;
+        if (x == null || y == null) return false;
+        if (x instanceof Number && y instanceof Number) {
+            return ((Number)x).doubleValue() == ((Number)y).doubleValue();
+        }
         return java.util.Objects.equals(x, y);
     }
 
