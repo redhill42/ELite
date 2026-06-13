@@ -545,6 +545,10 @@ public class IRInterpreter {
                     ELNode node = (ELNode) obj;
                     Object result = node.getValue(evalContext);
                     push(result);
+                    // AST evaluation may have modified global variables through the
+                    // VariableMapper. Sync them back to local slots so subsequent
+                    // PUSH_VAR instructions see the updated values.
+                    syncLocalsFromGlobals();
                     ip += 1 + oc;
                     break;
                 }
@@ -741,6 +745,27 @@ public class IRInterpreter {
         // STORE_VAR (not STORE_GLOBAL) to create temporary shadow variables.
         elctx.getVariableMapper().setVariable(name,
             new org.operamasks.el.eval.closure.LiteralClosure(value));
+    }
+
+    /**
+     * After a TRAMPOLINE causes AST evaluation (which may modify global variables
+     * through the VariableMapper), copy those changes back to local slots so
+     * subsequent PUSH_VAR instructions see the updated values.
+     *
+     * <p>Top-level {@code define} stores to both STORE_VAR (local slot) and
+     * STORE_GLOBAL (VariableMapper). AST evaluation only touches the VariableMapper,
+     * so without this sync the IR locals become stale.
+     */
+    private void syncLocalsFromGlobals() {
+        String[] names = function.varNames();
+        if (names == null) return;
+        javax.el.VariableMapper vm = elctx.getVariableMapper();
+        for (int i = 0; i < names.length && i < locals.length; i++) {
+            javax.el.ValueExpression ve = vm.resolveVariable(names[i]);
+            if (ve != null) {
+                locals[i] = ve.getValue(elctx);
+            }
+        }
     }
 
     // ── Direct field access ──

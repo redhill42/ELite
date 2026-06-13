@@ -42,6 +42,31 @@ class ExceptionTest extends EliteTestBase {
     }
 
     @Test
+    void tryFinallyPreservesVariableMutation() {
+        // Regression: TRAMPOLINE evaluates try body via AST, which may modify
+        // global variables. The IR's local slots must sync from the global
+        // VariableMapper so subsequent PUSH_VAR sees the updated value.
+        exec("define tryMutate(x) { define i = x; try { i *= 5 } finally {}; i }");
+        assertEquals(10L, evalL("tryMutate(2)"));
+        assertEquals(15L, evalL("tryMutate(3)"));
+    }
+
+    @Test
+    void tryCatchPreservesVariableMutation() {
+        exec("define tryCatchMutate(x) { define i = x; try { if (i > 10) { throw \"big\" }; i *= 3 } catch (e) { i = -1 }; i }");
+        assertEquals(6L, evalL("tryCatchMutate(2)"));
+        assertEquals(-1L, evalL("tryCatchMutate(20)"));
+    }
+
+    @Test
+    void tryWithCompoundAssignAndReadBack() {
+        // Multiple reads in same compilation unit — tests that both
+        // PUSH_VAR and STORE_VAR work correctly across the TRAMPOLINE boundary.
+        exec("define tryReadWrite() { define a = 2; define before = a; try { a *= 5 } finally {}; define after = a; [before, after] }");
+        assertEquals("[2, 10]", eval("tryReadWrite()").toString());
+    }
+
+    @Test
     void tryCatchFinally() {
         exec("define test() { define x = 0; try { throw \"err\" } catch (e) { x = 1 } finally { x = x + 1 }; x }");
         assertEquals(2L, evalL("test()"));
