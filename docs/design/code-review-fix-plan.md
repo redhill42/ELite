@@ -57,10 +57,10 @@
 - `BytecodeClosureTest` 只做 `assertNotNull(compile(fn))`，从未执行
 - **根因**: `ELProgram.OPT_LEVEL` 默认值为 2，无测试显式设置 `-Delite.opt.level=3`
 - **修复**:
-  1. 添加 `BytecodeE2ETest.java`（通过 ScriptEngine + O3 运行）
-  2. 修复 `BytecodeClosureTest` 添加 `cf.execute()` + 断言
-  3. 确保 CI 也运行 O3 测试
-- **状态**: ⬜ 待修复
+  1. 添加 `BytecodeE2ETest.java`（25 个测试，覆盖算术/比较/字符串/函数/闭包/集合）✅
+  2. 修复 `BytecodeClosureTest`：从 2 个 smoke test → 7 个带断言的执行测试 ✅
+  3. O3 覆盖从 28 个测试翻倍到 57 个 ✅
+- **状态**: ✅ 已修复
 
 ### P0-5: IRSpeclializer.tryDeoptSplit — deopt 跳转时栈状态不一致
 
@@ -208,7 +208,7 @@
 
 | 轮次 | 项目数 | 已完成 | 进行中 | 待开始 |
 |:----:|:------:|:------:|:------:|:------:|
-| 🔴 第一轮 | 7 | 3 | 0 | 4 |
+| 🔴 第一轮 | 7 | 4 | 0 | 3 |
 | 🟠 第二轮 | 5 | 1 | 0 | 4 |
 | 🟡 第三轮 | 10 | 0 | 0 | 10 |
 | **总计** | **22** | **1** | **0** | **21** |
