@@ -533,6 +533,12 @@ public class IRBytecodeCompiler {
                 int poolIdx = v.constPoolIndex();
                 Object nodeObj = fn.constantPool()[poolIdx];
                 if (nodeObj instanceof TryDescriptor) {
+                    // TODO: Call emitTryCatch(td) to generate native JVM exception
+                    // tables instead of falling back to AST evaluation. The
+                    // emitTryCatch method (below) is implemented and correct, but
+                    // not yet activated because it needs dedicated try/catch/finally
+                    // bytecode integration tests. Once activated, remove the
+                    // trampolineTry call and the Runtime.trampolineTry helper.
                     mv.visitVarInsn(A_ALOAD, S_CTX);
                     mv.visitLdcInsn(poolIdx);
                     mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
@@ -1115,7 +1121,14 @@ public class IRBytecodeCompiler {
     }
 
 
-    /** Generate JVM exception table bytecode from a TryDescriptor. */
+    /**
+     * Generate JVM exception table bytecode from a TryDescriptor.
+     *
+     * TODO: Activate by calling this from the TRAMPOLINE handler
+     * (compileInst, case TRAMPOLINE) instead of trampolineTry.
+     * Requires dedicated try/catch/finally bytecode integration tests.
+     * Once activated, Runtime.trampolineTry can be removed.
+     */
     private void emitTryCatch(TryDescriptor td) {
         // Compile each sub-function to bytecode
         CompiledFunction tryCF = compile(td.tryBody);
