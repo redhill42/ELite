@@ -608,7 +608,7 @@ public class IRBytecodeCompiler {
             case DYNEQ  -> emitDynCall("dynEq", 2);
             case DYNLT  -> emitDynCall("dynLt", 2);
             case DYNLE  -> emitDynCall("dynLe", 2);
-            default -> throw new UnsupportedOperationException("BC: " + Opcode.name(op));
+            default -> throw new CompilationError("BC unhandled opcode: " + Opcode.name(op) + " (" + op + ")");
         }
     }
 
