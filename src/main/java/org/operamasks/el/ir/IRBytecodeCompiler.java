@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.objectweb.asm.*;
 import static org.operamasks.el.ir.Opcode.*;
+import static org.operamasks.el.resources.Resources.*;
 
 /**
  * Compiles IRFunction to JVM bytecode. Phase 1: typed arithmetic, return.
@@ -101,7 +102,7 @@ public class IRBytecodeCompiler {
             return new CompiledFunction(m, bc, name, argTypes, fn.maxLocalCount(),
                 fn.defaultValues());
         } catch (Exception e) {
-            throw new RuntimeException("Bytecode compile failed", e);
+            throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
         }
     }
 
@@ -616,7 +617,7 @@ public class IRBytecodeCompiler {
             case DYNEQ  -> emitDynCall("dynEq", 2);
             case DYNLT  -> emitDynCall("dynLt", 2);
             case DYNLE  -> emitDynCall("dynLe", 2);
-            default -> throw new CompilationError("BC unhandled opcode: " + Opcode.name(op) + " (" + op + ")");
+            default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, Opcode.name(op), op));
         }
     }
 
@@ -812,7 +813,7 @@ public class IRBytecodeCompiler {
     /** Direct call: use compiled version if available, specialize on first call. */
     public static Object invokeDirect(javax.el.ELContext elctx, int funcId, Object[] args) {
         IRFunction fn = funcRegistry().get(funcId);
-        if (fn == null) throw new RuntimeException("Function not registered: " + funcId);
+        if (fn == null) throw new RuntimeException(_T(IR_FUNCTION_NOT_REGISTERED, funcId));
         // Check cache first
         CompiledFunction cf = compiledCache.get().get(fn);
         if (cf == null) {

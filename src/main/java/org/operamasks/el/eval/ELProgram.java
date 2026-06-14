@@ -40,6 +40,7 @@ import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.ir.IRInterpreter;
 import org.operamasks.el.ir.CompilationError;
 import org.operamasks.util.Utils;
+import static org.operamasks.el.resources.Resources.*;
 
 public class ELProgram implements Serializable
 {
@@ -211,9 +212,7 @@ public class ELProgram implements Serializable
                     return cf.execute(elctx, null);
                 } catch (CompilationError e) {
                     if (STRICT_BYTECODE)
-                        throw new ELException(
-                            "Bytecode compilation failed in strict mode. " +
-                            "Set -Delite.strict=false to allow IR fallback.", e);
+                        throw new ELException(_T(IR_STRICT_BYTECODE_FAILED), e);
                     if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
                     return new IRInterpreter(elctx, irFn, env).execute(null);
                 }

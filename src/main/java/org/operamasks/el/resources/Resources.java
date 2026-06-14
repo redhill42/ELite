@@ -134,5 +134,25 @@ public final class Resources
     public static final String EL_ARG_TYPE_MISMATCH = "EL_ARG_TYPE_MISMATCH";
     public static final String EL_RETURN_TYPE_MISMATCH = "EL_RETURN_TYPE_MISMATCH";
 
+    // General runtime
+    public static final String EL_NULL_OPERAND = "EL_NULL_OPERAND";
+    public static final String EL_CANNOT_COMPARE = "EL_CANNOT_COMPARE";
+
+    // IR subsystem
+    public static final String IR_BYTECODE_COMPILE_FAILED = "IR_BYTECODE_COMPILE_FAILED";
+    public static final String IR_BC_UNHANDLED_OPCODE      = "IR_BC_UNHANDLED_OPCODE";
+    public static final String IR_STRICT_BYTECODE_FAILED    = "IR_STRICT_BYTECODE_FAILED";
+    public static final String IR_FUNCTION_NOT_REGISTERED   = "IR_FUNCTION_NOT_REGISTERED";
+    public static final String IR_TYPE_MISMATCH             = "IR_TYPE_MISMATCH";
+    public static final String IR_FIELD_READ_FROM_NULL      = "IR_FIELD_READ_FROM_NULL";
+    public static final String IR_FIELD_NOT_FOUND           = "IR_FIELD_NOT_FOUND";
+    public static final String IR_FIELD_ACCESS_ERROR        = "IR_FIELD_ACCESS_ERROR";
+    public static final String IR_FIELD_WRITE_TO_NULL       = "IR_FIELD_WRITE_TO_NULL";
+    public static final String IR_CANNOT_ITERATE            = "IR_CANNOT_ITERATE";
+    public static final String IR_GETTER_INVOKE_FAILED = "IR_GETTER_INVOKE_FAILED";
+    public static final String IR_SETTER_INVOKE_FAILED = "IR_SETTER_INVOKE_FAILED";
+    public static final String IR_METHOD_INVOKE_FAILED = "IR_METHOD_INVOKE_FAILED";
+    public static final String IR_DYNAMIC_INVOKE_FAILED     = "IR_DYNAMIC_INVOKE_FAILED";
+
     private Resources() {}
 }

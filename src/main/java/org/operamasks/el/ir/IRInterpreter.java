@@ -38,6 +38,7 @@ import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 
 import static org.operamasks.el.ir.Opcode.*;
+import static org.operamasks.el.resources.Resources.*;
 
 /**
  * Stack-based interpreter for ELite IR.
@@ -882,7 +883,7 @@ public class IRInterpreter {
                     try {
                         push(m.invoke(base));
                     } catch (Exception e) {
-                        throw new RuntimeException("getter invoke failed", e);
+                        throw new RuntimeException(_T(IR_GETTER_INVOKE_FAILED), e);
                     }
                     ip += 1 + oc;
                     break;
@@ -895,7 +896,7 @@ public class IRInterpreter {
                         m.invoke(base, value);
                         push(value);
                     } catch (Exception e) {
-                        throw new RuntimeException("setter invoke failed", e);
+                        throw new RuntimeException(_T(IR_SETTER_INVOKE_FAILED), e);
                     }
                     ip += 1 + oc;
                     break;
@@ -915,7 +916,7 @@ public class IRInterpreter {
                         }
                         push(m.invoke(base, args));
                     } catch (Exception e) {
-                        throw new RuntimeException("method invoke failed", e);
+                        throw new RuntimeException(_T(IR_METHOD_INVOKE_FAILED), e);
                     }
                     ip += 1 + oc;
                     break;
@@ -970,9 +971,7 @@ public class IRInterpreter {
                             String expected = IRFormat.primTypeName(typeId);
                             String actual = val == null ? "null" :
                                             val.getClass().getName();
-                            throw new RuntimeException("Type mismatch: " +
-                                                       "expected " + expected +
-                                                       ", got " + actual);
+                            throw new RuntimeException(_T(IR_TYPE_MISMATCH, expected, actual));
                         }
                         ip = blockOffsets[deoptBlockId];
                         break;
@@ -1124,7 +1123,7 @@ public class IRInterpreter {
             elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
             return ELEngine.invokeTarget(elctx, target, closures);
         } catch (Exception e) {
-            throw new RuntimeException("dynamic invoke failed", e);
+            throw new RuntimeException(_T(IR_DYNAMIC_INVOKE_FAILED), e);
         }
     }
 
@@ -1195,24 +1194,22 @@ public class IRInterpreter {
 
     private Object loadField(Object base, String fieldName) {
         if (base == null)
-            throw new NullPointerException("Cannot read field '" + fieldName + "' from null");
+            throw new NullPointerException(_T(IR_FIELD_READ_FROM_NULL, fieldName));
         try {
             Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
             Field f = cls.getField(fieldName);
             Object target = Modifier.isStatic(f.getModifiers()) ? null : base;
             return f.get(target);
         } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Field not found: " + fieldName + " " +
-                                       "on" + " " + base.getClass().getName());
+            throw new RuntimeException(_T(IR_FIELD_NOT_FOUND, fieldName, base.getClass().getName()));
         } catch (IllegalAccessException e) {
-            throw new RuntimeException("Cannot access field: " + fieldName, e);
+            throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
         }
     }
 
     private Object storeField(Object base, String fieldName, Object value) {
         if (base == null)
-            throw new NullPointerException("Cannot write field '" + fieldName +
-                                           "' to null");
+            throw new NullPointerException(_T(IR_FIELD_WRITE_TO_NULL, fieldName));
         try {
             Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
             Field f = cls.getField(fieldName);
@@ -1220,10 +1217,9 @@ public class IRInterpreter {
             f.set(target, coerceArg(value, f.getType()));
             return value; // assignment returns the value
         } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Field not found: " + fieldName + " " +
-                                       "on" + " " + base.getClass().getName());
+            throw new RuntimeException(_T(IR_FIELD_NOT_FOUND, fieldName, base.getClass().getName()));
         } catch (IllegalAccessException e) {
-            throw new RuntimeException("Cannot access field: " + fieldName, e);
+            throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
         }
     }
 
@@ -1236,8 +1232,7 @@ public class IRInterpreter {
         elctx.setPropertyResolved(false);
         Object result = elctx.getELResolver().getValue(elctx, base, key);
         if (!elctx.isPropertyResolved()) {
-            throw new RuntimeException("Property not found: " + key +
-                                       " on " + base.getClass().getName());
+            throw new RuntimeException(_T(EL_PROPERTY_NOT_FOUND, base.getClass().getName(), key));
         }
         return result;
     }
@@ -1273,7 +1268,7 @@ public class IRInterpreter {
         if (elctx.isPropertyResolved())
             return result;
 
-        throw new RuntimeException("Undefined identifier: " + name);
+        throw new RuntimeException(_T(EL_UNDEFINED_IDENTIFIER, name));
     }
 
     // ── Iterator helpers ──
@@ -1306,6 +1301,6 @@ public class IRInterpreter {
                 }
             };
         }
-        throw new RuntimeException("Cannot iterate over: " + coll.getClass().getName());
+        throw new RuntimeException(_T(IR_CANNOT_ITERATE, coll.getClass().getName()));
     }
 }
