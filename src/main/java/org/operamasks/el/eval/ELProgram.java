@@ -210,6 +210,10 @@ public class ELProgram implements Serializable
                         IRBytecodeCompiler.compile(irFn);
                     return cf.execute(elctx, null);
                 } catch (CompilationError e) {
+                    if (STRICT_BYTECODE)
+                        throw new ELException(
+                            "Bytecode compilation failed in strict mode. " +
+                            "Set -Delite.strict=false to allow IR fallback.", e);
                     if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
                     return new IRInterpreter(elctx, irFn, env).execute(null);
                 }
