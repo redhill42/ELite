@@ -102,9 +102,11 @@ public class IRInterpreter {
 
         // evalContext is set by constructor
 
-        // Bind arguments to locals
+        // Bind arguments to locals (grow array if paramCount exceeds default)
+        int needed = Math.max(function.paramCount(), args != null ? args.length : 0);
+        if (needed > locals.length) growLocals(needed);
         if (args != null) {
-            for (int i = 0; i < args.length && i < locals.length; i++) {
+            for (int i = 0; i < args.length; i++) {
                 locals[i] = args[i];
             }
         }
@@ -113,7 +115,7 @@ public class IRInterpreter {
         Object[] defs = function.defaultValues();
         if (defs != null) {
             int provided = args != null ? args.length : 0;
-            for (int i = provided; i < function.paramCount() && i < locals.length; i++) {
+            for (int i = provided; i < function.paramCount(); i++) {
                 if (defs[i] != null)
                     locals[i] = defs[i];
             }
@@ -144,6 +146,7 @@ public class IRInterpreter {
                 }
                 case PUSH_VAR: {
                     int idx = pl & 0xFF;
+                    ensureLocals(idx);
                     push(locals[idx]);
                     ip += 1;
                     break;
@@ -620,7 +623,7 @@ public class IRInterpreter {
                 case INVOKE_TAIL: {
                     int argc = pl;
                     for (int i = argc - 1; i >= 0; i--) {
-                        locals[i] = pop();
+                        ensureLocals(i); locals[i] = pop();
                     }
                     ip = blockOffsets[0];
                     break;
@@ -1018,6 +1021,19 @@ public class IRInterpreter {
         stack = newStack;
     }
 
+    /** Ensure locals array has at least minCapacity slots. */
+    private void growLocals(int minCapacity) {
+        int newSize = Math.max(locals.length * 2, minCapacity);
+        Object[] newLocals = new Object[newSize];
+        System.arraycopy(locals, 0, newLocals, 0, locals.length);
+        locals = newLocals;
+    }
+
+    /** Ensure locals[idx] is accessible, growing the array if needed. */
+    private void ensureLocals(int idx) {
+        if (idx >= locals.length) growLocals(idx + 1);
+    }
+
     // ── Dynamic operation support ──
 
     private Object dynamicOp(int irOpcode) {
@@ -1170,7 +1186,7 @@ public class IRInterpreter {
         for (int i = 0; i < names.length && i < locals.length; i++) {
             ValueExpression ve = vm.resolveVariable(names[i]);
             if (ve != null) {
-                locals[i] = ve.getValue(elctx);
+                ensureLocals(i); locals[i] = ve.getValue(elctx);
             }
         }
     }
