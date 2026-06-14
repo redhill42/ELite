@@ -527,6 +527,13 @@ public class Parser extends Scanner
             return e;
           }
 
+          case ATSIGN: {
+            int p = scan();
+            String id = scanQName();
+            expect(IDENT);
+            return new ELNode.XFORM(p, e, new ELNode.IDENT(p, id));
+          }
+
           case LPAREN:
             return parseApplyExpression(scan(), e);
 
