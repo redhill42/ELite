@@ -236,40 +236,11 @@ public class IRBytecodeCompiler {
     private byte[] compileBytecode() {
         mv.visitCode();
 
-        // Apply default parameter values for missing args
-        Object[] defs = fn.defaultValues();
-        if (defs != null) {
-            for (int i = 0; i < fn.paramCount() && i < defs.length; i++) {
-                if (defs[i] != null) {
-                    mv.visitVarInsn(A_ALOAD, S_LOCALS);  // locals array
-                    emitIntConst(i);                      // index
-                    mv.visitInsn(A_AALOAD);               // locals[i]
-                    Label hasVal = new Label();
-                    mv.visitJumpInsn(198, hasVal);        // IFNONNULL → has value
-                    mv.visitVarInsn(A_ALOAD, S_LOCALS);   // locals array
-                    emitIntConst(i);                      // index
-                    // Push default value
-                    Object dv = defs[i];
-                    if (dv instanceof Integer ii) {
-                        emitIntConst(ii);
-                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                    } else if (dv instanceof Long l) {
-                        emitLongConst(l);
-                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-                    } else if (dv instanceof Double d) {
-                        emitDoubleConst(d);
-                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-                    } else if (dv instanceof Boolean b) {
-                        mv.visitInsn(b ? A_ICONST_1 : A_ICONST_0);
-                        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
-                    } else {
-                        mv.visitLdcInsn(dv);
-                    }
-                    mv.visitInsn(A_AASTORE);              // locals[i] = defs[i]
-                    mv.visitLabel(hasVal);
-                }
-            }
-        }
+        // Default parameter values are applied in CompiledFunction.execute()
+        // before the bytecode runs. The bytecode itself trusts the caller
+        // to have already expanded the locals array and filled defaults.
+        // For INVOKE_DIRECT cross-calls, emitPackArgsAndCall sets
+        // Runtime.setProvidedArgCount(argc) which the callee uses if needed.
 
         // Allocate labels for all blocks first (for forward references)
         for (int b = 0; b < fn.blockCount(); b++) {
@@ -1282,16 +1253,18 @@ public class IRBytecodeCompiler {
         }
 
         public Object execute(javax.el.ELContext elctx, Object[] locals) {
+            // Save actual arg count BEFORE expanding the array
+            int provided = locals != null ? locals.length : 0;
             if (locals == null) locals = new Object[maxLocals];
             else if (locals.length < maxLocals) {
                 Object[] expanded = new Object[maxLocals];
                 System.arraycopy(locals, 0, expanded, 0, locals.length);
                 locals = expanded;
             }
-            // Apply default parameter values for missing args
+            // Apply default parameter values for missing args.
+            // Uses the original args length (saved before array expansion)
+            // to distinguish "not provided" from "explicitly passed null".
             if (defaultValues != null) {
-                int provided = 0;
-                while (provided < locals.length && locals[provided] != null) provided++;
                 for (int i = provided; i < defaultValues.length && i < locals.length; i++) {
                     if (defaultValues[i] != null) locals[i] = defaultValues[i];
                 }

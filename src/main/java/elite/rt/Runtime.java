@@ -257,6 +257,20 @@ public final class Runtime {
     public static void setFuncPool(Object[] pool) { funcPool.set(pool); }
     public static void clearFuncPool() { funcPool.remove(); }
 
+    // ── Provided arg count for default parameter handling ──
+    // Uses ThreadLocal to avoid cross-thread interference in concurrent execution.
+    // Per JLS §17, each thread sees its own initial value (0).
+
+    private static final ThreadLocal<int[]> providedArgCount =
+        ThreadLocal.withInitial(() -> new int[1]);
+
+    /** Set the actual number of arguments passed (before default filling). */
+    public static void setProvidedArgCount(int n) { providedArgCount.get()[0] = n; }
+    /** Get the actual number of arguments passed. */
+    public static int getProvidedArgCount() { return providedArgCount.get()[0]; }
+    /** Clear the provided arg count (call after bytecode execution). */
+    public static void clearProvidedArgCount() { providedArgCount.remove(); }
+
     public static IRClosure createClosure(IRFunction fn, Object[] captured) {
         return new IRClosure(fn, captured);
     }

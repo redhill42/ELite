@@ -275,6 +275,46 @@ class ELEngineTest extends EliteTestBase {
         assertEquals(7L, evalL("inc(5, 2)"));
     }
 
+    // ---- Default params with explicit null (P0-2) ----
+
+    @Test
+    void defaultParameterExplicitNullNotOverwritten() {
+        // Explicitly passing null must NOT be replaced by the default value.
+        // Bug: IFNONNULL check in bytecode and execute() couldn't distinguish
+        // "not provided" from "explicitly passed null".
+        exec("define f(x = 42) => x");
+        assertEquals(42L, evalL("f()"), "missing arg → default");
+        assertEquals(10L, evalL("f(10)"), "explicit arg → arg");
+        assertNull(eval("f(null)"), "explicit null → null, not 42");
+    }
+
+    @Test
+    void defaultParameterNullWithMultipleDefaults() {
+        exec("define f(a, b = 10, c = 100) => [a, b, c]");
+        // Passing null for first param, relying on defaults for others
+        Object r = eval("f(null, 2)");
+        assertEquals("[null, 2, 100]", r.toString());
+    }
+
+    @Test
+    void defaultParameterNullThenDefault() {
+        exec("define f(a = 1, b = 2) => [a, b]");
+        assertEquals("[null, 2]", eval("f(null)").toString(),
+            "null for a, default for b");
+        assertEquals("[null, null]", eval("f(null, null)").toString(),
+            "explicit null for both, no defaults");
+    }
+
+    @Test
+    void defaultParameterExplicitNullStringDefault() {
+        exec("define greet(name = \"World\") => \"Hello, \" ~ name");
+        assertEquals("Hello, World", eval("greet()"));
+        assertEquals("Hello, Alice", eval("greet(\"Alice\")"));
+        // Explicit null must NOT be replaced by default "World"
+        assertEquals("Hello, null", eval("greet(null)"),
+            "explicit null must stay null, not be replaced by default 'World'");
+    }
+
     // ---- Error cases ----
 
     @Test
