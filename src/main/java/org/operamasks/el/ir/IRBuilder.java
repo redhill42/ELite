@@ -610,16 +610,24 @@ public class IRBuilder {
     private void emitTypedCmp(int op, int t) {
         switch (op) {
             case Token.EQ -> { if(t==T_INT)current.emitIEq(); else if(t==T_LONG)current.emitLEq(); else if(t==T_DOUBLE)current.emitDEq(); else current.emitDynEq(); }
-            case Token.NE -> { if(t==T_INT)current.emitINe(); else if(t==T_LONG)current.emitLNe(); else if(t==T_DOUBLE)current.emitDNe(); else current.emitDynEq(); }
+            case Token.NE -> { if(t==T_INT)current.emitINe(); else if(t==T_LONG)current.emitLNe(); else if(t==T_DOUBLE)current.emitDNe(); else { current.emitDynEq(); current.emitNot(); } }
             case Token.LT -> { if(t==T_INT)current.emitILt(); else if(t==T_LONG)current.emitLLt(); else if(t==T_DOUBLE)current.emitDLt(); else current.emitDynLt(); }
             case Token.LE -> { if(t==T_INT)current.emitILe(); else if(t==T_LONG)current.emitLLe(); else if(t==T_DOUBLE)current.emitDLe(); else current.emitDynLe(); }
-            case Token.GT -> { if(t==T_INT)current.emitIGt(); else if(t==T_LONG)current.emitLGt(); else if(t==T_DOUBLE)current.emitDGt(); else current.emitDynLt(); }
-            case Token.GE -> { if(t==T_INT)current.emitIGe(); else if(t==T_LONG)current.emitLGe(); else if(t==T_DOUBLE)current.emitDGe(); else current.emitDynLe(); }
+            case Token.GT -> { if(t==T_INT)current.emitIGt(); else if(t==T_LONG)current.emitLGt(); else if(t==T_DOUBLE)current.emitDGt(); else { current.emitDynLe(); current.emitNot(); } }
+            case Token.GE -> { if(t==T_INT)current.emitIGe(); else if(t==T_LONG)current.emitLGe(); else if(t==T_DOUBLE)current.emitDGe(); else { current.emitDynLt(); current.emitNot(); } }
             default -> current.emitDynEq();
         }
     }
     private void emitDynamicCmp(int op) {
-        switch (op) { case Token.EQ -> current.emitDynEq(); case Token.LT -> current.emitDynLt(); case Token.LE -> current.emitDynLe(); default -> current.emitDynEq(); }
+        switch (op) {
+            case Token.EQ -> current.emitDynEq();
+            case Token.NE -> { current.emitDynEq(); current.emitNot(); }
+            case Token.LT -> current.emitDynLt();
+            case Token.LE -> current.emitDynLe();
+            case Token.GT -> { current.emitDynLe(); current.emitNot(); }
+            case Token.GE -> { current.emitDynLt(); current.emitNot(); }
+            default -> current.emitDynEq();
+        }
     }
 
     // ── Logical AND/OR/NOT ──
@@ -1210,7 +1218,10 @@ public class IRBuilder {
         b.inTailPosition = true;
         for (String p : paramNames) b.ensureVar(p);
         b.build(body);
-        if (!endsWithReturn(b)) b.current.emitReturnVoid();
+        if (!endsWithReturn(b)) {
+            int typeId = b.typeIdFromNode(body);
+            b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
+        }
         return b.finish(name != null ? name : "lambda", paramNames.length);
     }
 

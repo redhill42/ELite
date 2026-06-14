@@ -43,8 +43,52 @@ class IRInterpreterTest {
 
     // ── Comparisons ──
     @Test void intEquality() { assertEquals(true, interpret("100 == 100")); assertEquals(false, interpret("5 == 6")); }
+    @Test void intInequality() { assertEquals(true, interpret("5 != 6")); assertEquals(false, interpret("100 != 100")); }
     @Test void intLessThan() { assertEquals(true, interpret("50 < 100")); assertEquals(false, interpret("100 < 50")); }
     @Test void intLessEqual() { assertEquals(true, interpret("100 <= 100")); }
+
+    // ── != Bug reproduction: P0-1 emitTypedCmp / emitDynamicCmp ──
+    // Bug 1: emitDynamicCmp (line 622) doesn't handle Token.NE → falls to default emitDynEq()
+    //         Dynamic-typed != produces == result
+    @Test void dynamicInequalityInt() {
+        // untyped parameters a,b → typeIdFromNode returns -1 → emitDynamicCmp
+        ELNode expr = Parser.parseExpression("a != b");
+        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
+        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        assertEquals(true, interp.execute(new Object[]{1, 2}),  "1 != 2 should be true");
+        assertEquals(false, interp.execute(new Object[]{5, 5}), "5 != 5 should be false");
+    }
+    @Test void dynamicInequalityDouble() {
+        ELNode expr = Parser.parseExpression("a != b");
+        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
+        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        assertEquals(true, interp.execute(new Object[]{3.14, 2.72}), "3.14 != 2.72 should be true");
+    }
+    // Bug 2: emitTypedCmp (line 613) Token.NE non-numeric type falls to else emitDynEq()
+    //         without emitNot(), e.g. String != String
+    @Test void stringInequality() {
+        assertEquals(true, interpret("\"hello\" != \"world\""), "'hello' != 'world' should be true");
+        assertEquals(false, interpret("\"abc\" != \"abc\""), "'abc' != 'abc' should be false");
+    }
+    @Test void dynamicInequalityString() {
+        ELNode expr = Parser.parseExpression("a != b");
+        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
+        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        assertEquals(true, interp.execute(new Object[]{"hello", "world"}), "'hello' != 'world' should be true");
+        assertEquals(false, interp.execute(new Object[]{"x", "x"}), "'x' != 'x' should be false");
+    }
+    @Test void irInequalityMatchesAst() {
+        // Verify IR != matches AST eval for various type combinations
+        String[] exprs = {
+            "5 != 6", "100 != 100",
+            "3.14 != 3.14", "2.72 != 3.14",
+            "\"a\" != \"a\"", "\"a\" != \"b\"",
+            "true != true", "true != false"
+        };
+        for (String expr : exprs) {
+            assertEquals(eval(expr), interpret(expr), "IR != result must match AST for: " + expr);
+        }
+    }
 
     // ── Booleans / Conditional / Concat / Null ──
     @Test void booleanTrue() { assertEquals(true, interpret("true")); }
