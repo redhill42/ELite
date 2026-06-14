@@ -95,6 +95,58 @@ class GuardTypeTest {
         }
     }
 
+    // P0-5: Tests that exercise the deopt path when inferred types mismatch
+    @Test void deoptTriggeredByTypeMismatchSingleOp() {
+        // Inferred type is int (from literal 2), but passing Double triggers deopt
+        try {
+            javax.script.ScriptEngine e =
+                new javax.script.ScriptEngineManager().getEngineByName("ELite");
+            // x inferred as int, passing 40.0 (Double) triggers GUARD_TYPE mismatch → deopt
+            assertEquals(42.0, ((Number)e.eval("(\\x => x + 2)(40.0)")).doubleValue(), 0.001);
+        } catch (javax.script.ScriptException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test void deoptTriggeredByTypeMismatchBinaryOp() {
+        try {
+            javax.script.ScriptEngine e =
+                new javax.script.ScriptEngineManager().getEngineByName("ELite");
+            // Define a function that takes two inferred-int params
+            e.eval("define add(a, b) => a + b");
+            // Passing mixed int + double triggers deopt on the inferred types
+            assertEquals(7.0, ((Number)e.eval("add(3.0, 4.0)")).doubleValue(), 0.001);
+            assertEquals(35.0, ((Number)e.eval("add(10, 25.0)")).doubleValue(), 0.001);
+        } catch (javax.script.ScriptException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test void deoptPreservesStackForMultiOpExpression() {
+        // Multiple operations after deopt should have correct stack
+        try {
+            javax.script.ScriptEngine e =
+                new javax.script.ScriptEngineManager().getEngineByName("ELite");
+            e.eval("define f(x) => (x + 1) * 2");
+            // x inferred as int, passing 40.0 triggers deopt in x+1
+            assertEquals(82.0, ((Number)e.eval("f(40.0)")).doubleValue(), 0.001);
+        } catch (javax.script.ScriptException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test void deoptProducesCorrectResultInConditional() {
+        try {
+            javax.script.ScriptEngine e =
+                new javax.script.ScriptEngineManager().getEngineByName("ELite");
+            e.eval("define g(a) => a > 0 ? a + 1 : 0");
+            // a inferred as int, passing 41.0 triggers deopt
+            assertEquals(42.0, ((Number)e.eval("g(41.0)")).doubleValue(), 0.001);
+        } catch (javax.script.ScriptException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     @Test void guardEliminationWithTwoParams() {
         IRFunction fn = buildTypedLambda("f",
             new String[]{"x", "y"},

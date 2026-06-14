@@ -221,18 +221,21 @@ public class IRSpeclializer implements IRPass {
         }
 
         // Build prefix: copy all instructions, replacing inferred dynamic ops
-        // with guards + typed op. Build deopt: copy all instructions as-is.
+        // with guards + typed ops.
+        //
+        // Build deopt: copy only from the first specialized dynamic op onwards.
+        // When GUARD_TYPE fails, the prefix has already executed the instructions
+        // before the guard and left their results on the stack. The deopt block
+        // must inherit this stack state rather than re-executing the prefix.
         sp = 0;
         IntList prefix = new IntList();
-        IntList deopt = new IntList();
+        IntList deopt  = new IntList();
+        boolean deoptStarted = false;
         v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
             int op = v.opcode();
             // Skip terminator — goes to suffix
             if (op == RETURN || op == RETURN_VOID || Opcode.isJump(op)) break;
-
-            // Copy original to deopt block
-            copyInst(deopt, code, v);
 
             // Check if this op should be replaced in the typed prefix
             boolean replaced = false;
@@ -262,11 +265,19 @@ public class IRSpeclializer implements IRPass {
                     if (newOp >= 0) {
                         emitGuardDeopt(prefix, resultType, DEOPT_PLACEHOLDER);
                         prefix.add(pack1(newOp, K_PRIM, resultType));
+                        // Deopt inherits prefix stack — copy the original
+                        // (unspecialized) dynamic op and start the deopt block
+                        copyInst(deopt, code, v);
+                        deoptStarted = true;
                         replaced = true;
                     }
                 }
             }
-            if (!replaced) copyInst(prefix, code, v);
+            if (!replaced) {
+                copyInst(prefix, code, v);
+                // After deopt has started, also copy non-replaced instructions
+                if (deoptStarted) copyInst(deopt, code, v);
+            }
 
             simulateStackForType(code, v, true);
             v.advance();
