@@ -611,25 +611,6 @@ public class IRSpecializer implements IRPass {
     // ── Specialization helpers ──
 
     /** Replace DYNADD/DYNSUB/etc. with typed variant if both operands have known types. */
-    private int specializeBinary(int[] code, int offset, int dynOp, int t1, int t2) {
-        if (t1 < 0 || t2 < 0) return -1;
-
-        int wider = wider(t1, t2);
-        int newOp = mapBinaryOp(dynOp, wider);
-        if (newOp < 0) return -1;
-
-        code[offset] = pack1(newOp, K_PRIM, wider);
-        return wider;
-    }
-
-    private void replaceDynNeg(int[] code, int offset, int t) {
-        int newOp = switch (t) {
-            case T_INT -> INEG; case T_LONG -> LNEG;
-            case T_DOUBLE -> DNEG; default -> -1;
-        };
-        if (newOp >= 0) code[offset] = pack1(newOp, K_PRIM, t);
-    }
-
     private static int mapBinaryOp(int dynOp, int typeId) {
         return switch (dynOp) {
             case DYNADD -> switch (typeId) {

@@ -671,8 +671,6 @@ public class IRBytecodeCompiler {
 
     private CompiledFunction compileOrGet(IRFunction target, int[] argTypes) {
         if (argTypes != null && allKnown(argTypes)) {
-            // Typed call: cache by (target, typeSignature)
-            String key = target.toString() + java.util.Arrays.toString(argTypes);
             return calleeCache.computeIfAbsent(target, fn -> {
                 IRFunction specialized = IRSpecializer.specialize(fn, argTypes);
                 return compileWithTypes(specialized, argTypes);
