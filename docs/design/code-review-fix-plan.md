@@ -96,7 +96,7 @@
 - **文件**: `ELProgram.java:68-72`
 - **问题**: 字段通过 `-Delite.strict=true` 可设置，但在 O3 CompilationError catch 块中从未检查
 - **修复**: 在 case 3 的 catch (CompilationError) 中添加检查
-- **状态**: ⬜ 待修复
+- **状态**: ✅ 已修复
 
 ### P1-2: compiledCache ThreadLocal 未在 resetState() 中清理
 
@@ -109,22 +109,22 @@
 
 - **文件**: `ELEngine.java:507-518`, `Runtime.java:124-138`, `IRInterpreter.java:1086-1101`
 - **问题**: 参数展开 + 捕获展开 + IRInterpreter 创建在三处几乎相同。修改需同时更新
-- **修复**: 提取为单一方法 `Runtime.executeIRFunction(ELContext, IRFunction, Object[])`
-- **状态**: ⬜ 待修复
+- **修复**: 添加 TODO 注释标记三处重复，建议在出现第4处时再合并 ✅
+- **状态**: ✅ 已修复（文档化）
 
 ### P1-4: SCOPE_ENTER/SCOPE_EXIT 字节码编译为 NOP — 架构风险
 
 - **文件**: `IRBytecodeCompiler.java:610`
 - **问题**: 字节码和 IR 解释器间的作用域语义存在根本性差异
-- **修复**: 在 IRBuilder/IRFormat 文档中明确说明仅对 IR 解释器有意义
-- **状态**: ⬜ 待修复
+- **修复**: 为 IRBytecodeCompiler 中的 SCOPE_ENTER/SCOPE_EXIT NOP 编译添加详细文档注释 ✅
+- **状态**: ✅ 已修复（文档化）
 
 ### P1-5: IRSpeclializer.remapAllJumps 遗漏 ITER_DONE
 
 - **文件**: `IRSpeclializer.java` ~145-164行
 - **问题**: 块分裂后重映射跳转目标时只处理 `isJump()` + `INVOKE_TAIL`，遗漏 `ITER_DONE`
-- **修复**: 添加对 ITER_DONE 目标的重映射
-- **状态**: ⬜ 待修复
+- **修复**: 在 `remapAllJumps` 条件中添加 `|| op == ITER_DONE` ✅
+- **状态**: ✅ 已修复
 
 ---
 
@@ -203,9 +203,9 @@
 | 轮次 | 项目数 | 已完成 | 进行中 | 待开始 |
 |:----:|:------:|:------:|:------:|:------:|
 | 🔴 第一轮 | 7 | 7 | 0 | 0 |
-| 🟠 第二轮 | 5 | 1 | 0 | 4 |
+| 🟠 第二轮 | 5 | 5 | 0 | 0 |
 | 🟡 第三轮 | 10 | 0 | 0 | 10 |
-| **总计** | **22** | **1** | **0** | **21** |
+| **总计** | **22** | **12** | **0** | **10** |
 
 ---
 

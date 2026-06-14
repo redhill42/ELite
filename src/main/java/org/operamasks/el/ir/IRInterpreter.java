@@ -1083,6 +1083,9 @@ public class IRInterpreter {
             args[i] = pop();
         }
         Object target = pop();
+        // IRFunction/IRClosure expansion duplicated across 3 places:
+        // IRInterpreter.dynamicInvoke, Runtime.invokeDyn, ELEngine.invokeTarget.
+        // Consolidate into a shared helper if a 4th occurrence is needed.
         // Handle IRFunction target (from inline lambda): execute directly
         if (target instanceof IRFunction irFn) {
             return new IRInterpreter(elctx, irFn, evalContext).execute(args);
