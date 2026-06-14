@@ -16,29 +16,39 @@
 
 package org.operamasks.el.ir;
 
-import javax.el.ELContext;
-import java.util.ArrayDeque;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-
-import org.operamasks.el.eval.*;
+import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.EvaluationContext;
+import org.operamasks.el.eval.Ranges;
+import org.operamasks.el.eval.TypeCoercion;
+import org.operamasks.el.eval.closure.ClosureObject;
+import org.operamasks.el.eval.closure.LiteralClosure;
+import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
-import elite.lang.Rational;
-import elite.lang.Decimal;
+import org.operamasks.el.resolver.MethodResolver;
+
+import javax.el.ELContext;
+import javax.el.ValueExpression;
+import javax.el.VariableMapper;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
 
 import static org.operamasks.el.ir.Opcode.*;
 
 /**
  * Stack-based interpreter for ELite IR.
- *
+ * <p>
  * Executes a linear int[] instruction stream using a switch-dispatch loop
  * and an operand stack. This replaces the recursive tree-walking of the
  * AST evaluator.
  *
  * <p>Dynamically-typed operations and complex features delegate to the
- * existing AST evaluator via the "trampoline" mechanism (opcode 0xE0 (TRAMPOLINE)).
+ * existing AST evaluator via the "trampoline" mechanism (opcode 0xE0
+ * (TRAMPOLINE)).
  * As more operations are specialized, fewer trampolines are needed.
  */
 public class IRInterpreter {
@@ -58,7 +68,7 @@ public class IRInterpreter {
     private Object[] stack;
     private int sp;            // stack pointer (points to next free slot)
     private Object[] locals;
-    private int ip;            // instruction pointer (absolute offset into code[])
+    private int ip;  // instruction pointer (absolute offset into code[])
 
     // ── Trampoline support ──
     private EvaluationContext evalContext;
@@ -68,14 +78,19 @@ public class IRInterpreter {
         this(elctx, function, null);
     }
 
-    /** Create an interpreter that inherits variable bindings from an existing EvaluationContext. */
-    public IRInterpreter(ELContext elctx, IRFunction function, EvaluationContext parentEnv) {
+    /**
+     * Create an interpreter that inherits variable bindings from an existing
+     * EvaluationContext.
+     */
+    public IRInterpreter(ELContext elctx, IRFunction function,
+                         EvaluationContext parentEnv) {
         this.elctx = elctx;
         this.function = function;
         this.code = function.code();
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
-        this.evalContext = parentEnv != null ? parentEnv : new EvaluationContext(elctx);
+        this.evalContext = parentEnv != null ? parentEnv :
+                           new EvaluationContext(elctx);
     }
 
     // ── Entry point ──
@@ -93,12 +108,14 @@ public class IRInterpreter {
                 locals[i] = args[i];
             }
         }
+
         // Fill missing parameters with default values
         Object[] defs = function.defaultValues();
         if (defs != null) {
             int provided = args != null ? args.length : 0;
             for (int i = provided; i < function.paramCount() && i < locals.length; i++) {
-                if (defs[i] != null) locals[i] = defs[i];
+                if (defs[i] != null)
+                    locals[i] = defs[i];
             }
         }
 
@@ -111,10 +128,9 @@ public class IRInterpreter {
     // ── Main interpreter loop ──
 
     private Object interpret() {
-        for (;;) {
+        for (; ; ) {
             int header = code[ip];
             int op = IRFormat.opcode(header);
-            int k  = IRFormat.kind(header);
             int oc = IRFormat.opCount(header);
             int pl = IRFormat.payload(header);
 
@@ -132,95 +148,430 @@ public class IRInterpreter {
                     ip += 1;
                     break;
                 }
-                case POP: { pop(); ip += 1; break; }
-                case DUP: { push(peek()); ip += 1; break; }
+                case POP: {
+                    pop();
+                    ip += 1;
+                    break;
+                }
+                case DUP: {
+                    push(peek());
+                    ip += 1;
+                    break;
+                }
                 case POP_N: {
-                    sp -= pl; ip += 1;
+                    sp -= pl;
+                    ip += 1;
                     break;
                 }
 
                 // ============ Typed int arithmetic ============
-                case IADD: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l+r); ip+=1; break; }
-                case ISUB: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l-r); ip+=1; break; }
-                case IMUL: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l*r); ip+=1; break; }
-                case IDIV: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l/r); ip+=1; break; }
-                case IREM: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l%r); ip+=1; break; }
-                case INEG: { int v=((Number)pop()).intValue(); push(-v); ip+=1; break; }
+                case IADD: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l + r);
+                    ip += 1;
+                    break;
+                }
+                case ISUB: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l - r);
+                    ip += 1;
+                    break;
+                }
+                case IMUL: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l * r);
+                    ip += 1;
+                    break;
+                }
+                case IDIV: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l / r);
+                    ip += 1;
+                    break;
+                }
+                case IREM: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l % r);
+                    ip += 1;
+                    break;
+                }
+                case INEG: {
+                    int v = ((Number)pop()).intValue();
+                    push(-v);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Typed long arithmetic ============
-                case LADD: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l+r); ip+=1; break; }
-                case LSUB: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l-r); ip+=1; break; }
-                case LMUL: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l*r); ip+=1; break; }
-                case LDIV: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l/r); ip+=1; break; }
-                case LREM: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l%r); ip+=1; break; }
-                case LNEG: { long v=((Number)pop()).longValue(); push(-v); ip+=1; break; }
+                case LADD: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l + r);
+                    ip += 1;
+                    break;
+                }
+                case LSUB: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l - r);
+                    ip += 1;
+                    break;
+                }
+                case LMUL: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l * r);
+                    ip += 1;
+                    break;
+                }
+                case LDIV: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l / r);
+                    ip += 1;
+                    break;
+                }
+                case LREM: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l % r);
+                    ip += 1;
+                    break;
+                }
+                case LNEG: {
+                    long v = ((Number)pop()).longValue();
+                    push(-v);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Typed double arithmetic ============
-                case DADD: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l+r); ip+=1; break; }
-                case DSUB: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l-r); ip+=1; break; }
-                case DMUL: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l*r); ip+=1; break; }
-                case DDIV: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l/r); ip+=1; break; }
-                case DNEG: { double v=((Number)pop()).doubleValue(); push(-v); ip+=1; break; }
+                case DADD: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l + r);
+                    ip += 1;
+                    break;
+                }
+                case DSUB: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l - r);
+                    ip += 1;
+                    break;
+                }
+                case DMUL: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l * r);
+                    ip += 1;
+                    break;
+                }
+                case DDIV: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l / r);
+                    ip += 1;
+                    break;
+                }
+                case DNEG: {
+                    double v = ((Number)pop()).doubleValue();
+                    push(-v);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Power ============
-                case IPOW: { int e=(Integer)pop(),b=(Integer)pop(); push((int)Math.pow(b,e)); ip+=1; break; }
-                case LPOW: { long e=((Number)pop()).longValue(),b=((Number)pop()).longValue(); push((long)Math.pow(b,e)); ip+=1; break; }
-                case DPOW: { double e=((Number)pop()).doubleValue(),b=((Number)pop()).doubleValue(); push(Math.pow(b,e)); ip+=1; break; }
+                case IPOW: {
+                    int e = (Integer)pop();
+                    int b = (Integer)pop();
+                    push((int)Math.pow(b, e));
+                    ip += 1;
+                    break;
+                }
+                case LPOW: {
+                    long e = ((Number)pop()).longValue();
+                    long b = ((Number)pop()).longValue();
+                    push((long)Math.pow(b, e));
+                    ip += 1;
+                    break;
+                }
+                case DPOW: {
+                    double e = ((Number)pop()).doubleValue();
+                    double b = ((Number)pop()).doubleValue();
+                    push(Math.pow(b, e));
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Typed bitwise (int) ============
-                case IAND: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l&r); ip+=1; break; }
-                case IOR:  { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l|r); ip+=1; break; }
-                case IXOR: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l^r); ip+=1; break; }
-                case ISHL: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l<<r); ip+=1; break; }
-                case ISHR: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l>>r); ip+=1; break; }
-                case IUSHR:{ int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l>>>r); ip+=1; break; }
-                case IBITNOT: { int v=((Number)pop()).intValue(); push(~v); ip+=1; break; }
+                case IAND: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l & r);
+                    ip += 1;
+                    break;
+                }
+                case IOR: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l | r);
+                    ip += 1;
+                    break;
+                }
+                case IXOR: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l ^ r);
+                    ip += 1;
+                    break;
+                }
+                case ISHL: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l << r);
+                    ip += 1;
+                    break;
+                }
+                case ISHR: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l >> r);
+                    ip += 1;
+                    break;
+                }
+                case IUSHR: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l >>> r);
+                    ip += 1;
+                    break;
+                }
+                case IBITNOT: {
+                    int v = ((Number)pop()).intValue();
+                    push(~v);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Typed bitwise (long) ============
-                case LAND: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l&r); ip+=1; break; }
-                case LOR:  { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l|r); ip+=1; break; }
-                case LXOR: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l^r); ip+=1; break; }
-                case LSHL: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l<<r); ip+=1; break; }
-                case LSHR: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>>r); ip+=1; break; }
-                case LUSHR:{ long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>>>r); ip+=1; break; }
-                case LBITNOT:{ long v=((Number)pop()).longValue(); push(~v); ip+=1; break; }
+                case LAND: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l & r);
+                    ip += 1;
+                    break;
+                }
+                case LOR: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l | r);
+                    ip += 1;
+                    break;
+                }
+                case LXOR: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l ^ r);
+                    ip += 1;
+                    break;
+                }
+                case LSHL: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l << r);
+                    ip += 1;
+                    break;
+                }
+                case LSHR: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l >> r);
+                    ip += 1;
+                    break;
+                }
+                case LUSHR: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l >>> r);
+                    ip += 1;
+                    break;
+                }
+                case LBITNOT: {
+                    long v = ((Number)pop()).longValue();
+                    push(~v);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Dynamic arithmetic ============
-                case DYNADD: case DYNSUB: case DYNMUL: case DYNDIV:
-                case DYNREM: case DYNNEG: case DYNPOW:
+                case DYNADD:
+                case DYNSUB:
+                case DYNMUL:
+                case DYNDIV:
+                case DYNREM:
+                case DYNNEG:
+                case DYNPOW:
                 case DYNCAT:
-                case DYNEQ: case DYNLT: case DYNLE: {
+                case DYNEQ:
+                case DYNLT:
+                case DYNLE: {
                     push(dynamicOp(op));
                     ip += 1;
                     break;
                 }
 
                 // ============ Typed int comparisons ============
-                case IEQ: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l==r); ip+=1; break; }
-                case INE: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l!=r); ip+=1; break; }
-                case ILT: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l<r);  ip+=1; break; }
-                case ILE: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l<=r); ip+=1; break; }
-                case IGT: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l>r);  ip+=1; break; }
-                case IGE: { int r=((Number)pop()).intValue(),l=((Number)pop()).intValue(); push(l>=r); ip+=1; break; }
+                case IEQ: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l == r);
+                    ip += 1;
+                    break;
+                }
+                case INE: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l != r);
+                    ip += 1;
+                    break;
+                }
+                case ILT: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l < r);
+                    ip += 1;
+                    break;
+                }
+                case ILE: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l <= r);
+                    ip += 1;
+                    break;
+                }
+                case IGT: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l > r);
+                    ip += 1;
+                    break;
+                }
+                case IGE: {
+                    int r = ((Number)pop()).intValue();
+                    int l = ((Number)pop()).intValue();
+                    push(l >= r);
+                    ip += 1;
+                    break;
+                }
 
-                case LEQ: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l==r); ip+=1; break; }
-                case LNE: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l!=r); ip+=1; break; }
-                case LLT: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l<r);  ip+=1; break; }
-                case LLE: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l<=r); ip+=1; break; }
-                case LGT: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>r);  ip+=1; break; }
-                case LGE: { long r=((Number)pop()).longValue(),l=((Number)pop()).longValue(); push(l>=r); ip+=1; break; }
+                case LEQ: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l == r);
+                    ip += 1;
+                    break;
+                }
+                case LNE: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l != r);
+                    ip += 1;
+                    break;
+                }
+                case LLT: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l < r);
+                    ip += 1;
+                    break;
+                }
+                case LLE: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l <= r);
+                    ip += 1;
+                    break;
+                }
+                case LGT: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l > r);
+                    ip += 1;
+                    break;
+                }
+                case LGE: {
+                    long r = ((Number)pop()).longValue();
+                    long l = ((Number)pop()).longValue();
+                    push(l >= r);
+                    ip += 1;
+                    break;
+                }
 
-                case DEQ: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l==r); ip+=1; break; }
-                case DNE: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l!=r); ip+=1; break; }
-                case DLT: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l<r);  ip+=1; break; }
-                case DLE: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l<=r); ip+=1; break; }
-                case DGT: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l>r);  ip+=1; break; }
-                case DGE: { double r=((Number)pop()).doubleValue(),l=((Number)pop()).doubleValue(); push(l>=r); ip+=1; break; }
+                case DEQ: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l == r);
+                    ip += 1;
+                    break;
+                }
+                case DNE: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l != r);
+                    ip += 1;
+                    break;
+                }
+                case DLT: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l < r);
+                    ip += 1;
+                    break;
+                }
+                case DLE: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l <= r);
+                    ip += 1;
+                    break;
+                }
+                case DGT: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l > r);
+                    ip += 1;
+                    break;
+                }
+                case DGE: {
+                    double r = ((Number)pop()).doubleValue();
+                    double l = ((Number)pop()).doubleValue();
+                    push(l >= r);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Boolean constants ============
-                case PUSH_TRUE:  { push(true);  ip+=1; break; }
-                case PUSH_FALSE: { push(false); ip+=1; break; }
-                case PUSH_NULL:  { push(null);  ip+=1; break; }
+                case PUSH_TRUE: {
+                    push(true);
+                    ip += 1;
+                    break;
+                }
+                case PUSH_FALSE: {
+                    push(false);
+                    ip += 1;
+                    break;
+                }
+                case PUSH_NULL: {
+                    push(null);
+                    ip += 1;
+                    break;
+                }
 
                 // ============ Control flow ============
                 case JUMP: {
@@ -229,27 +580,39 @@ public class IRInterpreter {
                     break;
                 }
                 case JUMP_IF_TRUE: {
-                    boolean cond = coerceToBoolean(pop());
-                    if (cond) { ip = blockOffsets[oc == 0 ? pl : code[ip + 1]]; }
-                    else { ip += 1 + oc; }
+                    boolean cond = TypeCoercion.coerceToBoolean(pop());
+                    if (cond) {
+                        ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
+                    } else {
+                        ip += 1 + oc;
+                    }
                     break;
                 }
                 case JUMP_IF_FALSE: {
-                    boolean cond = coerceToBoolean(pop());
-                    if (!cond) { ip = blockOffsets[oc == 0 ? pl : code[ip + 1]]; }
-                    else { ip += 1 + oc; }
+                    boolean cond = TypeCoercion.coerceToBoolean(pop());
+                    if (!cond) {
+                        ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
+                    } else {
+                        ip += 1 + oc;
+                    }
                     break;
                 }
                 case JUMP_IF_NULL: {
                     Object v = pop();
-                    if (v == null) { ip = blockOffsets[oc == 0 ? pl : code[ip + 1]]; }
-                    else { ip += 1 + oc; }
+                    if (v == null) {
+                        ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
+                    } else {
+                        ip += 1 + oc;
+                    }
                     break;
                 }
                 case JUMP_IF_NONNULL: {
                     Object v = pop();
-                    if (v != null) { ip = blockOffsets[oc == 0 ? pl : code[ip + 1]]; }
-                    else { ip += 1 + oc; }
+                    if (v != null) {
+                        ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
+                    } else {
+                        ip += 1 + oc;
+                    }
                     break;
                 }
 
@@ -264,13 +627,16 @@ public class IRInterpreter {
                 }
                 case INVOKE_DIRECT: {
                     int funcIdx = pl;  // function pool index in payload
-                    int argc = oc == 0 ? 0 : code[ip + 1];  // argCount in first operand
-                    IRFunction targetFn = (IRFunction) constantPool[funcIdx];
+                    // argCount in first operand
+                    int argc = oc == 0 ? 0 : code[ip + 1];
+                    IRFunction targetFn = (IRFunction)constantPool[funcIdx];
                     // Pop arguments
                     Object[] args = new Object[argc];
-                    for (int i = argc - 1; i >= 0; i--) args[i] = pop();
+                    for (int i = argc - 1; i >= 0; i--)
+                        args[i] = pop();
                     // Direct call: avoids ELEngine.invokeTarget overhead
-                    IRInterpreter callee = new IRInterpreter(elctx, targetFn, evalContext);
+                    IRInterpreter callee = new IRInterpreter(elctx, targetFn,
+                            evalContext);
                     push(callee.execute(args));
                     ip += 1 + oc;
                     break;
@@ -311,11 +677,14 @@ public class IRInterpreter {
                 }
                 case THROW: {
                     Object cause = pop();
-                    if (cause instanceof RuntimeException re) throw re;
+                    if (cause instanceof RuntimeException re)
+                        throw re;
                     if (cause instanceof Throwable t)
-                        throw new org.operamasks.el.eval.UserException(elctx, t);
+                        throw new org.operamasks.el.eval.UserException(elctx,
+                                t);
                     if (cause instanceof String s)
-                        throw new org.operamasks.el.eval.UserException(elctx, s);
+                        throw new org.operamasks.el.eval.UserException(elctx,
+                                s);
                     throw new org.operamasks.el.eval.UserException(elctx);
                 }
 
@@ -330,7 +699,7 @@ public class IRInterpreter {
                 }
                 case PUSH_GLOBAL: {
                     int nameIdx = oc == 0 ? pl : code[ip + 1];
-                    String name = (String) constantPool[nameIdx];
+                    String name = (String)constantPool[nameIdx];
                     Object val = resolveGlobal(name);
                     push(val);
                     ip += 1 + oc;
@@ -338,7 +707,7 @@ public class IRInterpreter {
                 }
                 case STORE_GLOBAL: {
                     int nameIdx = oc == 0 ? pl : code[ip + 1];
-                    String name = (String) constantPool[nameIdx];
+                    String name = (String)constantPool[nameIdx];
                     Object val = pop();
                     storeGlobal(name, val);
                     push(val);  // assignment returns the value
@@ -350,10 +719,14 @@ public class IRInterpreter {
                 case INC: {
                     int idx = pl;
                     Object val = locals[idx];
-                    if (val instanceof Long l) locals[idx] = l + 1;
-                    else if (val instanceof Integer i) locals[idx] = i + 1;
-                    else if (val instanceof Double d) locals[idx] = d + 1.0;
-                    else locals[idx] = ((Number) val).longValue() + 1;
+                    if (val instanceof Long l)
+                        locals[idx] = l + 1;
+                    else if (val instanceof Integer i)
+                        locals[idx] = i + 1;
+                    else if (val instanceof Double d)
+                        locals[idx] = d + 1.0;
+                    else
+                        locals[idx] = ((Number)val).longValue() + 1;
                     push(locals[idx]);
                     ip += 1;
                     break;
@@ -361,10 +734,14 @@ public class IRInterpreter {
                 case DEC: {
                     int idx = pl;
                     Object val = locals[idx];
-                    if (val instanceof Long l) locals[idx] = l - 1;
-                    else if (val instanceof Integer i) locals[idx] = i - 1;
-                    else if (val instanceof Double d) locals[idx] = d - 1.0;
-                    else locals[idx] = ((Number) val).longValue() - 1;
+                    if (val instanceof Long l)
+                        locals[idx] = l - 1;
+                    else if (val instanceof Integer i)
+                        locals[idx] = i - 1;
+                    else if (val instanceof Double d)
+                        locals[idx] = d - 1.0;
+                    else
+                        locals[idx] = ((Number)val).longValue() - 1;
                     push(locals[idx]);
                     ip += 1;
                     break;
@@ -391,7 +768,7 @@ public class IRInterpreter {
                 // ============ Direct field access ============
                 case LOAD_FIELD: {
                     Object base = pop();
-                    String fieldName = (String) constantPool[pl];
+                    String fieldName = (String)constantPool[pl];
                     push(loadField(base, fieldName));
                     ip += 1 + oc;
                     break;
@@ -399,7 +776,7 @@ public class IRInterpreter {
                 case STORE_FIELD: {
                     Object value = pop();
                     Object base = pop();
-                    String fieldName = (String) constantPool[pl];
+                    String fieldName = (String)constantPool[pl];
                     push(storeField(base, fieldName, value));
                     ip += 1 + oc;
                     break;
@@ -409,14 +786,15 @@ public class IRInterpreter {
                 case NEW_LIST: {
                     int count = pl;
                     Object[] elements = new Object[count];
-                    for (int i = count - 1; i >= 0; i--) elements[i] = pop();
+                    for (int i = count - 1; i >= 0; i--)
+                        elements[i] = pop();
                     push(java.util.Arrays.asList(elements));
                     ip += 1;
                     break;
                 }
                 case NEW_MAP: {
                     int count = pl;
-                    java.util.LinkedHashMap<Object, Object> map = new java.util.LinkedHashMap<>();
+                    LinkedHashMap<Object, Object> map = new LinkedHashMap<>();
                     for (int i = count - 1; i >= 0; i--) {
                         Object val = pop();
                         Object key = pop();
@@ -429,15 +807,16 @@ public class IRInterpreter {
                 case NEW_RANGE: {
                     Object end = pop();
                     Object begin = pop();
-                    push(org.operamasks.el.eval.Ranges.createRange(
-                        ((Number) begin).longValue(), ((Number) end).longValue(), 1));
+                    push(Ranges.createRange(((Number)begin).longValue(),
+                                            ((Number)end).longValue(), 1));
                     ip += 1;
                     break;
                 }
                 case NEW_TUPLE: {
                     int count = pl;
                     Object[] elems = new Object[count];
-                    for (int i = count - 1; i >= 0; i--) elems[i] = pop();
+                    for (int i = count - 1; i >= 0; i--)
+                        elems[i] = pop();
                     push(elems);
                     ip += 1;
                     break;
@@ -451,10 +830,11 @@ public class IRInterpreter {
                     break;
                 }
                 case ITER_NEXT: {
-                    java.util.Iterator<?> it = (java.util.Iterator<?>) pop();
+                    java.util.Iterator<?> it = (java.util.Iterator<?>)pop();
                     Object next = it.hasNext() ? it.next() : null;
                     push(it);    // iterator first (bottom)
-                    push(next);  // value on top (popped by ITER_DONE or STORE_VAR)
+                    push(next);  // value on top (popped by ITER_DONE or
+                                 // STORE_VAR)
                     ip += 1;
                     break;
                 }
@@ -479,7 +859,7 @@ public class IRInterpreter {
 
                 // ============ Unary logic ============
                 case NOT: {
-                    push(!coerceToBoolean(pop()));
+                    push(!TypeCoercion.coerceToBoolean(pop()));
                     ip += 1;
                     break;
                 }
@@ -494,36 +874,46 @@ public class IRInterpreter {
 
                 // ============ JavaBean getter call ============
                 case INVOKE_GETTER: {
-                    java.lang.reflect.Method m = (java.lang.reflect.Method) constantPool[pl];
+                    Method m = (Method)constantPool[pl];
                     Object base = pop();
-                    try { push(m.invoke(base)); }
-                    catch (Exception e) { throw new RuntimeException("getter invoke failed", e); }
+                    try {
+                        push(m.invoke(base));
+                    } catch (Exception e) {
+                        throw new RuntimeException("getter invoke failed", e);
+                    }
                     ip += 1 + oc;
                     break;
                 }
                 case INVOKE_SETTER: {
-                    java.lang.reflect.Method m = (java.lang.reflect.Method) constantPool[pl];
+                    Method m = (Method)constantPool[pl];
                     Object value = pop();
                     Object base = pop();
-                    try { m.invoke(base, value); push(value); }
-                    catch (Exception e) { throw new RuntimeException("setter invoke failed", e); }
+                    try {
+                        m.invoke(base, value);
+                        push(value);
+                    } catch (Exception e) {
+                        throw new RuntimeException("setter invoke failed", e);
+                    }
                     ip += 1 + oc;
                     break;
                 }
                 case INVOKE_METHOD: {
-                    java.lang.reflect.Method m = (java.lang.reflect.Method) constantPool[pl];
+                    Method m = (Method)constantPool[pl];
                     int argc = oc > 0 ? code[ip + 1] : 0;
                     Object[] args = new Object[argc];
-                    for (int i = argc - 1; i >= 0; i--) args[i] = pop();
+                    for (int i = argc - 1; i >= 0; i--)
+                        args[i] = pop();
                     Object base = pop();
                     try {
                         // Coerce args to match method's parameter types
-                        java.lang.Class<?>[] paramTypes = m.getParameterTypes();
+                        Class<?>[] paramTypes = m.getParameterTypes();
                         for (int i = 0; i < argc && i < paramTypes.length; i++) {
                             args[i] = coerceArg(args[i], paramTypes[i]);
                         }
                         push(m.invoke(base, args));
-                    } catch (Exception e) { throw new RuntimeException("method invoke failed", e); }
+                    } catch (Exception e) {
+                        throw new RuntimeException("method invoke failed", e);
+                    }
                     ip += 1 + oc;
                     break;
                 }
@@ -532,9 +922,10 @@ public class IRInterpreter {
                 case CLOSURE: {
                     int funcIdx = pl;
                     int captureCount = oc > 0 ? code[ip + 1] : 0;
-                    IRFunction fn = (IRFunction) constantPool[funcIdx];
+                    IRFunction fn = (IRFunction)constantPool[funcIdx];
                     Object[] captured = new Object[captureCount];
-                    for (int i = captureCount - 1; i >= 0; i--) captured[i] = pop();
+                    for (int i = captureCount - 1; i >= 0; i--)
+                        captured[i] = pop();
                     push(new IRClosure(fn, captured));
                     ip += 1 + oc;
                     break;
@@ -542,19 +933,24 @@ public class IRInterpreter {
 
                 // ============ Trampoline to AST evaluator ============
                 case TRAMPOLINE: { // OP_TRAMPOLINE
-                    // Pool index is in payload for both 1-word (oc=0) and 2-word (oc>0).
-                    // The operand word for 2-word TRAMPOLINE is always 0 (unused).
+                    // Pool index is in payload for both 1-word (oc=0) and
+                    // 2-word (oc>0).
+                    // The operand word for 2-word TRAMPOLINE is always 0
+                    // (unused).
                     int poolIdx = pl;
                     Object obj = constantPool[poolIdx];
-                    // TryDescriptor wraps pre-compiled IR blocks; evaluate the original TRY node
+                    // TryDescriptor wraps pre-compiled IR blocks; evaluate
+                    // the original TRY node
                     if (obj instanceof TryDescriptor td) {
                         obj = td.tryNode;
                     }
-                    ELNode node = (ELNode) obj;
+                    ELNode node = (ELNode)obj;
                     Object result = node.getValue(evalContext);
                     push(result);
-                    // AST evaluation may have modified global variables through the
-                    // VariableMapper. Sync them back to local slots so subsequent
+                    // AST evaluation may have modified global variables
+                    // through the
+                    // VariableMapper. Sync them back to local slots so
+                    // subsequent
                     // PUSH_VAR instructions see the updated values.
                     syncLocalsFromGlobals();
                     ip += 1 + oc;
@@ -569,9 +965,11 @@ public class IRInterpreter {
                     if (!checkType(val, typeId)) {
                         if (deoptBlockId == Opcode.STRICT_GUARD) {
                             String expected = IRFormat.primTypeName(typeId);
-                            String actual = val == null ? "null" : val.getClass().getName();
-                            throw new RuntimeException(
-                                "Type mismatch: expected " + expected + ", got " + actual);
+                            String actual = val == null ? "null" :
+                                            val.getClass().getName();
+                            throw new RuntimeException("Type mismatch: " +
+                                                       "expected " + expected +
+                                                       ", got " + actual);
                         }
                         ip = blockOffsets[deoptBlockId];
                         break;
@@ -587,9 +985,11 @@ public class IRInterpreter {
 
                 default: {
                     // Unknown opcode — trampoline to AST eval
-                    // This handles all the instructions we haven't implemented yet
+                    // This handles all the instructions we haven't
+                    // implemented yet
                     throw new UnsupportedOperationException(
-                        "Unknown IR opcode: " + Opcode.name(op) + " (" + op + ") at ip=" + ip);
+                            "Unknown IR " + "opcode: " + Opcode.name(op) +
+                            " (" + op + ") at " + "ip=" + ip);
                 }
             }
         }
@@ -598,7 +998,8 @@ public class IRInterpreter {
     // ── Stack helpers ──
 
     private void push(Object v) {
-        if (sp >= stack.length) growStack();
+        if (sp >= stack.length)
+            growStack();
         stack[sp++] = v;
     }
 
@@ -622,12 +1023,14 @@ public class IRInterpreter {
     private Object dynamicOp(int irOpcode) {
         Object rhs = pop();
         Object lhs = pop();
-        // For non-Number operands (e.g. ClosureObject from user-defined classes),
+        // For non-Number operands (e.g. ClosureObject from user-defined
+        // classes),
         // delegate to AST operator resolution via trampoline node.
         if (needsTrampolineDispatch(lhs, rhs)) {
             return trampolineBinaryOp(irOpcode, lhs, rhs);
         }
-        // Delegate to Runtime for type-resolved arithmetic (shared with bytecode path)
+        // Delegate to Runtime for type-resolved arithmetic (shared with
+        // bytecode path)
         return switch (irOpcode) {
             case DYNADD -> elite.rt.Runtime.dynAdd(lhs, rhs);
             case DYNSUB -> elite.rt.Runtime.dynSub(lhs, rhs);
@@ -637,34 +1040,39 @@ public class IRInterpreter {
             case DYNNEG -> elite.rt.Runtime.dynNeg(lhs);
             case DYNPOW -> elite.rt.Runtime.dynPow(lhs, rhs);
             case DYNCAT -> elite.rt.Runtime.dynCat(elctx, lhs, rhs);
-            case DYNEQ  -> elite.rt.Runtime.dynEq(lhs, rhs);
-            case DYNLT  -> elite.rt.Runtime.dynLt(lhs, rhs);
-            case DYNLE  -> elite.rt.Runtime.dynLe(lhs, rhs);
-            default -> elite.rt.Runtime.dynAdd(lhs, rhs);
+            case DYNEQ -> elite.rt.Runtime.dynEq(lhs, rhs);
+            case DYNLT -> elite.rt.Runtime.dynLt(lhs, rhs);
+            case DYNLE -> elite.rt.Runtime.dynLe(lhs, rhs);
+            default -> { assert(false); yield null; }
         };
     }
+
     private static boolean needsTrampolineDispatch(Object lhs, Object rhs) {
-        return (lhs instanceof org.operamasks.el.eval.closure.ClosureObject
-             || rhs instanceof org.operamasks.el.eval.closure.ClosureObject);
+        return (lhs instanceof ClosureObject || rhs instanceof ClosureObject);
     }
+
     private Object trampolineBinaryOp(int irOpcode, Object lhs, Object rhs) {
         int tokenOp = switch (irOpcode) {
-            case DYNADD -> Token.ADD; case DYNSUB -> Token.SUB;
-            case DYNMUL -> Token.MUL; case DYNDIV -> Token.DIV;
+            case DYNADD -> Token.ADD;
+            case DYNSUB -> Token.SUB;
+            case DYNMUL -> Token.MUL;
+            case DYNDIV -> Token.DIV;
             case DYNREM -> Token.REM;
-            case DYNPOW -> Token.POW; case DYNCAT -> Token.CAT;
-            case DYNEQ  -> Token.EQ;  case DYNLT  -> Token.LT;
-            case DYNLE  -> Token.LE;
-            default -> Token.ADD;
+            case DYNPOW -> Token.POW;
+            case DYNCAT -> Token.CAT;
+            case DYNEQ -> Token.EQ;
+            case DYNLT -> Token.LT;
+            case DYNLE -> Token.LE;
+            default -> { assert(false); yield 0; }
         };
-        int pos = org.operamasks.el.parser.Position.make(0, 0);
-        var leftC  = new org.operamasks.el.parser.ELNode.CONST(pos, lhs);
-        var rightC = new org.operamasks.el.parser.ELNode.CONST(pos, rhs);
-        var infix = new org.operamasks.el.parser.ELNode.INFIX(pos, Token.opNames[tokenOp], 100, leftC, rightC);
+        int pos = Position.make(0, 0);
+        var leftC = new ELNode.CONST(pos, lhs);
+        var rightC = new ELNode.CONST(pos, rhs);
+        var infix = new ELNode.INFIX(pos, Token.opNames[tokenOp], 100,
+                                     leftC, rightC);
         return infix.getValue(evalContext);
     }
 
-    // ── Dynamic invocation ──
     // ── Dynamic invocation ──
 
     private Object dynamicInvoke(int argCount) {
@@ -685,15 +1093,17 @@ public class IRInterpreter {
             int paramCount = irFn.paramCount();
             int captureCount = irFn.captureCount();
             Object[] expandedArgs = new Object[paramCount + captureCount];
-            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length, paramCount));
-            System.arraycopy(closure.captured, 0, expandedArgs, paramCount, captureCount);
+            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length,
+                    paramCount));
+            System.arraycopy(closure.captured, 0, expandedArgs, paramCount,
+                    captureCount);
             return new IRInterpreter(elctx, irFn, evalContext).execute(expandedArgs);
         }
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion
             javax.el.ELContext elctx = evalContext.getELContext();
-            elite.lang.Closure[] closures = org.operamasks.el.eval.ELEngine.getCallArgs(args);
-            return org.operamasks.el.eval.ELEngine.invokeTarget(elctx, target, closures);
+            elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
+            return ELEngine.invokeTarget(elctx, target, closures);
         } catch (Exception e) {
             throw new RuntimeException("dynamic invoke failed", e);
         }
@@ -701,46 +1111,30 @@ public class IRInterpreter {
 
     // ── Helpers ──
 
-    private static boolean coerceToBoolean(Object v) {
-        if (v instanceof Boolean) return (Boolean) v;
-        if (v == null) return false;
-        if (v instanceof String) return !((String) v).isEmpty();
-        if (v instanceof Number) return ((Number) v).doubleValue() != 0;
-        return true;
+    /**
+     * Coerce a method argument to the expected Java parameter type.
+     */
+    private Object coerceArg(Object arg, Class<?> paramType) {
+        return TypeCoercion.coerce(evalContext.getELContext(), arg, paramType);
     }
 
-    /** Coerce a method argument to the expected Java parameter type. */
-    private static Object coerceArg(Object arg, Class<?> paramType) {
-        if (arg == null) return null;
-        if (paramType.isInstance(arg)) return arg;
-        if (arg instanceof Number n) {
-            if (paramType == int.class || paramType == Integer.class)
-                return n.intValue();
-            if (paramType == long.class || paramType == Long.class)
-                return n.longValue();
-            if (paramType == double.class || paramType == Double.class)
-                return n.doubleValue();
-            if (paramType == float.class || paramType == Float.class)
-                return n.floatValue();
-            if (paramType == short.class || paramType == Short.class)
-                return n.shortValue();
-            if (paramType == byte.class || paramType == Byte.class)
-                return n.byteValue();
-        }
-        return arg;
-    }
-
-    /** Check if a runtime value matches the expected primitive type ID. */
+    /**
+     * Check if a runtime value matches the expected primitive type ID.
+     */
     private static boolean checkType(Object val, int typeId) {
-        if (val == null) return false;
+        if (val == null)
+            return false;
         return switch (typeId) {
-            case IRFormat.T_INT    -> val instanceof Integer || val instanceof Short
-                                   || val instanceof Byte || val instanceof Long;
-            case IRFormat.T_LONG   -> val instanceof Long || val instanceof Integer
-                                   || val instanceof Short || val instanceof Byte;
-            case IRFormat.T_DOUBLE -> val instanceof Double || val instanceof Float
-                                   || val instanceof Long || val instanceof Integer;
-            case IRFormat.T_BOOL   -> val instanceof Boolean;
+            case IRFormat.T_INT ->
+                    val instanceof Integer || val instanceof Short ||
+                    val instanceof Byte || val instanceof Long;
+            case IRFormat.T_LONG ->
+                    val instanceof Long || val instanceof Integer ||
+                    val instanceof Short || val instanceof Byte;
+            case IRFormat.T_DOUBLE ->
+                    val instanceof Double || val instanceof Float ||
+                    val instanceof Long || val instanceof Integer;
+            case IRFormat.T_BOOL -> val instanceof Boolean;
             case IRFormat.T_STRING -> val instanceof String;
             default -> true;  // unknown type → pass
         };
@@ -751,25 +1145,27 @@ public class IRInterpreter {
     private void storeGlobal(String name, Object value) {
         // Always write to the persistent VariableMapper. Scoped defines use
         // STORE_VAR (not STORE_GLOBAL) to create temporary shadow variables.
-        elctx.getVariableMapper().setVariable(name,
-            new org.operamasks.el.eval.closure.LiteralClosure(value));
+        elctx.getVariableMapper().setVariable(name, new LiteralClosure(value));
     }
 
     /**
-     * After a TRAMPOLINE causes AST evaluation (which may modify global variables
+     * After a TRAMPOLINE causes AST evaluation (which may modify global
+     * variables
      * through the VariableMapper), copy those changes back to local slots so
      * subsequent PUSH_VAR instructions see the updated values.
      *
      * <p>Top-level {@code define} stores to both STORE_VAR (local slot) and
-     * STORE_GLOBAL (VariableMapper). AST evaluation only touches the VariableMapper,
+     * STORE_GLOBAL (VariableMapper). AST evaluation only touches the
+     * VariableMapper,
      * so without this sync the IR locals become stale.
      */
     private void syncLocalsFromGlobals() {
         String[] names = function.varNames();
-        if (names == null) return;
-        javax.el.VariableMapper vm = elctx.getVariableMapper();
+        if (names == null)
+            return;
+        VariableMapper vm = elctx.getVariableMapper();
         for (int i = 0; i < names.length && i < locals.length; i++) {
-            javax.el.ValueExpression ve = vm.resolveVariable(names[i]);
+            ValueExpression ve = vm.resolveVariable(names[i]);
             if (ve != null) {
                 locals[i] = ve.getValue(elctx);
             }
@@ -779,29 +1175,34 @@ public class IRInterpreter {
     // ── Direct field access ──
 
     private Object loadField(Object base, String fieldName) {
-        if (base == null) throw new NullPointerException("Cannot read field '" + fieldName + "' from null");
+        if (base == null)
+            throw new NullPointerException("Cannot read field '" + fieldName + "' from null");
         try {
             Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
-            java.lang.reflect.Field f = cls.getField(fieldName);
-            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
+            Field f = cls.getField(fieldName);
+            Object target = Modifier.isStatic(f.getModifiers()) ? null : base;
             return f.get(target);
         } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Field not found: " + fieldName + " on " + base.getClass().getName());
+            throw new RuntimeException("Field not found: " + fieldName + " " +
+                                       "on" + " " + base.getClass().getName());
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Cannot access field: " + fieldName, e);
         }
     }
 
     private Object storeField(Object base, String fieldName, Object value) {
-        if (base == null) throw new NullPointerException("Cannot write field '" + fieldName + "' to null");
+        if (base == null)
+            throw new NullPointerException("Cannot write field '" + fieldName +
+                                           "' to null");
         try {
             Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
-            java.lang.reflect.Field f = cls.getField(fieldName);
-            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
+            Field f = cls.getField(fieldName);
+            Object target = Modifier.isStatic(f.getModifiers()) ? null : base;
             f.set(target, coerceArg(value, f.getType()));
             return value; // assignment returns the value
         } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Field not found: " + fieldName + " on " + base.getClass().getName());
+            throw new RuntimeException("Field not found: " + fieldName + " " +
+                                       "on" + " " + base.getClass().getName());
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Cannot access field: " + fieldName, e);
         }
@@ -810,12 +1211,14 @@ public class IRInterpreter {
     // ── Property / index access ──
 
     private Object loadProperty(Object base, Object key) {
-        if (base == null) return null;
-        javax.el.ELContext elctx = evalContext.getELContext();
+        if (base == null)
+            return null;
+        ELContext elctx = evalContext.getELContext();
         elctx.setPropertyResolved(false);
         Object result = elctx.getELResolver().getValue(elctx, base, key);
         if (!elctx.isPropertyResolved()) {
-            throw new RuntimeException("Property not found: " + key + " on " + base.getClass().getName());
+            throw new RuntimeException("Property not found: " + key +
+                                       " on " + base.getClass().getName());
         }
         return result;
     }
@@ -831,48 +1234,59 @@ public class IRInterpreter {
         javax.el.ELContext elctx = evalContext.getELContext();
 
         // 1) Check the EvaluationContext's own variable resolution chain
-        javax.el.ValueExpression ve = evalContext.resolveVariable(name);
+        ValueExpression ve = evalContext.resolveVariable(name);
         if (ve != null) {
             return ve.getValue(elctx);
         }
 
         // 2) Check the FunctionMapper for global/imported functions
-        org.operamasks.el.resolver.MethodResolver mr =
-            org.operamasks.el.resolver.MethodResolver.getInstance(elctx);
+        MethodResolver mr = MethodResolver.getInstance(elctx);
         if (mr != null) {
-            org.operamasks.el.eval.closure.MethodClosure mc =
-                mr.resolveGlobalMethod(elctx.getFunctionMapper(), name);
-            if (mc != null) return mc;
+            MethodClosure mc = mr.resolveGlobalMethod(
+                    elctx.getFunctionMapper(), name);
+            if (mc != null)
+                return mc;
         }
 
         // 3) Try ELResolver chain
         elctx.setPropertyResolved(false);
         Object result = elctx.getELResolver().getValue(elctx, null, name);
-        if (elctx.isPropertyResolved()) return result;
+        if (elctx.isPropertyResolved())
+            return result;
 
         throw new RuntimeException("Undefined identifier: " + name);
     }
 
     // ── Iterator helpers ──
 
-    @SuppressWarnings({"unchecked","rawtypes"})
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public static java.util.Iterator<?> getIterator(Object coll) {
-        if (coll instanceof Iterable) return ((Iterable) coll).iterator();
-        if (coll instanceof Object[]) return java.util.Arrays.asList((Object[]) coll).iterator();
+        if (coll instanceof Iterable)
+            return ((Iterable)coll).iterator();
+        if (coll instanceof Object[])
+            return java.util.Arrays.asList((Object[])coll).iterator();
         if (coll.getClass().isArray()) {
             int len = java.lang.reflect.Array.getLength(coll);
             Object[] arr = new Object[len];
-            for (int i = 0; i < len; i++) arr[i] = java.lang.reflect.Array.get(coll, i);
+            for (int i = 0; i < len; i++)
+                arr[i] = java.lang.reflect.Array.get(coll, i);
             return java.util.Arrays.asList(arr).iterator();
         }
         if (coll instanceof elite.lang.Seq seq) {
             return new java.util.Iterator<>() {
                 elite.lang.Seq s = seq;
-                public boolean hasNext() { return !s.isEmpty(); }
-                public Object next() { Object h = s.head(); s = s.tail(); return h; }
+
+                public boolean hasNext() {
+                    return !s.isEmpty();
+                }
+
+                public Object next() {
+                    Object h = s.head();
+                    s = s.tail();
+                    return h;
+                }
             };
         }
         throw new RuntimeException("Cannot iterate over: " + coll.getClass().getName());
     }
-
 }
