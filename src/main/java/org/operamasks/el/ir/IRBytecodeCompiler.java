@@ -786,6 +786,8 @@ public class IRBytecodeCompiler {
     public static void resetState() {
         funcRegistry.remove();
         funcIdCounter.remove();
+        compiledCache.remove();
+        elite.rt.Runtime.clearFuncPool();
     }
     private static java.util.Map<Integer, IRFunction> funcRegistry() { return funcRegistry.get(); }
 

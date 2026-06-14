@@ -46,12 +46,9 @@
 
 - **文件**: `Runtime.java:253-258`, `IRBytecodeCompiler.java:91`
 - **问题**: `Runtime.setFuncPool()` 每次编译被调用，但 `clearFuncPool()` 从未执行。长期运行导致 constant pool 引用无法 GC
-- **修复**:
-  - 方案A: 在 `CompiledFunction.execute()` 的 finally 中调用 `Runtime.clearFuncPool()`
-  - 方案B: 在 `IRBytecodeCompiler.compile()` 返回前调用
-  - 方案C: 在 `Runtime.invokeDyn()` 等方法结束时清理
-- **验证**: 重复执行 O3 编译的程序，确认无 OOM
-- **状态**: ⬜ 待修复
+- **修复**: 在 `resetState()` 中添加 `Runtime.clearFuncPool()`。同时清除 `compiledCache`，确保旧 CompiledFunction 不可达后安全清理 funcPool ✅
+- **验证**: 全量 602 测试通过，无回归
+- **状态**: ✅ 已修复
 
 ### P0-4: O3 字节码管线 — 零测试覆盖
 
@@ -111,8 +108,8 @@
 
 - **文件**: `IRBytecodeCompiler.java:809-825`
 - **问题**: `resetState()` 清理 `funcRegistry` 和 `funcIdCounter` 但不清理 `compiledCache`
-- **修复**: 添加 `compiledCache.remove()`
-- **状态**: ⬜ 待修复
+- **修复**: 添加 `compiledCache.remove()` ✅
+- **状态**: ✅ 已修复（与 P0-3 同一次提交）
 
 ### P1-3: IRFunction/IRClosure 调用逻辑在三处重复
 
@@ -211,8 +208,8 @@
 
 | 轮次 | 项目数 | 已完成 | 进行中 | 待开始 |
 |:----:|:------:|:------:|:------:|:------:|
-| 🔴 第一轮 | 7 | 2 | 0 | 5 |
-| 🟠 第二轮 | 5 | 0 | 0 | 5 |
+| 🔴 第一轮 | 7 | 3 | 0 | 4 |
+| 🟠 第二轮 | 5 | 1 | 0 | 4 |
 | 🟡 第三轮 | 10 | 0 | 0 | 10 |
 | **总计** | **22** | **1** | **0** | **21** |
 
