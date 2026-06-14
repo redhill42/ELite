@@ -68,8 +68,8 @@ class IRCoreTest {
     @Test
     void dynamicArith() {
         IREmitter out = new IREmitter();
-        out.emitPushVar(0, IRFormat.T_INT)
-           .emitPushVar(1, IRFormat.T_INT)
+        out.emitPushVar(0)
+           .emitPushVar(1)
            .emitDynAdd()
            .emitReturn(IRFormat.T_INT);
 

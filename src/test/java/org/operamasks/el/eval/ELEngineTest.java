@@ -260,7 +260,7 @@ class ELEngineTest extends EliteTestBase {
     @Test
     void defaultParametersWithControlFlow() {
         // Default params with recursion and INVOKE_TAIL (TCO) in the else branch.
-        // Exercises IRSpeclializer deopt splitting around tail-call instructions.
+        // Exercises IRSpecializer deopt splitting around tail-call instructions.
         exec("define sum(n, acc = 0) => n <= 0 ? acc : sum(n-1, acc+n)");
         assertEquals(55L, evalL("sum(10)"));
         assertEquals(0L, evalL("sum(0)"));

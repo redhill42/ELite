@@ -19,14 +19,14 @@ class GuardTypeTest {
     @Test void explicitParamGetsGuard() {
         IRFunction fn = buildTypedLambda("add", new String[]{"x"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE}, "x + 1");
-        IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
+        IRFunction spec = IRSpecializer.specialize(fn, new int[]{IRFormat.T_INT});
         assertTrue(scanOp(spec, Opcode.GUARD_TYPE));
     }
 
     @Test void inferredParamNowGetsDeoptGuard() {
         IRFunction fn = IRBuilder.compileLambda("add",
             new String[]{"x"}, Parser.parseExpression("x + 1"));
-        IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
+        IRFunction spec = IRSpecializer.specialize(fn, new int[]{IRFormat.T_INT});
         // Inferred single-op block: should be deopt-split with 3 blocks
         assertTrue(spec.blockCount() >= 2, "Deopt split should create extra blocks");
         assertTrue(scanOp(spec, Opcode.GUARD_TYPE), "Should have GUARD_TYPE");
@@ -36,7 +36,7 @@ class GuardTypeTest {
     @Test void explicitParamStillUsesStrictGuard() {
         IRFunction fn = buildTypedLambda("add", new String[]{"x"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE}, "x + 1");
-        IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
+        IRFunction spec = IRSpecializer.specialize(fn, new int[]{IRFormat.T_INT});
         // Explicit type: strict guard, no block splitting
         assertTrue(scanOpWithPayload(spec, Opcode.GUARD_TYPE, Opcode.STRICT_GUARD));
         assertFalse(scanOp(spec, Opcode.DYNADD)); // fully specialized, no fallback
@@ -45,7 +45,7 @@ class GuardTypeTest {
     @Test void guardWithStrictSentinel() {
         IRFunction fn = buildTypedLambda("sq", new String[]{"x"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE}, "x * x");
-        IRFunction spec = IRSpeclializer.specialize(fn, new int[]{IRFormat.T_INT});
+        IRFunction spec = IRSpecializer.specialize(fn, new int[]{IRFormat.T_INT});
         assertTrue(scanOpWithPayload(spec, Opcode.GUARD_TYPE, Opcode.STRICT_GUARD));
     }
 
@@ -76,7 +76,7 @@ class GuardTypeTest {
             new String[]{"x", "y"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE, IRFunction.PARAM_EXPLICIT_TYPE},
             "x + y + x");
-        IRFunction spec = IRSpeclializer.specialize(fn,
+        IRFunction spec = IRSpecializer.specialize(fn,
             new int[]{IRFormat.T_INT, IRFormat.T_INT});
         int n = countOp(spec, Opcode.GUARD_TYPE);
         assertTrue(n <= 2, "Redundant guard not eliminated: " + n);
@@ -152,7 +152,7 @@ class GuardTypeTest {
             new String[]{"x", "y"},
             new int[]{IRFunction.PARAM_EXPLICIT_TYPE, IRFunction.PARAM_EXPLICIT_TYPE},
             "x + y + x");
-        IRFunction spec = IRSpeclializer.specialize(fn,
+        IRFunction spec = IRSpecializer.specialize(fn,
             new int[]{IRFormat.T_INT, IRFormat.T_INT});
         int n = countOp(spec, Opcode.GUARD_TYPE);
         assertEquals(2, n, "Only x and y should be guarded once each");

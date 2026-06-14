@@ -674,12 +674,12 @@ public class IRBytecodeCompiler {
             // Typed call: cache by (target, typeSignature)
             String key = target.toString() + java.util.Arrays.toString(argTypes);
             return calleeCache.computeIfAbsent(target, fn -> {
-                IRFunction specialized = IRSpeclializer.specialize(fn, argTypes);
+                IRFunction specialized = IRSpecializer.specialize(fn, argTypes);
                 return compileWithTypes(specialized, argTypes);
             });
         }
         return calleeCache.computeIfAbsent(target, fn -> {
-            IRFunction specialized = IRSpeclializer.specialize(fn, new int[fn.paramCount()]);
+            IRFunction specialized = IRSpecializer.specialize(fn, new int[fn.paramCount()]);
             return compile(specialized);
         });
     }
@@ -816,7 +816,7 @@ public class IRBytecodeCompiler {
         CompiledFunction cf = compiledCache.get().get(fn);
         if (cf == null) {
             int[] argTypes = inferTypes(args);
-            IRFunction specialized = args.length > 0 ? IRSpeclializer.specialize(fn, argTypes) : fn;
+            IRFunction specialized = args.length > 0 ? IRSpecializer.specialize(fn, argTypes) : fn;
             cf = compile(specialized);  // generic Object[] version
             compiledCache.get().put(fn, cf);
         }

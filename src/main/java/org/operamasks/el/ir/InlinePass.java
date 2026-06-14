@@ -219,7 +219,7 @@ public class InlinePass implements IRPass {
     /** Emit inlined body with remapped pool indices. */
     private void emitInlinedBody(IntList out, IRFunction callee, int argc,
             int[] argTypes, int poolBase) {
-        IRFunction body = IRSpeclializer.specialize(callee, argTypes);
+        IRFunction body = IRSpecializer.specialize(callee, argTypes);
         int baseSlot = 8;
 
         // Pop args into temp locals (argN-1 first)

@@ -32,7 +32,7 @@ import static org.operamasks.el.ir.IRFormat.*;
  * The result is a function that runs faster when the type assumptions hold,
  * and falls back via GUARD_TYPE deoptimization when they don't.
  */
-public class IRSpeclializer implements IRPass {
+public class IRSpecializer implements IRPass {
 
     private int[] argTypes;    // type IDs for each parameter (-1 = unknown)
     private int[] varTypes;    // tracked types for local variables
@@ -56,7 +56,7 @@ public class IRSpeclializer implements IRPass {
      * @return specialized function, or the original if no specialization possible
      */
     public static IRFunction specialize(IRFunction fn, int[] argTypes) {
-        return new IRSpeclializer().transform(fn, argTypes);
+        return new IRSpecializer().transform(fn, argTypes);
     }
 
     @Override

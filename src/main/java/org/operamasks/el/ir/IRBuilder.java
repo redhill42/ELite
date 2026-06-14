@@ -291,7 +291,7 @@ public class IRBuilder {
             Integer idx = scope.get(node.id);
             if (idx != null) {
                 int t = typeIdFromNode(node);
-                current.emitPushVar(idx, t >= 0 ? t : T_INT);
+                current.emitPushVar(idx);
                 return;
             }
         }
@@ -299,7 +299,7 @@ public class IRBuilder {
         Integer idx = varIndex.get(node.id);
         if (idx != null) {
             int t = typeIdFromNode(node);
-            current.emitPushVar(idx, t >= 0 ? t : T_INT);
+            current.emitPushVar(idx);
         } else if (parent != null && parent.varIndex.containsKey(node.id)) {
             // Free variable captured from enclosing scope
             Integer captureIdx = capturedVars.get(node.id);
@@ -309,7 +309,7 @@ public class IRBuilder {
             }
             idx = varIndex.get(node.id);
             int t = typeIdFromNode(node);
-            current.emitPushVar(idx, t >= 0 ? t : T_INT);
+            current.emitPushVar(idx);
         } else {
             // Global variable — put name in constant pool, emit PUSH_GLOBAL
             int nameIdx = putConstant(node.id);
@@ -526,7 +526,7 @@ public class IRBuilder {
                 } else {
                     // x++ / x--: push old value, increment, keep old value on stack
                     int t = typeIdFromNode(target);
-                    current.emitPushVar(idx, t >= 0 ? t : T_INT);
+                    current.emitPushVar(idx);
                     current.emit1(isInc ? INC : DEC, K_PRIM, idx);
                     current.emitPop(); // discard new value, leave old value
                 }
@@ -915,7 +915,7 @@ public class IRBuilder {
 
         // Header: push i, push end, compare, branch
         startBlock(header);
-        current.emitPushVar(varIdx, T_INT);
+        current.emitPushVar(varIdx);
         build(r.end);
         if (exclusive) current.emitILt(); else current.emitILe();  // int comparison, not dynamic
         current.emitJumpIfFalse(exit);
@@ -926,7 +926,7 @@ public class IRBuilder {
         enterScope(); build(node.body); leaveScope();
         current.emitPop();                // discard body result
         // i = i + 1
-        current.emitPushVar(varIdx, T_INT);
+        current.emitPushVar(varIdx);
         current.emitPushConst(oneIdx);    // push constant 1
         current.emitIAdd();
         current.emitStoreVar(varIdx);     // stores to i, pushes result back
@@ -1027,7 +1027,7 @@ public class IRBuilder {
             for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
                 Integer outerIdx = varIndex.get(e.getKey());
                 if (outerIdx != null) {
-                    current.emitPushVar(outerIdx, T_INT);
+                    current.emitPushVar(outerIdx);
                 }
             }
         }
@@ -1301,7 +1301,7 @@ public class IRBuilder {
                                         boolean optimize, boolean isLambda) {
         if (optimize) {
             fn = FOLDER.transform(fn);
-            fn = IRSpeclializer.specialize(fn, new int[paramCount]);
+            fn = IRSpecializer.specialize(fn, new int[paramCount]);
             if (isLambda) fn = FOLDER.transform(fn);  // fold constants in specialized code
         }
         return fn;

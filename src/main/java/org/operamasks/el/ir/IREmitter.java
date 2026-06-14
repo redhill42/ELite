@@ -41,9 +41,8 @@ public class IREmitter {
 
     // ── Short operand helpers ──
 
-    /** Whether a value fits in the 16-bit payload field. */
-    private static boolean fits16(int v) { return (v & 0xFFFF) == (v & 0xFFFF) && v >= 0 && v <= 0xFFFF; }
-    // Java's unsigned 16-bit range is 0..65535
+    /** Whether a value fits in the 16-bit payload field (unsigned 0..65535). */
+    private static boolean fits16(int v) { return v >= 0 && v <= 0xFFFF; }
 
     // ── Core emit methods ──
 
@@ -87,7 +86,7 @@ public class IREmitter {
         }
     }
 
-    public IREmitter emitPushVar(int varIndex, int primTypeId) {
+    public IREmitter emitPushVar(int varIndex) {
         return emit1(PUSH_VAR, K_PRIM, varIndex & 0xFFFF);
     }
 
