@@ -54,7 +54,7 @@ public final class Runtime {
         Object r = c.getELResolver().getValue(c, null, name);
         if (c.isPropertyResolved())
             return r;
-        throw new RuntimeException("Undefined: " + name);
+        throw new RuntimeException("Undefined identifier: " + name);
     }
 
     public static Object storeGlobal(ELContext c, String name, Object value) {

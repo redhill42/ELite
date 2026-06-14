@@ -69,7 +69,10 @@ public class IRBytecodeCompiler {
     private final int[] argTypeIds;      // param types for typed mode, null for Object[] mode
     private boolean typedMode;
 
-    // Shared class loader so compiled callees are visible to callers
+    // Shared class loader so compiled callees are visible to callers.
+    // TODO: In long-running applications, compiled classes accumulate in this
+    //       static loader and are never GC'd. Consider per-thread ClassLoader
+    //       (cleared on resetState) or a SoftReference-based class cache.
     private static final SingleLoader LOADER = new SingleLoader();
 
     private static class SingleLoader extends ClassLoader {

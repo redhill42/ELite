@@ -1028,6 +1028,13 @@ public class IRBuilder {
                 Integer outerIdx = varIndex.get(e.getKey());
                 if (outerIdx != null) {
                     current.emitPushVar(outerIdx);
+                } else {
+                    // Captured variable not found in varIndex — it may be
+                    // defined in a scope block ({...}). Scoped variable
+                    // capture is not yet supported; the variable will be
+                    // undefined at runtime.
+                    // TODO: walk scopeStack to find the scoped variable and
+                    //       emit the correct slot reference.
                 }
             }
         }
