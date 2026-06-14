@@ -147,7 +147,7 @@ public class IRSpeclializer implements IRPass {
             for (int i = 0; i < block.size(); i++) {
                 int word = block.get(i);
                 int op = IRFormat.opcode(word);
-                if (Opcode.isJump(op) || op == INVOKE_TAIL) {
+                if (Opcode.isJump(op) || op == INVOKE_TAIL || op == ITER_DONE) {
                     int oc = IRFormat.opCount(word);
                     int oldTarget = oc == 0 ? IRFormat.payload(word) : block.get(i + 1);
                     if (oldTarget < oldCount) {

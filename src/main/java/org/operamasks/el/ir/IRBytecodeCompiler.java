@@ -584,7 +584,12 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "decLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
             }
-            case SCOPE_ENTER, SCOPE_EXIT -> { mv.visitInsn(0); }  // JVM NOP for frame consistency
+            // SCOPE_ENTER/SCOPE_EXIT create EvaluationContext scopes for the
+            // IR interpreter only. The bytecode backend handles scoped variable
+            // isolation at compile time via slot-based scoping (see IRBuilder).
+            // These opcodes are emitted as JVM NOP — the bytecode does not
+            // maintain a runtime scope stack.
+            case SCOPE_ENTER, SCOPE_EXIT -> { mv.visitInsn(0); }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD -> emitDynCall("dynAdd", 2);
