@@ -84,7 +84,7 @@ public final class Opcode {
     public static final int LUSHR   = 0x3C;
     public static final int LBITNOT = 0x3D;
 
-    // ── Typed comparisons (0x40-0x5F) ──
+    // ── Typed comparisons (0x40-0x51) ──
     public static final int IEQ = 0x40;  public static final int INE = 0x41;
     public static final int ILT = 0x42;  public static final int ILE = 0x43;
     public static final int IGT = 0x44;  public static final int IGE = 0x45;
@@ -95,32 +95,32 @@ public final class Opcode {
 
     public static final int DEQ = 0x4C;  public static final int DNE = 0x4D;
     public static final int DLT = 0x4E;  public static final int DLE = 0x4F;
-    public static final int DGT = 0x5A;  public static final int DGE = 0x5B;
+    public static final int DGT = 0x50;  public static final int DGE = 0x51;
 
-    // ── Dynamic comparisons (0x50-0x52) ──
-    public static final int DYNEQ = 0x50;
-    public static final int DYNLT = 0x51;
-    public static final int DYNLE = 0x52;
+    // ── Dynamic comparisons (0x52-0x54) ──
+    public static final int DYNEQ = 0x52;
+    public static final int DYNLT = 0x53;
+    public static final int DYNLE = 0x54;
 
-    // ── Control flow (0x54-0x5F) ──
-    public static final int JUMP            = 0x54;
-    public static final int JUMP_IF_TRUE    = 0x55;
-    public static final int JUMP_IF_FALSE   = 0x56;
-    public static final int JUMP_IF_NULL    = 0x57;
-    public static final int JUMP_IF_NONNULL = 0x58;
-    public static final int TABLE_SWITCH    = 0x59;
+    // ── Control flow (0x55-0x5F) ──
+    public static final int JUMP            = 0x55;
+    public static final int JUMP_IF_TRUE    = 0x56;
+    public static final int JUMP_IF_FALSE   = 0x57;
+    public static final int JUMP_IF_NULL    = 0x58;
+    public static final int JUMP_IF_NONNULL = 0x59;
+    public static final int TABLE_SWITCH    = 0x5A;
 
     // ── Function (0x60-0x6F) ──
     public static final int INVOKE        = 0x60;
     public static final int INVOKE_DYN    = 0x61;
     public static final int INVOKE_TAIL   = 0x62;
-    public static final int INVOKE_DIRECT = 0x5F;  // direct IRFunction call
-    public static final int CLOSURE       = 0x63;
-    public static final int RETURN        = 0x64;
-    public static final int RETURN_VOID   = 0x65;
-    public static final int THROW         = 0x66;  // pop value, wrap as UserException, throw
-    public static final int SCOPE_ENTER   = 0x67;  // push new EvaluationContext scope
-    public static final int SCOPE_EXIT    = 0x68;  // pop EvaluationContext scope
+    public static final int INVOKE_DIRECT = 0x63;  // direct IRFunction call
+    public static final int CLOSURE       = 0x64;
+    public static final int RETURN        = 0x65;
+    public static final int RETURN_VOID   = 0x66;
+    public static final int THROW         = 0x67;
+    public static final int SCOPE_ENTER   = 0x68;
+    public static final int SCOPE_EXIT    = 0x69;
 
     // ── Memory / allocation (0x70-0x7F) ──
     public static final int STORE_VAR      = 0x70;
@@ -176,8 +176,8 @@ public final class Opcode {
 
     public static boolean isTypedArith(int op) { return op >= 0x10 && op <= 0x24; }
     public static boolean isDynamicArith(int op) { return op >= 0x25 && op <= 0x2B; }
-    public static boolean isJump(int op) { return op >= 0x54 && op <= 0x58; }
-    public static boolean isComparison(int op) { return (op >= 0x40 && op <= 0x4F) || (op >= 0x50 && op <= 0x53) || (op >= 0x5A && op <= 0x5B); }
+    public static boolean isJump(int op) { return op >= 0x55 && op <= 0x5A; }
+    public static boolean isComparison(int op) { return op >= 0x40 && op <= 0x54; }
     public static boolean isGuard(int op) { return op == GUARD_TYPE; }
 
     /** Human-readable name for debugging. */
