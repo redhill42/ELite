@@ -297,10 +297,12 @@ public class TypeInferrer {
                     return ct.typeArgs.get(1);
             }
         }
-        // Try Java array component type
-        if (base instanceof PrimitiveType) {
+        // Java array access: primitiveType[integer] → same primitive
+        if (base instanceof PrimitiveType && index instanceof PrimitiveType) {
             return base;
         }
+        // Index access with non-numeric key returns unknown type.
+        // Example: 25[CELSIUS] → Measure (not Integer).
         return Type.DYNAMIC;
     }
 

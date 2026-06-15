@@ -1103,7 +1103,15 @@ public class IRInterpreter {
     }
 
     private static boolean needsTrampolineDispatch(Object lhs, Object rhs) {
-        return (lhs instanceof ClosureObject || rhs instanceof ClosureObject);
+        if (lhs instanceof ClosureObject || rhs instanceof ClosureObject)
+            return true;
+        // Non-numeric non-String operands (e.g. Measure, user-defined
+        // types) need AST operator resolution to find overloaded operators.
+        if (lhs != null && !(lhs instanceof Number) && !(lhs instanceof String))
+            return true;
+        if (rhs != null && !(rhs instanceof Number) && !(rhs instanceof String))
+            return true;
+        return false;
     }
 
     private Object trampolineBinaryOp(int irOpcode, Object lhs, Object rhs) {
