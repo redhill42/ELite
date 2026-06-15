@@ -505,7 +505,9 @@ public final class ELEngine
         } else if (target instanceof Closure) {
             return ((Closure)target).invoke(elctx, args);
         } else if (target instanceof org.operamasks.el.ir.IRFunction irFn) {
-            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, null)
+            EvaluationContext evalctx = null;
+            try { evalctx = (EvaluationContext) elctx.getContext(EvaluationContext.class); } catch (Exception ignored) {}
+            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, evalctx)
                 .execute(getArgValues(elctx, args));
         } else if (target instanceof org.operamasks.el.ir.IRClosure closure) {
             org.operamasks.el.ir.IRFunction irFn = closure.getFunction();
@@ -515,7 +517,9 @@ public final class ELEngine
             Object[] callArgs = getArgValues(elctx, args);
             System.arraycopy(callArgs, 0, expandedArgs, 0, Math.min(callArgs.length, paramCount));
             System.arraycopy(closure.getCaptured(), 0, expandedArgs, paramCount, captureCount);
-            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, null).execute(expandedArgs);
+            EvaluationContext evalctx = null;
+            try { evalctx = (EvaluationContext) elctx.getContext(EvaluationContext.class); } catch (Exception ignored) {}
+            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, evalctx).execute(expandedArgs);
         } else if (target instanceof Class) {
             return invokeClass(elctx, (Class)target, args);
         } else if (target instanceof ClosureObject) {

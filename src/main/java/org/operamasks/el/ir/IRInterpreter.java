@@ -28,6 +28,8 @@ import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.MethodResolver;
 
+import org.operamasks.el.eval.VariableMapperImpl;
+
 import javax.el.ELContext;
 import javax.el.ValueExpression;
 import javax.el.VariableMapper;
@@ -125,7 +127,29 @@ public class IRInterpreter {
         // Start at first block
         ip = blockOffsets.length > 0 ? blockOffsets[0] : 0;
 
-        return interpret();
+        // Push an isolated scope for this function call so parameters are
+        // visible to trampolined AST expressions without polluting outer
+        // scopes. A fresh VariableMapperImpl ensures nested calls cannot
+        // overwrite outer scope entries.
+        VariableMapperImpl functionScope = new VariableMapperImpl();
+        scopeStack.push(evalContext);
+        evalContext = evalContext.pushContext(functionScope);
+        syncLocalsToGlobals();
+
+        // Store current EvaluationContext on ELContext so invokeTarget
+        // can retrieve it for nested IRClosure/IRFunction calls.
+        // getContext/putContext may fail on ELContext implementations
+        // that don't support the context map API.
+        Object savedCtx = null;
+        try { savedCtx = elctx.getContext(EvaluationContext.class); } catch (Exception ignored) {}
+        try { elctx.putContext(EvaluationContext.class, evalContext); } catch (Exception ignored) {}
+
+        try {
+            return interpret();
+        } finally {
+            evalContext = scopeStack.pop();
+            try { elctx.putContext(EvaluationContext.class, savedCtx); } catch (Exception ignored) {}
+        }
     }
 
     // ── Main interpreter loop ──
@@ -638,10 +662,18 @@ public class IRInterpreter {
                     Object[] args = new Object[argc];
                     for (int i = argc - 1; i >= 0; i--)
                         args[i] = pop();
-                    // Direct call: avoids ELEngine.invokeTarget overhead
-                    IRInterpreter callee = new IRInterpreter(elctx, targetFn,
-                            evalContext);
-                    push(callee.execute(args));
+                    // Closures must go through dynamicInvoke so captured
+                    // values are expanded from the IRClosure object.
+                    if (targetFn.captureCount() > 0) {
+                        push(targetFn);
+                        for (int i = 0; i < argc; i++)
+                            push(args[i]);
+                        push(dynamicInvoke(argc));
+                    } else {
+                        IRInterpreter callee = new IRInterpreter(elctx, targetFn,
+                                evalContext);
+                        push(callee.execute(args));
+                    }
                     ip += 1 + oc;
                     break;
                 }
@@ -949,6 +981,10 @@ public class IRInterpreter {
                         obj = td.tryNode;
                     }
                     ELNode node = (ELNode)obj;
+                    // IR locals are in the locals[] array, not in the
+                    // EvaluationContext. Sync them so the AST evaluator
+                    // can see function parameters and let-bindings.
+                    syncLocalsToGlobals();
                     Object result = node.getValue(evalContext);
                     push(result);
                     // AST evaluation may have modified global variables
@@ -1186,6 +1222,24 @@ public class IRInterpreter {
             ValueExpression ve = vm.resolveVariable(names[i]);
             if (ve != null) {
                 ensureLocals(i); locals[i] = ve.getValue(elctx);
+            }
+        }
+    }
+
+    /**
+     * Before a TRAMPOLINE causes AST evaluation, copy IR local variable
+     * values into the EvaluationContext so the AST evaluator can see them.
+     * Writes through {@code evalContext.setVariable()} so values go to the
+     * current scope's isolated VariableMapper, not the shared ELContext one.
+     */
+    private void syncLocalsToGlobals() {
+        String[] names = function.varNames();
+        if (names == null)
+            return;
+        for (int i = 0; i < names.length && i < locals.length; i++) {
+            if (names[i] != null) {
+                ensureLocals(i);
+                evalContext.setVariable(names[i], new LiteralClosure(locals[i]));
             }
         }
     }

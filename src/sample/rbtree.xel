@@ -54,7 +54,7 @@ class TreeSet {
 
 void run(n) {
     define set = TreeSet();
-    define data = [1..n].shuffle()
+    define data = [1..n]@shuffle
     data.each(set.add)
     assert data.size() == n
     assert data.forall(set.contains)

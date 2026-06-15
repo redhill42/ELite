@@ -1018,7 +1018,12 @@ public class IRBuilder {
                                        node.vars.length, nested.capturedVars);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
-        registerFunction(node.name, poolIdx);
+        // Only register non-capturing functions for direct invocation.
+        // Capturing functions (closures) must go through INVOKE_DYN so
+        // captured values are passed via IRClosure.
+        if (fn.captureCount() == 0) {
+            registerFunction(node.name, poolIdx);
+        }
 
         // Emit CLOSURE opcode (even for 0-capture lambdas — PUSH_CONST
         // can't embed IRFunction via LDC in bytecode mode).
@@ -1039,6 +1044,15 @@ public class IRBuilder {
             }
         }
         current.emitClosure(poolIdx, nested.capturedVars.size());
+
+        // If the lambda has a name, store it in the global VariableMapper
+        // so recursive calls from trampolined bodies (e.g. let with
+        // destructuring patterns) can find the function by name.
+        if (node.name != null && !node.name.isEmpty()) {
+            current.emitDup();
+            int nameIdx = putConstant(node.name);
+            current.emitStoreGlobal(nameIdx);
+        }
     }
 
     // ── Trampoline ──
