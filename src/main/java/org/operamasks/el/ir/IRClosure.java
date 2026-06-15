@@ -16,11 +16,23 @@
 
 package org.operamasks.el.ir;
 
+import javax.el.ELContext;
+import javax.el.MethodInfo;
+import javax.el.PropertyNotWritableException;
+import javax.el.ValueExpression;
+
+import elite.lang.Closure;
+import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.EvaluationContext;
+
 /**
  * A closure: an IRFunction bundled with captured variable values.
- * Created by the CLOSURE opcode at runtime.
+ * Extends {@link elite.lang.Closure} so that {@code .curry()},
+ * {@code .call()}, and other Closure methods are discoverable by
+ * {@link org.operamasks.el.resolver.MethodResolver} when a closure
+ * is accessed from AST-evaluated (trampolined) code.
  */
-public class IRClosure {
+public class IRClosure extends Closure {
     public final IRFunction function;
     public final Object[] captured;
 
@@ -31,4 +43,88 @@ public class IRClosure {
 
     public IRFunction getFunction() { return function; }
     public Object[] getCaptured() { return captured; }
+
+    // ── Closure abstract methods ──
+
+    @Override
+    public Object invoke(ELContext elctx, Closure[] args) {
+        int paramCount = function.paramCount();
+        int captureCount = function.captureCount();
+        Object[] expandedArgs = new Object[paramCount + captureCount];
+        Object[] callArgs = ELEngine.getArgValues(elctx, args);
+        System.arraycopy(callArgs, 0, expandedArgs, 0,
+                         Math.min(callArgs.length, paramCount));
+        System.arraycopy(captured, 0, expandedArgs, paramCount, captureCount);
+        EvaluationContext evalctx = null;
+        try {
+            evalctx = (EvaluationContext) elctx.getContext(
+                EvaluationContext.class);
+        } catch (Exception ignored) {}
+        return new IRInterpreter(elctx, function, evalctx)
+            .execute(expandedArgs);
+    }
+
+    @Override
+    public int arity(ELContext elctx) {
+        return function.paramCount();
+    }
+
+    @Override
+    public MethodInfo getMethodInfo(ELContext elctx) {
+        Class<?>[] paramTypes = new Class<?>[function.paramCount()];
+        for (int i = 0; i < paramTypes.length; i++)
+            paramTypes[i] = Object.class;
+        return new MethodInfo(function.name(), Object.class, paramTypes);
+    }
+
+    // ── ValueExpression methods ──
+
+    @Override
+    public Object getValue(ELContext elctx) {
+        return this;
+    }
+
+    @Override
+    public void setValue(ELContext elctx, Object value) {
+        throw new PropertyNotWritableException();
+    }
+
+    @Override
+    public boolean isReadOnly(ELContext elctx) {
+        return true;
+    }
+
+    @Override
+    public Class<?> getType(ELContext elctx) {
+        return IRClosure.class;
+    }
+
+    @Override
+    public String getExpressionString() {
+        return function.name() != null ? function.name() : "<closure>";
+    }
+
+    @Override
+    public boolean isLiteralText() {
+        return false;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof IRClosure other)) return false;
+        return function.equals(other.function)
+            && java.util.Arrays.equals(captured, other.captured);
+    }
+
+    @Override
+    public int hashCode() {
+        return function.hashCode() * 31
+            + java.util.Arrays.hashCode(captured);
+    }
+
+    @Override
+    public String toString() {
+        return "IRClosure[" + function.name() + "]";
+    }
 }
