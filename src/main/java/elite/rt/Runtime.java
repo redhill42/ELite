@@ -367,6 +367,9 @@ public final class Runtime {
                                         NumOp longOp, java.util.function.DoubleBinaryOperator doubleOp,
                                         NumOp bigIntOp, NumOp bigDecOp, NumOp rationalOp, NumOp decimalOp) {
         if (x == null || y == null) throw new NullPointerException(_T(EL_NULL_OPERAND, op));
+        // Coerce String operands to numbers (same as AST TypeCoercion)
+        if (x instanceof String) x = org.operamasks.el.eval.TypeCoercion.coerceToDouble(x);
+        if (y instanceof String) y = org.operamasks.el.eval.TypeCoercion.coerceToDouble(y);
         Class<?> xc = x.getClass(), yc = y.getClass();
         if (xc == yc) {
             if (x instanceof Long)       return longOp.eval((Long)x, (Long)y);
