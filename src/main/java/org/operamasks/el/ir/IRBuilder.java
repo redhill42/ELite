@@ -91,6 +91,9 @@ public class IRBuilder {
         if (node instanceof ELNode.FOREACH)    { buildForEach((ELNode.FOREACH) node); return; }
         if (node instanceof ELNode.CONST_MATCH) { buildTrampoline(node); return; }
         if (node instanceof ELNode.MATCH)      { buildTrampoline(node); return; }
+        // ELNode.RETURN uses Token.THROW as its op (for Control.Return extends
+        // Control.Throw), but must be handled by buildReturn, not buildThrow.
+        if (node instanceof ELNode.RETURN)     { buildReturn((ELNode.RETURN) node); return; }
 
         switch (node.op) {
             case Token.NUMBER:    buildNumber((ELNode.NUMBER) node);   break;
