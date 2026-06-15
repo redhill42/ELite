@@ -499,10 +499,9 @@ public class IRBuilder {
             buildTrampoline(node); return;
         }
         int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
-        // Shift operators (<<, >>, >>>) are overloaded in ELite for stream
-        // I/O vs bit shift. When operand types are unknown, trampoline to
-        // AST which handles overloading. The typed ISHL opcode requires
-        // numeric operands and fails on PrintWriter/String/etc.
+        // Shift operators are overloaded for stream I/O vs bit shift.
+        // When types are unknown, trampoline to AST which handles
+        // overloading correctly.
         if ((l < 0 || r < 0) &&
             (node.op == Token.SHL || node.op == Token.SHR || node.op == Token.USHR)) {
             buildTrampoline(node); return;
