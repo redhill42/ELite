@@ -100,6 +100,11 @@ public class IRClosure extends Closure {
     }
 
     @Override
+    public Class<?> getExpectedType() {
+        return Closure.class;
+    }
+
+    @Override
     public String getExpressionString() {
         return function.name() != null ? function.name() : "<closure>";
     }

@@ -1137,7 +1137,12 @@ public class IRBuilder {
      * trampolined sub-expressions (CONST_MATCH, list comprehensions).
      */
     private void captureFreeVariables(IRBuilder nested, ELNode.LAMBDA node) {
-        if (parent == null) return; // top-level lambda, no outer scope
+        // Use nested.parent — the immediate enclosing scope that contains
+        // variables visible to the nested lambda. Using this.parent would
+        // skip one level when called from buildLambda (which runs in the
+        // parent builder's context, not the nested builder's).
+        IRBuilder enclosing = nested.parent;
+        if (enclosing == null) return; // top-level lambda, no outer scope
         java.util.Set<String> seen = new java.util.HashSet<>();
         // Collect lambda parameter names to exclude them
         for (ELNode.DEFINE v : node.vars) {
@@ -1145,11 +1150,9 @@ public class IRBuilder {
         }
         node.body.accept(new org.operamasks.el.parser.DefaultVisitor() {
             public void visit(ELNode.IDENT e) {
-                // Skip the lambda's own name (handled by STORE_GLOBAL)
-                // and parameters (already in the nested varIndex).
                 if (seen.contains(e.id)
                     || nested.varIndex.get(e.id) != null
-                    || !parent.varIndex.containsKey(e.id))
+                    || !enclosing.varIndex.containsKey(e.id))
                     return;
                 // Skip self-referencing name — handled by STORE_GLOBAL
                 if (e.id.equals(node.name))
