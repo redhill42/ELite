@@ -1008,6 +1008,12 @@ public class IRBuilder {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
             nested.ensureVar(var.id, flags);
         }
+        // Pre-scan the body for free variable references that the normal
+        // buildIdent path may miss (e.g. identifiers inside trampolined
+        // sub-expressions like CONST_MATCH or list comprehensions).
+        // Without this scan, those identifiers are never added to
+        // capturedVars and are invisible to the trampoline at runtime.
+        captureFreeVariables(nested, node);
         nested.inTailPosition = true;
         nested.build(node.body);
         if (!endsWithReturn(nested)) {
@@ -1123,6 +1129,36 @@ public class IRBuilder {
         if (a == T_DOUBLE || b == T_DOUBLE) return T_DOUBLE;
         if (a == T_LONG || b == T_LONG) return T_LONG;
         return a >= 0 ? a : (b >= 0 ? b : T_INT);
+    }
+
+    /**
+     * Pre-scan the lambda body for free variable references that may
+     * be missed during normal compilation because they are inside
+     * trampolined sub-expressions (CONST_MATCH, list comprehensions).
+     */
+    private void captureFreeVariables(IRBuilder nested, ELNode.LAMBDA node) {
+        if (parent == null) return; // top-level lambda, no outer scope
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        // Collect lambda parameter names to exclude them
+        for (ELNode.DEFINE v : node.vars) {
+            if (!"_".equals(v.id)) seen.add(v.id);
+        }
+        node.body.accept(new org.operamasks.el.parser.DefaultVisitor() {
+            public void visit(ELNode.IDENT e) {
+                // Skip the lambda's own name (handled by STORE_GLOBAL)
+                // and parameters (already in the nested varIndex).
+                if (seen.contains(e.id)
+                    || nested.varIndex.get(e.id) != null
+                    || !parent.varIndex.containsKey(e.id))
+                    return;
+                // Skip self-referencing name — handled by STORE_GLOBAL
+                if (e.id.equals(node.name))
+                    return;
+                nested.capturedVars.put(e.id, nested.capturedVars.size());
+                nested.ensureVar(e.id, 0);
+                seen.add(e.id);
+            }
+        });
     }
 
     // ── Finalization ──

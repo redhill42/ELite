@@ -824,7 +824,11 @@ public class IRInterpreter {
                     Object[] elements = new Object[count];
                     for (int i = count - 1; i >= 0; i--)
                         elements[i] = pop();
-                    push(java.util.Arrays.asList(elements));
+                    // Wrap in ListSeq so Seq methods (mappend, map, etc.)
+                    // are available and JVM module restrictions on
+                    // java.util.Arrays$ArrayList are avoided.
+                    java.util.List<Object> raw = java.util.Arrays.asList(elements);
+                    push(org.operamasks.el.eval.seq.ListSeq.make(raw));
                     ip += 1;
                     break;
                 }
