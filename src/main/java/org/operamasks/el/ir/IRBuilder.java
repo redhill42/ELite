@@ -202,6 +202,7 @@ public class IRBuilder {
             case Token.IDENT:     buildIdent((ELNode.IDENT) node);     break;
             case Token.ACCESS:    buildAccess((ELNode.ACCESS) node);   break;
             case Token.APPLY:     buildApply((ELNode.APPLY) node);     break;
+            case Token.XFORM:     buildXform((ELNode.XFORM) node);     break;
 
             case Token.ADD: case Token.SUB: case Token.MUL:
             case Token.DIV: case Token.REM: case Token.POW:
@@ -505,6 +506,41 @@ public class IRBuilder {
             inTailPosition = prev;
             current.emitInvokeDyn(node.args.length);
         }
+    }
+
+    private void buildXform(ELNode.XFORM node) {
+        if (node.right instanceof ELNode.IDENT) {
+            String id = ((ELNode.IDENT)node.right).id;
+            if (dataConstructorNames.contains(id)) {
+                buildTrampoline(node);
+                return;
+            }
+
+            boolean isTail = inTailPosition && lambdaName != null &&
+                             lambdaName.equals(id);
+            boolean isDirect = !isTail && knownFunctions.get().get(id) != null;
+
+            if (isTail) {
+                inTailPosition = false;
+                build(node.left);
+                inTailPosition = true;
+                current.emitInvokeTail(1);
+                justEmittedTail = true;
+                return;
+            }
+
+            if (isDirect) {
+                boolean prev = inTailPosition;
+                inTailPosition = false;
+                build(node.left);
+                inTailPosition = prev;
+                Integer funcIdx = knownFunctions.get().get(id);
+                current.emitInvokeDirect(funcIdx, 1);
+                return;
+            }
+        }
+
+        buildTrampoline(node);
     }
 
     // ── Literals: list, map, tuple, range ──

@@ -173,7 +173,7 @@ public final class IRPrinter {
             case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
                  Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
                 sb.append(" B").append(v.jumpTarget());
-            case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
+            case Opcode.INVOKE_DIRECT, Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
             case Opcode.NEW_LIST, Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
                 sb.append(" ").append(v.payload());

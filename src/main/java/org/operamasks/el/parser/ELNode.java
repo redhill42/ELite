@@ -1550,10 +1550,6 @@ public abstract class ELNode implements Serializable
         }
 
         public Object getValue(EvaluationContext context) {
-            if (left instanceof TUPLE) {
-                return right.invoke(context, getCallArgs(context));
-            }
-
             ELContext elctx = context.getELContext();
             Object lhs = left.getValue(context);
 

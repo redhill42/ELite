@@ -527,17 +527,22 @@ public class Parser extends Scanner
             return e;
           }
 
+          case LPAREN:
+            return parseApplyExpression(scan(), e);
+
           case ATSIGN: {
             int p = scan();
             String id = scanQName();
             expect(IDENT);
-            return new ELNode.XFORM(p, e, new ELNode.IDENT(p, id));
+            ELNode.IDENT ident = new ELNode.IDENT(p, id);
+            if (e instanceof ELNode.TUPLE t)
+                return new ELNode.APPLY(p, ident, t.elems, null);
+            return new ELNode.XFORM(p, e, ident);
           }
 
-          case LPAREN:
-            return parseApplyExpression(scan(), e);
-
           case XFORM:
+            if (e instanceof ELNode.TUPLE t)
+              return new ELNode.APPLY(scan(), parseTerm(), t.elems, null);
             return new ELNode.XFORM(scan(), e, parseTerm());
 
           case INC:
