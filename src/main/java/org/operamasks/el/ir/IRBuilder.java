@@ -953,13 +953,22 @@ public class IRBuilder {
             }
             build(node.expr);
             if (!scopeStack.isEmpty()) {
-                // Scoped define: allocate a new unique slot via ensureVar with a
-                // mangled name (e.g. "$0$s") to avoid reusing the top-level slot.
+                // Scoped define inside a SCOPE_ENTER block: allocate a unique
+                // mangled slot to avoid shadowing the outer scope, and
+                // register in the current scope layer so buildIdent resolves
+                // it via scopeStack traversal.
                 String scopedName = "$" + scopeStack.size() + "$" + node.id;
                 int idx = ensureVar(scopedName);
                 current.emitDup();
                 current.emitStoreVar(idx);
                 scopeStack.peek().put(node.id, idx);
+            } else if (parent != null) {
+                // Lambda-level define: STORE_VAR only (no STORE_GLOBAL),
+                // using the original name so buildIdent resolves it via
+                // varIndex lookup. The variable dies with the IRInterpreter.
+                int idx = ensureVar(node.id);
+                current.emitDup();
+                current.emitStoreVar(idx);
             } else {
                 // Top-level: STORE_VAR + STORE_GLOBAL (persistent across evals)
                 int idx = ensureVar(node.id);

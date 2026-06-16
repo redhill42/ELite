@@ -92,6 +92,8 @@ public class IRInterpreter {
         this.code = function.code();
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
+        if (parentEnv == null)
+            parentEnv = (EvaluationContext)elctx.getContext(EvaluationContext.class);
         this.evalContext = parentEnv != null ? parentEnv :
                            new EvaluationContext(elctx);
     }
@@ -99,6 +101,10 @@ public class IRInterpreter {
     // ── Entry point ──
 
     public Object execute(Object[] args) {
+        return execute(args, false);
+    }
+
+    public Object execute(Object[] args, boolean isTopLevel) {
         this.stack = new Object[DEFAULT_STACK_SIZE];
         this.sp = 0;
         this.locals = new Object[DEFAULT_LOCALS_SIZE];
@@ -133,28 +139,30 @@ public class IRInterpreter {
         // lazy sequence returned from eval).
         javax.el.ELContext savedElCtx = ELEngine.setCurrentELContext(elctx);
 
-        // Push an isolated scope for this function call so parameters are
-        // visible to trampolined AST expressions without polluting outer
-        // scopes. A fresh VariableMapperImpl ensures nested calls cannot
-        // overwrite outer scope entries.
-        VariableMapperImpl functionScope = new VariableMapperImpl();
-        scopeStack.push(evalContext);
-        evalContext = evalContext.pushContext(functionScope);
-        syncLocalsToGlobals();
+        // Scope management (matches AST behavior):
+        // - Top-level program: no pushContext — variables go directly
+        //   into the program-level evalContext.
+        // - Functions: pushContext() — lightweight scope that shares
+        //   the parent chain but isolates variables added within this function.
+        if (!isTopLevel) {
+            scopeStack.push(evalContext);
+            evalContext = evalContext.pushContext();
+        }
 
         // Store current EvaluationContext on ELContext so invokeTarget
         // can retrieve it for nested IRClosure/IRFunction calls.
         // getContext/putContext may fail on ELContext implementations
         // that don't support the context map API.
-        Object savedCtx = null;
-        try { savedCtx = elctx.getContext(EvaluationContext.class); } catch (Exception ignored) {}
-        try { elctx.putContext(EvaluationContext.class, evalContext); } catch (Exception ignored) {}
+        Object savedCtx = elctx.getContext(EvaluationContext.class);
+        elctx.putContext(EvaluationContext.class, evalContext);
 
         try {
             return interpret();
         } finally {
-            evalContext = scopeStack.pop();
-            try { elctx.putContext(EvaluationContext.class, savedCtx); } catch (Exception ignored) {}
+            if (!isTopLevel)
+                evalContext = scopeStack.pop();
+            if (savedCtx != null)
+                elctx.putContext(EvaluationContext.class, savedCtx);
             ELEngine.setCurrentELContext(savedElCtx);
         }
     }
@@ -719,11 +727,13 @@ public class IRInterpreter {
                 case SCOPE_ENTER: {
                     scopeStack.push(evalContext);
                     evalContext = evalContext.pushContext();
+                    elctx.putContext(EvaluationContext.class, evalContext);
                     ip += 1;
                     break;
                 }
                 case SCOPE_EXIT: {
                     evalContext = scopeStack.pop();
+                    elctx.putContext(EvaluationContext.class, evalContext);
                     ip += 1;
                     break;
                 }
@@ -1273,15 +1283,12 @@ public class IRInterpreter {
     // ── Global variable storage ──
 
     private void storeGlobal(String name, Object value) {
-        // Always write to the persistent VariableMapper. Scoped defines use
-        // STORE_VAR (not STORE_GLOBAL) to create temporary shadow variables.
+        // Write to evalContext chain only. elctx.getVariableMapper() is
+        // for externally-provided variables (JSP/JSF embedding) and must
+        // not be polluted with ELite-internal variables. Each eval call
+        // is an isolated environment — variables in one eval must not
+        // leak to another.
         LiteralClosure lc = new LiteralClosure(value);
-        elctx.getVariableMapper().setVariable(name, lc);
-        // Also write to the current isolated VM so the resolver chain
-        // (which checks the isolated VM first) can find the variable.
-        // syncLocalsToGlobals in execute() runs before STORE_VAR and
-        // writes null; STORE_GLOBAL runs during interpret() with the
-        // real value, so we must update the isolated VM here too.
         if (evalContext != null) {
             evalContext.setVariable(name, lc);
         }
