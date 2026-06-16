@@ -48,6 +48,11 @@ public class IRClosure extends Closure {
 
     @Override
     public Object invoke(ELContext elctx, Closure[] args) {
+        // IRClosures can be invoked from lazy sequence forcing where
+        // elctx may be null (getCurrentELContext returns null after
+        // the eval context has been torn down). Fall back to ThreadLocal.
+        if (elctx == null)
+            elctx = ELEngine.getCurrentELContext();
         int paramCount = function.paramCount();
         int captureCount = function.captureCount();
         Object[] expandedArgs = new Object[paramCount + captureCount];

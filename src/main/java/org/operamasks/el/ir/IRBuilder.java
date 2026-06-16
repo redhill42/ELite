@@ -464,18 +464,23 @@ public class IRBuilder {
                 return;
             }
         }
-        // Fallback: dynamic invoke. Build target first, then args,
-        // so stack is [target, arg0, ..., argN].
-        // For unresolved ACCESS with args (e.g. .map(fn) on dynamic type),
-        // the ACCESS compiles as LOAD_PROPERTY which can't find methods.
-        // Fall back to AST which resolves methods at runtime.
-        if (node.right instanceof ELNode.ACCESS && node.args.length > 0) {
-            buildTrampoline(node);
-        } else if (node.args.length == 0 && node.right instanceof ELNode.ACCESS) {
-            // 0-arg ACCESS (e.g. tree.eval(), UnitFormat.getInstance()):
-            // LOAD_PROPERTY replaces the base target with the MethodClosure,
-            // which loses the target for instance methods. Trampoline to AST
-            // which handles both static and instance method calls correctly.
+        // 0-arg ACCESS: use INVOKE_DYN_METHOD which resolves the method
+        // by name at runtime and calls MethodClosure.invoke(elctx, base, args).
+        // This handles ELContext injection (e.g. tree.eval() → eval(ELContext))
+        // and preserves `this` for instance methods.
+        if (node.args.length == 0 && node.right instanceof ELNode.ACCESS access
+            && isSimpleKey(access.index)) {
+            String methodName = getKeyName(access.index);
+            int keyIdx = putConstant(methodName);
+            boolean prev = inTailPosition;
+            inTailPosition = false;
+            build(access.right); // base
+            inTailPosition = prev;
+            current.emitInvokeDynMethod(keyIdx, 0);
+        } else if (node.right instanceof ELNode.ACCESS && node.args.length > 0) {
+            // args > 0 ACCESS: trampoline to AST which handles closure
+            // creation correctly (IR closures lose ELContext when lazy
+            // sequences are forced outside eval).
             buildTrampoline(node);
         } else {
             boolean prev = inTailPosition;

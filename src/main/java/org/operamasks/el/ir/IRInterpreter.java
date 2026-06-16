@@ -127,6 +127,12 @@ public class IRInterpreter {
         // Start at first block
         ip = blockOffsets.length > 0 ? blockOffsets[0] : 0;
 
+        // Ensure lazy sequences (DelaySeq, MappendSeq, etc.) can access the
+        // ELContext via ELEngine.getCurrentELContext() when forced outside of
+        // a Frame.addFrame() scope (e.g. by Java code calling .size() on a
+        // lazy sequence returned from eval).
+        javax.el.ELContext savedElCtx = ELEngine.setCurrentELContext(elctx);
+
         // Push an isolated scope for this function call so parameters are
         // visible to trampolined AST expressions without polluting outer
         // scopes. A fresh VariableMapperImpl ensures nested calls cannot
@@ -149,6 +155,7 @@ public class IRInterpreter {
         } finally {
             evalContext = scopeStack.pop();
             try { elctx.putContext(EvaluationContext.class, savedCtx); } catch (Exception ignored) {}
+            ELEngine.setCurrentELContext(savedElCtx);
         }
     }
 
@@ -953,6 +960,47 @@ public class IRInterpreter {
                         push(m.invoke(base, args));
                     } catch (Exception e) {
                         throw new RuntimeException(_T(IR_METHOD_INVOKE_FAILED), e);
+                    }
+                    ip += 1 + oc;
+                    break;
+                }
+
+                case INVOKE_DYN_METHOD: {
+                    String key = (String) constantPool[pl];
+                    int argc = oc > 0 ? code[ip + 1] : 0;
+                    Object[] args = new Object[argc];
+                    for (int i = argc - 1; i >= 0; i--)
+                        args[i] = pop();
+                    Object base = pop();
+                    elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
+
+                    // 1) ClosureObject dynamic dispatch (mirrors AST ACCESS.invoke).
+                    //    Monads and other custom objects handle method calls via
+                    //    invokeSpecial / invokeDynamic.
+                    if (base instanceof org.operamasks.el.eval.closure.ClosureObject co) {
+                        Object result = co.invoke(evalContext.getELContext(), key, closures);
+                        if (result != org.operamasks.el.eval.ELUtils.NO_RESULT) {
+                            push(result);
+                            ip += 1 + oc;
+                            break;
+                        }
+                        // NO_RESULT: fall through to MethodResolver
+                    }
+
+                    // 2) Resolve method/property by name on base via loadProperty
+                    //    (DataClass unwrap → ELResolver → MethodResolver fallback).
+                    Object resolved = loadProperty(base, key);
+                    if (resolved instanceof org.operamasks.el.eval.closure.MethodClosure mc) {
+                        // Method found — invoke with base as this,
+                        // ELContext injection handled by invokeMethod.
+                        push(mc.invoke(elctx, base, closures));
+                    } else if (argc == 0) {
+                        // 0-arg on a non-callable (bean property like .size()
+                        // on a Java List): return the value as-is.
+                        push(resolved);
+                    } else {
+                        throw new RuntimeException(
+                            _T(EL_METHOD_NOT_FOUND, base.getClass().getName(), key));
                     }
                     ip += 1 + oc;
                     break;

@@ -199,7 +199,7 @@ public final class ELEngine
         return currentELContext.get();
     }
 
-    static ELContext setCurrentELContext(ELContext context) {
+    public static ELContext setCurrentELContext(ELContext context) {
         ELContext prev = currentELContext.get();
         currentELContext.set(context);
         return prev;

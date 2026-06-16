@@ -303,6 +303,13 @@ public class IREmitter {
         else return emit3(INVOKE_METHOD, K_FN, methodPoolIdx >>> 16, methodPoolIdx & 0xFFFF, argCount);
     }
 
+    /** Dynamic method call by name: pops argc args + base, resolves key on base,
+     *  calls MethodClosure.invoke(elctx, base, args). Handles ELContext injection. */
+    public IREmitter emitInvokeDynMethod(int keyPoolIdx, int argCount) {
+        if (fits16(keyPoolIdx)) return emit2(INVOKE_DYN_METHOD, K_NONE, keyPoolIdx, argCount);
+        else return emit3(INVOKE_DYN_METHOD, K_NONE, keyPoolIdx >>> 16, keyPoolIdx & 0xFFFF, argCount);
+    }
+
     /** Create closure: pops captureCount values + IRFunction, pushes ClosureObject. */
     public IREmitter emitClosure(int funcPoolIdx, int captureCount) {
         if (fits16(funcPoolIdx)) return emit2(CLOSURE, K_FN, funcPoolIdx, captureCount);
