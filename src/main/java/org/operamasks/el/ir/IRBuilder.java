@@ -875,40 +875,11 @@ public class IRBuilder {
             return;
         }
 
-        // General iterator-based for-each (fallback)
-        build(node.range);
-        current.emitGetIter();
-
-        int header = allocBlockId(), body = allocBlockId(), exit = allocBlockId();
-        loopStack.push(new LoopTargets(header, exit));
-        current.emitJump(header);
-
-        startBlock(header);
-        current.emitIterNext();
-        current.emitIterDone(exit);
-
-        if (node.var != null) {
-            int varIdx = ensureVar(node.var.id);
-            current.emitStoreVar(varIdx);
-            current.emitPop();
-        }
-        if (node.index != null) {
-            int idxVar = ensureVar(node.index.id);
-            current.emitPushConst(0);
-            current.emitStoreVar(idxVar);
-            current.emitPop();
-        }
-
-        current.emitJump(body);
-
-        startBlock(body);
-        enterScope(); build(node.body); leaveScope();
-        current.emitPop();
-        current.emitJump(header);
-
-        startBlock(exit);
-        emitPushNull();
-        loopStack.pop();
+        // General iterator-based for-each: trampoline to AST.
+        // The IR compilation has a known bug with ITER_DONE/STORE_VAR
+        // stack ordering that causes ClassCastException on 2nd iteration.
+        // AST handles for-in correctly.
+        buildTrampoline(node);
     }
 
     /** Check if the for-each iterates over a simple integer range [start..end] or [start..<end). */
