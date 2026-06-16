@@ -68,11 +68,25 @@ public class IRBuilder {
     // Pushed on SCOPE_ENTER, popped on SCOPE_EXIT.
     private final Deque<Map<String, Integer>> scopeStack = new ArrayDeque<>();
     private void enterScope() { scopeStack.push(new LinkedHashMap<>()); current.emitScopeEnter(); }
-    private void leaveScope() { scopeStack.pop(); current.emitScopeExit(); }
+    private void leaveScope() {
+        scopeStack.pop();
+        if (justEmittedTail) {
+            // INVOKE_TAIL was the last instruction — it is a terminator
+            // that resets the IRInterpreter state including scope layers.
+            // Emitting SCOPE_EXIT would be dead code.
+            justEmittedTail = false;
+        } else {
+            current.emitScopeExit();
+        }
+    }
 
     // ── Tail-call optimization ──
     String lambdaName = null;
     boolean inTailPosition = false;
+    /** Set to true by buildApply when INVOKE_TAIL is emitted. The next
+     *  leaveScope() call will skip emitting SCOPE_EXIT since INVOKE_TAIL
+     *  is a terminator and the SCOPE_EXIT would be dead code. */
+    private boolean justEmittedTail = false;
 
     IRBuilder() { this(null, null); }
 
@@ -427,6 +441,7 @@ public class IRBuilder {
             for (ELNode arg : node.args) build(arg);
             inTailPosition = prev;
             current.emitInvokeTail(node.args.length);
+            justEmittedTail = true;
             return;
         }
 

@@ -657,6 +657,15 @@ public class IRInterpreter {
                     for (int i = argc - 1; i >= 0; i--) {
                         ensureLocals(i); locals[i] = pop();
                     }
+                    // Pop any SCOPE_ENTER layers that were entered but
+                    // not exited (because INVOKE_TAIL is a terminator —
+                    // the SCOPE_EXIT after it in the IR is dead code).
+                    while (scopeStack.size() > 1) {
+                        evalContext = scopeStack.pop();
+                    }
+                    // Reset operand stack — old intermediate values
+                    // from previous iteration must not accumulate.
+                    sp = 0;
                     ip = blockOffsets[0];
                     break;
                 }
