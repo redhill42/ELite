@@ -200,25 +200,24 @@ public class IRInterpreter {
                 }
 
                 // ============ Typed int arithmetic ============
-                // Overflow promotes int→long→BigInteger to match AST.
                 case IADD: {
                     int r = ((Number)pop()).intValue();
                     int l = ((Number)pop()).intValue();
-                    push(elite.rt.Runtime.addInt(l, r));
+                    push(l + r);
                     ip += 1;
                     break;
                 }
                 case ISUB: {
                     int r = ((Number)pop()).intValue();
                     int l = ((Number)pop()).intValue();
-                    push(elite.rt.Runtime.subInt(l, r));
+                    push(l - r);
                     ip += 1;
                     break;
                 }
                 case IMUL: {
                     int r = ((Number)pop()).intValue();
                     int l = ((Number)pop()).intValue();
-                    push(elite.rt.Runtime.mulInt(l, r));
+                    push(l * r);
                     ip += 1;
                     break;
                 }
@@ -238,7 +237,7 @@ public class IRInterpreter {
                 }
                 case INEG: {
                     int v = ((Number)pop()).intValue();
-                    push(elite.rt.Runtime.dynNeg(v));
+                    push(-v);
                     ip += 1;
                     break;
                 }
@@ -247,21 +246,21 @@ public class IRInterpreter {
                 case LADD: {
                     long r = ((Number)pop()).longValue();
                     long l = ((Number)pop()).longValue();
-                    push(elite.rt.Runtime.addLong(l, r));
+                    push(l + r);
                     ip += 1;
                     break;
                 }
                 case LSUB: {
                     long r = ((Number)pop()).longValue();
                     long l = ((Number)pop()).longValue();
-                    push(elite.rt.Runtime.subLong(l, r));
+                    push(l - r);
                     ip += 1;
                     break;
                 }
                 case LMUL: {
                     long r = ((Number)pop()).longValue();
                     long l = ((Number)pop()).longValue();
-                    push(elite.rt.Runtime.mulLong(l, r));
+                    push(l * r);
                     ip += 1;
                     break;
                 }
@@ -1141,6 +1140,7 @@ public class IRInterpreter {
                 return trampolineBinaryOp(irOpcode, val, null);
             return elite.rt.Runtime.dynNeg(val);
         }
+
         Object rhs = pop();
         Object lhs = pop();
         // For non-Number operands (e.g. ClosureObject from user-defined
@@ -1157,7 +1157,6 @@ public class IRInterpreter {
             case DYNMUL -> elite.rt.Runtime.dynMul(lhs, rhs);
             case DYNDIV -> elite.rt.Runtime.dynDiv(lhs, rhs);
             case DYNREM -> elite.rt.Runtime.dynRem(lhs, rhs);
-            case DYNNEG -> elite.rt.Runtime.dynNeg(lhs);
             case DYNPOW -> elite.rt.Runtime.dynPow(lhs, rhs);
             case DYNCAT -> elite.rt.Runtime.dynCat(elctx, lhs, rhs);
             case DYNEQ -> elite.rt.Runtime.dynEq(lhs, rhs);
