@@ -1165,11 +1165,6 @@ public class IRInterpreter {
                     captureCount);
             return new IRInterpreter(elctx, irFn, evalContext).execute(expandedArgs);
         }
-        // 0-arg call on a non-callable target (e.g. list.size() where
-        // LOAD_PROPERTY returned the property value): return it as-is.
-        if (argCount == 0 && !(target instanceof elite.lang.Closure)) {
-            return target;
-        }
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion
             javax.el.ELContext elctx = evalContext.getELContext();
@@ -1314,10 +1309,17 @@ public class IRInterpreter {
         if (base instanceof org.operamasks.el.eval.closure.DataClass dc)
             base = dc.getJavaClass();
         ELContext elctx = evalContext.getELContext();
-        elctx.setPropertyResolved(false);
-        Object result = elctx.getELResolver().getValue(elctx, base, key);
-        if (elctx.isPropertyResolved())
-            return result;
+        Object result;
+        try {
+            elctx.setPropertyResolved(false);
+            result = elctx.getELResolver().getValue(elctx, base, key);
+            if (elctx.isPropertyResolved())
+                return result;
+        } catch (javax.el.PropertyNotFoundException e) {
+            // Some ELResolvers (BeanELResolver) throw instead of
+            // setting isPropertyResolved(false). Catch and fall
+            // through to method resolution below.
+        }
         // Property not found — try method resolution (mirrors ELNode.ACCESS.invoke).
         // Static methods like UnitFormat.getInstance() resolve through this path.
         if (key instanceof String) {

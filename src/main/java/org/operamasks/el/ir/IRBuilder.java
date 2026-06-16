@@ -472,10 +472,11 @@ public class IRBuilder {
         if (node.right instanceof ELNode.ACCESS && node.args.length > 0) {
             buildTrampoline(node);
         } else if (node.args.length == 0 && node.right instanceof ELNode.ACCESS) {
-            // 0-arg method call: build the ACCESS (which pushes the method/property),
-            // then INVOKE_DYN(0) to call it. E.g. UnitFormat.getInstance().
-            build(node.right);
-            current.emitInvokeDyn(0);
+            // 0-arg ACCESS (e.g. tree.eval(), UnitFormat.getInstance()):
+            // LOAD_PROPERTY replaces the base target with the MethodClosure,
+            // which loses the target for instance methods. Trampoline to AST
+            // which handles both static and instance method calls correctly.
+            buildTrampoline(node);
         } else {
             boolean prev = inTailPosition;
             inTailPosition = false;
