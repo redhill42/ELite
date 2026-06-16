@@ -52,6 +52,13 @@ public class IRBuilder {
     private Map<Object, Integer> constIndex = new HashMap<>();
     private List<Object> constants = new ArrayList<>();
 
+    // ── Compile-time class resolution ──
+    // Mirrors ClassResolver: alias = simpleName→fqName (import foo.Bar);
+    // packages = "foo.bar" prefixes (import foo.bar.*).
+    private final ClassLoader classLoader;
+    private final Map<String, String> importAliases;   // simpleName → fully.qualified.Name
+    private final List<String>       importPackages;   // package prefixes for wildcard imports
+
     // ── Loop stack ──
     private record LoopTargets(int continueBlock, int breakBlock) {}
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
@@ -67,11 +74,25 @@ public class IRBuilder {
     String lambdaName = null;
     boolean inTailPosition = false;
 
-    IRBuilder() { this(null); }
+    IRBuilder() { this(null, null); }
 
-    /** Create a nested builder sharing the parent's constant pool. */
+    /** Create a top-level builder with optional import context for CLASS resolution. */
+    IRBuilder(ClassLoader loader, List<String> imps) {
+        this.parent = null;
+        this.classLoader = loader;
+        this.importAliases = new LinkedHashMap<>();
+        this.importPackages = new ArrayList<>();
+        seedImports(imps);
+        this.currentBlockId = 0;
+        this.current = new IREmitter();
+    }
+
+    /** Create a nested builder sharing the parent's constant pool and import context. */
     private IRBuilder(IRBuilder parent) {
         this.parent = parent;
+        this.classLoader = parent != null ? parent.classLoader : null;
+        this.importAliases = parent != null ? parent.importAliases : new LinkedHashMap<>();
+        this.importPackages = parent != null ? parent.importPackages : new ArrayList<>();
         this.currentBlockId = 0;
         this.current = new IREmitter();
         if (parent != null) {
@@ -80,6 +101,63 @@ public class IRBuilder {
             this.constants = parent.constants;
             this.constIndex = parent.constIndex;
         }
+    }
+
+    /** Seed import aliases and package prefixes from the program's import list.
+     *  Built-in defaults mirror ClassResolver's defaults. */
+    private void seedImports(List<String> imps) {
+        // Built-in imports (mirrors ClassResolver constructor)
+        importPackages.add("elite.lang");
+        importPackages.add("java.lang");
+        importPackages.add("java.util");
+        addImportAlias("java.lang.reflect.Array");
+        addImportAlias("java.math.BigInteger");
+        addImportAlias("java.math.BigDecimal");
+
+        if (imps != null) {
+            for (String imp : imps) {
+                if (imp.endsWith(".*")) {
+                    String pkg = imp.substring(0, imp.length() - 2);
+                    if (!importPackages.contains(pkg)) importPackages.add(pkg);
+                } else {
+                    addImportAlias(imp);
+                }
+            }
+        }
+    }
+
+    private void addImportAlias(String fqName) {
+        String simpleName = fqName.substring(fqName.lastIndexOf('.') + 1);
+        importAliases.putIfAbsent(simpleName, fqName);
+    }
+
+    /**
+     * Resolve a class name at compile time using the builder's import context.
+     * Returns null if resolution fails (caller should fall back to trampoline).
+     */
+    Class<?> resolveClassAtCompileTime(String name) {
+        if (classLoader == null) return null;
+
+        // Fully-qualified name: try directly
+        if (name.indexOf('.') != -1) {
+            try { return Class.forName(name, false, classLoader); }
+            catch (ClassNotFoundException e) { return null; }
+        }
+
+        // Check simple-name alias (from import foo.bar.Baz)
+        String fqName = importAliases.get(name);
+        if (fqName != null) {
+            try { return Class.forName(fqName, false, classLoader); }
+            catch (ClassNotFoundException e) { /* fall through to package search */ }
+        }
+
+        // Search wildcard-imported packages (import foo.bar.*)
+        for (String pkg : importPackages) {
+            try { return Class.forName(pkg + "." + name, false, classLoader); }
+            catch (ClassNotFoundException e) { /* continue */ }
+        }
+
+        return null;
     }
 
     // ============ MAIN DISPATCH ============
@@ -394,9 +472,10 @@ public class IRBuilder {
         if (node.right instanceof ELNode.ACCESS && node.args.length > 0) {
             buildTrampoline(node);
         } else if (node.args.length == 0 && node.right instanceof ELNode.ACCESS) {
-            // For 0-arg ACCESS (e.g. .size()), the ACCESS is a property load,
-            // not a callable. Just leave the result on stack.
+            // 0-arg method call: build the ACCESS (which pushes the method/property),
+            // then INVOKE_DYN(0) to call it. E.g. UnitFormat.getInstance().
             build(node.right);
+            current.emitInvokeDyn(0);
         } else {
             boolean prev = inTailPosition;
             inTailPosition = false;
@@ -787,11 +866,32 @@ public class IRBuilder {
                 return;
             }
             // CLASS nodes (from import) produce DataClass wrapping a
-            // Java Class. AST handles static method resolution on
-            // DataClass correctly; IR stores raw DataClass which breaks
-            // getInstance() etc.
-            if (node.expr instanceof ELNode.CLASS) {
-                buildTrampoline(node);
+            // Java Class. Resolve at compile time using the import context
+            // and push the raw java.lang.Class directly. A raw Class is
+            // compatible with ACCESS.invoke() which checks `base instanceof
+            // Class` for static method resolution. DataClass wrapping is only
+            // needed for @data (CLASSDEF) or pattern matching — import-based
+            // CLASS nodes don't need it.
+            if (node.expr instanceof ELNode.CLASS clsNode) {
+                Class<?> cls = resolveClassAtCompileTime(clsNode.name);
+                if (cls != null) {
+                    emitPushConst(K_NONE, cls);
+                    if (!scopeStack.isEmpty()) {
+                        String scopedName = "$" + scopeStack.size() + "$" + node.id;
+                        int idx = ensureVar(scopedName);
+                        current.emitDup();
+                        current.emitStoreVar(idx);
+                        scopeStack.peek().put(node.id, idx);
+                    } else {
+                        int idx = ensureVar(node.id);
+                        current.emitDup();
+                        current.emitStoreVar(idx);
+                        int nameIdx = putConstant(node.id);
+                        current.emitStoreGlobal(nameIdx);
+                    }
+                } else {
+                    buildTrampoline(node);
+                }
                 return;
             }
             build(node.expr);
@@ -1327,17 +1427,35 @@ public class IRBuilder {
     }
 
     /**
-     * Compile expressions with optional optimization passes.
+     * Compile expressions with optional optimization passes and import context.
      * <p>
      * When {@code optimize} is false, constant folding and type specialization
      * (GUARD_TYPE, DEOPT splitting) are skipped. This is used by opt level 1
      * to produce conservative IR for comparison with optimized IR.
+     * <p>
+     * {@code imps} and {@code loader} enable compile-time resolution of CLASS
+     * nodes (from {@code import} statements) without falling back to TRAMPOLINE.
      */
     public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> expressions,
                                               boolean optimize) {
+        return compileWithDefs(defs, expressions, null, null, optimize);
+    }
+
+    /**
+     * Compile with import context for compile-time class resolution.
+     *
+     * @param defs  function/class definition nodes
+     * @param exps  expression nodes
+     * @param imps  import list (e.g. ["java.util.*", "dsl.UnitFormat"])
+     * @param loader ClassLoader for resolving class names
+     * @param optimize whether to run optimization passes
+     */
+    public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> exps,
+                                              List<String> imps, ClassLoader loader,
+                                              boolean optimize) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry per compilation
-        IRBuilder b = new IRBuilder();
+        IRBuilder b = new IRBuilder(loader, imps);
 
         // Pre-register function definitions for direct call optimization
         if (defs != null) {
@@ -1347,11 +1465,11 @@ public class IRBuilder {
         }
 
         // Compile expressions
-        for (int i = 0; i < expressions.size() - 1; i++) {
-            b.build(expressions.get(i)); b.current.emitPop();
+        for (int i = 0; i < exps.size() - 1; i++) {
+            b.build(exps.get(i)); b.current.emitPop();
         }
-        if (!expressions.isEmpty()) {
-            ELNode last = expressions.get(expressions.size() - 1);
+        if (!exps.isEmpty()) {
+            ELNode last = exps.get(exps.size() - 1);
             b.build(last);
             if (!endsWithReturn(b)) {
                 int t = b.typeIdFromNode(last);

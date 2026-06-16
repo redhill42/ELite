@@ -195,17 +195,20 @@ public class ELProgram implements Serializable
                 // Conservative IR — no optimization passes (constant folding, type specialization skipped)
                 // The IR interpreter handles TRAMPOLINE opcodes inline via AST evaluation,
                 // so there is no need for a full-program fallback.
-                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, false);
+                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
+                    Utils.getClassLoader(elctx), false);
                 return new IRInterpreter(elctx, irFn, env).execute(null);
             }
 
             case 2: {
-                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
+                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
+                    Utils.getClassLoader(elctx), true);
                 return new IRInterpreter(elctx, irFn, env).execute(null);
             }
 
             case 3: default: {
-                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps);
+                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
+                    Utils.getClassLoader(elctx), true);
                 try {
                     IRBytecodeCompiler.CompiledFunction cf =
                         IRBytecodeCompiler.compile(irFn);

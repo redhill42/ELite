@@ -1165,6 +1165,11 @@ public class IRInterpreter {
                     captureCount);
             return new IRInterpreter(elctx, irFn, evalContext).execute(expandedArgs);
         }
+        // 0-arg call on a non-callable target (e.g. list.size() where
+        // LOAD_PROPERTY returned the property value): return it as-is.
+        if (argCount == 0 && !(target instanceof elite.lang.Closure)) {
+            return target;
+        }
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion
             javax.el.ELContext elctx = evalContext.getELContext();
@@ -1311,10 +1316,29 @@ public class IRInterpreter {
         ELContext elctx = evalContext.getELContext();
         elctx.setPropertyResolved(false);
         Object result = elctx.getELResolver().getValue(elctx, base, key);
-        if (!elctx.isPropertyResolved()) {
-            throw new RuntimeException(_T(EL_PROPERTY_NOT_FOUND, base.getClass().getName(), key));
+        if (elctx.isPropertyResolved())
+            return result;
+        // Property not found — try method resolution (mirrors ELNode.ACCESS.invoke).
+        // Static methods like UnitFormat.getInstance() resolve through this path.
+        if (key instanceof String) {
+            String name = (String) key;
+            org.operamasks.el.resolver.MethodResolver mr =
+                org.operamasks.el.resolver.MethodResolver.getInstance(elctx);
+            org.operamasks.el.eval.closure.MethodClosure mc = null;
+            if (base instanceof Class<?> cls) {
+                // Static method first, then instance method on Class itself
+                mc = mr.resolveStaticMethod(cls, name);
+                if (mc == null)
+                    mc = mr.resolveMethod(cls, name);
+                if (mc == null)
+                    mc = mr.resolveMethod(Class.class, name);
+            } else {
+                mc = mr.resolveMethod(base.getClass(), name);
+            }
+            if (mc != null)
+                return mc;
         }
-        return result;
+        throw new RuntimeException(_T(EL_PROPERTY_NOT_FOUND, base.getClass().getName(), key));
     }
 
     private void storeProperty(Object base, Object key, Object value) {
