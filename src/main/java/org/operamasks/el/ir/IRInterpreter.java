@@ -1211,7 +1211,16 @@ public class IRInterpreter {
     private void storeGlobal(String name, Object value) {
         // Always write to the persistent VariableMapper. Scoped defines use
         // STORE_VAR (not STORE_GLOBAL) to create temporary shadow variables.
-        elctx.getVariableMapper().setVariable(name, new LiteralClosure(value));
+        LiteralClosure lc = new LiteralClosure(value);
+        elctx.getVariableMapper().setVariable(name, lc);
+        // Also write to the current isolated VM so the resolver chain
+        // (which checks the isolated VM first) can find the variable.
+        // syncLocalsToGlobals in execute() runs before STORE_VAR and
+        // writes null; STORE_GLOBAL runs during interpret() with the
+        // real value, so we must update the isolated VM here too.
+        if (evalContext != null) {
+            evalContext.setVariable(name, lc);
+        }
     }
 
     /**
