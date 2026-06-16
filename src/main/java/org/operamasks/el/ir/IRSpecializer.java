@@ -384,8 +384,12 @@ public class IRSpecializer implements IRPass {
                     int wider = wider(t1, t2);
                     if (t1 >= 0 && t2 >= 0) {
                         int newOp = mapBinaryOp(op, wider);
-                        if (newOp >= 0) {
-                            // Guard operands that came from variables with known types
+                        // Explicitly typed vars: guard + typed op (safe — user
+                        // declared the type, no overflow promotion).
+                        // Inferred vars: only specialize if both operands are
+                        // from explicit variables; otherwise keep DYN path
+                        // which handles overflow promotion correctly.
+                        if (newOp >= 0 && ((e1 && e2) || (e1 && t2 >= 0) || (e2 && t1 >= 0))) {
                             if (e1) emitGuardIfNeeded(out, t1, s1);
                             else if (t1 >= 0 && s1 >= 0) emitGuard(out, t1);
                             if (e2) emitGuardIfNeeded(out, t2, s2);
@@ -404,11 +408,13 @@ public class IRSpecializer implements IRPass {
                     int s = varSrcAt(0);
                     boolean e = explicitAt(0);
                     int t = popType();
-                    if (t >= 0 && s >= 0) { // only guard if from a variable
+                    // Only specialize for explicitly typed variables.
+                    // Inferred types may overflow (int→long) which the
+                    // DYN path handles correctly.
+                    if (t >= 0 && e && s >= 0) {
                         int newOp = mapNegOp(t);
                         if (newOp >= 0) {
-                            if (e) emitGuardIfNeeded(out, t, s);
-                            else emitGuard(out, t);
+                            emitGuardIfNeeded(out, t, s);
                             out.add(pack1(newOp, K_PRIM, t));
                             changed = true;
                         } else {
@@ -429,11 +435,11 @@ public class IRSpecializer implements IRPass {
                     boolean e2 = explicitAt(0), e1 = explicitAt(1);
                     int t2 = popType(), t1 = popType();
                     int newOp = specializeCmpOp(op, t1, t2);
-                    if (newOp >= 0) {
-                        if (e1) emitGuardIfNeeded(out, t1, s1);
-                        else if (t1 >= 0 && s1 >= 0) emitGuard(out, t1);
-                        if (e2) emitGuardIfNeeded(out, t2, s2);
-                        else if (t2 >= 0 && s2 >= 0) emitGuard(out, t2);
+                    // Only specialize for explicitly typed vars where
+                    // overflow promotion is not expected.
+                    if (newOp >= 0 && e1 && e2) {
+                        emitGuardIfNeeded(out, t1, s1);
+                        emitGuardIfNeeded(out, t2, s2);
                         out.add(pack1(newOp, K_BOOL, 0));
                         changed = true;
                     } else {
@@ -526,10 +532,17 @@ public class IRSpecializer implements IRPass {
         }
     }
 
-    /** Emit a strict (throw-on-fail) guard for the given type. */
+    /** Emit a strict guard for explicitly typed variables.
+     *  Overflow promotion is NOT performed — the declared type is honored. */
     private static void emitGuard(IntList out, int typeId) {
         out.add(IRFormat.pack2h(GUARD_TYPE, K_GUARDED, typeId));
         out.add(Opcode.STRICT_GUARD);
+    }
+
+    /** Emit a soft guard for inferred types. Overflow-promoted values
+     *  (Integer→Long→BigInteger) deopt to the dynamic path. */
+    private static void emitGuardSoft(IntList out, int typeId) {
+        emitGuardDeopt(out, typeId, DEOPT_PLACEHOLDER);
     }
 
     /** Emit a deopt guard: check type, jump to deoptBlockId on mismatch. */

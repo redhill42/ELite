@@ -360,29 +360,38 @@ public final class Runtime {
     // ── Type-resolution framework matching ELNode.Arithmetic.evaluate() ──
 
     @FunctionalInterface
-    private interface NumOp { Object eval(long x, long y); }
+    public interface NumOp { Object eval(long x, long y); }
+    public interface IntOp { Object eval(int x, int y); }
+
+    /** Overflow detection constants (matching ELNode.Arithmetic). */
+    private static final long LONG_SIG_BIT = 1L << 63;
+    private static final int  INT_SIG_BIT  = 1 << 31;
 
     /** Shared type resolver for binary arithmetic. Matches AST's Arithmetic.evaluate(). */
     private static Object resolveBinOp(Object x, Object y, String op,
-                                        NumOp longOp, java.util.function.DoubleBinaryOperator doubleOp,
-                                        NumOp bigIntOp, NumOp bigDecOp, NumOp rationalOp, NumOp decimalOp) {
+                                        IntOp intOp, NumOp longOp,
+                                        java.util.function.DoubleBinaryOperator doubleOp,
+                                        NumOp bigIntOp, NumOp bigDecOp,
+                                        NumOp rationalOp, NumOp decimalOp) {
         if (x == null || y == null) throw new NullPointerException(_T(EL_NULL_OPERAND, op));
         // Coerce String operands to numbers (same as AST TypeCoercion)
         if (x instanceof String) x = org.operamasks.el.eval.TypeCoercion.coerceToDouble(x);
         if (y instanceof String) y = org.operamasks.el.eval.TypeCoercion.coerceToDouble(y);
         Class<?> xc = x.getClass(), yc = y.getClass();
         if (xc == yc) {
-            if (x instanceof Long)       return longOp.eval((Long)x, (Long)y);
-            if (x instanceof Integer)    return longOp.eval((Integer)x, (Integer)y);
-            if (x instanceof Double)     return doubleOp.applyAsDouble((Double)x, (Double)y);
-            if (x instanceof Float)      return doubleOp.applyAsDouble((Float)x, (Float)y);
-            if (x instanceof Short)      return longOp.eval((Short)x, (Short)y);
-            if (x instanceof Byte)       return longOp.eval((Byte)x, (Byte)y);
+            // Integer: use int op with overflow detection → promote to Long if needed
+            if (x instanceof Integer)   return intOp.eval((Integer)x, (Integer)y);
+            if (x instanceof Long)      return longOp.eval((Long)x, (Long)y);
+            if (x instanceof Double)    return doubleOp.applyAsDouble((Double)x, (Double)y);
+            if (x instanceof Float)     return doubleOp.applyAsDouble((Float)x, (Float)y);
+            if (x instanceof Short)     return intOp.eval(((Short)x).intValue(), ((Short)y).intValue());
+            if (x instanceof Byte)      return intOp.eval(((Byte)x).intValue(), ((Byte)y).intValue());
             if (x instanceof elite.lang.Decimal dx && y instanceof elite.lang.Decimal dy) return decimalOp.eval(0,0);
             if (x instanceof elite.lang.Rational rx && y instanceof elite.lang.Rational ry) return rationalOp.eval(0,0);
             if (x instanceof java.math.BigInteger bx && y instanceof java.math.BigInteger by) return bigIntOp.eval(0,0);
             if (x instanceof java.math.BigDecimal bx && y instanceof java.math.BigDecimal by) return bigDecOp.eval(0,0);
         }
+        // Mixed types: promote to the wider type
         if (x instanceof java.math.BigDecimal || y instanceof java.math.BigDecimal)
             return bigDecOp.eval(0,0);
         if (x instanceof elite.lang.Decimal || y instanceof elite.lang.Decimal)
@@ -396,7 +405,52 @@ public final class Runtime {
             return bigIntOp.eval(0,0);
         if (x instanceof Long || y instanceof Long)
             return longOp.eval(((Number)x).longValue(), ((Number)y).longValue());
-        return longOp.eval(((Number)x).intValue(), ((Number)y).intValue());
+        // Fallback: promote to int (may lose precision for non-standard Number types)
+        return intOp.eval(((Number)x).intValue(), ((Number)y).intValue());
+    }
+
+    /** int addition with overflow → long promotion (matches AST ADD.eval(int,int)). */
+    public static Object addInt(int x, int y) {
+        int z = x + y;
+        if ((~(x ^ y) & (x ^ z) & INT_SIG_BIT) != 0)
+            return (long)x + (long)y;
+        return z;
+    }
+    /** int subtraction with overflow → long promotion (matches AST SUB.eval(int,int)). */
+    public static Object subInt(int x, int y) {
+        int z = x - y;
+        if ((~(x ^ ~y) & (x ^ z) & INT_SIG_BIT) != 0)
+            return (long)x - (long)y;
+        return z;
+    }
+    /** int multiplication with overflow → long promotion (matches AST MUL.eval(int,int)). */
+    public static Object mulInt(int x, int y) {
+        long z = (long)x * (long)y;
+        if ((int)z != z)
+            return z; // already long
+        return (int)z;
+    }
+
+    /** long addition with overflow → BigInteger promotion (matches AST ADD.eval(long,long)). */
+    public static Object addLong(long x, long y) {
+        long z = x + y;
+        if ((~(x ^ y) & (x ^ z) & LONG_SIG_BIT) != 0)
+            return java.math.BigInteger.valueOf(x).add(java.math.BigInteger.valueOf(y));
+        return z;
+    }
+    /** long subtraction with overflow → BigInteger promotion (matches AST SUB.eval(long,long)). */
+    public static Object subLong(long x, long y) {
+        long z = x - y;
+        if ((~(x ^ ~y) & (x ^ z) & LONG_SIG_BIT) != 0)
+            return java.math.BigInteger.valueOf(x).subtract(java.math.BigInteger.valueOf(y));
+        return z;
+    }
+    /** long multiplication with overflow → BigInteger promotion (matches AST MUL.eval(long,long)). */
+    public static Object mulLong(long x, long y) {
+        long z = x * y;
+        if (y != 0 && z / y != x)
+            return java.math.BigInteger.valueOf(x).multiply(java.math.BigInteger.valueOf(y));
+        return z;
     }
     private static boolean looksLikeFloat(Object v) {
         if (!(v instanceof Number n)) return false;
@@ -407,7 +461,8 @@ public final class Runtime {
 
     public static Object dynAdd(Object x, Object y) {
         return resolveBinOp(x, y, "+",
-            (a,b)->a+b, (a,b)->a+b,
+            Runtime::addInt, Runtime::addLong,
+            (a,b)->a+b,
             (a,b)->((java.math.BigInteger)x).add((java.math.BigInteger)y),
             (a,b)->((java.math.BigDecimal)x).add((java.math.BigDecimal)y),
             (a,b)->((elite.lang.Rational)x).add((elite.lang.Rational)y).reduce(),
@@ -415,7 +470,8 @@ public final class Runtime {
     }
     public static Object dynSub(Object x, Object y) {
         return resolveBinOp(x, y, "-",
-            (a,b)->a-b, (a,b)->a-b,
+            Runtime::subInt, Runtime::subLong,
+            (a,b)->a-b,
             (a,b)->((java.math.BigInteger)x).subtract((java.math.BigInteger)y),
             (a,b)->((java.math.BigDecimal)x).subtract((java.math.BigDecimal)y),
             (a,b)->((elite.lang.Rational)x).subtract((elite.lang.Rational)y).reduce(),
@@ -423,7 +479,8 @@ public final class Runtime {
     }
     public static Object dynMul(Object x, Object y) {
         return resolveBinOp(x, y, "*",
-            (a,b)->a*b, (a,b)->a*b,
+            Runtime::mulInt, Runtime::mulLong,
+            (a,b)->a*b,
             (a,b)->((java.math.BigInteger)x).multiply((java.math.BigInteger)y),
             (a,b)->((java.math.BigDecimal)x).multiply((java.math.BigDecimal)y),
             (a,b)->((elite.lang.Rational)x).multiply((elite.lang.Rational)y).reduce(),
@@ -441,6 +498,7 @@ public final class Runtime {
         return resolveBinOp(x, y, "/",
             (a,b)->{throw new UnsupportedOperationException();},
             (a,b)->a/b,
+            (a,b)->a/b,
             (a,b)->((java.math.BigInteger)x).divide((java.math.BigInteger)y),
             (a,b)->((java.math.BigDecimal)x).divide((java.math.BigDecimal)y, java.math.MathContext.DECIMAL128),
             (a,b)->((elite.lang.Rational)x).divide((elite.lang.Rational)y).reduce(),
@@ -449,6 +507,7 @@ public final class Runtime {
     public static Object dynRem(Object x, Object y) {
         return resolveBinOp(x, y, "%",
             (a,b)->a%b, (a,b)->a%b,
+            (a,b)->a%b,
             (a,b)->((java.math.BigInteger)x).remainder((java.math.BigInteger)y),
             (a,b)->((java.math.BigDecimal)x).remainder((java.math.BigDecimal)y),
             (a,b)->null, // Rational doesn't support rem
