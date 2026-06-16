@@ -1303,6 +1303,11 @@ public class IRInterpreter {
     private Object loadProperty(Object base, Object key) {
         if (base == null)
             return null;
+        // DataClass wraps a Java Class (e.g. from import). Unwrap to
+        // the underlying java.lang.Class so the ELResolver can find
+        // static methods (getInstance, etc.).
+        if (base instanceof org.operamasks.el.eval.closure.DataClass dc)
+            base = dc.getJavaClass();
         ELContext elctx = evalContext.getELContext();
         elctx.setPropertyResolved(false);
         Object result = elctx.getELResolver().getValue(elctx, base, key);

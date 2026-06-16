@@ -780,10 +780,17 @@ public class IRBuilder {
     private void buildDefine(ELNode.DEFINE node) {
         if (node.expr != null) {
             // @data constructors (CLASSDEF) have lazy fields (&tail)
-            // that must be wrapped in EvalClosure by AST. IR cannot
-            // generate EvalClosure — trampoline the entire define.
+            // that must be wrapped in EvalClosure by AST.
             if (node.expr instanceof ELNode.CLASSDEF) {
                 dataConstructorNames.add(node.id);
+                buildTrampoline(node);
+                return;
+            }
+            // CLASS nodes (from import) produce DataClass wrapping a
+            // Java Class. AST handles static method resolution on
+            // DataClass correctly; IR stores raw DataClass which breaks
+            // getInstance() etc.
+            if (node.expr instanceof ELNode.CLASS) {
                 buildTrampoline(node);
                 return;
             }
