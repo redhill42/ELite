@@ -174,7 +174,6 @@ public final class ASTDumper {
                 if (f.getName().equals("name")) continue; // shown inline
                 if (f.getName().equals("dvals")) continue; // internal
                 if (f.getName().equals("varargs")) continue; // boolean
-                if (f.getName().equals("immediate")) continue; // boolean
                 if (f.getName().equals("negative")) continue; // boolean
                 if (f.getName().equals("exclude")) continue; // boolean
                 if (f.getName().equals("readonly")) continue; // boolean

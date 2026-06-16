@@ -328,6 +328,13 @@ public class IRBuilder {
             buildTrampoline(node);
             return;
         }
+        // @data constructors have lazy fields (&tail) — AST must evaluate
+        // the call to wrap deferred arguments in EvalClosure. IR eagerly
+        // builds all arguments before INVOKE_DYN, causing infinite recursion.
+        if (node.right instanceof ELNode.IDENT
+            && dataConstructorNames.contains(((ELNode.IDENT) node.right).id)) {
+            buildTrampoline(node); return;
+        }
         // Determine if this will use direct call or TCO (avoids pushing target)
         boolean isTail = inTailPosition && lambdaName != null
             && node.right instanceof ELNode.IDENT
@@ -772,6 +779,14 @@ public class IRBuilder {
     }
     private void buildDefine(ELNode.DEFINE node) {
         if (node.expr != null) {
+            // @data constructors (CLASSDEF) have lazy fields (&tail)
+            // that must be wrapped in EvalClosure by AST. IR cannot
+            // generate EvalClosure — trampoline the entire define.
+            if (node.expr instanceof ELNode.CLASSDEF) {
+                dataConstructorNames.add(node.id);
+                buildTrampoline(node);
+                return;
+            }
             build(node.expr);
             if (!scopeStack.isEmpty()) {
                 // Scoped define: allocate a new unique slot via ensureVar with a
@@ -1273,6 +1288,8 @@ public class IRBuilder {
     // ── Function registry for direct calls ──
     private static final ThreadLocal<Map<String, Integer>> knownFunctions =
         ThreadLocal.withInitial(HashMap::new);
+    /** @data constructor names whose calls need AST trampoline (lazy args). */
+    private static final Set<String> dataConstructorNames = new HashSet<>();
 
     /** Register a function name → constant pool index for direct call optimization. */
     private void registerFunction(String name, int irFunctionPoolIdx) {
