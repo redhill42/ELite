@@ -1,109 +1,137 @@
 # O2 Profiling Analysis
 
 > 分析日期：2026-06-16
-> 工具：JFR (Java Flight Recorder)
-> 负载：`fib(20)` 递归 x 500次
+> 工具：JFR (Java Flight Recorder)，1ms sampling period
 
-## 负载代码
+## 分层负载设计
 
-```elite
-define fib(n) { if (n <= 1) { n } else { fib(n-1) + fib(n-2) } }
-for (i in [1..500]) { fib(20); }
+从简单到复杂，逐步增加 IR 压力：
+
+| Level | 负载 | 迭代 | 特点 |
+|-------|------|------|------|
+| 1 | `for` 循环内纯算术 `x = x + i` | 500M | 纯 IR，无函数调用 |
+| 2 | `for` 循环内调用 `square(i)` | 100M | IR + 函数调用 (INVOKE_DIRECT) |
+| 3 | 尾递归 `fib(60)` x 200k | 200k × 60 = 12M 调用 | IR + 递归 + 运算符 |
+
+## Level 1: 纯算术循环
+
+```
+for (i in [1..500000000]) { x = x + i }
 ```
 
-## 热点排名 (CPU samples)
+**结果**：500M 迭代仅 12 个 JFR 样本，无 IR exec path 内的样本。
+IR 类型化算术 (LADD) + 优化后 indexed loop 几乎零开销，与编译语言性能相当。
 
-| 排名 | 方法 | 样本数 | 类别 |
-|------|------|--------|------|
-| 1 | `HashMap.getNode/put` | 45+ | JVM |
-| 2 | `ELNode$Binary.getValue` | 35 | AST 求值 |
-| 3 | `ELNode$LAMBDA.invoke` | 29 | AST 求值 |
-| 4 | `MethodResolver.resolveMethod` | 29 | 方法解析 |
-| 5 | `MethodResolver$MethodMap.get` | 29 | 缓存查询 |
-| 6 | `EvalClosure.invoke` | 25 | AST 求值 |
-| 7 | `ELEngine.invokeTarget` | 22 | 调用分发 |
-| 8 | `GlobalMethodMap.getExpandoMethod` | 19 | Expando 查找 |
-| 9 | `ELNode$COND.invokeTail` | 19 | 条件求值 |
-| 10 | `ELNode$Binary.invokeOperator` | 19 | 运算符分发 |
-| 11 | `MethodResolver.resolveStaticMethod` | 18 | 静态方法解析 |
-| 12 | `getStaticMethodClosure` | 18 | 缓存查询 |
-| 13 | `ELNode.invokeTail` | 14 | 尾调用 |
-| 14 | `EvalClosure.getValue` | 14 | 闭包求值 |
-| 15 | `ELNode.getBoolean` | 13 | 布尔转换 |
-| 16 | `ELNode$APPLY.getValue` | 13 | 函数调用 |
-| 17 | `ELNode$IDENT.getValue` | 12 | 变量解析 |
-| 18 | `ELNode$IDENT.invoke` | 11 | 变量调用 |
-| 19 | `EvaluationContext.resolveVariable` | 11 | 变量查找 |
-| 20 | `DelayEvalClosure.force` | 10 | 延迟求值 |
-| 21 | `StackTrace.addFrame` / `removeFrame` | 8 | 栈帧管理 |
+## Level 2: 函数调用循环
 
-## 瓶颈分析
+```
+define square(x) => x * x;
+for (i in [1..100000000]) { sum = sum + square(i); }
+```
 
-### 1. AST 求值路径占比过高 (瓶颈 #1)
+**结果**：100M 迭代仅 8 样本。`square(i)` 被编译为 INVOKE_DIRECT，内联/直调开销可忽略。
 
-`fib(20)` 是一个递归 lambda，其函数体的 `<=`、`+`、`-` 等运算符全部走 AST 的 `Binary.invokeOperator` → `MethodResolver` → `invokeTarget` 路径，没有用到 IR 的类型化算术运算（IADD/ISUB/IEQ）。
+## Level 3: 尾递归 fib(60) × 200k
 
-**根因**：lambda 内部的函数调用 `fib(n-1)` 触发了 `IDENT.invoke` → `EvalClosure.invoke` → `Lambda.invoke` 这整条 AST 调用链。lambda 的递归调用没有用 `INVOKE_DIRECT` 是因为 `fn` 不在 `knownFunctions` 中（可能是捕获了自身引用的问题）。
+```
+define fib(n, a, b) { if (n <= 0) { a } else { fib(n-1, b, a+b) } }
+```
 
-**优化方向**：
-- 确保递归 lambda 的 self-call 走 INOVKE_DIRECT 或至少走 INVOKE_DYN
-- 将函数体中的 `<=`、`+`、`-` 编译为类型化 IR 操作码而非 AST 回退
+**结果**：744ms 总时间，12M 函数调用，513 JFR 样本。
 
-### 2. MethodResolver 开销 (瓶颈 #2)
+### 聚合热点
 
-每次 `Binary.invokeOperator` 都涉及：
-- `MethodResolver.getInstance(elctx)` — `ELContext.getContext(Class)` → `HashMap.get`
-- `resolveStaticMethod` — `MethodMap.get` → `HashMap.get`  
-- `resolveMethod` — `getMethodClosure` → `ExpandoMethodMap.get` → `HashMap.get`
+| 排名 | 方法 | 样本 | 占比 |
+|------|------|------|------|
+| 1 | `IRInterpreter.execute()` | 926 | ~100% |
+| 2 | `IRInterpreter.interpret()` | 916 | ~99% |
+| 3 | `ELProgram.evaluate()` | 396 | 调用链 |
+| 4 | `checkType (GUARD_TYPE)` | 83 | 8% |
+| 5 | `syncLocalsToGlobals` | 8 | <1% |
 
-对于基本类型（int/long），运算符语义是确定的，不需要运行时方法解析。
+### interpret() 内部热点
 
-**优化方向**：
-- 类型特化 pass 识别基本数值类型，直接映射到 IADD/ISUB/IEQ 等类型化操作码
-- 避免动态类型时需要的方法查找
-
-### 3. 帧管理开销 (瓶颈 #3)
-
-`StackTrace.addFrame` / `removeFrame` 每次函数调用都会触发：
-- `ELContext.getContext(StackTrace.class)` — HashMap 查找
-- `setCurrentELContext` / 恢复 — ThreadLocal 读写
-- 帧对象分配
-
-**优化方向**：
-- IR 直调路径（已知函数）可跳过帧管理
-- 将帧管理降级为 debug 模式选项
-
-### 4. Expando 方法查找 (瓶颈 #4)
-
-`GlobalMethodMap.getExpandoMethod` 每次运算符解析都要走一遍全局 expando 方法查找（HashMap 遍历），属于固定开销。
-
-**优化方向**：
-- 编译期解析已知运算符绑定，消除运行时查找
+| 行号 | 代码 | 说明 |
+|------|------|------|
+| 168-169 | `IRFormat.opCount(header)`/`payload(header)` | 每条指令的解码头开销 |
+| 181-182 | `PUSH_VAR` — `ensureLocals` + `push(locals[idx])` | 局部变量读取 + 数组边界检查 |
+| 532 | `push(l <= r)` — `LLE` 结果装箱 | Long 比较 + Boolean 装箱 |
+| 682 | `push(callee.execute(args))` — `INVOKE_DIRECT` | 递归调用创建新 IRInterpreter |
 
 ---
 
-## Benchmark 数据 (10000 次迭代)
+## 根本瓶颈
 
-| 操作 | ops/s | ns/op | 备注 |
-|------|-------|-------|------|
-| `[1,2,3]` list literal | 1,185,203 | 843.7 | |
-| `map literal` | 834,585 | 1,198.2 | |
-| `list index access` | 437,706 | 2,284.6 | 2.7x slower than literal |
+### 瓶颈 #1 (P0): 类型未知导致动态运算符
 
-List index access 比 list literal 慢近 3 倍，说明 `LOAD_PROPERTY` 路径有优化空间。
+尾递归 fib 的 IR 代码：
+```
+    PUSH_VAR v0       ; n
+    PUSH_CONST 0
+    DYNLE             ; ← 动态比较！不是 LLE
+    ...
+    PUSH_VAR v0       ; n
+    PUSH_CONST 1
+    DYNSUB            ; ← 动态减法！不是 LSUB
+    ...
+    PUSH_VAR v1       ; a
+    PUSH_VAR v2       ; b
+    DYNADD            ; ← 动态加法！不是 LADD
+    INVOKE_TAIL 3
+```
+
+`n`, `a`, `b` 的类型未被推断为 `Long`，导致所有运算符走 `DYN*` 动态路径。每次 DYNLE/DYNSUB/DYNADD 内部都会：
+1. 判断操作数实际类型 (`checkType`)
+2. 调用 `ELEngine.resolveBinOp` 查找运算符闭包
+3. 执行运算并返回结果
+
+而类型化操作码 `LLE`/`LSUB`/`LADD` 直接用 `((Number)pop()).longValue()` 完成运算，无需解析。
+
+**优化方向**：
+- 增强类型推断：从函数调用 `fib(60, 0, 1)` 的参数类型反向推导函数体内变量类型
+- 在 IRSpecializer 中插入 GUARD_TYPE 检查并生成 typed vs dynamic 双路径（deopt）
+- 如果无法编译期确定，至少在第一次调用时记录实际类型并生成特化版本
+
+### 瓶颈 #2 (P1): INVOKE_TAIL 每层递归创建新 IRInterpreter
+
+```java
+// line 682
+IRInterpreter callee = new IRInterpreter(elctx, targetFn, evalContext);
+push(callee.execute(args));
+```
+
+每次尾递归调用都创建新 `IRInterpreter` 对象 + 初始化 `execute()`（scope push、locals 数组、syncLocals 等）。12M 次调用 × 744ms = 62ns/次调用。
+
+实际上 TCO 应该在本层栈帧内复用，不创建新的 IRInterpreter。
+
+**优化方向**：INVOKE_TAIL 在当前 IRInterpreter 内循环执行，复用栈和 locals，只更新参数值。
+
+### 瓶颈 #3 (P2): 每条指令的解码头开销
+
+```java
+int header = code[ip];          // line 167 — 内存读取
+int oc = IRFormat.opCount(header);  // line 168 — 位运算
+int pl = IRFormat.payload(header);  // line 169 — 位运算
+```
+
+每条指令都需要解析 header 的 opcode、opCount、payload。12M 次调用 × ~4 条指令 = 48M 次解码。
+
+**优化方向**：将热门指令序列合并为超级指令（macro-op fusion），或使用 threaded interpreter。
 
 ---
 
-## 优先级
+## 性能模型
 
-**P0 — 应首先优化**：
-1. 递归/闭包 lambda 的 IR 直调路径（避免 `Lambda.invoke` AST 回退）
-2. 基本数值类型的运算符直接编译为类型化操作码
+| 指标 | 数值 | 备注 |
+|------|------|------|
+| fib(60) 每次调用 | ~62ns | 含 3 个动态运算 + 1 个 INVOKE_TAIL |
+| 纯算术循环 | ~0.6ns/iter | 几乎 JVM 原生速度 |
+| 函数调用开销 | ~3ns/call | INVOKE_DIRECT 内联 | 
 
-**P1 — 显著收益**：
-3. MethodResolver 运算符查找暖启动优化（缓存命中率）
-4. `list index access` 的 LOAD_PROPERTY 优化
+---
 
-**P2 — 渐进优化**：
-5. 帧管理开销降低
-6. Expando 查找提前绑定
+## 下一步
+
+1. 类型推断增强 → 让 DYNLE→LLE, DYNSUB→LSUB, DYNADD→LADD
+2. TCO 栈帧复用 → 避免每次递归 new IRInterpreter
+3. 重新 profiling 验证 typed ops + TCO 的加速效果
