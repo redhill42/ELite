@@ -36,10 +36,21 @@ package org.operamasks.el.ir;
 public class InstructionView {
     private final int[] code;
     private int offset;
+    private Object[] constantPool;
 
     public InstructionView(int[] code, int offset) {
+        this(code, offset, null);
+    }
+
+    public InstructionView(int[] code, int offset, Object[] constantPool) {
         this.code = code;
         this.offset = offset;
+        this.constantPool = constantPool;
+    }
+
+    /** Set the constant pool for disassembly display. */
+    public void setConstantPool(Object[] pool) {
+        this.constantPool = pool;
     }
 
     // ── Raw access ──
@@ -110,7 +121,7 @@ public class InstructionView {
 
     /** Peek at the next instruction without consuming it. */
     public InstructionView peek() {
-        return new InstructionView(code, offset + totalWords());
+        return new InstructionView(code, offset + totalWords(), constantPool);
     }
 
     /** Peek N instructions ahead without consuming. */
@@ -119,12 +130,12 @@ public class InstructionView {
         for (int i = 0; i < n && o < code.length; i++) {
             o += IRFormat.totalWords(code[o]);
         }
-        return new InstructionView(code, o);
+        return new InstructionView(code, o, constantPool);
     }
 
     /** Create a fresh view at the same position. */
     public InstructionView dup() {
-        return new InstructionView(code, offset);
+        return new InstructionView(code, offset, constantPool);
     }
 
     // ── Type helpers ──
@@ -152,20 +163,72 @@ public class InstructionView {
         int k = kind();
         if (k == IRFormat.K_PRIM || k == IRFormat.K_GUARDED) {
             s += "(" + IRFormat.primTypeName(payload()) + ")";
-        } else if (k == IRFormat.K_DYN) {
-            s += "(dynamic)";
         } else if (k == IRFormat.K_BOOL) {
             s += "(bool)";
         }
         if (Opcode.isJump(op)) {
             s += " -> B" + jumpTarget();
         }
-        if (op == Opcode.PUSH_CONST) {
-            s += " #" + constPoolIndex();
+        if (op == Opcode.PUSH_CONST || op == Opcode.PUSH_VAR) {
+            int idx = op == Opcode.PUSH_CONST ? constPoolIndex() : varIndex();
+            s += " " + formatPoolRef(idx);
         }
-        if (op == Opcode.PUSH_VAR) {
-            s += " v" + varIndex();
+        if (op == Opcode.PUSH_GLOBAL || op == Opcode.STORE_GLOBAL
+            || op == Opcode.INVOKE_DYN_METHOD) {
+            int idx = constPoolIndex();
+            s += " " + formatPoolRef(idx);
+        }
+        if (op == Opcode.TRAMPOLINE) {
+            int idx = constPoolIndex();
+            s += " " + formatTrampolineNode(idx);
         }
         return s;
+    }
+
+    /** Format a constant pool reference, resolving the value if pool is set. */
+    private String formatPoolRef(int idx) {
+        if (constantPool != null && idx >= 0 && idx < constantPool.length) {
+            Object val = constantPool[idx];
+            if (val instanceof String s)
+                return "#" + idx + " '" + abbreviate(s, 40) + "'";
+            return "#" + idx + " " + abbreviate(String.valueOf(val), 40);
+        }
+        return "#" + idx;
+    }
+
+    /** Format a TRAMPOLINE pool entry showing the AST node type. */
+    private String formatTrampolineNode(int idx) {
+        String ref = formatPoolRef(idx);
+        if (constantPool != null && idx >= 0 && idx < constantPool.length) {
+            Object val = constantPool[idx];
+            if (val instanceof org.operamasks.el.parser.ELNode node) {
+                return ref + " [" + nodeName(node) + "]";
+            }
+        }
+        return ref;
+    }
+
+    /** Return a human-readable name for an ELNode. */
+    private static String nodeName(org.operamasks.el.parser.ELNode node) {
+        if (node == null) return "null";
+        String cn = node.getClass().getSimpleName();
+        // Extract meaningful identifiers if present
+        if (node instanceof org.operamasks.el.parser.ELNode.DEFINE d) {
+            return cn + " " + d.id;
+        }
+        if (node instanceof org.operamasks.el.parser.ELNode.IDENT id) {
+            return cn + " " + id.id;
+        }
+        if (node instanceof org.operamasks.el.parser.ELNode.APPLY a
+            && a.right instanceof org.operamasks.el.parser.ELNode.ACCESS ac
+            && ac.index instanceof org.operamasks.el.parser.ELNode.IDENT idx) {
+            return cn + " <" + idx.id + ">";
+        }
+        return cn + "(" + node.op + ")";
+    }
+
+    private static String abbreviate(String s, int max) {
+        if (s.length() <= max) return s;
+        return s.substring(0, max - 3) + "...";
     }
 }

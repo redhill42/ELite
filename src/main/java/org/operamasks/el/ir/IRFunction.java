@@ -193,7 +193,7 @@ public class IRFunction {
             sb.append("  B").append(b).append(" (offset=").append(blockOffsets[b]).append("):\n");
             int start = blockOffsets[b];
             int end = (b + 1 < blockOffsets.length) ? blockOffsets[b + 1] : code.length;
-            InstructionView v = new InstructionView(code, start);
+            InstructionView v = new InstructionView(code, start, constantPool);
             while (v.inBounds() && v.offset() < end) {
                 sb.append("    ").append(v).append("\n");
                 v.advance();

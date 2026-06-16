@@ -132,7 +132,7 @@ public final class IRPrinter {
             int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : fn.code().length;
             sb.append("  B").append(b).append(":\n");
 
-            InstructionView v = new InstructionView(fn.code(), start);
+            InstructionView v = new InstructionView(fn.code(), start, fn.constantPool());
             while (v.inBounds() && v.offset() < end) {
                 sb.append("    ").append(formatInst(v, fn)).append("\n");
                 v.advance();
@@ -177,8 +177,46 @@ public final class IRPrinter {
                 sb.append(" ").append(v.payload());
             case Opcode.NEW_LIST, Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
                 sb.append(" ").append(v.payload());
+            case Opcode.TRAMPOLINE -> {
+                int idx = v.constPoolIndex();
+                sb.append(" #").append(idx);
+                if (idx < fn.constantPool().length) {
+                    sb.append(" ").append(formatTrampolineNode(fn.constantPool()[idx]));
+                }
+            }
         }
         return sb.toString();
+    }
+
+    /** Format a trampoline pool entry showing the AST node type and key info. */
+    private static String formatTrampolineNode(Object c) {
+        if (c instanceof ELNode n) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("<").append(n.getClass().getSimpleName());
+            appendNodeDetails(sb, n);
+            sb.append(">");
+            return sb.toString();
+        }
+        return formatConst(c);
+    }
+
+    /** Append meaningful details for trampolined ELNode types. */
+    private static void appendNodeDetails(StringBuilder sb, ELNode n) {
+        if (n instanceof org.operamasks.el.parser.ELNode.DEFINE d)
+            sb.append(" ").append(d.id);
+        else if (n instanceof org.operamasks.el.parser.ELNode.IDENT id)
+            sb.append(" ").append(id.id);
+        else if (n instanceof org.operamasks.el.parser.ELNode.APPLY a) {
+            if (a.right instanceof org.operamasks.el.parser.ELNode.ACCESS ac
+                && ac.index instanceof org.operamasks.el.parser.ELNode.IDENT idx)
+                sb.append(" .").append(idx.id).append("(").append(a.args.length).append(")");
+            else if (a.right instanceof org.operamasks.el.parser.ELNode.IDENT fn)
+                sb.append(" ").append(fn.id).append("(").append(a.args.length).append(")");
+        } else if (n instanceof org.operamasks.el.parser.ELNode.ACCESS ac) {
+            if (ac.index instanceof org.operamasks.el.parser.ELNode.IDENT idx)
+                sb.append(" .").append(idx.id);
+        } else if (n instanceof org.operamasks.el.parser.ELNode.COND)
+            sb.append(" ?:");
     }
 
     private static String formatConst(Object c) {
