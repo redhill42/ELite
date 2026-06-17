@@ -888,17 +888,17 @@ public class IRBuilder {
             } else {
                 emitDynamicOp(node.binary.op);
             }
-            // Store result back — captured vars go to eval context only
+            // Store result back — assign must find existing binding in full chain
             current.emitDup();
             if (isCaptured.contains(ident.id)) {
-                // Captured: STORE_GLOBAL into eval context
+                // Captured: search full eval context chain
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreGlobal(nameIdx);
+                current.emitStoreDeep(nameIdx);
             } else {
                 int idx = varIndex.getOrDefault(ident.id, -1);
                 if (idx >= 0) current.emitStoreVar(idx);
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreGlobal(nameIdx);
+                current.emitStoreDeep(nameIdx);
             }
         } else {
             buildTrampoline(node);
@@ -911,15 +911,15 @@ public class IRBuilder {
         if (node.left instanceof ELNode.IDENT ident) {
             current.emitDup();
             if (isCaptured.contains(ident.id)) {
-                // Captured by inner closure: STORE_GLOBAL into eval context
+                // Captured by inner closure: search full eval context chain
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreGlobal(nameIdx);
+                current.emitStoreDeep(nameIdx);
             } else {
-                // Non-captured: STORE_VAR (local slot) + STORE_GLOBAL (persistence)
+                // Non-captured: STORE_VAR (local slot) + STORE_DEEP (full chain)
                 int idx = varIndex.getOrDefault(ident.id, -1);
                 if (idx >= 0) current.emitStoreVar(idx);
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreGlobal(nameIdx);
+                current.emitStoreDeep(nameIdx);
             }
         } else if (node.left instanceof ELNode.ACCESS access && isSimpleKey(access.index)) {
             // obj.prop = value — try direct field store for known Java types

@@ -133,7 +133,8 @@ public final class Opcode {
     public static final int NEW_RANGE      = 0x77;
     public static final int LOAD_PROPERTY  = 0x78;  // pops key, base → base[key]
     public static final int STORE_PROPERTY = 0x79;  // pops val, key, base → base[key]=val
-    public static final int STORE_GLOBAL   = 0x7B;  // store to global
+    public static final int STORE_DEEP     = 0x7A;  // store to global, full chain search, throw if undefined
+    public static final int STORE_GLOBAL   = 0x7B;  // store to global (current scope, create if new)
     public static final int GET_ITER       = 0x7C;
     public static final int ITER_NEXT      = 0x7D;
     public static final int ITER_DONE      = 0x7E;
@@ -250,6 +251,7 @@ public final class Opcode {
             case NEW_RANGE:      return "NEW_RANGE";
             case LOAD_PROPERTY:  return "LOAD_PROPERTY";
             case STORE_PROPERTY: return "STORE_PROPERTY";
+            case STORE_DEEP:     return "STORE_DEEP";
             case STORE_GLOBAL:   return "STORE_GLOBAL";
             case GET_ITER:       return "GET_ITER";
             case ITER_NEXT:      return "ITER_NEXT";

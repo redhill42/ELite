@@ -760,6 +760,15 @@ public class IRInterpreter {
                     ip += 1 + oc;
                     break;
                 }
+                case STORE_DEEP: {
+                    int nameIdx = oc == 0 ? pl : code[ip + 1];
+                    String name = (String)constantPool[nameIdx];
+                    Object val = pop();
+                    storeAssign(name, val);
+                    push(val);
+                    ip += 1 + oc;
+                    break;
+                }
 
                 // ============ Increment / Decrement ============
                 case INC: {
@@ -1260,12 +1269,17 @@ public class IRInterpreter {
     // ── Global variable storage ──
 
     private void storeGlobal(String name, Object value) {
+        // define: create/update in current scope only (head-bounded search)
         LiteralClosure lc = new LiteralClosure(value);
         if (evalContext != null) {
-            // Use setVariableDeep so that captured variables (defined in an
-            // enclosing scope) are updated in place rather than shadowed.
-            // Non-captured variables won't be found in any ancestor, so they
-            // are prepended to the current scope as usual.
+            evalContext.setVariable(name, lc);
+        }
+    }
+
+    private void storeAssign(String name, Object value) {
+        // assign: search full chain, throw if not found
+        LiteralClosure lc = new LiteralClosure(value);
+        if (evalContext != null) {
             evalContext.setVariableDeep(name, lc);
         }
     }

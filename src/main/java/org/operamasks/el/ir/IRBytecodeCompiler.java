@@ -425,7 +425,7 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "pushGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
-            case STORE_GLOBAL -> {
+            case STORE_DEEP, STORE_GLOBAL -> {
                 int idx = v.payload();
                 String name = (String) fn.constantPool()[idx];
                 // Stack: [value]. Need [ctx, name, value].

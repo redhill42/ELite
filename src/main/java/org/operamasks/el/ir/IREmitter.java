@@ -328,6 +328,12 @@ public class IREmitter {
         else return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16, namePoolIndex & 0xFFFF);
     }
 
+    /** Store to global with full chain search — throws if variable not defined. */
+    public IREmitter emitStoreDeep(int namePoolIndex) {
+        if (fits16(namePoolIndex)) return emit1(STORE_DEEP, K_NONE, namePoolIndex);
+        else return emit2(STORE_DEEP, K_NONE, namePoolIndex >>> 16, namePoolIndex & 0xFFFF);
+    }
+
     /** Pop collection → push iterator. */
     public IREmitter emitGetIter() { return emit1(GET_ITER, K_NONE, 0); }
 

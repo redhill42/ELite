@@ -167,19 +167,17 @@ public class EvaluationContext extends AbstractClosure
 
     /**
      * Set a variable by searching the FULL resolver chain (not limited by head).
-     * Used for captured variables that need to update bindings in enclosing scopes.
+     * Used for assignments to captured variables that need to update bindings
+     * in enclosing scopes. Unlike {@link #setVariable}, this method never creates
+     * a new variable — it throws PropertyNotFoundException if the variable is
+     * not found anywhere in the scope chain.
      */
     public void setVariableDeep(String name, ValueExpression value) {
-        if (name.equals("xmlns") || name.startsWith("xmlns:")) {
-            setVariable(name, value);
-            return;
-        }
         for (Resolver r = tail; r != null; r = r.next) {
             if (r.set(name, value)) return;
         }
-        if (value != null) {
-            tail = new Variable(name, value, tail);
-        }
+        throw new javax.el.PropertyNotFoundException(
+            "标识符未定义: " + name);
     }
 
     public EvaluationContext pushContext(VariableMapper env) {
