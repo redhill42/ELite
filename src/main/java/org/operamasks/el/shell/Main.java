@@ -19,12 +19,22 @@ package org.operamasks.el.shell;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.file.Path;
 import java.util.*;
 
 import javax.el.ELContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
+
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.UserInterruptException;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
+import org.jline.utils.AttributedString;
+import org.jline.utils.AttributedStyle;
 
 import org.operamasks.el.shell.command.Command;
 import org.operamasks.el.shell.command.CommandProvider;
@@ -47,6 +57,9 @@ public class Main
     private boolean dumpIR = false;
     private boolean dumpAST = false;
     private boolean dumpBC  = false;
+
+    private static final Path HISTORY_FILE = Path.of(
+        System.getProperty("user.home"), ".elite_history");
 
     public Main() {
         this.shellContext = new ShellContext();
@@ -125,7 +138,6 @@ public class Main
                 } else if (args[argIndex].equals("--dump-ast")) {
                     dumpAST = true;
                 } else if (args[argIndex].startsWith("-O")) {
-                    // Optimization level: -O0, -O1, -O2, -O3
                     String level = args[argIndex].substring(2);
                     if (level.matches("[0-3]")) {
                         System.setProperty("elite.opt.level", level);
@@ -168,58 +180,103 @@ public class Main
     private void repl(ScriptEngine engine) throws IOException {
         ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
 
-        ConsoleReader console = new ConsoleReader(System.in, System.out);
-        console.setCompletor(new ELiteCompletor(elctx, engine));
+        // Build JLine terminal and line reader
+        Terminal terminal = TerminalBuilder.builder()
+            .name("ELite")
+            .encoding(shellContext.getEncoding() != null
+                ? shellContext.getEncoding() : "UTF-8")
+            .build();
+
+        LineReader reader = LineReaderBuilder.builder()
+            .terminal(terminal)
+            .completer(new VariableCompletor(elctx, engine))
+            .variable(LineReader.HISTORY_FILE, HISTORY_FILE)
+            .variable(LineReader.HISTORY_FILE_SIZE, 1000)
+            .variable(LineReader.SECONDARY_PROMPT_PATTERN, "%P  ")
+            .option(LineReader.Option.CASE_INSENSITIVE, false)
+            .build();
+
+        reader.setVariable(LineReader.INDENTATION, 0);
 
         String buffer = null;
         int lineno = 1;
 
         while (true) {
-            if (shellContext.isCompleted()) break;
+            if (shellContext.isCompleted())
+                break;
 
             String prompt = (lineno == 1) ? "> " : (lineno+") ");
-            String line = console.readLine(prompt);
-            if (line == null) break;
+            String line;
+            try {
+                line = reader.readLine(prompt);
+            } catch (UserInterruptException e) {
+                // Ctrl-C: discard buffer
+                buffer = null;
+                lineno = 1;
+                continue;
+            } catch (EndOfFileException e) {
+                // Ctrl-D
+                break;
+            }
+            if (line == null)
+                break;  // EOF
 
             if (lineno == 1) {
+                // the first line
                 line = line.trim();
-                if (line.length() == 0) continue;
-                if (exec_cmd(shellContext, line)) continue;
+                if (line.isEmpty())
+                    continue;
+                if (exec_cmd(shellContext, line))
+                    continue;
                 buffer = line;
             } else {
-                if (line.length() == 0) { buffer = null; lineno = 1; continue; }
-                else buffer += "\n" + line;
+                // the continuation line
+                if (line.isEmpty()) {
+                    buffer = null;
+                    lineno = 1;
+                    continue;
+                } else {
+                    buffer += "\n" + line;
+                }
             }
 
             if (buffer.endsWith("\\")) {
+                // continuation line
                 buffer = buffer.substring(0, buffer.length()-1);
                 lineno++;
                 continue;
             }
-            
+
             try {
                 Object value = engine.eval(buffer);
                 engine.put("_", value);
                 if (value != null) {
-                    StackTrace.addFrame(elctx, "__toplevel__", null, Position.make(1,1));
-                    try { Builtin.print(elctx, value); }
-                    finally { StackTrace.removeFrame(elctx); }
+                    StackTrace.addFrame(elctx, "__toplevel__", null, Position.make(1, 1));
+                    try {
+                        Builtin.print(elctx, value);
+                    } finally {
+                        StackTrace.removeFrame(elctx);
+                    }
                 }
             } catch (ScriptException ex) {
-                if (ex.getCause() instanceof IncompleteException) { lineno++; continue; }
-                else System.err.println(hilight(ex.getMessage()));
-            } catch (Exception ex) { printStackTrace(ex); }
-            catch (Error ex) { printStackTrace(ex); }
+                if (ex.getCause() instanceof IncompleteException) {
+                    lineno++;
+                    continue;
+                } else {
+                    terminal.writer().println(
+                        new AttributedString(ex.getMessage(),
+                            AttributedStyle.DEFAULT.foreground(AttributedStyle.RED))
+                            .toAnsi());
+                }
+            } catch (Exception | Error ex) {
+                printStackTrace(ex);
+            }
 
             buffer = null;
             lineno = 1;
         }
-        console.close();
-    }
 
-    private static String hilight(String text) {
-        // Use ANSI red color codes directly
-        return "\033[31m" + text + "\033[0m";
+        terminal.close();
     }
 
     private void printStackTrace(Throwable except) {
@@ -287,7 +344,7 @@ public class Main
 
     // Shell Commands
 
-    private static Map<String, Method> commands = new HashMap<String, Method>();
+    private static final Map<String, Method> commands = new HashMap<>();
     static {
         for (Method method : CommandProvider.class.getMethods()) {
             if (Modifier.isPublic(method.getModifiers()) &&

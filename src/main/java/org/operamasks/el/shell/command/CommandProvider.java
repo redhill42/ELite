@@ -35,7 +35,7 @@ import org.operamasks.el.shell.ShellContext;
 import elite.lang.Builtin;
 
 public final class CommandProvider {
-    private static final String COMMANDS[] = {
+    private static final String[] COMMANDS = {
         "?                       print this usage information",
         "@ <filename>            specify a file to execute",
         "ls [x|a]                list system|global methods and all variable's key",
@@ -43,7 +43,6 @@ public final class CommandProvider {
         "which <classname>       find out the absolute path of specify classname"
     };
 
-    // 本来是要做成在类上标注@CommandProvider更容易扩展，后来考虑到没有好的方式进行预扫描，暂时采用这种方式。
     @Command("?")
     public static void help(ShellContext shellContext, String args) {
         for (String s : COMMANDS) {
@@ -53,7 +52,7 @@ public final class CommandProvider {
 
     @Command("@")
     public static int exec(ShellContext shellContext, String filename) {
-        if (filename == null || filename.length() == 0) {
+        if (filename == null || filename.isEmpty()) {
             System.err.println("file name is null!");
             return 1;
         }
@@ -62,10 +61,7 @@ public final class CommandProvider {
             String text = readFile(filename, shellContext.getEncoding());
             engine.put(ScriptEngine.FILENAME, filename);
             engine.eval(text);
-        } catch (ScriptException ex) {
-            System.err.println(ex.getMessage());
-            return 1;
-        } catch (IOException ex) {
+        } catch (ScriptException | IOException ex) {
             System.err.println(ex.getMessage());
             return 1;
         }
@@ -81,7 +77,7 @@ public final class CommandProvider {
     public static void ls(ShellContext shellContext, String args) {
         ScriptEngine engine = shellContext.getEngine();
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
-        Set<String> lst = new TreeSet<String>();
+        Set<String> lst = new TreeSet<>();
 
         if (args.indexOf('x') != -1) {
             MethodResolver mr = MethodResolver.getInstance(elctx);
@@ -104,7 +100,7 @@ public final class CommandProvider {
         String resname = args.replace('.', '/') + ".class";
         URL res = loader.getResource(resname);
         if (res != null) {
-            System.out.println(res.toString());
+            System.out.println(res);
         } else {
             System.err.println(args + ": not found");
         }
