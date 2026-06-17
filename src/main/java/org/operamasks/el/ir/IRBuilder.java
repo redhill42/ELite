@@ -1317,6 +1317,8 @@ public class IRBuilder {
 
         IRBuilder nested = new IRBuilder(this);
         nested.lambdaName = node.name;
+        // Propagate source file from the AST node
+        if (node.file != null) nested.currentFile = node.file;
         for (ELNode.DEFINE var : node.vars) {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
             nested.ensureVar(var.id, flags);
@@ -1924,6 +1926,7 @@ public class IRBuilder {
             String name = lam.name != null ? lam.name : d.id;
             IRBuilder nested = new IRBuilder(b);  // share parent pool
             nested.lambdaName = lam.name;
+            if (lam.file != null) nested.currentFile = lam.file;
             for (ELNode.DEFINE var : lam.vars) {
                 int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
                 nested.ensureVar(var.id, flags);
