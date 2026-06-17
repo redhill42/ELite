@@ -208,6 +208,7 @@ public class IRBuilder {
         if (node == null) { emitPushNull(); return; }
 
         if (node instanceof ELNode.COMPOUND)   { buildCompound((ELNode.COMPOUND) node); return; }
+        if (node instanceof ELNode.Composite)  { buildComposite((ELNode.Composite) node); return; }
         if (node instanceof ELNode.FOREACH)    { buildForEach((ELNode.FOREACH) node); return; }
         if (node instanceof ELNode.CONST_MATCH) { buildTrampoline(node); return; }
         if (node instanceof ELNode.MATCH)      { buildTrampoline(node); return; }
@@ -1067,6 +1068,22 @@ public class IRBuilder {
         buildTail(node.right);
     }
     private void buildExpr(ELNode.EXPR node) { build(node.right); }
+
+    /** Compile string interpolation (Composite) without trampoline.
+     *  Equivalent to AST: StringBuilder → append(coerceToString(elem)) → toString().
+     *  Uses DYNCAT chain to concatenate elements with type coercion. */
+    private void buildComposite(ELNode.Composite node) {
+        if (node.elems.length == 0) {
+            emitPushConst(T_STRING, "");
+            return;
+        }
+        build(node.elems[0]);
+        for (int i = 1; i < node.elems.length; i++) {
+            build(node.elems[i]);
+            current.emitDynCat();
+        }
+    }
+
     private void buildCompound(ELNode.COMPOUND node) {
         for (int i = 0; i < node.exps.length - 1; i++) {
             build(node.exps[i]); current.emitPop();
