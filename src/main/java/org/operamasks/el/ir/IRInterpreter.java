@@ -75,7 +75,6 @@ public class IRInterpreter {
 
     // ── Trampoline support ──
     private EvaluationContext evalContext;
-    private final ArrayDeque<EvaluationContext> scopeStack = new ArrayDeque<>();
 
     public IRInterpreter(ELContext elctx, IRFunction function) {
         this(elctx, function, null);
@@ -139,28 +138,24 @@ public class IRInterpreter {
         // lazy sequence returned from eval).
         javax.el.ELContext savedElCtx = ELEngine.setCurrentELContext(elctx);
 
-        // Scope management (matches AST behavior):
+        // Scope management:
         // - Top-level program: no pushContext — variables go directly
         //   into the program-level evalContext.
-        // - Functions: pushContext() — lightweight scope that shares
-        //   the parent chain but isolates variables added within this function.
+        // - Functions: pushContext() with head=null allows the child
+        //   context to traverse into parent bindings for captured variable
+        //   updates (setVariable finds and updates parent's Variable in place).
         if (!isTopLevel) {
-            scopeStack.push(evalContext);
             evalContext = evalContext.pushContext();
         }
 
         // Store current EvaluationContext on ELContext so invokeTarget
         // can retrieve it for nested IRClosure/IRFunction calls.
-        // getContext/putContext may fail on ELContext implementations
-        // that don't support the context map API.
         Object savedCtx = elctx.getContext(EvaluationContext.class);
         elctx.putContext(EvaluationContext.class, evalContext);
 
         try {
             return interpret();
         } finally {
-            if (!isTopLevel)
-                evalContext = scopeStack.pop();
             if (savedCtx != null)
                 elctx.putContext(EvaluationContext.class, savedCtx);
             ELEngine.setCurrentELContext(savedElCtx);
@@ -665,12 +660,6 @@ public class IRInterpreter {
                     for (int i = argc - 1; i >= 0; i--) {
                         ensureLocals(i); locals[i] = pop();
                     }
-                    // Pop any SCOPE_ENTER layers that were entered but
-                    // not exited (because INVOKE_TAIL is a terminator —
-                    // the SCOPE_EXIT after it in the IR is dead code).
-                    while (scopeStack.size() > 1) {
-                        evalContext = scopeStack.pop();
-                    }
                     // Reset operand stack — old intermediate values
                     // from previous iteration must not accumulate.
                     sp = 0;
@@ -724,16 +713,11 @@ public class IRInterpreter {
                 case RETURN_VOID: {
                     return null;
                 }
-                case SCOPE_ENTER: {
-                    scopeStack.push(evalContext);
-                    evalContext = evalContext.pushContext();
-                    elctx.putContext(EvaluationContext.class, evalContext);
-                    ip += 1;
-                    break;
-                }
+                case SCOPE_ENTER:
                 case SCOPE_EXIT: {
-                    evalContext = scopeStack.pop();
-                    elctx.putContext(EvaluationContext.class, evalContext);
+                    // NOP — control-flow scopes are handled purely at
+                    // compile time via slot allocation. Closure scope
+                    // isolation is handled by execute()'s pushContext().
                     ip += 1;
                     break;
                 }
@@ -1039,11 +1023,7 @@ public class IRInterpreter {
                 }
 
                 // ============ Trampoline to AST evaluator ============
-                case TRAMPOLINE: { // OP_TRAMPOLINE
-                    // Pool index is in payload for both 1-word (oc=0) and
-                    // 2-word (oc>0).
-                    // The operand word for 2-word TRAMPOLINE is always 0
-                    // (unused).
+                case TRAMPOLINE: {
                     int poolIdx = pl;
                     Object obj = constantPool[poolIdx];
                     // TryDescriptor wraps pre-compiled IR blocks; evaluate
@@ -1052,17 +1032,14 @@ public class IRInterpreter {
                         obj = td.tryNode;
                     }
                     ELNode node = (ELNode)obj;
-                    // IR locals are in the locals[] array, not in the
-                    // EvaluationContext. Sync them so the AST evaluator
-                    // can see function parameters and let-bindings.
+                    // Sync locals → evalContext so the AST evaluator can
+                    // see function parameters and let-bindings.
                     syncLocalsToGlobals();
                     Object result = node.getValue(evalContext);
                     push(result);
-                    // AST evaluation may have modified global variables
-                    // through the
-                    // VariableMapper. Sync them back to local slots so
-                    // subsequent
-                    // PUSH_VAR instructions see the updated values.
+                    // Sync back: AST evaluation may have modified variables
+                    // through the evalContext chain. Copy changes back to
+                    // local slots so subsequent PUSH_VAR sees them.
                     syncLocalsFromGlobals();
                     ip += 1 + oc;
                     break;
@@ -1283,55 +1260,48 @@ public class IRInterpreter {
     // ── Global variable storage ──
 
     private void storeGlobal(String name, Object value) {
-        // Write to evalContext chain only. elctx.getVariableMapper() is
-        // for externally-provided variables (JSP/JSF embedding) and must
-        // not be polluted with ELite-internal variables. Each eval call
-        // is an isolated environment — variables in one eval must not
-        // leak to another.
         LiteralClosure lc = new LiteralClosure(value);
         if (evalContext != null) {
-            evalContext.setVariable(name, lc);
+            // Use setVariableDeep so that captured variables (defined in an
+            // enclosing scope) are updated in place rather than shadowed.
+            // Non-captured variables won't be found in any ancestor, so they
+            // are prepended to the current scope as usual.
+            evalContext.setVariableDeep(name, lc);
         }
     }
 
     /**
-     * After a TRAMPOLINE causes AST evaluation (which may modify global
-     * variables
-     * through the VariableMapper), copy those changes back to local slots so
-     * subsequent PUSH_VAR instructions see the updated values.
-     *
-     * <p>Top-level {@code define} stores to both STORE_VAR (local slot) and
-     * STORE_GLOBAL (VariableMapper). AST evaluation only touches the
-     * VariableMapper,
-     * so without this sync the IR locals become stale.
+     * Before a TRAMPOLINE, copy IR local variable values into the
+     * EvaluationContext so the AST evaluator can see them.
+     * Uses regular setVariable (current-scope only) to avoid overwriting
+     * parent parameters during recursive calls.
      */
-    private void syncLocalsFromGlobals() {
+    private void syncLocalsToGlobals() {
         String[] names = function.varNames();
-        if (names == null)
-            return;
-        VariableMapper vm = elctx.getVariableMapper();
+        if (names == null) return;
         for (int i = 0; i < names.length && i < locals.length; i++) {
-            ValueExpression ve = vm.resolveVariable(names[i]);
-            if (ve != null) {
-                ensureLocals(i); locals[i] = ve.getValue(elctx);
+            if (names[i] != null) {
+                ensureLocals(i);
+                evalContext.setVariable(names[i], new LiteralClosure(locals[i]));
             }
         }
     }
 
     /**
-     * Before a TRAMPOLINE causes AST evaluation, copy IR local variable
-     * values into the EvaluationContext so the AST evaluator can see them.
-     * Writes through {@code evalContext.setVariable()} so values go to the
-     * current scope's isolated VariableMapper, not the shared ELContext one.
+     * After a TRAMPOLINE, copy any changes the AST evaluator made back
+     * to local slots. Reads from evalContext (not VariableMapper) to
+     * align with the new scope architecture.
      */
-    private void syncLocalsToGlobals() {
+    private void syncLocalsFromGlobals() {
         String[] names = function.varNames();
-        if (names == null)
-            return;
+        if (names == null) return;
         for (int i = 0; i < names.length && i < locals.length; i++) {
             if (names[i] != null) {
                 ensureLocals(i);
-                evalContext.setVariable(names[i], new LiteralClosure(locals[i]));
+                ValueExpression ve = evalContext.resolveVariable(names[i]);
+                if (ve != null) {
+                    locals[i] = ve.getValue(elctx);
+                }
             }
         }
     }

@@ -155,32 +155,6 @@ public class IRBytecodeCompiler {
         cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         cw.visit(61, 1 | 0x20, internalName, null, "java/lang/Object", null);
 
-        // Store varNames as static field for trampoline→locals sync
-        String[] names = fn.varNames();
-        if (names != null && names.length > 0) {
-            cw.visitField(1 | 8 | 16, "$varNames", "[Ljava/lang/String;", null, null);
-            MethodVisitor cl = cw.visitMethod(1 | 8, "<clinit>", "()V", null, null);
-            cl.visitCode();
-            // Build String[] with varNames — emit int consts inline (mv is final)
-            int n = names.length;
-            if (n >= -1 && n <= 5) cl.visitInsn(A_ICONST_0 + n);
-            else if (n <= Byte.MAX_VALUE) cl.visitIntInsn(A_BIPUSH, n);
-            else cl.visitIntInsn(A_SIPUSH, n);
-            cl.visitTypeInsn(A_ANEWARRAY, "java/lang/String");
-            for (int i = 0; i < n; i++) {
-                cl.visitInsn(A_DUP);
-                if (i >= -1 && i <= 5) cl.visitInsn(A_ICONST_0 + i);
-                else if (i <= Byte.MAX_VALUE) cl.visitIntInsn(A_BIPUSH, i);
-                else cl.visitIntInsn(A_SIPUSH, i);
-                cl.visitLdcInsn(names[i]);
-                cl.visitInsn(A_AASTORE);
-            }
-            cl.visitFieldInsn(A_PUTSTATIC, internalName, "$varNames", "[Ljava/lang/String;");
-            cl.visitInsn(A_RETURN);
-            cl.visitMaxs(4, 1);
-            cl.visitEnd();
-        }
-
         MethodVisitor cm = cw.visitMethod(1, "<init>", "()V", null, null);
         cm.visitCode();
         cm.visitVarInsn(A_ALOAD, 0); // this
@@ -552,14 +526,6 @@ public class IRBytecodeCompiler {
                     mv.visitLdcInsn(poolIdx);
                     mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                         "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
-                }
-                // Sync globals → locals after AST evaluation
-                if (fn.varNames() != null && fn.varNames().length > 0) {
-                    mv.visitVarInsn(A_ALOAD, S_CTX);       // ctx
-                    mv.visitVarInsn(A_ALOAD, S_LOCALS);    // locals[]
-                    mv.visitFieldInsn(A_GETSTATIC, internalName, "$varNames", "[Ljava/lang/String;");
-                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                        "syncLocals", "(Ljavax/el/ELContext;[Ljava/lang/Object;[Ljava/lang/String;)V", false);
                 }
             }
             case GUARD_TYPE -> {

@@ -18,6 +18,7 @@ package org.operamasks.el.ir;
 
 import java.util.*;
 
+import org.operamasks.el.parser.DefaultVisitor;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Token;
 
@@ -63,20 +64,29 @@ public class IRBuilder {
     private record LoopTargets(int continueBlock, int breakBlock) {}
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
-    // ── Scope tracking (compile-time slot allocation for O3) ──
-    // Each scope is a map from variable name → slot index.
-    // Pushed on SCOPE_ENTER, popped on SCOPE_EXIT.
-    private final Deque<Map<String, Integer>> scopeStack = new ArrayDeque<>();
-    private void enterScope() { scopeStack.push(new LinkedHashMap<>()); current.emitScopeEnter(); }
-    private void leaveScope() {
-        scopeStack.pop();
-        if (justEmittedTail) {
-            // INVOKE_TAIL was the last instruction — it is a terminator
-            // that resets the IRInterpreter state including scope layers.
-            // Emitting SCOPE_EXIT would be dead code.
-            justEmittedTail = false;
-        } else {
-            current.emitScopeExit();
+    // ── Scope analysis (from pre-pass) ──
+    private ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
+    /** Variables in this scope that are captured by inner closures → use STORE_GLOBAL/PUSH_GLOBAL. */
+    private final Set<String> isCaptured = new HashSet<>();
+
+    // ── Control-flow scope tracking (compile-time slot allocation only, no runtime ops) ──
+    // When entering a control-flow scope ({...} block in if/while/for), we save the
+    // current varIndex bindings for names that will be shadowed, allocate new slots
+    // for the inner variables, and restore on scope exit. No SCOPE_ENTER/SCOPE_EXIT.
+    private final Deque<Map<String, Integer>> savedVarBindings = new ArrayDeque<>();
+
+    private void enterControlScope() {
+        savedVarBindings.push(new LinkedHashMap<>());
+    }
+
+    private void leaveControlScope() {
+        Map<String, Integer> saved = savedVarBindings.pop();
+        for (Map.Entry<String, Integer> e : saved.entrySet()) {
+            if (e.getValue() == null) {
+                varIndex.remove(e.getKey());
+            } else {
+                varIndex.put(e.getKey(), e.getValue());
+            }
         }
     }
 
@@ -88,10 +98,15 @@ public class IRBuilder {
      *  is a terminator and the SCOPE_EXIT would be dead code. */
     private boolean justEmittedTail = false;
 
-    IRBuilder() { this(null, null); }
+    IRBuilder() { this(null, null, null); }
 
     /** Create a top-level builder with optional import context for CLASS resolution. */
     IRBuilder(ClassLoader loader, List<String> imps) {
+        this(loader, imps, null);
+    }
+
+    /** Create a top-level builder with import context and scope analysis. */
+    IRBuilder(ClassLoader loader, List<String> imps, ScopeAnalyzer.ScopeAnalysis analysis) {
         this.parent = null;
         this.classLoader = loader;
         this.importAliases = new LinkedHashMap<>();
@@ -99,16 +114,29 @@ public class IRBuilder {
         seedImports(imps);
         this.currentBlockId = 0;
         this.current = new IREmitter();
+        this.scopeAnalysis = analysis;
+        if (analysis != null) {
+            this.isCaptured.addAll(analysis.capturedByInner);
+        }
     }
 
     /** Create a nested builder sharing the parent's constant pool and import context. */
     private IRBuilder(IRBuilder parent) {
+        this(parent, null);
+    }
+
+    /** Create a nested builder with optional scope analysis for this lambda. */
+    private IRBuilder(IRBuilder parent, ScopeAnalyzer.ScopeAnalysis analysis) {
         this.parent = parent;
         this.classLoader = parent != null ? parent.classLoader : null;
         this.importAliases = parent != null ? parent.importAliases : new LinkedHashMap<>();
         this.importPackages = parent != null ? parent.importPackages : new ArrayList<>();
         this.currentBlockId = 0;
         this.current = new IREmitter();
+        this.scopeAnalysis = analysis;
+        if (analysis != null) {
+            this.isCaptured.addAll(analysis.capturedByInner);
+        }
         if (parent != null) {
             this.lambdaName = parent.lambdaName;
             // Share constants with parent so pool indices are consistent
@@ -382,35 +410,35 @@ public class IRBuilder {
 
     // ── Identifiers ──
     private void buildIdent(ELNode.IDENT node) {
-        // 1) Check scope chain from innermost to outermost (compile-time scoping)
-        for (Map<String, Integer> scope : scopeStack) {
-            Integer idx = scope.get(node.id);
-            if (idx != null) {
-                int t = typeIdFromNode(node);
-                current.emitPushVar(idx);
-                return;
-            }
+        // 1) Captured variable: must go through evaluation context
+        //    (both in the enclosing scope and inside closures).
+        if (isCaptured.contains(node.id)) {
+            int nameIdx = putConstant(node.id);
+            current.emitPushGlobal(nameIdx);
+            return;
         }
-        // 2) Check top-level varIndex
+        // 2) Check local varIndex (non-captured locals + params)
         Integer idx = varIndex.get(node.id);
         if (idx != null) {
-            int t = typeIdFromNode(node);
             current.emitPushVar(idx);
-        } else if (parent != null && parent.varIndex.containsKey(node.id)) {
-            // Free variable captured from enclosing scope
+            return;
+        }
+        // 3) Free variable from enclosing scope, NOT captured by inner closures
+        //    (capture by value — push from enclosing local slot at closure creation)
+        if (parent != null && parent.varIndex.containsKey(node.id)
+            && !parent.isCaptured.contains(node.id)) {
             Integer captureIdx = capturedVars.get(node.id);
             if (captureIdx == null) {
                 capturedVars.put(node.id, capturedVars.size());
                 captureIdx = ensureVar(node.id, 0);
             }
             idx = varIndex.get(node.id);
-            int t = typeIdFromNode(node);
             current.emitPushVar(idx);
-        } else {
-            // Global variable — put name in constant pool, emit PUSH_GLOBAL
-            int nameIdx = putConstant(node.id);
-            current.emitPushGlobal(nameIdx);
+            return;
         }
+        // 4) Global fallback — resolve by name in evaluation context
+        int nameIdx = putConstant(node.id);
+        current.emitPushGlobal(nameIdx);
     }
 
     // ── Apply ──
@@ -808,10 +836,10 @@ public class IRBuilder {
         current.emitJumpIfTrue(thenB);
         current.emitJump(elseB);
         sealAndStart(thenB);
-        enterScope(); buildTail(node.left); leaveScope();
+        enterControlScope(); buildTail(node.left); leaveControlScope();
         current.emitJump(mergeB);
         sealAndStart(elseB);
-        enterScope(); buildTail(node.right); leaveScope();
+        enterControlScope(); buildTail(node.right); leaveControlScope();
         current.emitJump(mergeB);
         sealAndStart(mergeB);
     }
@@ -850,10 +878,9 @@ public class IRBuilder {
     // 在 IR 层面展开为 x = x op y，不依赖 AST 节点结构
     private void buildAssignOp(ELNode.ASSIGNOP node) {
         if (node.left instanceof ELNode.IDENT ident) {
-            // 构建: left-value op right-value, 然后存回 left
+            // Build: left-value op right-value, then store back
             build(node.left);        // push current value of x
-            build(node.right);       // push delta (5)
-            // Emit the binary operation
+            build(node.right);       // push delta
             int leftT = typeIdFromNode(node.left);
             int rightT = typeIdFromNode(node.right);
             if (leftT >= 0 && rightT >= 0) {
@@ -861,12 +888,18 @@ public class IRBuilder {
             } else {
                 emitDynamicOp(node.binary.op);
             }
-            // Store result back — locally AND globally (matches buildAssign)
-            int idx = varIndex.getOrDefault(ident.id, -1);
+            // Store result back — captured vars go to eval context only
             current.emitDup();
-            if (idx >= 0) current.emitStoreVar(idx);
-            int nameIdx = putConstant(ident.id);
-            current.emitStoreGlobal(nameIdx);
+            if (isCaptured.contains(ident.id)) {
+                // Captured: STORE_GLOBAL into eval context
+                int nameIdx = putConstant(ident.id);
+                current.emitStoreGlobal(nameIdx);
+            } else {
+                int idx = varIndex.getOrDefault(ident.id, -1);
+                if (idx >= 0) current.emitStoreVar(idx);
+                int nameIdx = putConstant(ident.id);
+                current.emitStoreGlobal(nameIdx);
+            }
         } else {
             buildTrampoline(node);
         }
@@ -876,12 +909,18 @@ public class IRBuilder {
     private void buildAssign(ELNode.ASSIGN node) {
         build(node.right); // value to assign
         if (node.left instanceof ELNode.IDENT ident) {
-            // Store locally (if the variable is in local scope) AND globally
-            int idx = varIndex.getOrDefault(ident.id, -1);
             current.emitDup();
-            if (idx >= 0) current.emitStoreVar(idx);  // local
-            int nameIdx = putConstant(ident.id);
-            current.emitStoreGlobal(nameIdx);           // global
+            if (isCaptured.contains(ident.id)) {
+                // Captured by inner closure: STORE_GLOBAL into eval context
+                int nameIdx = putConstant(ident.id);
+                current.emitStoreGlobal(nameIdx);
+            } else {
+                // Non-captured: STORE_VAR (local slot) + STORE_GLOBAL (persistence)
+                int idx = varIndex.getOrDefault(ident.id, -1);
+                if (idx >= 0) current.emitStoreVar(idx);
+                int nameIdx = putConstant(ident.id);
+                current.emitStoreGlobal(nameIdx);
+            }
         } else if (node.left instanceof ELNode.ACCESS access && isSimpleKey(access.index)) {
             // obj.prop = value — try direct field store for known Java types
             String fieldName = getKeyName(access.index);
@@ -933,13 +972,28 @@ public class IRBuilder {
                 Class<?> cls = resolveClassAtCompileTime(clsNode.name);
                 if (cls != null) {
                     emitPushConst(K_NONE, cls);
-                    if (!scopeStack.isEmpty()) {
-                        String scopedName = "$" + scopeStack.size() + "$" + node.id;
-                        int idx = ensureVar(scopedName);
+                    // CLASS define inside a control-flow scope: save old binding,
+                    // allocate new slot with the same name
+                    if (!savedVarBindings.isEmpty()) {
+                        Map<String, Integer> saved = savedVarBindings.peek();
+                        if (!saved.containsKey(node.id)) {
+                            saved.put(node.id, varIndex.get(node.id));
+                        }
+                        int idx = ensureVar(node.id);
                         current.emitDup();
                         current.emitStoreVar(idx);
-                        scopeStack.peek().put(node.id, idx);
+                    } else if (isCaptured.contains(node.id)) {
+                        // Captured by inner closure: STORE_GLOBAL only
+                        current.emitDup();
+                        int nameIdx = putConstant(node.id);
+                        current.emitStoreGlobal(nameIdx);
+                    } else if (parent != null) {
+                        // In a function, not captured: STORE_VAR only
+                        int idx = ensureVar(node.id);
+                        current.emitDup();
+                        current.emitStoreVar(idx);
                     } else {
+                        // Top-level: STORE_VAR + STORE_GLOBAL (persistence)
                         int idx = ensureVar(node.id);
                         current.emitDup();
                         current.emitStoreVar(idx);
@@ -952,25 +1006,37 @@ public class IRBuilder {
                 return;
             }
             build(node.expr);
-            if (!scopeStack.isEmpty()) {
-                // Scoped define inside a SCOPE_ENTER block: allocate a unique
-                // mangled slot to avoid shadowing the outer scope, and
-                // register in the current scope layer so buildIdent resolves
-                // it via scopeStack traversal.
-                String scopedName = "$" + scopeStack.size() + "$" + node.id;
-                int idx = ensureVar(scopedName);
+            // Three-tier variable storage strategy:
+            // 1. Captured by inner closure → STORE_GLOBAL only (eval context)
+            // 2. Function-local, not captured → STORE_VAR only (locals[])
+            // 3. Top-level, not captured → STORE_VAR + STORE_GLOBAL (persistence)
+
+            if (!savedVarBindings.isEmpty()) {
+                // Inside a control-flow scope ({...} in if/while/for):
+                // save the old slot binding, allocate a new slot for the shadow
+                Map<String, Integer> saved = savedVarBindings.peek();
+                if (!saved.containsKey(node.id)) {
+                    saved.put(node.id, varIndex.get(node.id));
+                }
+                int idx = ensureVar(node.id);
                 current.emitDup();
                 current.emitStoreVar(idx);
-                scopeStack.peek().put(node.id, idx);
+            } else if (isCaptured.contains(node.id)) {
+                // This variable is captured by an inner closure.
+                // All accesses must go through the EvaluationContext chain
+                // so that closures see the same binding.
+                current.emitDup();
+                int nameIdx = putConstant(node.id);
+                current.emitStoreGlobal(nameIdx);
             } else if (parent != null) {
-                // Lambda-level define: STORE_VAR only (no STORE_GLOBAL),
-                // using the original name so buildIdent resolves it via
-                // varIndex lookup. The variable dies with the IRInterpreter.
+                // Function-level define, not captured by any inner closure.
+                // Local slot only — dies with the IRInterpreter invocation.
                 int idx = ensureVar(node.id);
                 current.emitDup();
                 current.emitStoreVar(idx);
             } else {
-                // Top-level: STORE_VAR + STORE_GLOBAL (persistent across evals)
+                // Top-level define: store locally (for fast access) AND
+                // globally (for cross-eval persistence).
                 int idx = ensureVar(node.id);
                 current.emitDup();
                 current.emitStoreVar(idx);
@@ -1011,7 +1077,7 @@ public class IRBuilder {
         loopStack.push(new LoopTargets(header, exit));
         current.emitJump(header);
         startBlock(header); build(node.cond); current.emitJumpIfTrue(body); current.emitJump(exit);
-        startBlock(body);   enterScope(); build(node.body); leaveScope(); current.emitPop(); current.emitJump(header);
+        startBlock(body);   enterControlScope(); build(node.body); leaveControlScope(); current.emitPop(); current.emitJump(header);
         startBlock(exit);   emitPushNull();
         // Exit block falls through to next — add RETURN at toplevel by caller
         loopStack.pop();
@@ -1027,7 +1093,7 @@ public class IRBuilder {
         if (node.cond != null) { build(node.cond); current.emitJumpIfTrue(body); } else current.emitJump(body);
         current.emitJump(exit);
         startBlock(body);
-        if (node.body != null) { enterScope(); build(node.body); leaveScope(); current.emitPop(); }
+        if (node.body != null) { enterControlScope(); build(node.body); leaveControlScope(); current.emitPop(); }
         if (node.step != null) for (ELNode e : node.step) { build(e); current.emitPop(); }
         current.emitJump(header);
         startBlock(exit); emitPushNull();
@@ -1092,7 +1158,7 @@ public class IRBuilder {
 
         // Body: execute, then increment
         startBlock(body);
-        enterScope(); build(node.body); leaveScope();
+        enterControlScope(); build(node.body); leaveControlScope();
         current.emitPop();                // discard body result
         // i = i + 1
         current.emitPushVar(varIdx);
@@ -1171,18 +1237,27 @@ public class IRBuilder {
 
     // ── Lambda ──
     private void buildLambda(ELNode.LAMBDA node) {
-        IRBuilder nested = new IRBuilder(this);  // share parent pool
+        // Compute scope analysis for this lambda: determine which variables
+        // it captures from the enclosing scope and whether they are mutated.
+        Set<String> lambdaFreeVars = new HashSet<>();
+        Set<String> lambdaMutableFree = new HashSet<>();
+        computeLambdaCaptures(node, lambdaFreeVars, lambdaMutableFree);
+
+        IRBuilder nested = new IRBuilder(this);
         nested.lambdaName = node.name;
         for (ELNode.DEFINE var : node.vars) {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
             nested.ensureVar(var.id, flags);
         }
+
         // Pre-scan the body for free variable references that the normal
         // buildIdent path may miss (e.g. identifiers inside trampolined
         // sub-expressions like CONST_MATCH or list comprehensions).
         // Without this scan, those identifiers are never added to
         // capturedVars and are invisible to the trampoline at runtime.
         captureFreeVariables(nested, node);
+
+        // Build the lambda body
         nested.inTailPosition = true;
         nested.build(node.body);
         if (!endsWithReturn(nested)) {
@@ -1200,21 +1275,24 @@ public class IRBuilder {
             registerFunction(node.name, poolIdx);
         }
 
-        // Emit CLOSURE opcode (even for 0-capture lambdas — PUSH_CONST
-        // can't embed IRFunction via LDC in bytecode mode).
+        // Emit CLOSURE opcode. For captured variables:
+        // - If the captured var is in the enclosing scope's isCaptured set
+        //   (i.e., it's stored in eval context), push via PUSH_GLOBAL.
+        // - Otherwise, push from the enclosing scope's local slot via PUSH_VAR.
         if (!nested.capturedVars.isEmpty()) {
-            // Push outer values of captured variables onto stack
             for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
-                Integer outerIdx = varIndex.get(e.getKey());
-                if (outerIdx != null) {
-                    current.emitPushVar(outerIdx);
+                String varName = e.getKey();
+                if (isCaptured.contains(varName)) {
+                    // Captured var lives in eval context — read from there
+                    int nameIdx = putConstant(varName);
+                    current.emitPushGlobal(nameIdx);
                 } else {
-                    // Captured variable not found in varIndex — it may be
-                    // defined in a scope block ({...}). Scoped variable
-                    // capture is not yet supported; the variable will be
-                    // undefined at runtime.
-                    // TODO: walk scopeStack to find the scoped variable and
-                    //       emit the correct slot reference.
+                    // Free var from enclosing scope's local slot
+                    Integer outerIdx = varIndex.get(varName);
+                    if (outerIdx != null) {
+                        current.emitPushVar(outerIdx);
+                    }
+                    // else: variable not found — will be undefined at runtime
                 }
             }
         }
@@ -1228,6 +1306,105 @@ public class IRBuilder {
             int nameIdx = putConstant(node.name);
             current.emitStoreGlobal(nameIdx);
         }
+    }
+
+    /**
+     * Compute which variables this lambda captures from the enclosing scope
+     * and whether they are mutated. Uses ScopeAnalysis when available,
+     * falling back to the pre-scan approach.
+     */
+    private void computeLambdaCaptures(ELNode.LAMBDA node,
+                                       Set<String> freeVarsOut,
+                                       Set<String> mutableFreeOut) {
+        // Collect parameter names to exclude them
+        Set<String> paramNames = new HashSet<>();
+        for (ELNode.DEFINE v : node.vars) {
+            if (!"_".equals(v.id)) paramNames.add(v.id);
+        }
+
+        // Use ScopeAnalysis if available (from pre-pass)
+        if (scopeAnalysis != null) {
+            // The pre-pass already computed captures for all lambdas.
+            // We use the enclosing scope's capturedByInner to know which
+            // of OUR variables are captured. For the lambda itself, we
+            // need to compute which enclosing variables IT captures.
+            // This is done by walking the lambda body and checking against
+            // varIndex (enclosing scope's locals).
+            Set<String> bodyRefs = new HashSet<>();
+            Set<String> bodyMutations = new HashSet<>();
+            collectVarRefs(node.body, paramNames, bodyRefs, bodyMutations);
+
+            for (String ref : bodyRefs) {
+                if (!paramNames.contains(ref)
+                    && (varIndex.containsKey(ref) || isCaptured.contains(ref))) {
+                    freeVarsOut.add(ref);
+                    if (bodyMutations.contains(ref)) {
+                        mutableFreeOut.add(ref);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Fallback: scan the body for free variable references
+        // (same logic as captureFreeVariables but without allocating slots)
+        if (parent == null) return; // top-level lambda, no outer scope
+
+        Set<String> bodyRefs = new HashSet<>();
+        Set<String> bodyMutations = new HashSet<>();
+        collectVarRefs(node.body, paramNames, bodyRefs, bodyMutations);
+
+        for (String ref : bodyRefs) {
+            if (!paramNames.contains(ref)
+                && (parent.varIndex.containsKey(ref) || parent.isCaptured.contains(ref))) {
+                freeVarsOut.add(ref);
+                if (bodyMutations.contains(ref)) {
+                    mutableFreeOut.add(ref);
+                }
+            }
+        }
+    }
+
+    /** Collect all variable references and mutations in a subtree. */
+    private void collectVarRefs(ELNode body, Set<String> excludeNames,
+                                Set<String> refsOut, Set<String> mutationsOut) {
+        body.accept(new DefaultVisitor() {
+            public void visit(ELNode.IDENT e) {
+                if (!excludeNames.contains(e.id)) {
+                    refsOut.add(e.id);
+                }
+            }
+            public void visit(ELNode.ASSIGN e) {
+                if (e.left instanceof ELNode.IDENT ident && !excludeNames.contains(ident.id)) {
+                    mutationsOut.add(ident.id);
+                    refsOut.add(ident.id);
+                }
+                scan(e.left);
+                scan(e.right);
+            }
+            public void visit(ELNode.INC e) {
+                if (e.right instanceof ELNode.IDENT ident && !excludeNames.contains(ident.id)) {
+                    mutationsOut.add(ident.id);
+                    refsOut.add(ident.id);
+                }
+                scan(e.right);
+            }
+            public void visit(ELNode.DEC e) {
+                if (e.right instanceof ELNode.IDENT ident && !excludeNames.contains(ident.id)) {
+                    mutationsOut.add(ident.id);
+                    refsOut.add(ident.id);
+                }
+                scan(e.right);
+            }
+            // Skip nested lambdas — their body references are their own captures,
+            // not captures of THIS lambda.
+            public void visit(ELNode.LAMBDA e) {
+                // Don't recurse into nested lambdas for THIS lambda's capture analysis
+            }
+            public void visit(ELNode.BLOCK e) {
+                // Don't recurse into nested blocks either
+            }
+        });
     }
 
     // ── Trampoline ──
@@ -1474,7 +1651,10 @@ public class IRBuilder {
     public static IRFunction compile(ELNode node, boolean optimize) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();
-        IRBuilder b = new IRBuilder();
+        // Run scope analysis for the expression
+        ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(null,
+            java.util.List.of(node), null);
+        IRBuilder b = new IRBuilder(null, null, analysis);
         b.build(node);
         if (!endsWithReturn(b)) {
             int typeId = b.typeIdFromNode(node);
@@ -1484,7 +1664,7 @@ public class IRBuilder {
     }
 
     public static IRFunction compile(List<ELNode> expressions) {
-        return compileWithDefs(null, expressions);
+        return compileWithDefs(null, expressions, null, null, true);
     }
 
     /** Compile expressions with prior function definitions for direct call optimization. */
@@ -1521,7 +1701,11 @@ public class IRBuilder {
                                               boolean optimize) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry per compilation
-        IRBuilder b = new IRBuilder(loader, imps);
+
+        // Run scope analysis before building IR to determine which variables
+        // are captured by closures and need to go through the evaluation context.
+        ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(defs, exps, null);
+        IRBuilder b = new IRBuilder(loader, imps, analysis);
 
         // Pre-register function definitions for direct call optimization
         if (defs != null) {

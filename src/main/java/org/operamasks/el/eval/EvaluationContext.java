@@ -165,6 +165,23 @@ public class EvaluationContext extends AbstractClosure
         return newctx;
     }
 
+    /**
+     * Set a variable by searching the FULL resolver chain (not limited by head).
+     * Used for captured variables that need to update bindings in enclosing scopes.
+     */
+    public void setVariableDeep(String name, ValueExpression value) {
+        if (name.equals("xmlns") || name.startsWith("xmlns:")) {
+            setVariable(name, value);
+            return;
+        }
+        for (Resolver r = tail; r != null; r = r.next) {
+            if (r.set(name, value)) return;
+        }
+        if (value != null) {
+            tail = new Variable(name, value, tail);
+        }
+    }
+
     public EvaluationContext pushContext(VariableMapper env) {
         EvaluationContext newctx = new EvaluationContext();
         newctx.elctx = this.elctx;
