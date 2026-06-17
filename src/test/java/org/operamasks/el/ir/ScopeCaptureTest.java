@@ -489,4 +489,39 @@ class ScopeCaptureTest extends EliteTestBase {
         assertEquals(15L, evalL("add(5)"));
         assertEquals(50L, evalL("mul(5)"));
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Undefined variable assignment — must throw in all scopes
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void assignToUndefinedTopLevelThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("x = 1"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void assignToUndefinedInIfBlockThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("if (true) { x = 1 }"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void defineThenAssignWorks() {
+        exec("define x = 5");
+        exec("x = 10");
+        assertEquals(10L, evalL("x"));
+    }
+
+    @Test
+    void assignToUndefinedInFunctionThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("define f() { y = 1; y }; f()"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
 }

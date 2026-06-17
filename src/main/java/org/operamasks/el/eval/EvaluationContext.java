@@ -174,11 +174,16 @@ public class EvaluationContext extends AbstractClosure
      * not found anywhere in the scope chain.
      */
     public void setVariableDeep(String name, ValueExpression value) {
-        // Only match Variable nodes — skip VMResolver which always returns
-        // true from set() and would silently create entries in the external
-        // VariableMapper for truly undefined names.
+        // Search the full chain for an existing binding.
+        // For Variable nodes: direct match and update.
+        // For VMResolver: only set if the variable already exists in the mapper
+        // (check via resolve first); otherwise skip — we don't auto-create.
         for (Resolver r = tail; r != null; r = r.next) {
             if (r instanceof Variable v && v.set(name, value)) return;
+            if (r instanceof VMResolver vm && vm.resolve(name) != null) {
+                vm.set(name, value);
+                return;
+            }
         }
         throw new javax.el.PropertyNotFoundException(
             _T(EL_UNDEFINED_IDENTIFIER, name));
