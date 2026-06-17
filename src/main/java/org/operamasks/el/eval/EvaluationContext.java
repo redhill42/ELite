@@ -174,6 +174,20 @@ public class EvaluationContext extends AbstractClosure
      * not found anywhere in the scope chain.
      */
     public void setVariableDeep(String name, ValueExpression value) {
+        // Namespace variables must be wrapped in a Namespace object to
+        // preserve the namespace semantics — same as setVariable.
+        // We still require the variable to exist in the chain (full search)
+        // and throw if not found.
+        if (name.equals("xmlns") || name.startsWith("xmlns:")) {
+            String prefix = name.equals("xmlns") ? "" : name.substring(6);
+            Namespace namespace = new Namespace(prefix, null);
+            namespace.setValue(elctx, value.getValue(elctx));
+            for (Resolver r = tail; r != null; r = r.next) {
+                if (r.set(name, namespace)) return;
+            }
+            throw new javax.el.PropertyNotFoundException(
+                _T(EL_UNDEFINED_IDENTIFIER, name));
+        }
         // Search the full chain for an existing binding.
         // For Variable nodes: direct match and update.
         // For VMResolver: only set if the variable already exists in the mapper
