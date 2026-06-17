@@ -206,7 +206,10 @@ class ScopeCaptureTest extends EliteTestBase {
         exec("define inc = fs[0]");
         exec("define dec = fs[1]");
         exec("define read = fs[2]");
+        // inc() increments x to 6, returns new value
         assertEquals(6L, evalL("inc()"));
+        assertEquals(6L, evalL("read()"));
+        // dec() decrements x to 5, returns new value
         assertEquals(5L, evalL("dec()"));
         assertEquals(5L, evalL("read()"));
     }
@@ -523,5 +526,111 @@ class ScopeCaptureTest extends EliteTestBase {
             javax.script.ScriptException.class,
             () -> engine.eval("define f() { y = 1; y }; f()"));
         assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Compound assignment (+=, -=, *=, /=, %=) on undefined variable
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void compoundAddToUndefinedThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("x += 1"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void compoundSubtractToUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("x -= 1"));
+    }
+
+    @Test
+    void compoundMultiplyToUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("x *= 2"));
+    }
+
+    @Test
+    void compoundDivideToUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("x /= 2"));
+    }
+
+    @Test
+    void compoundModuloToUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("x %= 2"));
+    }
+
+    @Test
+    void compoundAddToUndefinedInFunctionThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("define f() { x += 1; x }; f()"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void compoundAssignOnDefinedVariableWorks() {
+        exec("define x = 10");
+        exec("x += 5");
+        assertEquals(15L, evalL("x"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Increment / decrement on undefined variable
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void preIncOnUndefinedThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("++x"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void postIncOnUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("x++"));
+    }
+
+    @Test
+    void preDecOnUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("--x"));
+    }
+
+    @Test
+    void postDecOnUndefinedThrows() {
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("x--"));
+    }
+
+    @Test
+    void incOnUndefinedInFunctionThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("define f() { ++x; x }; f()"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void decOnUndefinedInFunctionThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("define f() { --x; x }; f()"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void incDecOnDefinedVariableWorks() {
+        exec("define x = 5");
+        exec("++x");
+        assertEquals(6L, evalL("x"));
+        exec("x--");
+        assertEquals(5L, evalL("x"));
     }
 }

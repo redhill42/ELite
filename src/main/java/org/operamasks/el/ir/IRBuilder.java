@@ -700,17 +700,35 @@ public class IRBuilder {
 
         if (target instanceof ELNode.IDENT ident) {
             Integer idx = varIndex.get(ident.id);
-            if (idx != null) {
-                // Local variable: emit INC/DEC opcode
+            if (idx != null && !isCaptured.contains(ident.id)) {
+                // Local variable (not captured): emit INC/DEC opcode
                 if (isPre) {
-                    // ++x / --x: increment in-place, push new value
                     current.emit1(isInc ? INC : DEC, K_PRIM, idx);
                 } else {
-                    // x++ / x--: push old value, increment, keep old value on stack
-                    int t = typeIdFromNode(target);
                     current.emitPushVar(idx);
                     current.emit1(isInc ? INC : DEC, K_PRIM, idx);
                     current.emitPop(); // discard new value, leave old value
+                }
+                return;
+            }
+            if (isCaptured.contains(ident.id)) {
+                // Captured variable: read from evalContext, mutate, store back
+                // via STORE_DEEP so the enclosing scope sees the change.
+                int nameIdx = putConstant(ident.id);
+                int oneIdx = putConstant(1L);
+                if (isPre) {
+                    current.emitPushGlobal(nameIdx);
+                    current.emitPushConst(oneIdx);
+                    emitDynamicOp(isInc ? Token.ADD : Token.SUB);
+                    current.emitDup(); // keep new value on stack for return
+                    current.emitStoreDeep(nameIdx);
+                } else {
+                    current.emitPushGlobal(nameIdx); // old value
+                    current.emitDup();               // dup for return
+                    current.emitPushConst(oneIdx);
+                    emitDynamicOp(isInc ? Token.ADD : Token.SUB);
+                    current.emitStoreDeep(nameIdx);
+                    current.emitPop(); // discard new value, keep old value
                 }
                 return;
             }
