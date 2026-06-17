@@ -1,8 +1,8 @@
 target
 .idea
+.claude
 *.ipr
 *.iml
 *.iws
 .DS_Store
 bench/*.class
-.claude/settings.json

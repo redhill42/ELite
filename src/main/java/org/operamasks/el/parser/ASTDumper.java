@@ -49,12 +49,12 @@ public final class ASTDumper {
     private static void dumpNode(ELNode node, StringBuilder sb,
                                   String prefix, boolean isLast, boolean isRoot) {
         if (node == null) {
-            sb.append(prefix).append(isLast ? "└── " : "├── ")
+            sb.append(prefix).append(isLast ? "└─ " : "├─ ")
               .append("(null)\n");
             return;
         }
 
-        String connector = isRoot ? "" : (isLast ? "└── " : "├── ");
+        String connector = isRoot ? "" : (isLast ? "└─ " : "├─ ");
         sb.append(prefix).append(connector);
 
         // Node header: type name + key values
@@ -68,7 +68,7 @@ public final class ASTDumper {
 
         // Collect child nodes
         Child[] children = collectChildren(node);
-        String childPrefix = prefix + (isRoot ? "" : (isLast ? "    " : "│   "));
+        String childPrefix = prefix + (isRoot ? "" : (isLast ? "   " : "│  "));
 
         for (int i = 0; i < children.length; i++) {
             Child c = children[i];
@@ -76,10 +76,10 @@ public final class ASTDumper {
             if (c.node != null) {
                 dumpNode(c.node, sb, childPrefix, last, false);
             } else if (c.nodes != null) {
-                dumpNodeList(c.nodes, sb, childPrefix, last, c.label, c.nodeType);
+                dumpNodeList(c.nodes, sb, childPrefix, last, c.label);
             } else if (c.value != null) {
                 // Leaf field with a non-node value
-                sb.append(childPrefix).append(last ? "└── " : "├── ")
+                sb.append(childPrefix).append(last ? "└─ " : "├─ ")
                   .append(c.label).append(": ").append(c.value).append('\n');
             }
         }
@@ -87,16 +87,15 @@ public final class ASTDumper {
 
     private static void dumpNodeList(ELNode[] nodes, StringBuilder sb,
                                       String prefix, boolean isLast,
-                                      String label, String nodeType) {
-        String connector = isLast ? "└── " : "├── ";
+                                      String label) {
+        String connector = isLast ? "└─ " : "├─ ";
         if (nodes.length == 0) {
             sb.append(prefix).append(connector).append(label).append(": []\n");
             return;
         }
         sb.append(prefix).append(connector).append(label);
-        if (nodeType != null) sb.append(" (").append(nodeType).append(")");
         sb.append(":\n");
-        String childPrefix = prefix + (isLast ? "    " : "│   ");
+        String childPrefix = prefix + (isLast ? "   " : "│  ");
         for (int i = 0; i < nodes.length; i++) {
             dumpNode(nodes[i], sb, childPrefix, i == nodes.length - 1, false);
         }
@@ -136,12 +135,14 @@ public final class ASTDumper {
             sb.append(" '").append(escapeStr(String.valueOf(c.value))).append("'");
         } else if (node instanceof ELNode.BOOLEANVAL b) {
             sb.append(" ").append(b.value);
-        } else if (node instanceof ELNode.NULL) {
-            sb.append(" null");
         } else if (node instanceof ELNode.SYMBOL s) {
             sb.append(" '").append(s.value).append("'");
         } else if (node instanceof ELNode.LITERAL l) {
             sb.append(" ").append(l.value);
+        } else if (node instanceof ELNode.DEFINE def && !def.immediate) {
+            sb.append(" ").append("lazy");
+        } else if (node instanceof ELNode.CONS cons && cons.delay) {
+            sb.append(" ").append("delay");
         }
     }
 
@@ -151,7 +152,6 @@ public final class ASTDumper {
         String label;
         ELNode node;          // single node child
         ELNode[] nodes;       // multiple node children
-        String nodeType;      // optional type label for arrays
         String value;         // non-node leaf value
     }
 
@@ -177,6 +177,8 @@ public final class ASTDumper {
                 if (f.getName().equals("negative")) continue; // boolean
                 if (f.getName().equals("exclude")) continue; // boolean
                 if (f.getName().equals("readonly")) continue; // boolean
+                if (f.getName().equals("immediate")) continue; // boolean
+                if (f.getName().equals("delay")) continue; // boolean
                 if (f.getName().equals("rt")) continue; // Class<?>
                 if (f.getName().startsWith("this$")) continue; // inner class ref
                 if (f.getName().startsWith("__")) continue; // internal
@@ -194,18 +196,6 @@ public final class ASTDumper {
                         c.node = childNode;
                     } else if (val instanceof ELNode[] childNodes) {
                         c.nodes = childNodes;
-                        // Try to determine child type
-                        if (childNodes.length > 0) {
-                            Class<?> elemType = childNodes[0].getClass();
-                            // Check if all same type
-                            boolean allSame = true;
-                            for (int i = 1; i < childNodes.length; i++) {
-                                if (!childNodes[i].getClass().equals(elemType)) {
-                                    allSame = false; break;
-                                }
-                            }
-                            if (allSame) c.nodeType = elemType.getSimpleName();
-                        }
                     } else if (val instanceof String || val instanceof Number
                                || val instanceof Boolean) {
                         c.value = String.valueOf(val);
