@@ -196,19 +196,19 @@ public class ELProgram implements Serializable
                 // The IR interpreter handles TRAMPOLINE opcodes inline via AST evaluation,
                 // so there is no need for a full-program fallback.
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), false, DEBUG);
+                    Utils.getClassLoader(elctx), false, DEBUG, frame.getFileName());
                 return new IRInterpreter(elctx, irFn, env).execute(null, true);
             }
 
             case 2: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), true, DEBUG);
+                    Utils.getClassLoader(elctx), true, DEBUG, frame.getFileName());
                 return new IRInterpreter(elctx, irFn, env).execute(null, true);
             }
 
             case 3: default: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), true, DEBUG);
+                    Utils.getClassLoader(elctx), true, DEBUG, frame.getFileName());
                 try {
                     IRBytecodeCompiler.CompiledFunction cf =
                         IRBytecodeCompiler.compile(irFn);

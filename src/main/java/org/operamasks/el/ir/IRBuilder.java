@@ -70,6 +70,9 @@ public class IRBuilder {
     private int currentLine;          // line number of last built ELNode
     private final List<Integer> pcLineTable = new ArrayList<>(); // [pc, line, ...]
 
+    /** Set the source file name for debug info (called before compilation). */
+    void setFile(String file) { this.currentFile = file; }
+
     // ── Scope analysis (from pre-pass) ──
     private ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
     /** Variables in this scope that are captured by inner closures → use STORE_GLOBAL/PUSH_GLOBAL. */
@@ -223,7 +226,15 @@ public class IRBuilder {
         if (node == null) { emitPushNull(); return; }
 
         if (debug) {
-            currentLine = org.operamasks.el.parser.Position.line(node.pos);
+            int line = org.operamasks.el.parser.Position.line(node.pos);
+            if (line > 0) {
+                currentLine = line;
+                // Record the first line for PC 0
+                if (pcLineTable.isEmpty()) {
+                    pcLineTable.add(0);
+                    pcLineTable.add(currentLine);
+                }
+            }
         }
 
         if (node instanceof ELNode.COMPOUND)   { buildCompound((ELNode.COMPOUND) node); return; }
@@ -885,8 +896,9 @@ public class IRBuilder {
     private void sealAndStart(int blockId) {
         int[] code = current.toArray();
         blockMap.put(currentBlockId, code);
+        runningPc += code.length;
         if (debug && currentLine > 0) {
-            recordDebugLine(runningPc + code.length);
+            recordDebugLine(runningPc);
         }
         current.clear();
         currentBlockId = blockId;
@@ -1484,7 +1496,12 @@ public class IRBuilder {
 
     private void startBlock(int blockId) {
         if (current != null && !current.isEmpty()) {
-            blockMap.put(currentBlockId, current.toArray());
+            int[] code = current.toArray();
+            blockMap.put(currentBlockId, code);
+            runningPc += code.length;
+            if (debug && currentLine > 0) {
+                recordDebugLine(runningPc);
+            }
             current.clear();
         }
         currentBlockId = blockId;
@@ -1610,14 +1627,18 @@ public class IRBuilder {
     /** Build DebugInfo from collected data. */
     private DebugInfo buildDebugInfo(String name, int blockCount, int[] offsets) {
         if (!debug || pcLineTable.isEmpty()) return DebugInfo.EMPTY;
-        // Compute block start positions from the first PC in each block
+        // Compute block start positions: for each block, find the first
+        // pcLineTable entry whose PC is >= the block's start offset.
         int[] blockPos = new int[blockCount];
         for (int i = 0; i < blockCount; i++) {
-            int pc = offsets[i];
+            int blockStart = offsets[i];
             int line = 0;
+            // Get the line from the earliest PC entry at or after block start
             for (int j = 0; j < pcLineTable.size(); j += 2) {
-                if (pcLineTable.get(j) <= pc) line = pcLineTable.get(j + 1);
-                else break;
+                if (pcLineTable.get(j) >= blockStart) {
+                    line = pcLineTable.get(j + 1);
+                    break;
+                }
             }
             blockPos[i] = line > 0 ? org.operamasks.el.parser.Position.make(line, 1) : 0;
         }
@@ -1628,9 +1649,25 @@ public class IRBuilder {
     }
 
     IRFunction finish(String name, int paramCount, Map<String, Integer> captures) {
-        // Seal current block
-        if (current != null && !current.isEmpty()) blockMap.put(currentBlockId, current.toArray());
-        else if (current != null) { current.emitReturnVoid(); blockMap.put(currentBlockId, current.toArray()); }
+        // Seal current block and record its debug line
+        if (current != null) {
+            if (!current.isEmpty()) {
+                int[] code = current.toArray();
+                blockMap.put(currentBlockId, code);
+                if (debug && currentLine > 0) {
+                    runningPc += code.length;
+                    recordDebugLine(runningPc);
+                }
+            } else {
+                current.emitReturnVoid();
+                int[] code = current.toArray();
+                blockMap.put(currentBlockId, code);
+                if (debug && currentLine > 0) {
+                    runningPc += code.length;
+                    recordDebugLine(runningPc);
+                }
+            }
+        }
 
         int count = Math.max(nextBlockId, blockMap.keySet().stream().max(Integer::compare).orElse(0) + 1);
         int[][] ordered = new int[count][];
@@ -1642,17 +1679,7 @@ public class IRBuilder {
         int[] offsets = new int[count];
         for (int i = 0; i < count; i++) { offsets[i] = merged.size(); merged.addAll(ordered[i]); }
 
-        // Record PC→line before blocks get produced
-        if (debug) {
-            int pc = 0;
-            for (int i = 0; i < count && i < ordered.length; i++) {
-                int[] blk = ordered[i];
-                if (blk != null) {
-                    pc += blk.length; // approximate — finer tracking would be better
-                }
-            }
-            // Use fine-grained positions calculated earlier
-        }
+        // Build debug info using the recorded pc→line table
 
         // Build paramFlags: trim to paramCount
         int[] pf = null;
@@ -1836,12 +1863,19 @@ public class IRBuilder {
     public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> exps,
                                               List<String> imps, ClassLoader loader,
                                               boolean optimize) {
-        return compileWithDefs(defs, exps, imps, loader, optimize, false);
+        return compileWithDefs(defs, exps, imps, loader, optimize, false, null);
     }
 
     public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> exps,
                                               List<String> imps, ClassLoader loader,
                                               boolean optimize, boolean debug) {
+        return compileWithDefs(defs, exps, imps, loader, optimize, debug, null);
+    }
+
+    public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> exps,
+                                              List<String> imps, ClassLoader loader,
+                                              boolean optimize, boolean debug,
+                                              String file) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry per compilation
 
@@ -1849,6 +1883,7 @@ public class IRBuilder {
         // are captured by closures and need to go through the evaluation context.
         ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(defs, exps, null);
         IRBuilder b = new IRBuilder(loader, imps, analysis, debug);
+        if (file != null) b.setFile(file);
 
         // Pre-register function definitions for direct call optimization
         if (defs != null) {
