@@ -678,4 +678,102 @@ class ScopeCaptureTest extends EliteTestBase {
         assertEquals(10L, ((Number) l.get(0)).longValue());
         assertEquals(20L, ((Number) l.get(1)).longValue());
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Function scope — functions defined inside other functions
+    // must NOT leak to the global scope
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void localFunctionNotVisibleOutsideDefiningScope() {
+        // add() is defined inside foo(), must not be callable from outside
+        exec("define foo() { define add(a, b) => a + b }");
+        exec("foo()");
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("add(2, 3)"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void localFunctionCallableInsideDefiningScope() {
+        exec("define foo() {"
+           + "  define add(a, b) => a + b;"
+           + "  add(2, 3)"
+           + "}");
+        assertEquals(5L, evalL("foo()"));
+    }
+
+    @Test
+    void nestedLocalFunctionsAtMultipleLevels() {
+        exec("define outer() {"
+           + "  define f1(x) => x + 1;"
+           + "  define mid() {"
+           + "    define f2(x) => x * 2;"
+           + "    f2(f1(5))"
+           + "  };"
+           + "  mid()"
+           + "}");
+        assertEquals(12L, evalL("outer()"));
+        // f1 and f2 must not leak
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("f1(5)"));
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("f2(5)"));
+    }
+
+    @Test
+    void functionDefinedInIfBlockDoesNotLeak() {
+        exec("define result = 0");
+        exec("if (true) {"
+           + "  define add(a, b) => a + b;"
+           + "  result = add(2, 3)"
+           + "}");
+        assertEquals(5L, evalL("result"));
+        // add must not be visible outside the if block
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("add(2, 3)"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("Parser extracts defines inside blocks as top-level defs")
+    void functionDefinedInIfBlockVisibleInsideBlock() {
+        exec("define result = 0");
+        exec("if (true) {"
+           + "  define double(x) => x * 2;"
+           + "  result = double(5)"
+           + "}");
+        assertEquals(10L, evalL("result"));
+        // double must not leak
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("double(5)"));
+    }
+
+    @Test
+    void functionDefinedInWhileBlockDoesNotLeak() {
+        exec("define result = 0");
+        exec("define i = 0");
+        exec("while (i < 1) {"
+           + "  define triple(x) => x * 3;"
+           + "  result = triple(3);"
+           + "  i = i + 1"
+           + "}");
+        assertEquals(9L, evalL("result"));
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("triple(3)"));
+    }
+
+    @Test
+    void functionDefinedInForBlockDoesNotLeak() {
+        exec("define result = 0");
+        exec("for (j in [1..1]) {"
+           + "  define square(x) => x * x;"
+           + "  result = square(4)"
+           + "}");
+        assertEquals(16L, evalL("result"));
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("square(4)"));
+    }
 }

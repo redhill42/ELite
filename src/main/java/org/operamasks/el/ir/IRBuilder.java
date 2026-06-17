@@ -462,7 +462,7 @@ public class IRBuilder {
             && node.right instanceof ELNode.IDENT
             && lambdaName.equals(((ELNode.IDENT) node.right).id);
         boolean isDirect = !isTail && node.right instanceof ELNode.IDENT
-            && knownFunctions.get().get(((ELNode.IDENT) node.right).id) != null;
+            && resolveKnownFunction(((ELNode.IDENT) node.right).id) != null;
 
         if (isTail) {
             // TCO: build args (never in tail position), emit INVOKE_TAIL
@@ -481,7 +481,7 @@ public class IRBuilder {
             inTailPosition = false;
             for (ELNode arg : node.args) build(arg);
             inTailPosition = prev;
-            Integer funcIdx = knownFunctions.get().get(((ELNode.IDENT) node.right).id);
+            Integer funcIdx = resolveKnownFunction(((ELNode.IDENT) node.right).id);
             current.emitInvokeDirect(funcIdx, node.args.length);
             return;
         }
@@ -547,7 +547,7 @@ public class IRBuilder {
 
             boolean isTail = inTailPosition && lambdaName != null &&
                              lambdaName.equals(id);
-            boolean isDirect = !isTail && knownFunctions.get().get(id) != null;
+            boolean isDirect = !isTail && resolveKnownFunction(id) != null;
 
             if (isTail) {
                 inTailPosition = false;
@@ -563,7 +563,7 @@ public class IRBuilder {
                 inTailPosition = false;
                 build(node.left);
                 inTailPosition = prev;
-                Integer funcIdx = knownFunctions.get().get(id);
+                Integer funcIdx = resolveKnownFunction(id);
                 current.emitInvokeDirect(funcIdx, 1);
                 return;
             }
@@ -1291,9 +1291,13 @@ public class IRBuilder {
         // capturedVars and are invisible to the trampoline at runtime.
         captureFreeVariables(nested, node);
 
-        // Build the lambda body
+        // Build the lambda body in its own function scope so that
+        // functions defined inside are registered locally and don't
+        // leak into the enclosing scope's knownFunctions.
         nested.inTailPosition = true;
+        nested.pushFunctionScope();
         nested.build(node.body);
+        nested.popFunctionScope();
         if (!endsWithReturn(nested)) {
             int t = nested.typeIdFromNode(node.body);
             nested.current.emitReturn(t >= 0 ? t : T_INT);
@@ -1302,7 +1306,7 @@ public class IRBuilder {
                                        node.vars.length, nested.capturedVars);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
-        // Only register non-capturing functions for direct invocation.
+        // Register this function in the enclosing scope for direct calls.
         // Capturing functions (closures) must go through INVOKE_DYN so
         // captured values are passed via IRClosure.
         if (fn.captureCount() == 0) {
@@ -1332,10 +1336,12 @@ public class IRBuilder {
         }
         current.emitClosure(poolIdx, nested.capturedVars.size());
 
-        // If the lambda has a name, store it in the global VariableMapper
-        // so recursive calls from trampolined bodies (e.g. let with
-        // destructuring patterns) can find the function by name.
-        if (node.name != null && !node.name.isEmpty()) {
+        // If the lambda has a name, store it so recursive calls from
+        // trampolined bodies can find the function by name.
+        // Suppress inside control-flow scopes (if/while/for blocks) to
+        // prevent the function from leaking out of the block.
+        if (node.name != null && !node.name.isEmpty()
+            && savedVarBindings.isEmpty()) {
             current.emitDup();
             int nameIdx = putConstant(node.name);
             current.emitStoreGlobal(nameIdx);
@@ -1641,14 +1647,39 @@ public class IRBuilder {
     }
 
     // ── Function registry for direct calls ──
-    private static final ThreadLocal<Map<String, Integer>> knownFunctions =
-        ThreadLocal.withInitial(HashMap::new);
+    // Scope-aware: each function scope has its own map. Push on scope entry,
+    // pop on scope exit. Lookups search from innermost outward.
+    private static final ThreadLocal<Deque<Map<String, Integer>>> knownFunctions =
+        ThreadLocal.withInitial(ArrayDeque::new);
     /** @data constructor names whose calls need AST trampoline (lazy args). */
     private static final Set<String> dataConstructorNames = new HashSet<>();
 
-    /** Register a function name → constant pool index for direct call optimization. */
+    /** Push a new function scope (called at the start of a lambda body). */
+    private void pushFunctionScope() {
+        knownFunctions.get().push(new LinkedHashMap<>());
+    }
+
+    /** Pop the current function scope (called at the end of a lambda body). */
+    private void popFunctionScope() {
+        Deque<Map<String, Integer>> stack = knownFunctions.get();
+        if (!stack.isEmpty()) stack.pop();
+    }
+
+    /** Register a function name in the current scope. */
     private void registerFunction(String name, int irFunctionPoolIdx) {
-        if (name != null) knownFunctions.get().put(name, irFunctionPoolIdx);
+        if (name == null) return;
+        Deque<Map<String, Integer>> stack = knownFunctions.get();
+        if (stack.isEmpty()) stack.push(new LinkedHashMap<>());
+        stack.peek().put(name, irFunctionPoolIdx);
+    }
+
+    /** Resolve a function name from innermost scope outward. */
+    private Integer resolveKnownFunction(String name) {
+        for (Map<String, Integer> scope : knownFunctions.get()) {
+            Integer idx = scope.get(name);
+            if (idx != null) return idx;
+        }
+        return null;
     }
 
     // ── TCO compilation API (for testing and direct use) ──
@@ -1785,7 +1816,11 @@ public class IRBuilder {
                 nested.ensureVar(var.id, flags);
             }
             nested.inTailPosition = true;
+            // Build the body in its own scope — functions defined inside
+            // are registered locally and won't leak to the outer scope.
+            nested.pushFunctionScope();
             nested.build(lam.body);
+            nested.popFunctionScope();
             if (!endsWithReturn(nested)) {
                 int t = nested.typeIdFromNode(lam.body);
                 nested.current.emitReturn(t >= 0 ? t : T_INT);
