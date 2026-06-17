@@ -27,6 +27,7 @@ import org.operamasks.el.eval.closure.ClassDefinition;
 import org.operamasks.el.eval.closure.AbstractClosure;
 import org.operamasks.el.eval.closure.DataClass;
 import static javax.xml.XMLConstants.*;
+import static org.operamasks.el.resources.Resources.*;
 
 /**
  * The evaluation context that associated with a expression.
@@ -173,11 +174,14 @@ public class EvaluationContext extends AbstractClosure
      * not found anywhere in the scope chain.
      */
     public void setVariableDeep(String name, ValueExpression value) {
+        // Only match Variable nodes — skip VMResolver which always returns
+        // true from set() and would silently create entries in the external
+        // VariableMapper for truly undefined names.
         for (Resolver r = tail; r != null; r = r.next) {
-            if (r.set(name, value)) return;
+            if (r instanceof Variable v && v.set(name, value)) return;
         }
         throw new javax.el.PropertyNotFoundException(
-            "标识符未定义: " + name);
+            _T(EL_UNDEFINED_IDENTIFIER, name));
     }
 
     public EvaluationContext pushContext(VariableMapper env) {

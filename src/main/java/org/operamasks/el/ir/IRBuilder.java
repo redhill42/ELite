@@ -888,17 +888,22 @@ public class IRBuilder {
             } else {
                 emitDynamicOp(node.binary.op);
             }
-            // Store result back — assign must find existing binding in full chain
+            // Store result back — assign semantics for functions, define for top-level
             current.emitDup();
             if (isCaptured.contains(ident.id)) {
-                // Captured: search full eval context chain
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                if (parent != null)
+                    current.emitStoreDeep(nameIdx);
+                else
+                    current.emitStoreGlobal(nameIdx);
             } else {
                 int idx = varIndex.getOrDefault(ident.id, -1);
                 if (idx >= 0) current.emitStoreVar(idx);
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                if (parent != null)
+                    current.emitStoreDeep(nameIdx);
+                else
+                    current.emitStoreGlobal(nameIdx);
             }
         } else {
             buildTrampoline(node);
@@ -911,15 +916,25 @@ public class IRBuilder {
         if (node.left instanceof ELNode.IDENT ident) {
             current.emitDup();
             if (isCaptured.contains(ident.id)) {
-                // Captured by inner closure: search full eval context chain
+                // Captured by inner closure:
+                // - Inside a function: search full chain (STORE_DEEP)
+                // - Top-level: same as define (STORE_GLOBAL)
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                if (parent != null)
+                    current.emitStoreDeep(nameIdx);
+                else
+                    current.emitStoreGlobal(nameIdx);
             } else {
-                // Non-captured: STORE_VAR (local slot) + STORE_DEEP (full chain)
+                // Non-captured: STORE_VAR (local slot) + global store
                 int idx = varIndex.getOrDefault(ident.id, -1);
                 if (idx >= 0) current.emitStoreVar(idx);
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                // Top-level: define semantics (create if new)
+                // Inside function: assign semantics (find in chain, throw if undefined)
+                if (parent != null)
+                    current.emitStoreDeep(nameIdx);
+                else
+                    current.emitStoreGlobal(nameIdx);
             }
         } else if (node.left instanceof ELNode.ACCESS access && isSimpleKey(access.index)) {
             // obj.prop = value — try direct field store for known Java types
