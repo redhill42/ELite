@@ -633,4 +633,49 @@ class ScopeCaptureTest extends EliteTestBase {
         exec("x--");
         assertEquals(5L, evalL("x"));
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Tuple assignment
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void tupleAssignToUndefinedThrows() {
+        javax.script.ScriptException ex = assertThrows(
+            javax.script.ScriptException.class,
+            () -> engine.eval("(x, y) = (1, 2)"));
+        assertTrue(ex.getMessage().contains("标识符未定义"));
+    }
+
+    @Test
+    void tupleAssignPartiallyUndefinedThrows() {
+        exec("define x = 0");
+        assertThrows(javax.script.ScriptException.class,
+            () -> engine.eval("(x, y) = (1, 2)"));
+    }
+
+    @Test
+    void tupleAssignAllDefinedWorks() {
+        exec("define x = 0"); exec("define y = 0");
+        exec("(x, y) = (1, 2)");
+        assertEquals(1L, evalL("x"));
+        assertEquals(2L, evalL("y"));
+    }
+
+    @Test
+    void tupleAssignInFunctionWithCapturedVar() {
+        exec("define foo() {"
+           + "  define a = 0; define b = 0;"
+           + "  define set(v) => (a, b) = v;"
+           + "  define read() => [a, b];"
+           + "  [set, read]"
+           + "}");
+        exec("define fs = foo()");
+        exec("define set = fs[0]");
+        exec("define read = fs[1]");
+        exec("set((10, 20))");
+        Object result = eval("read()");
+        java.util.List<?> l = (java.util.List<?>) result;
+        assertEquals(10L, ((Number) l.get(0)).longValue());
+        assertEquals(20L, ((Number) l.get(1)).longValue());
+    }
 }
