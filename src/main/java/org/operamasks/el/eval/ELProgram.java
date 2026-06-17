@@ -73,7 +73,7 @@ public class ELProgram implements Serializable
     static boolean STRICT_BYTECODE = Boolean.getBoolean("elite.strict");
 
     /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
-    static final boolean DEBUG = Boolean.getBoolean("elite.debug");
+    public static final boolean DEBUG = Boolean.getBoolean("elite.debug");
 
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
@@ -196,19 +196,19 @@ public class ELProgram implements Serializable
                 // The IR interpreter handles TRAMPOLINE opcodes inline via AST evaluation,
                 // so there is no need for a full-program fallback.
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), false);
+                    Utils.getClassLoader(elctx), false, DEBUG);
                 return new IRInterpreter(elctx, irFn, env).execute(null, true);
             }
 
             case 2: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), true);
+                    Utils.getClassLoader(elctx), true, DEBUG);
                 return new IRInterpreter(elctx, irFn, env).execute(null, true);
             }
 
             case 3: default: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), true);
+                    Utils.getClassLoader(elctx), true, DEBUG);
                 try {
                     IRBytecodeCompiler.CompiledFunction cf =
                         IRBytecodeCompiler.compile(irFn);

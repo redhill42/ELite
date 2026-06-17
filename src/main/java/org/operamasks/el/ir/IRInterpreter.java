@@ -75,6 +75,9 @@ public class IRInterpreter {
 
     // ── Trampoline support ──
     private EvaluationContext evalContext;
+    // ── Debug support ──
+    private final boolean debug;
+    private org.operamasks.el.eval.Frame frame; // current stack frame (debug only)
 
     public IRInterpreter(ELContext elctx, IRFunction function) {
         this(elctx, function, null);
@@ -91,6 +94,7 @@ public class IRInterpreter {
         this.code = function.code();
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
+        this.debug = org.operamasks.el.eval.ELProgram.DEBUG;
         if (parentEnv == null)
             parentEnv = (EvaluationContext)elctx.getContext(EvaluationContext.class);
         this.evalContext = parentEnv != null ? parentEnv :
@@ -148,6 +152,15 @@ public class IRInterpreter {
             evalContext = evalContext.pushContext();
         }
 
+        // Debug: push a stack frame for this function call
+        if (debug && !isTopLevel) {
+            DebugInfo di = function.debugInfo();
+            String fnName = di.functionName() != null ? di.functionName() : function.name();
+            String fileName = di.fileName();
+            int blockPos = di.positionForBlock(0);
+            frame = org.operamasks.el.eval.StackTrace.addFrame(elctx, fnName, fileName, blockPos);
+        }
+
         // Store current EvaluationContext on ELContext so invokeTarget
         // can retrieve it for nested IRClosure/IRFunction calls.
         Object savedCtx = elctx.getContext(EvaluationContext.class);
@@ -155,7 +168,25 @@ public class IRInterpreter {
 
         try {
             return interpret();
+        } catch (RuntimeException e) {
+            if (debug && !(e instanceof org.operamasks.el.eval.EvaluationException)
+                && !(e instanceof org.operamasks.el.eval.Control)) {
+                // Update frame position to error location
+                if (frame != null) {
+                    DebugInfo di = function.debugInfo();
+                    int line = di.lineForPC(ip);
+                    if (line > 0) {
+                        frame.setPos(org.operamasks.el.parser.Position.make(line, 1));
+                    }
+                }
+                throw new org.operamasks.el.eval.EvaluationException(elctx, e);
+            }
+            throw e;
         } finally {
+            if (frame != null) {
+                org.operamasks.el.eval.StackTrace.removeFrame(elctx);
+                frame = null;
+            }
             if (savedCtx != null)
                 elctx.putContext(EvaluationContext.class, savedCtx);
             ELEngine.setCurrentELContext(savedElCtx);

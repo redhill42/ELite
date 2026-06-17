@@ -137,7 +137,7 @@ public class IRSpecializer implements IRPass {
         }
         return new IRFunction(fn.name(), fn.paramCount(), fn.captureCount(),
                 merged.toArray(), newOffsets, fn.constantPool(),
-                fn.varNames(), fn.sourcePositions(), fn.paramFlags(),
+                fn.varNames(), fn.debugInfo(), fn.paramFlags(),
                 fn.defaultValues());
     }
 

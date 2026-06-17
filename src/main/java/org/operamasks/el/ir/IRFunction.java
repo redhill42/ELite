@@ -46,8 +46,8 @@ public class IRFunction {
     /** Variable names indexed by PUSH_VAR/PUSH_GLOBAL payload. */
     private final String[] varNames;
 
-    /** Optional: positions for debugging. Parallel to blocks. */
-    private final int[] sourcePositions;
+    /** Source-level debug info (PC→line mapping, file/function metadata). */
+    private final DebugInfo debugInfo;
 
     /**
      * Per-parameter flags. Bit 0 = type was explicitly annotated (vs. inferred).
@@ -65,42 +65,59 @@ public class IRFunction {
 
     IRFunction(String name, int paramCount,
                int[] code, int[] blockOffsets,
+               Object[] constantPool, String[] varNames) {
+        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
+             DebugInfo.EMPTY, null, null);
+    }
+
+    // Backward-compatible: accepts int[] sourcePositions (ignored)
+    IRFunction(String name, int paramCount,
+               int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions) {
         this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             sourcePositions, null, null);
+             DebugInfo.EMPTY, null, null);
     }
 
+    // Backward-compatible: sourcePositions + paramFlags
     IRFunction(String name, int paramCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
                int[] sourcePositions, int[] paramFlags) {
         this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             sourcePositions, paramFlags, null);
+             DebugInfo.EMPTY, paramFlags, null);
+    }
+
+    IRFunction(String name, int paramCount,
+               int[] code, int[] blockOffsets,
+               Object[] constantPool, String[] varNames,
+               DebugInfo debugInfo, int[] paramFlags) {
+        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
+             debugInfo, paramFlags, null);
     }
 
     // For ConstantFolder which passes defaultValues as last arg
     IRFunction(String name, int paramCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
-               int[] sourcePositions, int[] paramFlags,
+               DebugInfo debugInfo, int[] paramFlags,
                Object[] defaultValues) {
         this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             sourcePositions, paramFlags, defaultValues);
+             debugInfo, paramFlags, defaultValues);
     }
 
     IRFunction(String name, int paramCount, int captureCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
-               int[] sourcePositions, int[] paramFlags) {
+               DebugInfo debugInfo, int[] paramFlags) {
         this(name, paramCount, captureCount, code, blockOffsets, constantPool, varNames,
-             sourcePositions, paramFlags, null);
+             debugInfo, paramFlags, null);
     }
 
     IRFunction(String name, int paramCount, int captureCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
-               int[] sourcePositions, int[] paramFlags,
+               DebugInfo debugInfo, int[] paramFlags,
                Object[] defaultValues) {
         this.name = name;
         this.paramCount = paramCount;
@@ -109,7 +126,7 @@ public class IRFunction {
         this.blockOffsets = blockOffsets;
         this.constantPool = constantPool;
         this.varNames = varNames;
-        this.sourcePositions = sourcePositions;
+        this.debugInfo = debugInfo != null ? debugInfo : DebugInfo.EMPTY;
         this.paramFlags = paramFlags;
         this.defaultValues = defaultValues;
     }
@@ -121,7 +138,7 @@ public class IRFunction {
     public int[] blockOffsets() { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
     public String[] varNames() { return varNames; }
-    public int[] sourcePositions() { return sourcePositions; }
+    public DebugInfo debugInfo() { return debugInfo; }
 
     /**
      * Per-parameter flags. Bit 0 (EXPLICIT_TYPE) = type was explicitly annotated.
@@ -145,7 +162,7 @@ public class IRFunction {
         if (defs == null) return this;
         for (Object d : defs) if (d != null) {
             return new IRFunction(name, paramCount, captureCount, code, blockOffsets,
-                    constantPool, varNames, sourcePositions, paramFlags, defs);
+                    constantPool, varNames, debugInfo, paramFlags, defs);
         }
         return this; // all null — no defaults to apply
     }

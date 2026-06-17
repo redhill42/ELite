@@ -116,6 +116,8 @@ public class Main
                     shellContext.setEncoding(args[++argIndex]);
                 } else if (args[argIndex].equals("-i")) {
                     shellContext.setInteractive(true);
+                } else if (args[argIndex].equals("--debug")) {
+                    System.setProperty("elite.debug", "true");
                 } else if (args[argIndex].equals("--dump-ir")) {
                     dumpIR = true;
                 } else if (args[argIndex].equals("--dump-bc")) {

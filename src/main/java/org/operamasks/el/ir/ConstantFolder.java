@@ -94,7 +94,7 @@ public class ConstantFolder implements IRPass {
 
         return new IRFunction(input.name(), input.paramCount(),
                 merged.toArray(), newOffsets, newPool, input.varNames(),
-                input.sourcePositions(), input.paramFlags(),
+                input.debugInfo(), input.paramFlags(),
                 input.defaultValues());
     }
 

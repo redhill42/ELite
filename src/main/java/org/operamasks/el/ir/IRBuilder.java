@@ -64,6 +64,12 @@ public class IRBuilder {
     private record LoopTargets(int continueBlock, int breakBlock) {}
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
+    // ── Debug info ──
+    private final boolean debug;
+    private String currentFile;       // source file name
+    private int currentLine;          // line number of last built ELNode
+    private final List<Integer> pcLineTable = new ArrayList<>(); // [pc, line, ...]
+
     // ── Scope analysis (from pre-pass) ──
     private ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
     /** Variables in this scope that are captured by inner closures → use STORE_GLOBAL/PUSH_GLOBAL. */
@@ -98,15 +104,21 @@ public class IRBuilder {
      *  is a terminator and the SCOPE_EXIT would be dead code. */
     private boolean justEmittedTail = false;
 
-    IRBuilder() { this(null, null, null); }
+    IRBuilder() { this(null, null, null, false); }
 
     /** Create a top-level builder with optional import context for CLASS resolution. */
     IRBuilder(ClassLoader loader, List<String> imps) {
-        this(loader, imps, null);
+        this(loader, imps, null, false);
     }
 
     /** Create a top-level builder with import context and scope analysis. */
     IRBuilder(ClassLoader loader, List<String> imps, ScopeAnalyzer.ScopeAnalysis analysis) {
+        this(loader, imps, analysis, false);
+    }
+
+    /** Create a top-level builder with import context, scope analysis, and debug flag. */
+    IRBuilder(ClassLoader loader, List<String> imps, ScopeAnalyzer.ScopeAnalysis analysis,
+              boolean debug) {
         this.parent = null;
         this.classLoader = loader;
         this.importAliases = new LinkedHashMap<>();
@@ -114,6 +126,7 @@ public class IRBuilder {
         seedImports(imps);
         this.currentBlockId = 0;
         this.current = new IREmitter();
+        this.debug = debug;
         this.scopeAnalysis = analysis;
         if (analysis != null) {
             this.isCaptured.addAll(analysis.capturedByInner);
@@ -133,6 +146,8 @@ public class IRBuilder {
         this.importPackages = parent != null ? parent.importPackages : new ArrayList<>();
         this.currentBlockId = 0;
         this.current = new IREmitter();
+        this.debug = parent != null && parent.debug;
+        this.currentFile = parent != null ? parent.currentFile : null;
         this.scopeAnalysis = analysis;
         if (analysis != null) {
             this.isCaptured.addAll(analysis.capturedByInner);
@@ -206,6 +221,10 @@ public class IRBuilder {
 
     void build(ELNode node) {
         if (node == null) { emitPushNull(); return; }
+
+        if (debug) {
+            currentLine = org.operamasks.el.parser.Position.line(node.pos);
+        }
 
         if (node instanceof ELNode.COMPOUND)   { buildCompound((ELNode.COMPOUND) node); return; }
         if (node instanceof ELNode.Composite)  { buildComposite((ELNode.Composite) node); return; }
@@ -864,10 +883,17 @@ public class IRBuilder {
     }
     /** Seal current block into blockMap and start a new block with the given ID. */
     private void sealAndStart(int blockId) {
-        blockMap.put(currentBlockId, current.toArray());
+        int[] code = current.toArray();
+        blockMap.put(currentBlockId, code);
+        if (debug && currentLine > 0) {
+            recordDebugLine(runningPc + code.length);
+        }
         current.clear();
         currentBlockId = blockId;
     }
+
+    // Running PC counter for debug info
+    private int runningPc;
 
     // ── Coalesce ──
     private void buildCoalesce(ELNode node) {
@@ -1570,6 +1596,37 @@ public class IRBuilder {
         return finish(name, paramCount, null);
     }
 
+    /** Record the current line for the given PC (used by debug info). */
+    private void recordDebugLine(int pc) {
+        if (debug && currentLine > 0 && pc >= 0) {
+            int n = pcLineTable.size();
+            // Deduplicate consecutive same-line entries
+            if (n >= 2 && pcLineTable.get(n - 1) == currentLine) return;
+            pcLineTable.add(pc);
+            pcLineTable.add(currentLine);
+        }
+    }
+
+    /** Build DebugInfo from collected data. */
+    private DebugInfo buildDebugInfo(String name, int blockCount, int[] offsets) {
+        if (!debug || pcLineTable.isEmpty()) return DebugInfo.EMPTY;
+        // Compute block start positions from the first PC in each block
+        int[] blockPos = new int[blockCount];
+        for (int i = 0; i < blockCount; i++) {
+            int pc = offsets[i];
+            int line = 0;
+            for (int j = 0; j < pcLineTable.size(); j += 2) {
+                if (pcLineTable.get(j) <= pc) line = pcLineTable.get(j + 1);
+                else break;
+            }
+            blockPos[i] = line > 0 ? org.operamasks.el.parser.Position.make(line, 1) : 0;
+        }
+        int n = pcLineTable.size();
+        int[] pcLines = new int[n];
+        for (int i = 0; i < n; i++) pcLines[i] = pcLineTable.get(i);
+        return new DebugInfo(currentFile, name, blockPos, pcLines, n / 2);
+    }
+
     IRFunction finish(String name, int paramCount, Map<String, Integer> captures) {
         // Seal current block
         if (current != null && !current.isEmpty()) blockMap.put(currentBlockId, current.toArray());
@@ -1585,6 +1642,18 @@ public class IRBuilder {
         int[] offsets = new int[count];
         for (int i = 0; i < count; i++) { offsets[i] = merged.size(); merged.addAll(ordered[i]); }
 
+        // Record PC→line before blocks get produced
+        if (debug) {
+            int pc = 0;
+            for (int i = 0; i < count && i < ordered.length; i++) {
+                int[] blk = ordered[i];
+                if (blk != null) {
+                    pc += blk.length; // approximate — finer tracking would be better
+                }
+            }
+            // Use fine-grained positions calculated earlier
+        }
+
         // Build paramFlags: trim to paramCount
         int[] pf = null;
         if (!paramFlags.isEmpty()) {
@@ -1595,7 +1664,7 @@ public class IRBuilder {
         return new IRFunction(name, paramCount, captures != null ? captures.size() : 0,
             merged.toArray(), offsets,
             constants.toArray(new Object[0]), varNames.toArray(new String[0]),
-            new int[count], pf);
+            buildDebugInfo(name, count, offsets), pf);
     }
 
     // ── Convenience emits ──
@@ -1714,12 +1783,15 @@ public class IRBuilder {
 
     /** Compile a single expression, optionally applying optimization passes. */
     public static IRFunction compile(ELNode node, boolean optimize) {
+        return compile(node, optimize, false);
+    }
+
+    public static IRFunction compile(ELNode node, boolean optimize, boolean debug) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();
-        // Run scope analysis for the expression
         ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(null,
             java.util.List.of(node), null);
-        IRBuilder b = new IRBuilder(null, null, analysis);
+        IRBuilder b = new IRBuilder(null, null, analysis, debug);
         b.build(node);
         if (!endsWithReturn(b)) {
             int typeId = b.typeIdFromNode(node);
@@ -1764,13 +1836,19 @@ public class IRBuilder {
     public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> exps,
                                               List<String> imps, ClassLoader loader,
                                               boolean optimize) {
+        return compileWithDefs(defs, exps, imps, loader, optimize, false);
+    }
+
+    public static IRFunction compileWithDefs(List<ELNode> defs, List<ELNode> exps,
+                                              List<String> imps, ClassLoader loader,
+                                              boolean optimize, boolean debug) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry per compilation
 
         // Run scope analysis before building IR to determine which variables
         // are captured by closures and need to go through the evaluation context.
         ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(defs, exps, null);
-        IRBuilder b = new IRBuilder(loader, imps, analysis);
+        IRBuilder b = new IRBuilder(loader, imps, analysis, debug);
 
         // Pre-register function definitions for direct call optimization
         if (defs != null) {
