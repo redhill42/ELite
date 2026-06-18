@@ -97,6 +97,14 @@ public class IRBuilder {
      */
     private final Set<String> isCaptured = new HashSet<>();
 
+    /**
+     * Slot indices whose variable was stored via STORE_GLOBAL during define.
+     * Assignments (x = expr) need STORE_DEEP only for these slots — slot-only
+     * variables (function locals, control-flow shadows) don't have global
+     * bindings and would fail with PropertyNotFoundException.
+     */
+    private final Set<Integer> globalSlots = new HashSet<>();
+
     // ── Control-flow scope tracking (compile-time slot allocation only, no
     // runtime ops) ──
     // When entering a control-flow scope ({...} block in if/while/for), we
@@ -1380,17 +1388,28 @@ public class IRBuilder {
             }
 
             // Store result back — assign must find existing binding in full
-            // chain
+            // chain.
+            // Only emit STORE_DEEP when the variable was stored via STORE_GLOBAL
+            // at define time (top-level, captured). Slot-only variables
+            // (function locals, control-flow shadows) don't have global
+            // bindings and STORE_DEEP would throw PropertyNotFoundException.
             current.emitDup();
             if (isCaptured.contains(ident.id)) {
                 int nameIdx = putConstant(ident.id);
                 current.emitStoreDeep(nameIdx);
             } else {
                 int idx = varIndex.getOrDefault(ident.id, -1);
-                if (idx >= 0)
+                if (idx >= 0) {
                     current.emitStoreVar(idx);
-                int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                    if (globalSlots.contains(idx)) {
+                        int nameIdx = putConstant(ident.id);
+                        current.emitStoreDeep(nameIdx);
+                    }
+                } else {
+                    // Variable from previous eval — only global binding exists
+                    int nameIdx = putConstant(ident.id);
+                    current.emitStoreDeep(nameIdx);
+                }
             }
         } else {
             buildTrampoline(node);
@@ -1407,13 +1426,18 @@ public class IRBuilder {
                 int nameIdx = putConstant(ident.id);
                 current.emitStoreDeep(nameIdx);
             } else {
-                // Non-captured: STORE_VAR (local slot) + STORE_DEEP (full
-                // chain)
                 int idx = varIndex.getOrDefault(ident.id, -1);
-                if (idx >= 0)
+                if (idx >= 0) {
                     current.emitStoreVar(idx);
-                int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                    if (globalSlots.contains(idx)) {
+                        int nameIdx = putConstant(ident.id);
+                        current.emitStoreDeep(nameIdx);
+                    }
+                } else {
+                    // Variable from previous eval — only global binding exists
+                    int nameIdx = putConstant(ident.id);
+                    current.emitStoreDeep(nameIdx);
+                }
             }
         } else if (node.left instanceof ELNode.ACCESS access &&
                    isSimpleKey(access.index)) {
@@ -1504,6 +1528,7 @@ public class IRBuilder {
                         current.emitStoreVar(idx);
                         int nameIdx = putConstant(node.id);
                         current.emitStoreGlobal(nameIdx);
+                        globalSlots.add(idx);
                     }
                 } else {
                     buildTrampoline(node);
@@ -1552,6 +1577,7 @@ public class IRBuilder {
                 current.emitStoreVar(idx);
                 int nameIdx = putConstant(node.id);
                 current.emitStoreGlobal(nameIdx);
+                globalSlots.add(idx);
             }
         }
     }
