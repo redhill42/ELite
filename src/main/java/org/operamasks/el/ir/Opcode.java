@@ -122,8 +122,6 @@ public final class Opcode {
     public static final int RETURN        = 0x65;
     public static final int RETURN_VOID   = 0x66;
     public static final int THROW         = 0x67;
-    public static final int SCOPE_ENTER   = 0x68;
-    public static final int SCOPE_EXIT    = 0x69;
 
     // ── Memory / allocation (0x70-0x7F) ──
     public static final int STORE_VAR      = 0x70;
@@ -242,8 +240,6 @@ public final class Opcode {
             case RETURN:       return "RETURN";
             case RETURN_VOID:  return "RETURN_VOID";
             case THROW:        return "THROW";
-            case SCOPE_ENTER:  return "SCOPE_ENTER";
-            case SCOPE_EXIT:   return "SCOPE_EXIT";
             case STORE_VAR:      return "STORE_VAR";
             case LOAD_FIELD:     return "LOAD_FIELD";
             case STORE_FIELD:    return "STORE_FIELD";

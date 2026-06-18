@@ -744,14 +744,6 @@ public class IRInterpreter {
                 case RETURN_VOID: {
                     return null;
                 }
-                case SCOPE_ENTER:
-                case SCOPE_EXIT: {
-                    // NOP — control-flow scopes are handled purely at
-                    // compile time via slot allocation. Closure scope
-                    // isolation is handled by execute()'s pushContext().
-                    ip += 1;
-                    break;
-                }
                 case THROW: {
                     Object cause = pop();
                     if (cause instanceof RuntimeException re)
