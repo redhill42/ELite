@@ -327,7 +327,7 @@ public class IRSpecializer implements IRPass {
             case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL, false, -1); }
             case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL, false, -1); }
             case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL, false, -1); }
-            case DYNEQ, DYNLT, DYNLE -> { pop2(); pushType(T_BOOL, false, -1); }
+            case REFEQ, REFNE, DYNEQ, DYNLT, DYNLE -> { pop2(); pushType(T_BOOL, false, -1); }
             case DUP -> { int t = peekType(); boolean e = peekExplicit(); pushType(t, e, varSrcAt(0)); }
             case POP -> pop1();
             case POP_N -> { for (int i=0; i<v.payload(); i++) pop1(); }
@@ -430,6 +430,7 @@ public class IRSpecializer implements IRPass {
                 case IEQ, INE, ILT, ILE, IGT, IGE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
                 case LEQ, LNE, LLT, LLE, LGT, LGE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
                 case DEQ, DNE, DLT, DLE, DGT, DGE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
+                case REFEQ, REFNE -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }
                 case DYNEQ, DYNLT, DYNLE -> {
                     int s2 = varSrcAt(0), s1 = varSrcAt(1);
                     boolean e2 = explicitAt(0), e1 = explicitAt(1);

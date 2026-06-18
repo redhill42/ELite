@@ -159,6 +159,8 @@ public class IREmitter {
     // ── Dynamic comparisons ──
 
     public IREmitter emitDynEq() { return emit1(DYNEQ, K_DYN, 0); }
+    public IREmitter emitRefEq() { return emit1(REFEQ, K_DYN, 0); }
+    public IREmitter emitRefNe() { return emit1(REFNE, K_DYN, 0); }
     public IREmitter emitDynLt() { return emit1(DYNLT, K_DYN, 0); }
     public IREmitter emitDynLe() { return emit1(DYNLE, K_DYN, 0); }
 

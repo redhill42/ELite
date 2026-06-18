@@ -926,9 +926,8 @@ public class IRBuilder {
         build(node.left);
         build(node.right);
         inTailPosition = prev;
-        // Emit as dynamic comparison — interpreter handles === via reference equality
-        current.emitDynEq();
-        if (node.op == Token.IDNE) current.emitNot();
+        if (node.op == Token.IDNE) current.emitRefNe();
+        else current.emitRefEq();
     }
 
     // ── Compound assignment (+=, -=, etc.) ──

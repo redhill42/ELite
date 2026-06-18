@@ -1104,6 +1104,22 @@ public class IRInterpreter {
                     break;
                 }
 
+                // ============ Identity comparison ============
+                case REFEQ: {
+                    Object r = pop();
+                    Object l = pop();
+                    push(l == r);
+                    ip += 1;
+                    break;
+                }
+                case REFNE: {
+                    Object r = pop();
+                    Object l = pop();
+                    push(l != r);
+                    ip += 1;
+                    break;
+                }
+
                 // ============ NOP ============
                 case NOP:
                     ip += 1;

@@ -84,7 +84,7 @@ public final class Opcode {
     public static final int LUSHR   = 0x3C;
     public static final int LBITNOT = 0x3D;
 
-    // ── Typed comparisons (0x40-0x51) ──
+    // ── Typed comparisons (0x40-0x53) ──
     public static final int IEQ = 0x40;  public static final int INE = 0x41;
     public static final int ILT = 0x42;  public static final int ILE = 0x43;
     public static final int IGT = 0x44;  public static final int IGE = 0x45;
@@ -97,18 +97,21 @@ public final class Opcode {
     public static final int DLT = 0x4E;  public static final int DLE = 0x4F;
     public static final int DGT = 0x50;  public static final int DGE = 0x51;
 
-    // ── Dynamic comparisons (0x52-0x54) ──
-    public static final int DYNEQ = 0x52;
-    public static final int DYNLT = 0x53;
-    public static final int DYNLE = 0x54;
+    public static final int REFEQ = 0x52;  // reference/identity equality (===)
+    public static final int REFNE = 0x53;  // reference/identity inequality (!==)
 
-    // ── Control flow (0x55-0x5F) ──
-    public static final int JUMP            = 0x55;
-    public static final int JUMP_IF_TRUE    = 0x56;
-    public static final int JUMP_IF_FALSE   = 0x57;
-    public static final int JUMP_IF_NULL    = 0x58;
-    public static final int JUMP_IF_NONNULL = 0x59;
-    public static final int TABLE_SWITCH    = 0x5A;
+    // ── Dynamic comparisons (0x54-0x56) ──
+    public static final int DYNEQ = 0x54;
+    public static final int DYNLT = 0x55;
+    public static final int DYNLE = 0x56;
+
+    // ── Control flow (0x57-0x5F) ──
+    public static final int JUMP            = 0x57;
+    public static final int JUMP_IF_TRUE    = 0x58;
+    public static final int JUMP_IF_FALSE   = 0x59;
+    public static final int JUMP_IF_NULL    = 0x5A;
+    public static final int JUMP_IF_NONNULL = 0x5B;
+    public static final int TABLE_SWITCH    = 0x5C;
 
     // ── Function (0x60-0x6F) ──
     public static final int INVOKE        = 0x60;
@@ -176,11 +179,11 @@ public final class Opcode {
 
     // ── Binary decoders ──
 
-    public static boolean isTypedArith(int op) { return op >= 0x10 && op <= 0x24; }
-    public static boolean isDynamicArith(int op) { return op >= 0x25 && op <= 0x2B; }
-    public static boolean isJump(int op) { return op >= 0x55 && op <= 0x5A; }
-    public static boolean isComparison(int op) { return op >= 0x40 && op <= 0x54; }
-    public static boolean isGuard(int op) { return op == GUARD_TYPE; }
+    public static boolean isTypedArith(int op)   { return op >= IADD && op <= DPOW; }
+    public static boolean isDynamicArith(int op)  { return op >= DYNADD && op <= DYNPOW; }
+    public static boolean isJump(int op)          { return op >= JUMP && op <= TABLE_SWITCH; }
+    public static boolean isComparison(int op)    { return op >= IEQ && op <= DYNLE; }
+    public static boolean isGuard(int op)         { return op == GUARD_TYPE; }
 
     /** Human-readable name for debugging. */
     public static String name(int op) {
@@ -260,6 +263,7 @@ public final class Opcode {
             case GUARD_TYPE:    return "GUARD_TYPE";
             case CAT:    return "CAT";
             case DYNCAT: return "DYNCAT";
+            case REFEQ: return "REFEQ";  case REFNE: return "REFNE";
             case NOT: return "NOT";
             case INC: return "INC"; case DEC: return "DEC";
             case PUSH_TRUE:  return "PUSH_TRUE";

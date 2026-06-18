@@ -580,6 +580,8 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "dynCat", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
+            case REFEQ -> emitDynCall("refEq", 2);
+            case REFNE -> emitDynCall("refNe", 2);
             case DYNEQ  -> emitDynCall("dynEq", 2);
             case DYNLT  -> emitDynCall("dynLt", 2);
             case DYNLE  -> emitDynCall("dynLe", 2);

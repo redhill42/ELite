@@ -157,6 +157,16 @@ public final class Runtime {
         return java.util.Arrays.asList(elems);
     }
 
+    /** Reference/identity equality (===). */
+    public static Object refEq(Object x, Object y) {
+        return x == y;
+    }
+
+    /** Reference/identity inequality (!==). */
+    public static Object refNe(Object x, Object y) {
+        return x != y;
+    }
+
     public static Object newMap(Object[] kvs) {
         java.util.LinkedHashMap<Object, Object> m = new java.util.LinkedHashMap<>();
         for (int i = 0; i < kvs.length; i += 2)
