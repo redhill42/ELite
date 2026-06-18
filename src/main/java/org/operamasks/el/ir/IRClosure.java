@@ -67,11 +67,11 @@ public class IRClosure extends Closure {
             elctx = ELEngine.getCurrentELContext();
         int paramCount = function.paramCount();
         int captureCount = function.captureCount();
-        Object[] expandedArgs = new Object[paramCount + captureCount];
+        int provided = Math.min(args != null ? args.length : 0, paramCount);
+        Object[] expandedArgs = new Object[provided + captureCount];
         Object[] callArgs = ELEngine.getArgValues(elctx, args);
-        System.arraycopy(callArgs, 0, expandedArgs, 0,
-                         Math.min(callArgs.length, paramCount));
-        System.arraycopy(captured, 0, expandedArgs, paramCount, captureCount);
+        System.arraycopy(callArgs, 0, expandedArgs, 0, provided);
+        System.arraycopy(captured, 0, expandedArgs, provided, captureCount);
         EvaluationContext evalctx = null;
         try {
             evalctx = (EvaluationContext) elctx.getContext(

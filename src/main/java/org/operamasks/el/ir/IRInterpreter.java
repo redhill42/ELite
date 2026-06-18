@@ -123,10 +123,13 @@ public class IRInterpreter {
             }
         }
 
-        // Fill missing parameters with default values
+        // Fill missing parameters with default values.
+        // Use paramCount (not args.length) as the upper bound for provided args
+        // because expanded args from INVOKE_DYN/IRClosure include capture slots
+        // at the end, inflating args.length.
         Object[] defs = function.defaultValues();
         if (defs != null) {
-            int provided = args != null ? args.length : 0;
+            int provided = args != null ? Math.min(args.length, function.paramCount()) : 0;
             for (int i = provided; i < function.paramCount(); i++) {
                 if (defs[i] != null)
                     locals[i] = defs[i];
@@ -1276,10 +1279,11 @@ public class IRInterpreter {
             IRFunction irFn = closure.function;
             int paramCount = irFn.paramCount();
             int captureCount = irFn.captureCount();
-            Object[] expandedArgs = new Object[paramCount + captureCount];
-            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length,
-                    paramCount));
-            System.arraycopy(closure.captured, 0, expandedArgs, paramCount,
+            int provided = Math.min(args.length, paramCount);
+            int total = provided + captureCount;
+            Object[] expandedArgs = new Object[total];
+            System.arraycopy(args, 0, expandedArgs, 0, provided);
+            System.arraycopy(closure.captured, 0, expandedArgs, provided,
                     captureCount);
             EvaluationContext closureCtx = closure.evalContext != null
                 ? closure.evalContext : evalContext;

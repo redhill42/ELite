@@ -185,6 +185,19 @@ public class ELProgram implements Serializable
     private Object evaluate(List<ELNode> defs, List<ELNode> exps,
                             EvaluationContext env, javax.el.ELContext elctx,
                             Frame frame) {
+        // For IR evaluation, merge function definitions into the expression
+        // list so they go through the full IR build pipeline (buildDefine →
+        // buildLambda → STORE_GLOBAL). This ensures all code executes through
+        // IR, not AST. The AST forward-declaration loop (lines 161-164)
+        // already ran and stored definitions for forward reference.
+        if (OPT_LEVEL > 0 && !defs.isEmpty()) {
+            List<ELNode> merged = new ArrayList<>(defs.size() + exps.size());
+            merged.addAll(defs);
+            merged.addAll(exps);
+            exps = merged;
+            defs = java.util.Collections.emptyList();
+        }
+
         if (exps.isEmpty()) return null;
 
         switch (OPT_LEVEL) {
