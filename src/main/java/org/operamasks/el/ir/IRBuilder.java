@@ -1480,7 +1480,9 @@ public class IRBuilder {
                     if (!savedVarBindings.isEmpty()) {
                         Map<String, Integer> saved = savedVarBindings.peek();
                         if (!saved.containsKey(node.id)) {
-                            saved.put(node.id, varIndex.get(node.id));
+                            // Save old binding and remove from varIndex so
+                            // ensureVar allocates a fresh slot for the shadow
+                            saved.put(node.id, varIndex.remove(node.id));
                         }
                         int idx = ensureVar(node.id);
                         current.emitDup();
@@ -1522,7 +1524,9 @@ public class IRBuilder {
                 // save the old slot binding, allocate a new slot for the shadow
                 Map<String, Integer> saved = savedVarBindings.peek();
                 if (!saved.containsKey(node.id)) {
-                    saved.put(node.id, varIndex.get(node.id));
+                    // Save old binding and remove from varIndex so ensureVar
+                    // allocates a fresh slot for the shadow. Null → didn't exist.
+                    saved.put(node.id, varIndex.remove(node.id));
                 }
                 int idx = ensureVar(node.id);
                 current.emitDup();
@@ -1864,8 +1868,11 @@ public class IRBuilder {
         // leak into the enclosing scope's knownFunctions.
         nested.inTailPosition = true;
         nested.pushFunctionScope();
-        nested.build(node.body);
-        nested.popFunctionScope();
+        try {
+            nested.build(node.body);
+        } finally {
+            nested.popFunctionScope();
+        }
         if (!endsWithReturn(nested)) {
             int t = nested.typeIdFromNode(node.body);
             nested.current.emitReturn(t >= 0 ? t : T_INT);
@@ -2454,6 +2461,7 @@ public class IRBuilder {
         knownFunctions.get().clear();
         knownFunctions.remove();  // also remove ThreadLocal to prevent
         // cross-test pollution
+        dataConstructorNames.clear();
     }
 
     public static IRFunction compile(ELNode node) {
@@ -2613,8 +2621,11 @@ public class IRBuilder {
             // Build the body in its own scope — functions defined inside
             // are registered locally and won't leak to the outer scope.
             nested.pushFunctionScope();
-            nested.build(lam.body);
-            nested.popFunctionScope();
+            try {
+                nested.build(lam.body);
+            } finally {
+                nested.popFunctionScope();
+            }
             if (!endsWithReturn(nested)) {
                 int t = nested.typeIdFromNode(lam.body);
                 nested.current.emitReturn(t >= 0 ? t : T_INT);

@@ -59,6 +59,38 @@ class ScopeCaptureTest extends EliteTestBase {
     }
 
     @Test
+    void blockScopedVariableWriteDoesNotAffectOuter() {
+        // The inner define must allocate a fresh slot so the outer x is preserved.
+        exec("define test() {"
+           + "  define x = 1;"
+           + "  if (true) { define x = 2; x = x + 1 };"
+           + "  x"
+           + "}");
+        assertEquals(1L, evalL("test()"));
+    }
+
+    @Test
+    void blockScopedVariableShadowInWhile() {
+        exec("define test() {"
+           + "  define x = 10;"
+           + "  define i = 0;"
+           + "  while (i < 1) { define x = 20; i = i + 1 };"
+           + "  x"
+           + "}");
+        assertEquals(10L, evalL("test()"));
+    }
+
+    @Test
+    void blockScopedVariableShadowInFor() {
+        exec("define test() {"
+           + "  define x = 'outer';"
+           + "  for (i in [1..1]) { define x = i; };"
+           + "  x"
+           + "}");
+        assertEquals("outer", eval("test()"));
+    }
+
+    @Test
     void forLoopVariableIsolation() {
         exec("define test(n) {"
            + "  define s = 0;"
