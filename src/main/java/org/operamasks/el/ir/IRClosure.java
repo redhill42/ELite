@@ -35,10 +35,22 @@ import org.operamasks.el.eval.EvaluationContext;
 public class IRClosure extends Closure {
     public final IRFunction function;
     public final Object[] captured;
+    /**
+     * The evalContext chain active when this closure was created.
+     * Used as the basis for PUSH_GLOBAL/STORE_DEEP inside the closure body,
+     * so captured variable reads and writes resolve against the original
+     * enclosing scope rather than the caller's scope.
+     */
+    public final EvaluationContext evalContext;
 
     public IRClosure(IRFunction function, Object[] captured) {
+        this(function, captured, null);
+    }
+
+    public IRClosure(IRFunction function, Object[] captured, EvaluationContext evalContext) {
         this.function = function;
         this.captured = captured;
+        this.evalContext = evalContext;
     }
 
     public IRFunction getFunction() { return function; }
@@ -65,6 +77,10 @@ public class IRClosure extends Closure {
             evalctx = (EvaluationContext) elctx.getContext(
                 EvaluationContext.class);
         } catch (Exception ignored) {}
+        // Prefer the closure's own evalContext so that captured variable
+        // reads and writes resolve in the original enclosing scope.
+        if (evalContext != null)
+            evalctx = evalContext;
         return new IRInterpreter(elctx, function, evalctx)
             .execute(expandedArgs);
     }

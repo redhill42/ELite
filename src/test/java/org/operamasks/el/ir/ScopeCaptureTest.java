@@ -164,6 +164,12 @@ class ScopeCaptureTest extends EliteTestBase {
     }
 
     @Test
+    void capturedVariableModificationPropagatesSingleEval() {
+        // Same as above but define+call in single eval → IR path
+        assertEquals(8L, evalL("define foo() { define x = 5; define bar() => x += 3; bar(); x }; foo()"));
+    }
+
+    @Test
     void readOnlyCapturedVariable() {
         exec("define foo() { define x = 5; define bar() => x * 2; bar() }");
         assertEquals(10L, evalL("foo()"));

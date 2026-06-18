@@ -301,7 +301,18 @@ public final class Runtime {
 
     /** Create closure by pool index (for bytecode — LDC can't embed IRFunction). */
     public static IRClosure createClosureById(int funcIdx, Object[] captured) {
-        return new IRClosure((IRFunction) funcPool.get()[funcIdx], captured);
+        IRFunction fn = (IRFunction) funcPool.get()[funcIdx];
+        // Capture evalContext so captured variables resolve in the
+        // original enclosing scope. Try the ELContext first (bytecode
+        // mode stores it there), then fall back to ThreadLocal.
+        org.operamasks.el.eval.EvaluationContext evalCtx = null;
+        try {
+            javax.el.ELContext elctx = ELEngine.getCurrentELContext();
+            if (elctx != null)
+                evalCtx = (org.operamasks.el.eval.EvaluationContext)
+                    elctx.getContext(org.operamasks.el.eval.EvaluationContext.class);
+        } catch (Exception ignored) {}
+        return new IRClosure(fn, captured, evalCtx);
     }
 
     // ── Locals / IncDec ──

@@ -152,6 +152,20 @@ public class IRInterpreter {
             evalContext = evalContext.pushContext();
         }
 
+        // Sync captured parameters to evalContext so inner closures can
+        // read and modify them via PUSH_GLOBAL/STORE_DEEP. Parameters are
+        // slot-only by default — this copies their initial values into the
+        // evalContext chain.
+        int[] pFlags = function.paramFlags();
+        String[] vNames = function.varNames();
+        if (pFlags != null && vNames != null) {
+            for (int i = 0; i < Math.min(pFlags.length, vNames.length); i++) {
+                if ((pFlags[i] & IRFunction.PARAM_CAPTURED) != 0) {
+                    storeGlobal(vNames[i], locals[i]);
+                }
+            }
+        }
+
         // Debug: push a stack frame for this function call
         if (debug && !isTopLevel) {
             DebugInfo di = function.debugInfo();
@@ -1049,7 +1063,10 @@ public class IRInterpreter {
                     Object[] captured = new Object[captureCount];
                     for (int i = captureCount - 1; i >= 0; i--)
                         captured[i] = pop();
-                    push(new IRClosure(fn, captured));
+                    // Capture the current evalContext so captured variable
+                    // reads and writes inside the closure resolve against
+                    // the original enclosing scope.
+                    push(new IRClosure(fn, captured, evalContext));
                     ip += 1 + oc;
                     break;
                 }
@@ -1252,7 +1269,9 @@ public class IRInterpreter {
         if (target instanceof IRFunction irFn) {
             return new IRInterpreter(elctx, irFn, evalContext).execute(args);
         }
-        // Handle IRClosure target: expand args with captured values
+        // Handle IRClosure target: expand args with captured values.
+        // Use the closure's own evalContext so captured variable reads
+        // and writes resolve in the original enclosing scope.
         if (target instanceof IRClosure closure) {
             IRFunction irFn = closure.function;
             int paramCount = irFn.paramCount();
@@ -1262,7 +1281,9 @@ public class IRInterpreter {
                     paramCount));
             System.arraycopy(closure.captured, 0, expandedArgs, paramCount,
                     captureCount);
-            return new IRInterpreter(elctx, irFn, evalContext).execute(expandedArgs);
+            EvaluationContext closureCtx = closure.evalContext != null
+                ? closure.evalContext : evalContext;
+            return new IRInterpreter(elctx, irFn, closureCtx).execute(expandedArgs);
         }
         try {
             // Use ELEngine's invoke mechanism with Closure[] conversion

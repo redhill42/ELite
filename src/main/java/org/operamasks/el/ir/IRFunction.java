@@ -145,6 +145,8 @@ public class IRFunction {
      * Returns null if no annotation info is available.
      */
     public static final int PARAM_EXPLICIT_TYPE = 1;
+    /** Parameter is captured by an inner closure — must be stored in evalContext. */
+    public static final int PARAM_CAPTURED = 2;
 
     public int[] paramFlags() { return paramFlags; }
 

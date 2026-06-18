@@ -1889,6 +1889,25 @@ public class IRBuilder {
         // capturedVars and are invisible to the trampoline at runtime.
         captureFreeVariables(nested, node);
 
+        // Run scope analysis to identify which local variables are captured
+        // by inner closures. These must use STORE_GLOBAL (eval context chain)
+        // so inner closures can read and modify them via PUSH_GLOBAL/STORE_DEEP.
+        ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
+            node, Set.of(), new HashSet<>());
+        nested.isCaptured.addAll(lamAnaly.capturedByInner);
+
+        // Mark captured parameters so the interpreter can sync them to
+        // evalContext at function entry (params are slot-only by default).
+        for (ELNode.DEFINE var : node.vars) {
+            if (lamAnaly.capturedByInner.contains(var.id)) {
+                Integer idx = nested.varIndex.get(var.id);
+                if (idx != null) {
+                    int flags = nested.paramFlags.get(idx);
+                    nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
+                }
+            }
+        }
+
         // Build the lambda body in its own function scope so that
         // functions defined inside are registered locally and don't
         // leak into the enclosing scope's knownFunctions.
@@ -2643,6 +2662,24 @@ public class IRBuilder {
                             IRFunction.PARAM_EXPLICIT_TYPE : 0;
                 nested.ensureVar(var.id, flags);
             }
+            // Run scope analysis to identify variables captured by inner
+            // closures. These must use STORE_GLOBAL (eval context chain)
+            // so inner closures can read and modify them.
+            ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
+                lam, Set.of(), new HashSet<>());
+            nested.isCaptured.addAll(lamAnaly.capturedByInner);
+
+            // Mark captured parameters for evalContext sync at function entry
+            for (ELNode.DEFINE var : lam.vars) {
+                if (lamAnaly.capturedByInner.contains(var.id)) {
+                    Integer idx = nested.varIndex.get(var.id);
+                    if (idx != null) {
+                        int flags = nested.paramFlags.get(idx);
+                        nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
+                    }
+                }
+            }
+
             nested.inTailPosition = true;
             // Build the body in its own scope — functions defined inside
             // are registered locally and won't leak to the outer scope.
