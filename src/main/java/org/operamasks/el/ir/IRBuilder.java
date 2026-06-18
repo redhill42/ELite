@@ -1751,8 +1751,11 @@ public class IRBuilder {
 
         int header = allocBlockId();
         int body = allocBlockId();
+        int step = allocBlockId();
         int exit = allocBlockId();
-        loopStack.push(new LoopTargets(header, exit));
+        // continue → step (increment, then re-check condition)
+        // break → exit
+        loopStack.push(new LoopTargets(step, exit));
 
         // Jump to header
         current.emitJump(header);
@@ -1768,13 +1771,16 @@ public class IRBuilder {
         current.emitJumpIfFalse(exit);
         current.emitJump(body);
 
-        // Body: execute, then increment
+        // Body: execute
         startBlock(body);
         enterControlScope();
         build(node.body);
         leaveControlScope();
         current.emitPop();                // discard body result
-        // i = i + 1
+        current.emitJump(step);           // → increment step
+
+        // Step: increment loop var, then re-check condition
+        startBlock(step);
         current.emitPushVar(varIdx);
         current.emitPushConst(oneIdx);    // push constant 1
         current.emitIAdd();
