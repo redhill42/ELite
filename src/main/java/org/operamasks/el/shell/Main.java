@@ -194,6 +194,7 @@ public class Main
             .variable(LineReader.HISTORY_FILE_SIZE, 1000)
             .variable(LineReader.SECONDARY_PROMPT_PATTERN, "%P  ")
             .option(LineReader.Option.CASE_INSENSITIVE, false)
+            .option(LineReader.Option.DISABLE_EVENT_EXPANSION, true)
             .build();
 
         reader.setVariable(LineReader.INDENTATION, 0);
