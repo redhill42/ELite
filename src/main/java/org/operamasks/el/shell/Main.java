@@ -231,18 +231,11 @@ public class Main
                     continue;
                 buffer = line;
             } else {
-                // the continuation line
-                if (line.isEmpty()) {
-                    buffer = null;
-                    lineno = 1;
-                    continue;
-                } else {
-                    buffer += "\n" + line;
-                }
+                buffer += "\n" + line;
             }
 
+            // Explicit line continuation via trailing backslash
             if (buffer.endsWith("\\")) {
-                // continuation line
                 buffer = buffer.substring(0, buffer.length()-1);
                 lineno++;
                 continue;
