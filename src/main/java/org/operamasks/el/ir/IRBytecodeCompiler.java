@@ -41,6 +41,7 @@ public class IRBytecodeCompiler {
     private static final int A_DCMPG = 152, A_LCMP = 148;
     private static final int A_IF_ICMPEQ = 159, A_IF_ICMPNE = 160, A_IF_ICMPLT = 161;
     private static final int A_IF_ICMPLE = 164, A_IF_ICMPGT = 163, A_IF_ICMPGE = 162;
+    private static final int A_IF_ACMPEQ = 165, A_IF_ACMPNE = 166;
     private static final int A_IFEQ = 153, A_IFNE = 154, A_IFLT = 155, A_IFLE = 158, A_IFGT = 157, A_IFGE = 156;
     private static final int A_INVOKESPECIAL = 183, A_INVOKESTATIC = 184, A_INVOKEVIRTUAL = 182;
     private static final int A_INVOKEINTERFACE = 185;
@@ -288,6 +289,13 @@ public class IRBytecodeCompiler {
             case DLE -> { emitUnboxDouble(2); emitDCmp(A_IFLE); }
             case DGT -> { emitUnboxDouble(2); emitDCmp(A_IFGT); }
             case DGE -> { emitUnboxDouble(2); emitDCmp(A_IFGE); }
+
+            case REFEQ -> emitRefCmp(A_IF_ACMPEQ);
+            case REFNE -> emitRefCmp(A_IF_ACMPNE);
+
+            case DYNEQ  -> emitDynCall("dynEq", 2);
+            case DYNLT  -> emitDynCall("dynLt", 2);
+            case DYNLE  -> emitDynCall("dynLe", 2);
 
             case PUSH_VAR -> {
                 if (typedMode && v.varIndex() < argTypeIds.length) {
@@ -580,11 +588,6 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "dynCat", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
-            case REFEQ -> emitDynCall("refEq", 2);
-            case REFNE -> emitDynCall("refNe", 2);
-            case DYNEQ  -> emitDynCall("dynEq", 2);
-            case DYNLT  -> emitDynCall("dynLt", 2);
-            case DYNLE  -> emitDynCall("dynLe", 2);
             default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, Opcode.name(op), op));
         }
     }
@@ -607,6 +610,14 @@ public class IRBytecodeCompiler {
     }
     private void emitLCmp(int jvmOp) {
         mv.visitInsn(A_LCMP);
+        Label t = new Label(), e = new Label();
+        mv.visitJumpInsn(jvmOp, t);
+        mv.visitInsn(A_ICONST_0); mv.visitJumpInsn(A_GOTO, e);
+        mv.visitLabel(t); mv.visitInsn(A_ICONST_1); mv.visitLabel(e);
+        mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+    }
+    /** Reference identity comparison (=== / !==). Two Object refs on stack → Boolean. */
+    private void emitRefCmp(int jvmOp) {
         Label t = new Label(), e = new Label();
         mv.visitJumpInsn(jvmOp, t);
         mv.visitInsn(A_ICONST_0); mv.visitJumpInsn(A_GOTO, e);
