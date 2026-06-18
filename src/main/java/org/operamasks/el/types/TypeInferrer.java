@@ -147,8 +147,6 @@ public class TypeInferrer {
                 result = inferConditional((ELNode.COND) node); break;
             case Token.COALESCE:
                 result = inferCoalesce(node); break;
-            case Token.SAFEREF:
-                result = inferSafeRef(node); break;
             case Token.CAT:
                 result = Type.STRING; break;
             case Token.INSTANCEOF:
@@ -449,16 +447,6 @@ public class TypeInferrer {
         Type right = infer(bin.right);
         Type unified = left.unify(right);
         return unified != null ? unified : left;
-    }
-
-    private Type inferSafeRef(ELNode node) {
-        ELNode.Binary bin = (ELNode.Binary) node;
-        Type left = infer(bin.left);
-        Type right = infer(bin.right);
-        // Safe ref: left ?? right — returns left if non-null, else right
-        // Type is the unification of left and right (non-null part of left + right)
-        Type unified = left.unify(right);
-        return unified != null ? unified : right;
     }
 
     // =========== Sequential (THEN) ===========

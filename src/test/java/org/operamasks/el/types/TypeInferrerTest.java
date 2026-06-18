@@ -634,13 +634,6 @@ class TypeInferrerTest {
     }
 
     @Test
-    void inferSafeRef() {
-        // Safe reference operator (fix #12)
-        Type t = infer("x !? 42");
-        assertNotNull(t, "Safe ref should produce a type");
-    }
-
-    @Test
     void conditionalWithWiderTypes() {
         // true ? 1 : 2.0 — Integer + Double should unify to Double (fix #2)
         Type t = infer("true ? 1 : 2.0");

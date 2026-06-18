@@ -164,9 +164,6 @@ public enum ExpressionType
     /** A node that represents a bitwise right-shift operation. */
     RIGHT_SHIFT(">>", SHIFT_PREC),
 
-    /** A node that represents safe reference operation. */
-    SAFEREF("!?", COALESCE_PREC),
-
     /** A node that represents arithmetic subtraction operation. */
     SUBTRACT("-", ADD_PREC),
 

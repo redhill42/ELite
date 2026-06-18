@@ -2229,57 +2229,6 @@ public abstract class ELNode implements Serializable
     }
 
     /**
-     * Safe reference operation.
-     */
-    public static class SAFEREF extends Binary {
-        public SAFEREF(int pos, ELNode left, ELNode right) {
-            super(Token.SAFEREF, pos, left, right);
-        }
-
-        public int precedence() {
-            return COALESCE_PREC;
-        }
-
-        // right associative
-        public ELNode order() {
-            return right_order();
-        }
-
-        public Object getValue(EvaluationContext context) {
-            Object value = getLeftValue(context);
-            if (value == null)
-                value = right.getValue(context);
-            return value;
-        }
-
-        private Object getLeftValue(EvaluationContext context) {
-            if (left.op == Token.IDENT) {
-                ELContext elctx = context.getELContext();
-                String id = ((IDENT)left).id;
-
-                ValueExpression expr = context.resolveVariable(id);
-                if (expr != null) {
-                    return expr.getValue(elctx);
-                }
-
-                elctx.setPropertyResolved(false);
-                Object value = elctx.getELResolver().getValue(elctx, null, id);
-                return elctx.isPropertyResolved() ? value : null;
-            } else {
-                return left.getValue(context);
-            }
-        }
-
-        public Class getType(EvaluationContext context) {
-            return right.getType(context);
-        }
-
-        public void accept(Visitor v) {
-            v.visit(this);
-        }
-    }
-
-    /**
      * OR expression.
      */
     public static class OR extends Binary implements Pattern {
@@ -6335,7 +6284,6 @@ public abstract class ELNode implements Serializable
         public void visit(ASSIGN e)     { visitNode(e); }
         public void visit(COND e)       { visitNode(e); }
         public void visit(COALESCE e)   { visitNode(e); }
-        public void visit(SAFEREF e)    { visitNode(e); }
         public void visit(OR e)         { visitNode(e); }
         public void visit(AND e)        { visitNode(e); }
         public void visit(BITOR e)      { visitNode(e); }

@@ -34,8 +34,7 @@ public final class Token
     public static final int KEYWORD         = 1 + INFIX;        // syntax rules keyword
     public static final int COND            = 1 + KEYWORD;      // x?y:z
     public static final int COALESCE        = 1 + COND;         // x??y
-    public static final int SAFEREF         = 1 + COALESCE;     // x!?y
-    public static final int OR              = 1 + SAFEREF;      // x||y
+    public static final int OR              = 1 + COALESCE;     // x||y
     public static final int AND             = 1 + OR;           // x&&y
     public static final int BITOR           = 1 + AND;          // x:|:y
     public static final int XOR             = 1 + BITOR;        // x:^:y
@@ -166,7 +165,7 @@ public final class Token
 
     // Operator names
     public static final String opNames[] = {
-        "unknown", "=", "?=", "prefix", "infix", "keyword", "?:", "??", "!?", "||", "&&",
+        "unknown", "=", "?=", "prefix", "infix", "keyword", "?:", "??", "||", "&&",
         ":|:", ":^:", ":&:", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "<<", ">>", ">>>",
         "~", "+", "-", "*", "/", "div", "%", "^", "instanceof", "in", "not",
         ":!:", "+", "-", "++", "--", "empty", "->", "()", ".", "[]", "apply", "new",

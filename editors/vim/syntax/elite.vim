@@ -50,7 +50,7 @@ syn match   eliteOperator   "::"
 " Lambda arrow
 syn match   eliteOperator   "=>"
 " Elvis / coalesce / safe ref
-syn match   eliteOperator   "??\|!?"
+syn match   eliteOperator   "??"
 " Bitwise
 syn match   eliteOperator   ":|:\|:&:\|:^:\|:!:"
 " Comparison

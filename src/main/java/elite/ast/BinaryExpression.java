@@ -103,8 +103,6 @@ public class BinaryExpression extends Expression
             return new ELNode.REM(pos, lhs, rhs);
         case RIGHT_SHIFT:
             return new ELNode.SHR(pos, lhs, rhs);
-        case SAFEREF:
-            return new ELNode.SAFEREF(pos, lhs, rhs);
         case SUBTRACT:
             return new ELNode.SUB(pos, lhs, rhs);
         case THEN:

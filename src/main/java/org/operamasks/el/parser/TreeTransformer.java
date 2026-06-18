@@ -171,10 +171,6 @@ public class TreeTransformer extends ELNode.Visitor
         result = new ELNode.COALESCE(e.pos, transform(e.left), transform(e.right));
     }
 
-    public void visit(ELNode.SAFEREF e) {
-        result = new ELNode.SAFEREF(e.pos, transform(e.left), transform(e.right));
-    }
-    
     public void visit(ELNode.OR e) {
         result = new ELNode.OR(e.pos, transform(e.left), transform(e.right));
     }

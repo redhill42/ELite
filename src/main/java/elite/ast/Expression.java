@@ -817,16 +817,6 @@ public abstract class Expression
     }
 
     /**
-     * Creates a BinaryExpression that represents a safe reference operation.
-     * @param left the left operand
-     * @param right the right operand
-     * @return the safe reference expression
-     */
-    public static Expression SAFEREF(Object left, Object right) {
-        return new BinaryExpression(ExpressionType.SAFEREF, arg(left), arg(right));
-    }
-
-    /**
      * Create a sequence expression.
      * @param exps expressions in the sequence
      * @return the sequence expression

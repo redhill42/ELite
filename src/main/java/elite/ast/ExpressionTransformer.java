@@ -108,12 +108,6 @@ final class ExpressionTransformer extends ELNode.Visitor
                                       transform(e.right));
     }
 
-    public void visit(ELNode.SAFEREF e) {
-        result = new BinaryExpression(ExpressionType.SAFEREF,
-                                      transform(e.left),
-                                      transform(e.right));
-    }
-
     public void visit(ELNode.OR e) {
         result = new BinaryExpression(ExpressionType.OR,
                                       transform(e.left),

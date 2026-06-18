@@ -668,8 +668,6 @@ public class Parser extends Scanner
             return new ELNode.USHR(scan(), e, parseTerm());
           case COALESCE:
             return new ELNode.COALESCE(scan(), e, parseTerm());
-          case SAFEREF:
-            return new ELNode.SAFEREF(scan(), e, parseTerm());
           case QUESTIONMARK: {
             int p = scan();
             ELNode second = parseNonColonExpression(false);

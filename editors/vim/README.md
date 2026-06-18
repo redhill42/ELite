@@ -43,7 +43,7 @@ Plug 'hongun/ELite', { 'rtp': 'editors/vim' }
 ## What's Highlighted
 
 - **Keywords**: `define`, `class`, `if`, `else`, `for`, `while`, `match`, `case`, `try`, `catch`, `import`, `require`, etc.
-- **Operators**: `->`, `::`, `=>`, `==`, `!=`, `~`, `??`, `!?`, bitwise (`:|:`, `:&:`, `:^:`, `:!:`), etc.
+- **Operators**: `->`, `::`, `=>`, `==`, `!=`, `~`, `??`, bitwise (`:|:`, `:&:`, `:^:`, `:!:`), etc.
 - **Literals**: strings (`""`, `"""`), characters (`'a'`), numbers, hex (`0xFF`), floats, BigInteger (`42b`), Rational (`1/3r`)
 - **String interpolation**: `${expr}` inside strings
 - **Type annotations**: `::Integer`, `::List<String>`

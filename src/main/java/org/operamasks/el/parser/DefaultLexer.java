@@ -853,7 +853,6 @@ public class DefaultLexer extends Lexer
         shared.addOperator("!", NOT, -1);
         shared.addOperator("!=", NE, -1);
         shared.addOperator("!==", IDNE, -1);
-        shared.addOperator("!?", SAFEREF, -1);
         shared.addOperator("|", BAR, -1);
         shared.addOperator("||", OR, -1);
         shared.addOperator("&", LAZY, -1);

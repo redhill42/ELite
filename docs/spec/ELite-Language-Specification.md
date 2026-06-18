@@ -160,7 +160,7 @@ Type:           ::  instanceof  is  as
 Access:         .   ->  [   ]   (   )
 Structure:      {   }   (   )   [   ]   ,   ;   :
 Lambda:         \   =>
-Other:          @   #   $   ?   ??  !?  |   ...
+Other:          @   #   $   ?   ??  |   ...
 ```
 
 ### 2.6 Numeric Literals
@@ -491,16 +491,14 @@ x > 0 ? "positive" : "negative"
 The condition is evaluated first. If truthy, the true-branch is evaluated and
 returned; otherwise the false-branch. Only one branch is evaluated.
 
-### 4.8 Coalescing and Safe Reference
+### 4.8 Coalescing
 
 ```
 coalesce := conditional { '??' conditional }
-safe_ref := coalesce { '!?' coalesce }
 ```
 
 ```elite
 x ?? "default"          // If x is null, use "default"
-obj !? .property        // Safe property access — null if obj is null
 ```
 
 ### 4.9 Lambda Expressions
@@ -630,7 +628,7 @@ Operators are ordered from highest (tightest binding) to lowest precedence:
 | 6 | Bitwise OR | `:\|:` | Left |
 | 5 | Logical AND | `&&` `and` | Left |
 | 4 | Logical OR | `\|\|` `or` | Left |
-| 3 | Coalesce | `??` `!?` | Left |
+| 3 | Coalesce | `??` | Left |
 | 2 | Conditional | `? :` | Right |
 | 1 | Assignment | `=` `:=` `+=` `-=` `*=` `/=` `%=` `~=` | Right |
 | 0 | Sequential | `,` `;` `\n` | Left |
@@ -1667,7 +1665,7 @@ assign_op       := '=' | ':=' | '+=' | '-=' | '*=' | '/=' | '%=' | '~='
 
 conditional     := coalesce [ '?' expression ':' conditional ]
 
-coalesce        := logical_or { ( '??' | '!?' ) logical_or }
+coalesce        := logical_or { ( '??' ) logical_or }
 
 logical_or      := logical_and { ( '||' | 'or' ) logical_and }
 
