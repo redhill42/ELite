@@ -1336,47 +1336,11 @@ public class Parser extends Scanner
 
     private String parseTypeNameOpt() {
         if (token == COLONCOLON) {
-            // Type annotation: `:: TypeName` e.g., define x::Integer = 42
-            return parseTypeAnnotation();
+            scan();
+            return parseClassLiteral(false);
         } else {
             return null;
         }
-    }
-
-    /**
-     * Parse a type annotation after '::'.
-     */
-    private String parseTypeAnnotation() {
-        expect(COLONCOLON);
-        return parseTypeName();
-    }
-
-    /**
-     * Parse a type name which may be simple (Integer), dotted (java.util.Date),
-     * or parameterized (List&lt;Integer&gt;).
-     */
-    private String parseTypeName() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(scanQName());
-        expect(IDENT);
-        // Handle dotted names: java.util.Date
-        while (token == FIELD) {
-            sb.append('.');
-            scan(); // skip dot
-            sb.append(scanQName());
-            expect(IDENT);
-        }
-        // Parse generic type arguments: List<Integer, String>
-        if (token == LT) {
-            sb.append('<');
-            scan();
-            do {
-                sb.append(parseTypeName());
-            } while (scan(COMMA));
-            expect(GT);
-            sb.append('>');
-        }
-        return sb.toString();
     }
 
     /**
@@ -1601,15 +1565,15 @@ public class Parser extends Scanner
         }
         expect(RPAREN);
 
-        // Parse optional return type annotation: `: TypeName`
-        if (rtype == null) {
-            rtype = parseTypeNameOpt();
-        }
-
         if (token == LPAREN) {
             body = parseCurriedProcedureDefinition(p, name, rtype, meta, plist);
             close_scope();
         } else {
+            // optional return type annotation
+            if (rtype == null) {
+                rtype = parseTypeNameOpt();
+            }
+
             // look ahead for '{|', disable alternate equation if found
             boolean allow_alts = true;
             if (plist.classic) {
@@ -1784,7 +1748,6 @@ public class Parser extends Scanner
     private static class Param {
         int            pos;         // the position of parameter
         String         name;        // the parameter name
-        String         type;        // the type annotation (e.g., "Integer", "List<String>")
         ELNode.Pattern pattern;     // the parameter pattern
         ELNode.METASET meta;        // the parameter's metadata
         ELNode         deflt;       // the default value
@@ -1817,7 +1780,6 @@ public class Parser extends Scanner
             param.pos = pos;
             param.meta = parseMetaData();
             param.pattern = parsePattern();
-            param.type = parseTypeNameOpt();
 
             if (isVariablePattern(param.pattern)) {
                 param.deflt = scan(ASSIGN) ? parseExpression() : null;
@@ -1891,11 +1853,8 @@ public class Parser extends Scanner
                 vars[i] = (ELNode.DEFINE)p.pattern;
                 vars[i].meta = p.meta;
                 vars[i].expr = p.deflt;
-                // p.type may be null if parsePattern already consumed ::Type
-                // (pattern parser calls parseTypeNameOpt before parameter list parser)
-                if (p.type != null) vars[i].type = p.type;
             } else {
-                vars[i] = new ELNode.DEFINE(p.pos, p.name, p.type, p.meta);
+                vars[i] = new ELNode.DEFINE(p.pos, p.name, null, p.meta);
             }
         }
 
@@ -2142,35 +2101,30 @@ public class Parser extends Scanner
         var = scanVar(p, meta);
         type = parseTypeNameOpt();
 
-        switch (token) {
-        case ASSIGN:
+        if (token == ASSIGN) {
             // define id=exp;
             scan();
             var.type = type;
             var.immediate = !scan(LAZY);
             var.expr = parseExpressionStatement();
-            break;
-
-        case LPAREN:
-        case ARROW:
-        case LBRACE:
-            // define foo(x,y) {exp}
-            // syntax sugar for foo={x,y=>exp}
-            var.expr = parseProcedureDefinition(var.id, type, meta);
-            break;
-
-        default:
-            if (var.operator != null) {
-                // declare operator only, no actual definition
-                // e.g. @prefix print;
-                return null;
-            }
-
-            // define x;
-            var.expr = new ELNode.NULL(pos);
-            break;
+            return var;
         }
 
+        if (token == LPAREN && type == null) {
+            // define foo(x,y) {exp}
+            // syntax sugar for foo=\x,y=>exp
+            var.expr = parseProcedureDefinition(var.id, type, meta);
+            return var;
+        }
+
+        if (var.operator != null) {
+            // declare operator only, no actual definition
+            // e.g. @prefix print;
+            return null;
+        }
+
+        // define x;
+        var.expr = new ELNode.NULL(pos);
         return var;
     }
 
@@ -2240,7 +2194,7 @@ public class Parser extends Scanner
         if (token == IDENT) {
             String id = scanQName();
             scan();
-            if (token == LPAREN || token == ARROW || token == LBRACE) {
+            if (token == LPAREN) {
                 ELNode.DEFINE var = new_symbol(p, id, null, null);
                 var.expr = parseProcedureDefinition(id, "void", null);
                 return var;
@@ -2276,10 +2230,7 @@ public class Parser extends Scanner
         }
 
         // parse base class and interfaces
-        if (token == COLONCOLON) {
-            scan();
-            base = parseClassLiteral(false);
-        } else if (token == EXTENDS || token == IMPLEMENTS) {
+        if (token == EXTENDS || token == IMPLEMENTS) {
             if (token == EXTENDS) {
                 scan();
                 base = parseClassLiteral(false);

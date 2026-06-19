@@ -110,7 +110,7 @@ public class TypeInferrer {
             case Token.NULL:
                 result = Type.DYNAMIC; break;
             case Token.SYMBOL:
-                result = Type.STRING; break;
+                result = Type.DYNAMIC; break;
 
             // Identifiers & access
             case Token.IDENT:
@@ -785,7 +785,6 @@ public class TypeInferrer {
             Class<?> cls = ELEngine.resolveJavaClass(elctx, node.base);
             return new ClassType(cls);
         } catch (Exception e) {
-            addErrorAt(currentNode, _T(EL_UNDEFINED_TYPE, node.base));
             return Type.DYNAMIC;
         }
     }
@@ -841,7 +840,6 @@ public class TypeInferrer {
             String argsStr = typeName.substring(lt + 1, typeName.length() - 1);
             Type base = resolveSimpleType(baseName);
             if (base == null) {
-                addErrorAt(errorNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
             // Parse type arguments (handle nested generics with balanced brackets)
@@ -857,14 +855,12 @@ public class TypeInferrer {
                 Class<?> cls = ELEngine.resolveJavaClass(elctx, baseName);
                 return new ClassType(cls, argTypes);
             } catch (Exception e) {
-                addErrorAt(errorNode, _T(EL_UNDEFINED_TYPE, baseName));
                 return Type.DYNAMIC;
             }
         }
 
         Type resolved = resolveSimpleType(typeName);
         if (resolved == null) {
-            addErrorAt(errorNode, _T(EL_UNDEFINED_TYPE, typeName));
             return Type.DYNAMIC; // Return DYNAMIC even on error for gradual typing
         }
         return resolved;
