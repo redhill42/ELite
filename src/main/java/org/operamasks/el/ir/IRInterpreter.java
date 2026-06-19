@@ -18,6 +18,7 @@ package org.operamasks.el.ir;
 
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.EvaluationContext;
+import org.operamasks.el.eval.EvaluationException;
 import org.operamasks.el.eval.Ranges;
 import org.operamasks.el.eval.TypeCoercion;
 import org.operamasks.el.eval.closure.ClosureObject;
@@ -28,15 +29,11 @@ import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.MethodResolver;
 
-import org.operamasks.el.eval.VariableMapperImpl;
-
 import javax.el.ELContext;
 import javax.el.ValueExpression;
-import javax.el.VariableMapper;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 
 import static org.operamasks.el.ir.Opcode.*;
@@ -1342,10 +1339,10 @@ public class IRInterpreter {
 
     private void storeGlobal(String name, Object value) {
         // assign: search full chain, throw if not found
-        LiteralClosure lc = new LiteralClosure(value);
-        if (evalContext != null) {
-            evalContext.setVariableDeep(name, lc);
-        }
+        ValueExpression ve = evalContext.resolveVariable(name);
+        if (ve == null)
+            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
+        ve.setValue(elctx, value);
     }
 
     /**

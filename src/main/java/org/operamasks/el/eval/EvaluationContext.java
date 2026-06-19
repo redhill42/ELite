@@ -27,7 +27,6 @@ import org.operamasks.el.eval.closure.ClassDefinition;
 import org.operamasks.el.eval.closure.AbstractClosure;
 import org.operamasks.el.eval.closure.DataClass;
 import static javax.xml.XMLConstants.*;
-import static org.operamasks.el.resources.Resources.*;
 
 /**
  * The evaluation context that associated with a expression.
@@ -200,44 +199,6 @@ public class EvaluationContext extends AbstractClosure
         if (value != null) {
             tail = new Variable(name, value, tail);
         }
-    }
-
-    /**
-     * Set a variable by searching the FULL resolver chain (not limited by head).
-     * Used for assignments to captured variables that need to update bindings
-     * in enclosing scopes. Unlike {@link #setVariable}, this method never creates
-     * a new variable — it throws PropertyNotFoundException if the variable is
-     * not found anywhere in the scope chain.
-     */
-    public void setVariableDeep(String name, ValueExpression value) {
-        if (name.equals("xmlns") || name.startsWith("xmlns:")) {
-            // set namespace variable
-            String prefix = name.equals("xmlns") ? "" : name.substring(6);
-            Namespace namespace = new Namespace(prefix, null);
-            namespace.setValue(elctx, value.getValue(elctx));
-            internalSetVariableDeep(name, namespace);
-        } else {
-            internalSetVariableDeep(name, value);
-        }
-    }
-
-    private void internalSetVariableDeep(String name, ValueExpression value) {
-        // Search the full chain for an existing binding.
-        // For Variable nodes: direct match and update.
-        // For VMResolver: only set if the variable already exists in the mapper
-        // (check via resolve first); otherwise skip — we don't auto-create.
-        for (Resolver r = tail; r != null; r = r.next) {
-            if (r instanceof Variable v && v.set(name, value))
-                return;
-            if (r instanceof VMResolver vm && vm.resolve(name) != null) {
-                vm.set(name, value);
-                return;
-            }
-        }
-
-        // throw if the variable not defined in all context chain.
-        throw new javax.el.PropertyNotFoundException(
-                _T(EL_UNDEFINED_IDENTIFIER, name));
     }
 
     public ValueExpression resolveVariable(String name) {
