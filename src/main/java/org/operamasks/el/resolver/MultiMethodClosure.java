@@ -29,6 +29,8 @@ import javax.el.MethodInfo;
 import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.closure.NamedClosure;
+import org.operamasks.util.Utils;
+
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -61,7 +63,7 @@ class MultiMethodClosure extends JavaMethodClosure
         System.arraycopy(methods, 0, newlist, 0, methods.length);
         newlist[methods.length] = method;
         methods = newlist;
-        method.setAccessible(true);
+        Utils.setAccessible(method);
         return this;
     }
 
@@ -148,7 +150,7 @@ class MultiMethodClosure extends JavaMethodClosure
         methods = new Method[count];
         for (int i = 0; i < count; i++) {
             methods[i] = readMethod(in);
-            methods[i].setAccessible(true);
+            Utils.setAccessible(methods[i]);
         }
     }
 

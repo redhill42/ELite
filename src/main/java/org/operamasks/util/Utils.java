@@ -16,16 +16,61 @@
 
 package org.operamasks.util;
 
+import java.lang.reflect.AccessibleObject;
 import java.util.Arrays;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import javax.el.ELContext;
 import org.operamasks.el.eval.TypeCoercion;
+import sun.misc.Unsafe;
 
 public class Utils
 {
     private Utils() {}
+    private static final int overrideOffset;
+    public static final Unsafe UNSAFE;
+
+    private static class Throws {
+        @SuppressWarnings("unchecked")
+        public static <T extends Throwable> RuntimeException sneakyThrows(Throwable throwable) throws T {
+            throw (T) throwable;
+        }
+    }
+
+    static {
+        /*
+         * 通过反射获取 Unsafe 实例，这是JDK故意保留的使用方式
+         * 通过 Unsafe setAccessible 的 Field 和 未 setAccessible 的 Field 逐一对比获取 override 字段的内存偏移（字段偏移在所有子类型中固定）
+         * 通过 override 偏移，即可绕过权限校验强行设置所有 setAccessible
+         */
+        try {
+            Field accessible = Unsafe.class.getDeclaredField("theUnsafe");
+            Field notAccessible = Unsafe.class.getDeclaredField("theUnsafe");
+            accessible.setAccessible(true);
+            notAccessible.setAccessible(false);
+            Unsafe unsafe = (Unsafe) accessible.get(null);
+            // override 布尔型字节偏移量。在java17应该是 12
+            int i = 0;
+            while (unsafe.getBoolean(accessible, i) == unsafe.getBoolean(notAccessible, i)) {i++;}
+            overrideOffset = i;
+            UNSAFE = unsafe;
+        } catch (Throwable e) {
+            throw Throws.sneakyThrows(e);
+        }
+    }
+
+    @SuppressWarnings({"deprecation", "UnusedReturnValue"})
+    public static <T extends AccessibleObject> T setAccessible(T object) {
+        if (object == null) {
+            return null;
+        }
+        if (object.isAccessible()) {
+            return object;
+        }
+        UNSAFE.putBoolean(object, overrideOffset, true);
+        return object;
+    }
 
     /**
      * Get the wrapper class if the given class is a primitive type. Returns
@@ -167,10 +212,8 @@ public class Utils
                 }
 
                 method = declClass.getDeclaredMethod(name, params);
-                method.setAccessible(true);
-            } catch (NoSuchMethodException ex) {
-                method = null;
-            } catch (ClassNotFoundException ex) {
+                setAccessible(method);
+            } catch (NoSuchMethodException | ClassNotFoundException ex) {
                 method = null;
             }
         }

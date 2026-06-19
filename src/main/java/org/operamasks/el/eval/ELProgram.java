@@ -324,7 +324,7 @@ public class ELProgram implements Serializable
     private static void importField(ELContext elctx, Field field, String prefix) {
         if (Modifier.isStatic(field.getModifiers())) {
             try {
-                field.setAccessible(true);
+                Utils.setAccessible(field);
                 String name = field.getName();
                 if (prefix != null)
                     name = prefix + ":" + name;

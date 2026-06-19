@@ -28,8 +28,6 @@ import java.util.Iterator;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import javax.el.ELResolver;
 import javax.el.ELContext;
 import javax.el.MethodInfo;
@@ -49,6 +47,7 @@ import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.ClosureObject;
 import org.operamasks.el.eval.closure.ClassDefinition;
 import org.operamasks.el.eval.TypeCoercion;
+import org.operamasks.util.Utils;
 
 public class BeanPropertyELResolver extends ELResolver
 {
@@ -73,7 +72,7 @@ public class BeanPropertyELResolver extends ELResolver
         
         // Access class field
         if (base instanceof Class) {
-            Field field = getBeanField((Class)base, property);
+            Field field = getBeanField((Class<?>)base, property);
             if (field != null && Modifier.isStatic(field.getModifiers())) {
                 context.setPropertyResolved(true);
                 return field.getType();
@@ -103,7 +102,7 @@ public class BeanPropertyELResolver extends ELResolver
 
         // Return the dynamic property type.
         if (base instanceof PropertyResolvable) {
-            Class type = ((PropertyResolvable)base).getType(context, property);
+            Class<?> type = ((PropertyResolvable)base).getType(context, property);
             if (context.isPropertyResolved()) {
                 return type;
             }
@@ -144,7 +143,7 @@ public class BeanPropertyELResolver extends ELResolver
 
         // Access class field
         if (base instanceof Class) {
-            Field field = getBeanField((Class)base, property);
+            Field field = getBeanField((Class<?>)base, property);
             if (field != null && Modifier.isStatic(field.getModifiers())) {
                 Object value = getFieldValue(field, null);
                 context.setPropertyResolved(true);
@@ -214,10 +213,10 @@ public class BeanPropertyELResolver extends ELResolver
 
         // Access class field
         if (base instanceof Class) {
-            Field field = getBeanField((Class)base, property);
+            Field field = getBeanField((Class<?>)base, property);
             if (field != null && Modifier.isStatic(field.getModifiers())) {
                 if (Modifier.isFinal(field.getModifiers())) {
-                    throw new PropertyNotWritableException(((Class)base).getName() + "." + property);
+                    throw new PropertyNotWritableException(((Class<?>)base).getName() + "." + property);
                 } else {
                     setFieldValue(field, null, value);
                     context.setPropertyResolved(true);
@@ -291,7 +290,7 @@ public class BeanPropertyELResolver extends ELResolver
 
         // Access class field
         if (base instanceof Class) {
-            Field field = getBeanField((Class)base, property);
+            Field field = getBeanField((Class<?>)base, property);
             if (field != null && Modifier.isStatic(field.getModifiers())) {
                 context.setPropertyResolved(true);
                 return Modifier.isFinal(field.getModifiers());
@@ -340,12 +339,12 @@ public class BeanPropertyELResolver extends ELResolver
             return null;
         }
 
-        ArrayList<FeatureDescriptor> list = new ArrayList<FeatureDescriptor>();
-        Class baseClass = base.getClass();
+        ArrayList<FeatureDescriptor> list = new ArrayList<>();
+        Class<?> baseClass = base.getClass();
 
-        for (Class c = baseClass; c != null; c = c.getSuperclass()) {
+        for (Class<?> c = baseClass; c != null; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
-                if (fieldAccessible(baseClass, f)) {
+                if (fieldAccessible(f)) {
                     FeatureDescriptor feat = new FeatureDescriptor();
                     feat.setName(f.getName());
                     feat.setDisplayName(f.getName());
@@ -371,12 +370,12 @@ public class BeanPropertyELResolver extends ELResolver
                 feat.setValue(TYPE, bp.getType());
                 list.add(feat);
             }
-        } catch (IntrospectionException ex) {}
+        } catch (IntrospectionException ex) { /* ignored */ }
 
         return list.iterator();
     }
 
-    public Class getCommonPropertyType(ELContext context, Object base) {
+    public Class<?> getCommonPropertyType(ELContext context, Object base) {
         if (base == null)
             return null;
         return Object.class;
@@ -384,7 +383,7 @@ public class BeanPropertyELResolver extends ELResolver
 
     // Implementation --------------
 
-    protected BeanProperty getBeanProperty(Class baseClass, Object property) {
+    protected BeanProperty getBeanProperty(Class<?> baseClass, Object property) {
         try {
             return BeanUtils.getProperty(baseClass, property.toString());
         } catch (IntrospectionException ex) {
@@ -394,6 +393,7 @@ public class BeanPropertyELResolver extends ELResolver
 
     protected Object getPropertyValue(Method method, Object base) {
         try {
+            Utils.setAccessible(method);
             return method.invoke(base);
         } catch (InvocationTargetException ex) {
             throw new ELException(ex.getTargetException());
@@ -404,6 +404,7 @@ public class BeanPropertyELResolver extends ELResolver
 
     protected void setPropertyValue(Method method, Object base, Object value) {
         try {
+            Utils.setAccessible(method);
             method.invoke(base, value);
         } catch (InvocationTargetException ex) {
             throw new ELException(ex.getTargetException());
@@ -412,7 +413,7 @@ public class BeanPropertyELResolver extends ELResolver
         }
     }
 
-    protected boolean fieldAccessible(Class baseClass, Field f) {
+    protected boolean fieldAccessible(Field f) {
         return Modifier.isPublic(f.getModifiers());
     }
 
@@ -438,35 +439,33 @@ public class BeanPropertyELResolver extends ELResolver
     protected final class BeanFields {
         private final Map<String,Field> fieldMap = new HashMap<String, Field>();
 
-        public BeanFields(final Class baseClass) {
-            AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                public Object run() {
-                    // Walk superclass chain
-                    for (Class c = baseClass; c != null; c = c.getSuperclass()) {
-                        for (Field f : c.getDeclaredFields()) {
-                            if (fieldAccessible(baseClass, f)) {
-                                f.setAccessible(true);
-                                fieldMap.put(f.getName(), f);
-                            }
-                        }
+        public BeanFields(final Class<?> baseClass) {
+            // Walk superclass chain
+            for (Class<?> c = baseClass; c != null; c = c.getSuperclass()) {
+                for (Field f : c.getDeclaredFields()) {
+                    if (fieldAccessible(f)) {
+                        Utils.setAccessible(f);
+                        fieldMap.put(f.getName(), f);
                     }
-                    // Walk interface chain (e.g. JFrame implements WindowConstants with EXIT_ON_CLOSE)
-                    walkInterfaces(baseClass, new HashSet<>());
-                    return null;
                 }
-                private void walkInterfaces(Class c, Set<Class> seen) {
-                    for (Class iface : c.getInterfaces()) {
-                        if (seen.add(iface)) {
-                            for (Field f : iface.getDeclaredFields()) {
-                                if (fieldAccessible(baseClass, f)) {
-                                    f.setAccessible(true);
-                                    fieldMap.putIfAbsent(f.getName(), f);
-                                }
-                            }
-                            walkInterfaces(iface, seen);
+            }
+
+            // Walk interface chain (e.g. JFrame implements WindowConstants with EXIT_ON_CLOSE)
+            walkInterfaces(baseClass, baseClass, new HashSet<>());
+        }
+
+        private void walkInterfaces(Class<?> baseClass, Class<?> c, Set<Class<?>> seen) {
+            for (Class<?> iface : c.getInterfaces()) {
+                if (seen.add(iface)) {
+                    for (Field f : iface.getDeclaredFields()) {
+                        if (fieldAccessible(f)) {
+                            Utils.setAccessible(f);
+                            fieldMap.putIfAbsent(f.getName(), f);
                         }
                     }
-                }});
+                    walkInterfaces(baseClass, iface, seen);
+                }
+            }
         }
 
         public Field getBeanField(String name) {
@@ -474,9 +473,9 @@ public class BeanPropertyELResolver extends ELResolver
         }
     }
 
-    private SimpleCache<Class,BeanFields> cache = SimpleCache.make(200);
+    private final SimpleCache<Class<?>,BeanFields> cache = SimpleCache.make(200);
 
-    protected Field getBeanField(Class baseClass, Object prop) {
+    protected Field getBeanField(Class<?> baseClass, Object prop) {
         BeanFields fields = cache.get(baseClass);
         if (fields == null) {
             fields = new BeanFields(baseClass);

@@ -27,6 +27,7 @@ import javax.el.ELException;
 import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.closure.NamedClosure;
+import org.operamasks.util.Utils;
 
 import static org.operamasks.el.resources.Resources.*;
 
@@ -118,11 +119,12 @@ class SingleMethodClosure extends JavaMethodClosure
         init(method);
     }
 
+    @SuppressWarnings("deprecation")
     private void init(Method method) {
-        method.setAccessible(true);
+        Utils.setAccessible(method);
 
         // cache argument count for quick test
-        Class[] types = method.getParameterTypes();
+        Class<?>[] types = method.getParameterTypes();
         nargs = types.length;
         if (nargs > 0 && types[0] == ELContext.class)
             --nargs;
