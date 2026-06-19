@@ -71,7 +71,7 @@ public final class Runtime {
         throw new RuntimeException(_T(EL_UNDEFINED_IDENTIFIER, name));
     }
 
-    public static Object storeGlobal(ELContext c, String name, Object value) {
+    public static Object defineGlobal(ELContext c, String name, Object value) {
         c.getVariableMapper().setVariable(name, new org.operamasks.el.eval.closure.LiteralClosure(value));
         return value;
     }

@@ -501,7 +501,7 @@ public class IRSpecializer implements IRPass {
                     pop1(); pushType(t, e, s);
                     copyInst(out, code, v);
                 }
-                case STORE_GLOBAL -> {
+                case DEFINE_GLOBAL -> {
                     int t = peekType(); boolean e = peekExplicit();
                     pop1(); pushType(t, e, -1);
                     copyInst(out, code, v);

@@ -173,7 +173,7 @@ public class InstructionView {
             int idx = op == Opcode.PUSH_CONST ? constPoolIndex() : varIndex();
             s += " " + formatPoolRef(idx);
         }
-        if (op == Opcode.PUSH_GLOBAL || op == Opcode.STORE_GLOBAL
+        if (op == Opcode.PUSH_GLOBAL || op == Opcode.DEFINE_GLOBAL
             || op == Opcode.INVOKE_DYN_METHOD) {
             int idx = constPoolIndex();
             s += " " + formatPoolRef(idx);

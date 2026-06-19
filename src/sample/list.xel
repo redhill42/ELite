@@ -78,14 +78,6 @@ S：那么我也知道了。
 
 define puzzle(lb,hb) {
     /**
-     * 判断M和N的乘积P是否只有M和N这一对因子。
-     */
-    define unique(m,n) {
-        define P = m*n;
-        empty [v where v in [lb..sqrt(P)], v != m, P%v == 0];
-    }
-
-    /**
      * 条件一: 也就是S先生的第一句话。
      * 把S分成任意的两个数M和N的和之后，再判断M和N的乘积P是否只有M和N这一对因子。
      * 如果只有一对因子，则S先生不能肯定P先生不能说出这两个数，则条件一不满足。
@@ -93,6 +85,14 @@ define puzzle(lb,hb) {
     define cond1(x,y) {
         define S = x+y;
         empty [(m,n) where m in [lb..S/2], n = S-m, unique(m,n)];
+    }
+
+    /**
+     * 判断M和N的乘积P是否只有M和N这一对因子。
+     */
+    define unique(m,n) {
+        define P = m*n;
+        empty [v where v in [lb..sqrt(P)], v != m, P%v == 0];
     }
 
     /**

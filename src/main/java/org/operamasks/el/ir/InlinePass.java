@@ -242,7 +242,7 @@ public class InlinePass implements IRPass {
                 int callerIdx = poolBase + calleeIdx;
                 int kind = bv.kind();
                 out.add(pack1(PUSH_CONST, kind, callerIdx & 0xFFFF));
-            } else if (op == PUSH_GLOBAL || op == STORE_GLOBAL) {
+            } else if (op == PUSH_GLOBAL || op == DEFINE_GLOBAL) {
                 int calleeIdx = bv.constPoolIndex();
                 int callerIdx = poolBase + calleeIdx;
                 out.add(pack1(op, K_NONE, callerIdx & 0xFFFF));

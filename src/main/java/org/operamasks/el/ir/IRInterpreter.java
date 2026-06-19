@@ -156,7 +156,7 @@ public class IRInterpreter {
         }
 
         // Sync captured parameters to evalContext so inner closures can
-        // read and modify them via PUSH_GLOBAL/STORE_DEEP. Parameters are
+        // read and modify them via PUSH_GLOBAL/STORE_GLOBAL. Parameters are
         // slot-only by default — this copies their initial values into the
         // evalContext chain.
         int[] pFlags = function.paramFlags();
@@ -164,7 +164,7 @@ public class IRInterpreter {
         if (pFlags != null && vNames != null) {
             for (int i = 0; i < Math.min(pFlags.length, vNames.length); i++) {
                 if ((pFlags[i] & IRFunction.PARAM_CAPTURED) != 0) {
-                    storeGlobal(vNames[i], locals[i]);
+                    defineGlobal(vNames[i], locals[i]);
                 }
             }
         }
@@ -791,20 +791,20 @@ public class IRInterpreter {
                     ip += 1 + oc;
                     break;
                 }
+                case DEFINE_GLOBAL: {
+                    int nameIdx = oc == 0 ? pl : code[ip + 1];
+                    String name = (String)constantPool[nameIdx];
+                    Object val = pop();
+                    defineGlobal(name, val);
+                    push(val);  // definition returns the value
+                    ip += 1 + oc;
+                    break;
+                }
                 case STORE_GLOBAL: {
                     int nameIdx = oc == 0 ? pl : code[ip + 1];
                     String name = (String)constantPool[nameIdx];
                     Object val = pop();
                     storeGlobal(name, val);
-                    push(val);  // assignment returns the value
-                    ip += 1 + oc;
-                    break;
-                }
-                case STORE_DEEP: {
-                    int nameIdx = oc == 0 ? pl : code[ip + 1];
-                    String name = (String)constantPool[nameIdx];
-                    Object val = pop();
-                    storeAssign(name, val);
                     push(val);
                     ip += 1 + oc;
                     break;
@@ -1332,7 +1332,7 @@ public class IRInterpreter {
 
     // ── Global variable storage ──
 
-    private void storeGlobal(String name, Object value) {
+    private void defineGlobal(String name, Object value) {
         // define: create/update in current scope only (head-bounded search)
         LiteralClosure lc = new LiteralClosure(value);
         if (evalContext != null) {
@@ -1340,7 +1340,7 @@ public class IRInterpreter {
         }
     }
 
-    private void storeAssign(String name, Object value) {
+    private void storeGlobal(String name, Object value) {
         // assign: search full chain, throw if not found
         LiteralClosure lc = new LiteralClosure(value);
         if (evalContext != null) {

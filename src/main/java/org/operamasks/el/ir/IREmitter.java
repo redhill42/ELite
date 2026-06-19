@@ -534,22 +534,22 @@ public class IREmitter {
     /**
      * Pop value, store to global variable (name in constant pool).
      */
-    public IREmitter emitStoreGlobal(int namePoolIndex) {
+    public IREmitter emitDefineGlobal(int namePoolIndex) {
         if (fits16(namePoolIndex))
-            return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);
+            return emit1(DEFINE_GLOBAL, K_NONE, namePoolIndex);
         else
-            return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16,
+            return emit2(DEFINE_GLOBAL, K_NONE, namePoolIndex >>> 16,
                     namePoolIndex & 0xFFFF);
     }
 
     /**
      * Store to global with full chain search — throws if variable not defined.
      */
-    public IREmitter emitStoreDeep(int namePoolIndex) {
+    public IREmitter emitStoreGlobal(int namePoolIndex) {
         if (fits16(namePoolIndex))
-            return emit1(STORE_DEEP, K_NONE, namePoolIndex);
+            return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);
         else
-            return emit2(STORE_DEEP, K_NONE, namePoolIndex >>> 16,
+            return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16,
                     namePoolIndex & 0xFFFF);
     }
 

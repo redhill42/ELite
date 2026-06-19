@@ -99,7 +99,7 @@ public class IRBuilder {
 
     /**
      * Slot indices whose variable was stored via STORE_GLOBAL during define.
-     * Assignments (x = expr) need STORE_DEEP only for these slots — slot-only
+     * Assignments (x = expr) need STORE_GLOBAL only for these slots — slot-only
      * variables (function locals, control-flow shadows) don't have global
      * bindings and would fail with PropertyNotFoundException.
      */
@@ -1005,7 +1005,7 @@ public class IRBuilder {
             }
             if (isCaptured.contains(ident.id)) {
                 // Captured variable: read from evalContext, mutate, store back
-                // via STORE_DEEP so the enclosing scope sees the change.
+                // via STORE_GLOBAL so the enclosing scope sees the change.
                 int nameIdx = putConstant(ident.id);
                 int oneIdx = putConstant(1L);
                 if (isPre) {
@@ -1013,13 +1013,13 @@ public class IRBuilder {
                     current.emitPushConst(oneIdx);
                     emitDynamicOp(isInc ? Token.ADD : Token.SUB);
                     current.emitDup(); // keep new value on stack for return
-                    current.emitStoreDeep(nameIdx);
+                    current.emitStoreGlobal(nameIdx);
                 } else {
                     current.emitPushGlobal(nameIdx); // old value
                     current.emitDup();               // dup for return
                     current.emitPushConst(oneIdx);
                     emitDynamicOp(isInc ? Token.ADD : Token.SUB);
-                    current.emitStoreDeep(nameIdx);
+                    current.emitStoreGlobal(nameIdx);
                     current.emitPop(); // discard new value, keep old value
                 }
                 return;
@@ -1389,26 +1389,26 @@ public class IRBuilder {
 
             // Store result back — assign must find existing binding in full
             // chain.
-            // Only emit STORE_DEEP when the variable was stored via STORE_GLOBAL
+            // Only emit STORE_GLOBAL when the variable was stored via STORE_GLOBAL
             // at define time (top-level, captured). Slot-only variables
             // (function locals, control-flow shadows) don't have global
-            // bindings and STORE_DEEP would throw PropertyNotFoundException.
+            // bindings and STORE_GLOBAL would throw PropertyNotFoundException.
             current.emitDup();
             if (isCaptured.contains(ident.id)) {
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                current.emitStoreGlobal(nameIdx);
             } else {
                 int idx = varIndex.getOrDefault(ident.id, -1);
                 if (idx >= 0) {
                     current.emitStoreVar(idx);
                     if (globalSlots.contains(idx)) {
                         int nameIdx = putConstant(ident.id);
-                        current.emitStoreDeep(nameIdx);
+                        current.emitStoreGlobal(nameIdx);
                     }
                 } else {
                     // Variable from previous eval — only global binding exists
                     int nameIdx = putConstant(ident.id);
-                    current.emitStoreDeep(nameIdx);
+                    current.emitStoreGlobal(nameIdx);
                 }
             }
         } else {
@@ -1424,19 +1424,19 @@ public class IRBuilder {
             if (isCaptured.contains(ident.id)) {
                 // Captured by inner closure: search full eval context chain
                 int nameIdx = putConstant(ident.id);
-                current.emitStoreDeep(nameIdx);
+                current.emitStoreGlobal(nameIdx);
             } else {
                 int idx = varIndex.getOrDefault(ident.id, -1);
                 if (idx >= 0) {
                     current.emitStoreVar(idx);
                     if (globalSlots.contains(idx)) {
                         int nameIdx = putConstant(ident.id);
-                        current.emitStoreDeep(nameIdx);
+                        current.emitStoreGlobal(nameIdx);
                     }
                 } else {
                     // Variable from previous eval — only global binding exists
                     int nameIdx = putConstant(ident.id);
-                    current.emitStoreDeep(nameIdx);
+                    current.emitStoreGlobal(nameIdx);
                 }
             }
         } else if (node.left instanceof ELNode.ACCESS access &&
@@ -1515,7 +1515,7 @@ public class IRBuilder {
                         // Captured by inner closure: STORE_GLOBAL only
                         current.emitDup();
                         int nameIdx = putConstant(node.id);
-                        current.emitStoreGlobal(nameIdx);
+                        current.emitDefineGlobal(nameIdx);
                     } else if (parent != null) {
                         // In a function, not captured: STORE_VAR only
                         int idx = ensureVar(node.id);
@@ -1527,7 +1527,7 @@ public class IRBuilder {
                         current.emitDup();
                         current.emitStoreVar(idx);
                         int nameIdx = putConstant(node.id);
-                        current.emitStoreGlobal(nameIdx);
+                        current.emitDefineGlobal(nameIdx);
                         globalSlots.add(idx);
                     }
                 } else {
@@ -1562,7 +1562,7 @@ public class IRBuilder {
                 // so that closures see the same binding.
                 current.emitDup();
                 int nameIdx = putConstant(node.id);
-                current.emitStoreGlobal(nameIdx);
+                current.emitDefineGlobal(nameIdx);
             } else if (parent != null) {
                 // Function-level define, not captured by any inner closure.
                 // Local slot only — dies with the IRInterpreter invocation.
@@ -1576,7 +1576,7 @@ public class IRBuilder {
                 current.emitDup();
                 current.emitStoreVar(idx);
                 int nameIdx = putConstant(node.id);
-                current.emitStoreGlobal(nameIdx);
+                current.emitDefineGlobal(nameIdx);
                 globalSlots.add(idx);
             }
         }
@@ -1897,7 +1897,7 @@ public class IRBuilder {
 
         // Run scope analysis to identify which local variables are captured
         // by inner closures. These must use STORE_GLOBAL (eval context chain)
-        // so inner closures can read and modify them via PUSH_GLOBAL/STORE_DEEP.
+        // so inner closures can read and modify them via PUSH_GLOBAL/STORE_GLOBAL.
         ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
             node, Set.of(), new HashSet<>());
         nested.isCaptured.addAll(lamAnaly.capturedByInner);
@@ -1972,7 +1972,7 @@ public class IRBuilder {
             savedVarBindings.isEmpty()) {
             current.emitDup();
             int nameIdx = putConstant(node.name);
-            current.emitStoreGlobal(nameIdx);
+            current.emitDefineGlobal(nameIdx);
         }
     }
 

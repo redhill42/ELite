@@ -433,7 +433,7 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "pushGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
-            case STORE_DEEP, STORE_GLOBAL -> {
+            case STORE_GLOBAL, DEFINE_GLOBAL -> {
                 int idx = v.payload();
                 String name = (String) fn.constantPool()[idx];
                 // Stack: [value]. Need [ctx, name, value].
@@ -442,7 +442,7 @@ public class IRBytecodeCompiler {
                 mv.visitLdcInsn(name);                // name
                 mv.visitVarInsn(A_ALOAD, S_TMP);     // value
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
-                    "storeGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    "defineGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
 
             // ─── Collections ───

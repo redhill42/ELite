@@ -163,7 +163,7 @@ public final class IRPrinter {
                 }
             }
             case Opcode.STORE_VAR -> sb.append(" v").append(v.payload() & 0xFFFF);
-            case Opcode.STORE_GLOBAL -> {
+            case Opcode.DEFINE_GLOBAL -> {
                 int idx = v.payload();
                 sb.append(" #").append(idx);
                 if (idx < fn.constantPool().length) {

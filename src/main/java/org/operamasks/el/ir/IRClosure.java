@@ -37,7 +37,7 @@ public class IRClosure extends Closure {
     public final Object[] captured;
     /**
      * The evalContext chain active when this closure was created.
-     * Used as the basis for PUSH_GLOBAL/STORE_DEEP inside the closure body,
+     * Used as the basis for PUSH_GLOBAL/STORE_GLOBAL inside the closure body,
      * so captured variable reads and writes resolve against the original
      * enclosing scope rather than the caller's scope.
      */
