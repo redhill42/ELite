@@ -143,8 +143,7 @@ public final class Token
     public static final int LET             = 1 + UNDEF;
     public static final int DO              = 1 + LET;
     public static final int IF              = 1 + DO;
-    public static final int THEN            = 1 + IF;
-    public static final int ELSE            = 1 + THEN;
+    public static final int ELSE            = 1 + IF;
     public static final int FOR             = 1 + ELSE;
     public static final int WHILE           = 1 + FOR;
     public static final int SWITCH          = 1 + WHILE;
@@ -175,7 +174,7 @@ public final class Token
         "abstract", "synchronized", "true", "false", "null", "void",
         ":", "::", "?", "(", ")", "[", "]", "{", "}", "|", "&", "@", "#", "=>", "...", ",", ";",
         "require", "import", "module", "grammar", "define", "class", "extends", "implements",
-        "undef", "let", "do", "if", "then", "else", "for", "while", "switch", "case", "case",
+        "undef", "let", "do", "if", "else", "for", "while", "switch", "case", "case",
         "default", "break", "continue", "return", "throw", "try", "catch", "finally", "assert", "LALR"
     };
 

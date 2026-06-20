@@ -279,7 +279,7 @@ public abstract class Expression
 
     /**
      * Appends two expression to create a CompoundExpression
-     * @param expresson expression to append
+     * @param expression expression to append
      * @return the compound expression
      */
     public Expression append(Expression expression) {
@@ -822,15 +822,10 @@ public abstract class Expression
      * @return the sequence expression
      */
     public static Expression SEQUENCE(Object... exps) {
-        if (exps.length < 1) {
-            throw new IllegalArgumentException("The number of expressions must be >= 1");
-        }
-
-        Expression e = arg(exps[exps.length-1]);
-        for (int i = exps.length - 2; i >= 0; i--) {
-            e = new BinaryExpression(ExpressionType.THEN, arg(exps[i]), e);
-        }
-        return e;
+        Expression[] args = new Expression[exps.length];
+        for (int i = 0; i < exps.length; i++)
+            args[i] = arg(exps[i]);
+        return new CompoundExpression(args);
     }
 
     /**

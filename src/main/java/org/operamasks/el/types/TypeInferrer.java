@@ -185,8 +185,6 @@ public class TypeInferrer {
             // Control flow
             case Token.MATCH:
                 result = inferMatch((ELNode.MATCH) node); break;
-            case Token.THEN:
-                result = inferThen(node); break;
 
             // OOP
             case Token.NEW:
@@ -447,14 +445,6 @@ public class TypeInferrer {
         Type right = infer(bin.right);
         Type unified = left.unify(right);
         return unified != null ? unified : left;
-    }
-
-    // =========== Sequential (THEN) ===========
-
-    private Type inferThen(ELNode node) {
-        ELNode.THEN then = (ELNode.THEN) node;
-        infer(then.left); // side-effecting expression
-        return infer(then.right);
     }
 
     // =========== Lambda ===========

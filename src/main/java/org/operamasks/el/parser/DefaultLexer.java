@@ -877,7 +877,6 @@ public class DefaultLexer extends Lexer
 
         shared.addOperator("module", MODULE, -1); // FIXME
         shared.addOperator("do", DO, -1);
-        shared.addOperator("then", THEN, -1);
         shared.addOperator("and", "&&", AND, -1);
         shared.addOperator("or", "||", OR, -1);
         shared.addOperator("eq", "==", EQ, -1);

@@ -418,9 +418,6 @@ public class IRBuilder {
             buildDefine((ELNode.DEFINE)node);
             break;
 
-        case Token.THEN:
-            buildThen((ELNode.THEN)node);
-            break;
         case Token.EXPR:
             if (node instanceof ELNode.EXPR)
                 buildExpr((ELNode.EXPR)node);
@@ -1580,13 +1577,6 @@ public class IRBuilder {
                 globalSlots.add(idx);
             }
         }
-    }
-
-    // ── Sequential ──
-    private void buildThen(ELNode.THEN node) {
-        build(node.left);
-        current.emitPop();
-        buildTail(node.right);
     }
 
     private void buildExpr(ELNode.EXPR node) {

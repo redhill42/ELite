@@ -84,12 +84,6 @@ final class ExpressionTransformer extends ELNode.Visitor
         result = new InfixExpression(e.name, e.prec, transform(e.left), transform(e.right));
     }
 
-    public void visit(ELNode.THEN e) {
-        result = new BinaryExpression(ExpressionType.THEN,
-                                      transform(e.left),
-                                      transform(e.right));
-    }
-
     public void visit(ELNode.ASSIGN e) {
         result = new BinaryExpression(ExpressionType.ASSIGN,
                                       transform(e.left),

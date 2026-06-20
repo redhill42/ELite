@@ -32,9 +32,6 @@ public enum ExpressionType
     /** A node that represents a function call. */
     APPLY,
 
-    /** A node that represents a sequential operation. */
-    THEN("then", THEN_PREC),
-
     /** A node that represents an assignment operation. */
     ASSIGN("=", ASSIGN_PREC),
 

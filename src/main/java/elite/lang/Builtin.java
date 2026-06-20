@@ -2351,11 +2351,6 @@ public final class Builtin
     private static final ELNode.IDNE __IDNE__ = new ELNode.IDNE(-1, null, null);
     private static final ELNode.EMPTY __EMPTY__ = new ELNode.EMPTY(-1, null);
 
-    @Expando(name="then", scope=GLOBAL)
-    public static Object __then__(ELContext elctx, Object x, Object y) {
-        return y;
-    }
-
     @Expando(name="~", scope=GLOBAL)
     public static Object __cat__(ELContext elctx, Object x, Object y) {
         return __CAT__.getValue(elctx, x, y);

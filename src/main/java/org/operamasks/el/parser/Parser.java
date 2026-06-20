@@ -582,9 +582,6 @@ public class Parser extends Scanner
               }
           }
 
-          case THEN:
-            return new ELNode.THEN(scan(), e, parseTerm());
-
           case ASSIGN:
             expect_lvalue(e);
             return new ELNode.ASSIGN(scan(), e, parseTerm());
