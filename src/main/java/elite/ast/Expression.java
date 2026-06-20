@@ -124,6 +124,16 @@ public abstract class Expression
     }
 
     /**
+     * Dump the expression tree for debugging.
+     * @param elctx the evaluation context
+     */
+    public void dump(ELContext elctx) {
+        EvaluationContext env = new EvaluationContext(elctx);
+        Frame frame = StackTrace.getFrame(env.getELContext());
+        getNode(frame.getPos()).dump();
+    }
+
+    /**
      * Convert an internal node representation into an expression.
      * @param node the internal node representation.
      * @return the expression
