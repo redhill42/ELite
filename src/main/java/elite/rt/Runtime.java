@@ -22,7 +22,9 @@ import elite.lang.Closure;
 import elite.lang.Decimal;
 import elite.lang.Rational;
 import elite.lang.Seq;
+import org.operamasks.el.eval.CharRanges;
 import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.Ranges;
 import org.operamasks.el.eval.TypeCoercion;
 import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.ir.IRClosure;
@@ -178,9 +180,46 @@ public final class Runtime {
         return elems;
     }
 
-    public static Object newRange(Object begin, Object end) {
-        return org.operamasks.el.eval.Ranges.createRange(
-                ((Number)begin).longValue(), ((Number)end).longValue(), 1);
+    private static boolean isChar(Object o) {
+        if (o instanceof Character) {
+            return true;
+        } else if (o instanceof String) {
+            return ((String)o).length() == 1;
+        } else {
+            return false;
+        }
+    }
+
+    private static char getChar(Object o) {
+        if (o instanceof Character) {
+            return (Character)o;
+        } else if (o instanceof String) {
+            return ((String)o).charAt(0);
+        } else {
+            throw new AssertionError();
+        }
+    }
+
+    public static Object newRange(Object begin, Object next, Object end) {
+        if (isChar(begin) && (next == null || isChar(next)) && (end == null || isChar(end))) {
+            char c_begin = getChar(begin);
+            int c_step = (next == null) ? 1 : getChar(next) - c_begin;
+            if (end == null) {
+                return CharRanges.createUnboundedRange(c_begin, c_step);
+            } else {
+                char c_end = getChar(end);
+                return CharRanges.createCharRange(c_begin, c_end, c_step);
+            }
+        } else {
+            long l_begin = TypeCoercion.coerceToLong(begin);
+            long l_step = (next == null) ? 1 : TypeCoercion.coerceToLong(next) - l_begin;
+            if (end == null) {
+                return Ranges.createUnboundedRange(l_begin, l_step);
+            } else {
+                long l_end = TypeCoercion.coerceToLong(end);
+                return Ranges.createRange(l_begin, l_end, l_step);
+            }
+        }
     }
 
     /** 'in' operator following ELNode.IN.eval() logic. */

@@ -5687,7 +5687,7 @@ public abstract class ELNode implements Serializable
                     return CharRanges.createUnboundedRange(c_begin, c_step);
                 } else {
                     char c_end = getChar(end);
-                    if (exclude) c_end = (char)(c_end - c_step);
+                    if (exclude) --c_end;
                     return CharRanges.createCharRange(c_begin, c_end, c_step);
                 }
             } else {
@@ -5697,7 +5697,7 @@ public abstract class ELNode implements Serializable
                     return Ranges.createUnboundedRange(l_begin, l_step);
                 } else {
                     long l_end = coerceToLong(end);
-                    if (exclude) l_end -= l_step;
+                    if (exclude) --l_end;
                     return Ranges.createRange(l_begin, l_end, l_step);
                 }
             }

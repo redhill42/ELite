@@ -902,9 +902,9 @@ public class IRInterpreter {
                 }
                 case NEW_RANGE: {
                     Object end = pop();
+                    Object next = pop();
                     Object begin = pop();
-                    push(Ranges.createRange(((Number)begin).longValue(),
-                                            ((Number)end).longValue(), 1));
+                    push(elite.rt.Runtime.newRange(begin, next, end));
                     ip += 1;
                     break;
                 }

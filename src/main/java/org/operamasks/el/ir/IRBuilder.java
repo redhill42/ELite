@@ -907,7 +907,8 @@ public class IRBuilder {
 
     private void buildRange(ELNode.RANGE node) {
         build(node.begin);
-        if (node.exclude) {
+        build(node.next);
+        if (node.exclude && node.end != null) {
             // Exclusive range [begin..<end): push end-1 for inclusive range end
             build(node.end);
             emitPushConst(T_INT, 1L);

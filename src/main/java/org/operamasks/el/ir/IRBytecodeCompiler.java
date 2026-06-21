@@ -449,7 +449,7 @@ public class IRBytecodeCompiler {
             case NEW_LIST  -> emitCallN("newList", pl);
             case NEW_MAP   -> emitCallN("newMap", pl * 2); // pl = pair count, 2 stack values per pair
             case NEW_TUPLE -> emitCallN("newTuple", pl);
-            case NEW_RANGE -> emitCall2("newRange");
+            case NEW_RANGE -> emitCall3("newRange");
 
             // ─── Iteration ───
             case GET_ITER  -> emitCall1Obj("getIter");
@@ -820,6 +820,10 @@ public class IRBytecodeCompiler {
     private void emitCall2(String method) {
         mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
             method, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+    }
+    private void emitCall3(String method) {
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                method, "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCall1Obj(String method) {
         mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
