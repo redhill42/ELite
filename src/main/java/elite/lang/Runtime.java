@@ -14,14 +14,10 @@
  * limitations under the License.
  */
 
-package elite.rt;
+package elite.lang;
 
 import javax.el.ELContext;
 
-import elite.lang.Closure;
-import elite.lang.Decimal;
-import elite.lang.Rational;
-import elite.lang.Seq;
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.ir.IRClosure;

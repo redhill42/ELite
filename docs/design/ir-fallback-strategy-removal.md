@@ -15,7 +15,7 @@
 
 | 变更 | 说明 |
 |------|------|
-| `elite.rt.Runtime` | 提取字节码运行时辅助方法到独立类，与编译器分离 |
+| `elite.lang.Runtime` | 提取字节码运行时辅助方法到独立类，与编译器分离 |
 | ELContext 参数化 | 生成的 `execute()` 方法改为 `(ELContext, Object[])`，消除 ThreadLocal |
 | 清理死代码 | 移除迁移到 Runtime 后的约 200 行废弃方法 |
 

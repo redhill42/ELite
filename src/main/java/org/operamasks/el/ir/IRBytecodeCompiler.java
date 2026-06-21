@@ -21,6 +21,7 @@ import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import org.objectweb.asm.*;
 import static org.operamasks.el.ir.Opcode.*;
 import static org.operamasks.el.resources.Resources.*;
@@ -93,7 +94,7 @@ public class IRBytecodeCompiler {
         String name = "ELiteCompiled$" + CLASS_COUNTER.incrementAndGet();
         String desc = typeDescriptor(argTypes);
         // Register IRFunction constant pool so CLOSURE bytecode can look up via funcIdx
-        elite.rt.Runtime.setFuncPool(fn.constantPool());
+        elite.lang.Runtime.setFuncPool(fn.constantPool());
         byte[] bc = new IRBytecodeCompiler(fn, name, desc, argTypes).compileBytecode();
         try {
             Class<?> c = LOADER.define(name, bc);
@@ -327,7 +328,7 @@ public class IRBytecodeCompiler {
             case RETURN_VOID -> { mv.visitInsn(A_ACONST_NULL); mv.visitInsn(A_ARETURN); }
             case THROW -> {
                 // Wrap non-RuntimeException in UserException, then throw
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "wrapThrow", "(Ljava/lang/Object;)Ljava/lang/RuntimeException;", false);
                 mv.visitInsn(191); // ATHROW
             }
@@ -394,7 +395,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, S_CTX);        // [base, ctx]
                 mv.visitInsn(A_SWAP);                    // [ctx, base]
                 mv.visitVarInsn(A_ALOAD, S_TMP);        // [ctx, base, key]
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "loadProp", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case STORE_PROPERTY -> {
@@ -406,7 +407,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, S_TMP + 1);   // base
                 mv.visitVarInsn(A_ALOAD, S_TMP + 2);   // key
                 mv.visitVarInsn(A_ALOAD, S_TMP);       // value
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "storeProp", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case LOAD_FIELD -> {
@@ -414,7 +415,7 @@ public class IRBytecodeCompiler {
                 String name = (String) fn.constantPool()[idx];
                 // Stack: [base]. LDC name → [base, name] — name on top (2nd param ✓)
                 mv.visitLdcInsn(name);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "loadField", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case STORE_FIELD -> {
@@ -422,7 +423,7 @@ public class IRBytecodeCompiler {
                 String name = (String) fn.constantPool()[idx];
                 // Stack: [value, base]. LDC name → [value, base, name] — name on top (3rd param ✓)
                 mv.visitLdcInsn(name);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case PUSH_GLOBAL -> {
@@ -430,7 +431,7 @@ public class IRBytecodeCompiler {
                 String name = (String) fn.constantPool()[idx];
                 mv.visitVarInsn(A_ALOAD, S_CTX);    // ctx
                 mv.visitLdcInsn(name);               // name
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "pushGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case STORE_GLOBAL, DEFINE_GLOBAL -> {
@@ -441,7 +442,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, S_CTX);     // ctx
                 mv.visitLdcInsn(name);                // name
                 mv.visitVarInsn(A_ALOAD, S_TMP);     // value
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "defineGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
 
@@ -497,7 +498,7 @@ public class IRBytecodeCompiler {
                     mv.visitInsn(A_ICONST_0);
                     mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
                 }
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "createClosureById",
                     "(Ljavax/el/ELContext;I[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
             }
@@ -528,12 +529,12 @@ public class IRBytecodeCompiler {
                     // trampolineTry call and the Runtime.trampolineTry helper.
                     mv.visitVarInsn(A_ALOAD, S_CTX);
                     mv.visitLdcInsn(poolIdx);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                         "trampolineTry", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
                 } else {
                     mv.visitVarInsn(A_ALOAD, S_CTX);
                     mv.visitLdcInsn(poolIdx);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                    mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                         "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
                 }
             }
@@ -546,21 +547,21 @@ public class IRBytecodeCompiler {
                 // interpreter, which handles deopt correctly.
                 mv.visitInsn(A_DUP);
                 emitIntConst(typeId);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
             }
             case INC -> {
                 int varIdx = pl;
                 mv.visitVarInsn(A_ALOAD, S_LOCALS);
                 emitIntConst(varIdx);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "incLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
             }
             case DEC -> {
                 int varIdx = pl;
                 mv.visitVarInsn(A_ALOAD, S_LOCALS);
                 emitIntConst(varIdx);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "decLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
             }
             case NOP -> {}
@@ -580,7 +581,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, S_CTX);        // ctx
                 mv.visitVarInsn(A_ALOAD, S_TMP);        // x
                 mv.visitVarInsn(A_ALOAD, S_TMP + 1);    // y
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "dynCat", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, Opcode.name(op), op));
@@ -751,7 +752,7 @@ public class IRBytecodeCompiler {
             mv.visitVarInsn(A_ALOAD, S_CTX);        // ctx
             mv.visitInsn(A_SWAP);                    // target, ctx → ctx, target
             mv.visitVarInsn(A_ALOAD, S_TMP);        // args
-            mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+            mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                 "invokeDyn", "(Ljavax/el/ELContext;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         } else {
             // Stack: [target, argsArray]. Need [ctx, target, argsArray].
@@ -759,7 +760,7 @@ public class IRBytecodeCompiler {
             mv.visitVarInsn(A_ALOAD, S_CTX);         // ctx
             mv.visitInsn(A_SWAP);                     // ctx, target → target, ctx
             mv.visitVarInsn(A_ALOAD, S_TMP);         // args
-            mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+            mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                 "invokeDyn", "(Ljavax/el/ELContext;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
     }
@@ -774,7 +775,7 @@ public class IRBytecodeCompiler {
         funcRegistry.remove();
         funcIdCounter.remove();
         compiledCache.remove();
-        elite.rt.Runtime.clearFuncPool();
+        elite.lang.Runtime.clearFuncPool();
     }
     private static java.util.Map<Integer, IRFunction> funcRegistry() { return funcRegistry.get(); }
 
@@ -819,15 +820,15 @@ public class IRBytecodeCompiler {
     // ── Simple call helpers (1-2 args popped from stack) ──
 
     private void emitCall2(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
             method, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCall3(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                 method, "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCall1Obj(String method) {
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
             method, "(Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
     private void emitCallN(String method, int count) {
@@ -846,7 +847,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, slots[i]); mv.visitInsn(A_AASTORE);
             }
         }
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
             method, "([Ljava/lang/Object;)Ljava/lang/Object;", false);
     }
 
@@ -1101,7 +1102,7 @@ public class IRBytecodeCompiler {
         String desc = argCount == 2
             ? "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
             : "(Ljava/lang/Object;)Ljava/lang/Object;";
-        mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
             method, desc, false);
     }
 

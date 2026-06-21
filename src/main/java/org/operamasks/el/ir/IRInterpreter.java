@@ -892,7 +892,7 @@ public class IRInterpreter {
                 Object end = pop();
                 Object next = pop();
                 Object begin = pop();
-                push(elite.rt.Runtime.newRange(begin, next, end));
+                push(elite.lang.Runtime.newRange(begin, next, end));
                 ip += 1;
                 break;
             }
@@ -936,7 +936,7 @@ public class IRInterpreter {
             case DYNIN: {
                 Object elem = pop();
                 Object coll = pop();
-                push(elite.rt.Runtime.dynIn(coll, elem));
+                push(elite.lang.Runtime.dynIn(coll, elem));
                 ip += 1;
                 break;
             }
@@ -1182,7 +1182,7 @@ public class IRInterpreter {
             Object val = pop();
             if (val instanceof ClosureObject)
                 return trampolineBinaryOp(irOpcode, val, null);
-            return elite.rt.Runtime.dynNeg(val);
+            return elite.lang.Runtime.dynNeg(val);
         }
 
         Object rhs = pop();
@@ -1196,16 +1196,16 @@ public class IRInterpreter {
         // Delegate to Runtime for type-resolved arithmetic (shared with
         // bytecode path)
         return switch (irOpcode) {
-            case DYNADD -> elite.rt.Runtime.dynAdd(lhs, rhs);
-            case DYNSUB -> elite.rt.Runtime.dynSub(lhs, rhs);
-            case DYNMUL -> elite.rt.Runtime.dynMul(lhs, rhs);
-            case DYNDIV -> elite.rt.Runtime.dynDiv(lhs, rhs);
-            case DYNREM -> elite.rt.Runtime.dynRem(lhs, rhs);
-            case DYNPOW -> elite.rt.Runtime.dynPow(lhs, rhs);
-            case DYNCAT -> elite.rt.Runtime.dynCat(elctx, lhs, rhs);
-            case DYNEQ -> elite.rt.Runtime.dynEq(lhs, rhs);
-            case DYNLT -> elite.rt.Runtime.dynLt(lhs, rhs);
-            case DYNLE -> elite.rt.Runtime.dynLe(lhs, rhs);
+            case DYNADD -> elite.lang.Runtime.dynAdd(lhs, rhs);
+            case DYNSUB -> elite.lang.Runtime.dynSub(lhs, rhs);
+            case DYNMUL -> elite.lang.Runtime.dynMul(lhs, rhs);
+            case DYNDIV -> elite.lang.Runtime.dynDiv(lhs, rhs);
+            case DYNREM -> elite.lang.Runtime.dynRem(lhs, rhs);
+            case DYNPOW -> elite.lang.Runtime.dynPow(lhs, rhs);
+            case DYNCAT -> elite.lang.Runtime.dynCat(elctx, lhs, rhs);
+            case DYNEQ -> elite.lang.Runtime.dynEq(lhs, rhs);
+            case DYNLT -> elite.lang.Runtime.dynLt(lhs, rhs);
+            case DYNLE -> elite.lang.Runtime.dynLe(lhs, rhs);
             default -> { assert (false); yield null; }
         };
     }
