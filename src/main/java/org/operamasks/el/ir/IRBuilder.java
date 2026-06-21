@@ -320,7 +320,10 @@ public class IRBuilder {
             buildNumber((ELNode.NUMBER)node);
             break;
         case Token.STRINGVAL:
-            buildString((ELNode.STRINGVAL)node);
+            if (node instanceof ELNode.REGEXP re)
+                buildConst(re.value);
+            else
+                buildString((ELNode.STRINGVAL)node);
             break;
         case Token.CHARVAL:
             buildConst(((ELNode.CHARVAL)node).value);

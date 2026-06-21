@@ -44,9 +44,58 @@ import static org.operamasks.el.eval.TypeCoercion.*;
 import static org.operamasks.el.eval.ELUtils.*;
 
 /**
- * ELite内建函数库.
+ * ELite 内建函数库，提供语言核心标准库的全部静态方法。
+ *
+ * <h3>架构</h3>
+ * 本类是一个不可实例化的静态方法集合，所有 public 方法通过
+ * {@link elite.lang.annotation.Expando @Expando} 注解注册到 ELite
+ * 的方法分派器，使它们在 ELite 代码中可以作为实例方法或全局函数调用。
+ *
+ * <h3>主要函数分类</h3>
+ * <ul>
+ *   <li><b>系统函数</b> — {@code defined}, {@code begin}, {@code delay},
+ *       {@code force}, {@code identity}, {@code coalesce}</li>
+ *   <li><b>区间与迭代</b> — {@code upto}, {@code downto}, {@code step},
+ *       {@code times}, {@code range}</li>
+ *   <li><b>集合操作</b> — {@code list}, {@code cons}, {@code map},
+ *       {@code filter}, {@code foldl/foldr}, {@code each}, {@code sort},
+ *       {@code reverse}, {@code join}</li>
+ *   <li><b>惰性序列</b> — {@code iterate}, {@code repeat}, {@code cycle},
+ *       {@code take}, {@code takeWhile}, {@code zip}, {@code unfold}</li>
+ *   <li><b>字符串/正则</b> — {@code matches}, {@code replace}, {@code join}</li>
+ *   <li><b>Java 互操作</b> — {@code __new__}, {@code attach},
+ *       {@code populate}, {@code asList}, {@code toArray}</li>
+ *   <li><b>BitSet</b> — 通过 {@code []}, {@code :!:}, {@code :&:},
+ *       {@code :|:}, {@code :^:} 运算符操作</li>
+ *   <li><b>延续 (Continuation)</b> — {@code yield}, {@code call_cc},
+ *       {@code run_cont}</li>
+ *   <li><b>内建运算符</b> — {@code +}, {@code -}, {@code *}, {@code ==},
+ *       {@code ===} 等，委托给 {@link org.operamasks.el.parser.ELNode ELNode}
+ *       保证编译期与运行期行为一致</li>
+ *   <li><b>I/O</b> — {@code print}, {@code printf}, {@code sprintf},
+ *       {@code format}</li>
+ *   <li><b>并发</b> — {@code thread}, {@code start_thread}</li>
+ *   <li><b>元编程</b> — {@code eval}（运行时解析执行 ELite 代码字符串）</li>
+ * </ul>
+ *
+ * <h3>关键设计模式</h3>
+ * <ul>
+ *   <li><b>惰性序列</b> — 所有集合遍历操作返回 {@code DelaySeq} 子类，
+ *       通过 {@code force()} 方法按需计算，计算后置 null 释放引用。</li>
+ *   <li><b>内建运算符的 AST 委托</b> — 每个运算符持有一个单例 AST 节点
+ *       （如 {@code __ADD__}），运行时求值通过 {@code ELNode.getValue()}
+ *       走完整的 ELite 类型强制链，保证行为一致。</li>
+ *   <li><b>异常控制流</b> — 迭代函数捕获 {@code Control.Break} 和
+ *       {@code Control.Continue}，对应 ELite 的 {@code break/continue}。</li>
+ *   <li><b>集合多态</b> — {@code map}/{@code filter}/{@code fold} 等函数
+ *       接受 String, Object[], Iterable, Map, Seq 等多种类型并分派。</li>
+ * </ul>
+ *
+ * @see elite.lang.annotation.Expando
+ * @see org.operamasks.el.parser.ELNode
+ * @see elite.lang.Continuation
  */
-@SuppressWarnings("unchecked")
+@SuppressWarnings({"unchecked", "unused"})
 public final class Builtin
 {
     private Builtin() {}
@@ -55,7 +104,7 @@ public final class Builtin
 
     /**
      * 判断一个变量是否已定义.
-     *
+     * <p>
      * 用法: defined(var)
      */
     public static boolean defined(ELContext elctx, Closure var) {
@@ -70,27 +119,27 @@ public final class Builtin
 
     /**
      * 创建一个Java对象实例.
-     *
+     * <p>
      * 用法: myclass.new(args...)
      */
     @Expando(name="new")
-    public static Object __new__(ELContext elctx, Class cls, Closure... args) {
+    public static Object __new__(ELContext elctx, Class<?> cls, Closure... args) {
         return ELEngine.newInstance(elctx, cls, args);
     }
 
     /**
      * 创建多维数组.
-     *
+     * <p>
      * 用法: myclass.newArray(dimensions...)
      */
     @Expando
-    public static Object newArray(Class cls, int... dimensions) {
+    public static Object newArray(Class<?> cls, int... dimensions) {
         return Array.newInstance(cls, dimensions);
     }
 
     /**
      * 顺序执行一系列表达式.
-     *
+     * <p>
      * 用法1: begin(exp1, exp2, ...)
      * 用法2: begin { block }
      */
@@ -108,7 +157,7 @@ public final class Builtin
 
     /**
      * 创建延时求值表达式.
-     *
+     * <p>
      * 用法: delay(exp)
      */
     public static Closure delay(Closure exp) {
@@ -117,14 +166,13 @@ public final class Builtin
 
     /**
      * 强制对延时求值表达式求值.
-     *
+     * <p>
      * 用法: force(promise)
      */
     public static Object force(ELContext elctx, Object promise) {
         if (promise instanceof ValueExpression) {
             return ((ValueExpression)promise).getValue(elctx);
-        } else if (promise instanceof Seq) {
-            Seq s = (Seq)promise;
+        } else if (promise instanceof Seq s) {
             for (Seq t = s; !t.isEmpty(); t = t.tail());
             return s;
         } else {
@@ -135,7 +183,7 @@ public final class Builtin
     /**
      * 总是返回参数值的函数, 其定义定价于:
      *      define identity = { x => x }
-     *
+     * <p>
      * 用法: 将identity作为参数传递给高阶函数
      */
     public static Object identity(Object x) {
@@ -145,7 +193,7 @@ public final class Builtin
     /**
      * 总是返回常量值的函数, 其定义定价于:
      *      define const(c) { x => c }
-     *
+     * <p>
      * 用法: 将const(c)作为参数传递给高阶函数
      */
     public static Closure _const(final Object c) {
@@ -159,7 +207,7 @@ public final class Builtin
 
     /**
      * 返回参数表中的第一个非空值, 如果所有元素皆为空则最终返回空值.
-     *
+     * <p>
      * 用法: coalesce(exp1, exp2, ...)
      */
     public static Object coalesce(ELContext elctx, Closure... exps) {
@@ -174,11 +222,12 @@ public final class Builtin
 
     /**
      * 从第一个值开始, 依次递增其数值, 直到达到第二个值, 在迭代过程中调用代码块.
-     *
+     * <p>
      * 用法: a.upto(b) { block ... }
      */
-    public static void upto(ELContext elctx, long a, long b, Closure p) {
-        for (; a <= b; ++a) {
+    @Expando
+    public static void upto(ELContext elctx, Object a, Object b, Closure p) {
+        for (; __le__(elctx, a, b); a = __add__(elctx, a, 1)) {
             try {
                 p.call(elctx, a);
             } catch (Control.Break br) {
@@ -191,11 +240,12 @@ public final class Builtin
 
     /**
      * 从第一个值开始, 依次递减其数值, 直到达到第二个值, 在迭代过程中调用代码块.
-     *
+     * <p>
      * 用法: a.downto(b) { block ... }
      */
-    public static void downto(ELContext elctx, long a, long b, Closure p) {
-        for (; a >= b; --a) {
+    @Expando
+    public static void downto(ELContext elctx, Object a, Object b, Closure p) {
+        for (; __ge__(elctx, a, b); a = __sub__(elctx, a, 1)) {
             try {
                 p.call(elctx, a);
             } catch (Control.Break br) {
@@ -208,9 +258,10 @@ public final class Builtin
 
     /**
      * 从第一个值开始, 按指定步长依次递增(或递减)其数值, 直到达到第二个值, 在迭代过程中调用代码块.
-     *
+     * <p>
      * 用法: a.step(b,i) { block ... }
      */
+    @Expando
     public static void step(ELContext elctx, Object a, Object b, Object i, Closure p) {
         switch (signum(elctx, i)) {
             case 1: // step up
@@ -244,10 +295,11 @@ public final class Builtin
 
     /**
      * 重复调用指定次数.
-     *
+     * <p>
      * 用法: n.times { block ... }
      */
-    public static void times(ELContext elctx, int n, Closure p) {
+    @Expando
+    public static void times(ELContext elctx, Integer n, Closure p) {
         for (int i = 0; i < n; i++) {
             try {
                 p.call(elctx, i);
@@ -261,7 +313,7 @@ public final class Builtin
     
     /**
      * 返回指定变量的所有元数据.
-     *
+     * <p>
      * 用法: annotations(var)
      */
     public static Annotation[] annotations(ELContext elctx, Closure var) {
@@ -278,7 +330,7 @@ public final class Builtin
 
     /**
      * 返回指定变量的元数据.
-     *
+     * <p>
      * 用法: annotation(var, type)
      */
     public static Annotation annotation(ELContext elctx, Closure var, String type) {
@@ -293,13 +345,14 @@ public final class Builtin
     /**
      * 向一个Java类附加自定义方法, Java类的所有实例(无论之前或之后创建)都
      * 将可以调用此方法. 自定义方法可以用闭包实现, 闭包的第一个参数是类实例.
-     *
+     * <p>
      * 注意: 附加方法将覆盖类本身的内建方法. 当多次附加同名方式时, 以前附加
      * 的方法将被覆盖.
-     *
+     * <p>
      * 用法: javaclass.attach(name, closure)
-     *
+     * <p>
      * 示例:
+     * <pre>
      *   String.attach('capitalize') { s =>
      *       if (s.length > 0) {
      *          Character.toUpperCase(s[0]) + s[1..*];
@@ -309,40 +362,42 @@ public final class Builtin
      *   }
      *
      *   "hello".capitalize()  ===>  "Hello"
+     * </pre>
      */
     @Expando
-    public static void attach(ELContext elctx, Class cls, String name, Closure closure) {
+    public static void attach(ELContext elctx, Class<?> cls, String name, Closure closure) {
         MethodResolver resolver = MethodResolver.getInstance(elctx);
         resolver.attachMethod(cls, name, closure);
     }
 
     /**
      * 使用给定的Map对JavaBean的属性进行赋值
-     *
+     * <p>
      * 示例:
      *  假定Person对象具有firstname, lastname, age, gender等属性, 则
      *  可以使用以下方式对这些属性赋值:
-     *
+     * <pre>
      *     person.populate({
      *         firstname : 'John',
      *         lastname : 'Doe',
      *         age : 31,
      *         gender : 'male'
      *     });
-     *
+     * </pre>
+     * <p>
      *  此函数可以代替以下的写法:
-     *
+     * <pre>
      *     person.firstname = 'John';
      *     person.lastname = 'Doe';
      *     person.age = 31;
      *     person.gender = 'male';
+     * </pre>
      */
     @Expando
     public static Object populate(ELContext elctx, Object base, Map<?,?> properties) {
-        if (base instanceof Map) {
-            ((Map)base).putAll(properties);
-        } else if (base instanceof ClosureObject) {
-            ClosureObject clo = (ClosureObject)base;
+        if (base instanceof Map map) {
+            map.putAll(properties);
+        } else if (base instanceof ClosureObject clo) {
             for (Map.Entry<?,?> e : properties.entrySet()) {
                 clo.setValue(elctx, e.getKey(), e.getValue());
             }
@@ -442,7 +497,7 @@ public final class Builtin
 
     /**
      * 以给定参数创建一个序列.
-     *
+     * <p>
      * 用法: list(exp1, exp2, ...)
      */
     public static Seq list(Object... args) {
@@ -495,15 +550,13 @@ public final class Builtin
      */
     @Expando(scope={EXPANDO,GLOBAL})
     public static Object replicate(Object x, int n) {
-        if (x instanceof Character) {
+        if (x instanceof Character c) {
             StringBuilder buf = new StringBuilder();
-            char c = ((Character)x).charValue();
             for (int i = 0; i < n; i++)
                 buf.append(c);
             return buf.toString();
-        } else if (x instanceof String) {
+        } else if (x instanceof String s) {
             StringBuilder buf = new StringBuilder();
-            String s = (String)x;
             for (int i = 0; i < n; i++)
                 buf.append(s);
             return buf.toString();
@@ -627,7 +680,7 @@ public final class Builtin
 
     /**
      * 创建区间对象.
-     *
+     * <p>
      * 用法: range(low, high, increment)
      */
     public static Seq range(ELContext elctx, Object a, Object b, Object i) {
@@ -643,11 +696,11 @@ public final class Builtin
             return CharRanges.createCharRange((Character)a, (Character)b, (Integer)i);
         }
 
-        switch (signum(elctx, i)) {
-            case 1:  return StepUp.make(elctx, a, b, i);
-            case -1: return StepDown.make(elctx, a, b, i);
-            default: throw new ELException("range: the step cannot be zero.");
-        }
+        return switch (signum(elctx, i)) {
+            case 1 -> StepUp.make(elctx, a, b, i);
+            case -1 -> StepDown.make(elctx, a, b, i);
+            default -> throw new ELException("range: the step cannot be zero.");
+        };
     }
 
     /**
@@ -794,7 +847,7 @@ public final class Builtin
 
     /**
      * 给定一组列表, 顺序从每个列表中取出一个元素组成一个元组, 将这些元组构造成一个新的列表.
-     *
+     * <p>
      * 用法: zip([a,b,c], [x,y,z])  ===> [(a,x), (b,y), (c,z)]
      */
     public static Seq zip(Seq... ls) {
@@ -808,7 +861,7 @@ public final class Builtin
     /**
      * 给定一组列表, 顺序从每个列表中取出一个元素组成一个元组, 使用这个元组调用
      * 指定的过程, 过程的返回值构造成一个新的列表.
-     *
+     * <p>
      * 用法: zipWith(f, [a,b,c], [x,y,z]) ===> [f(a,x), f(b,y), f(c,z)]
      */
     public static Seq zipwith(Closure proc, Seq... ls) {
@@ -912,17 +965,19 @@ public final class Builtin
     /**
      * 将集合对象转换成数组.
      */
-    public static Object[] toArray(Collection c) {
+    @Expando(scope={EXPANDO,GLOBAL})
+    public static Object[] toArray(Collection<?> c) {
         return c.toArray();
     }
 
     /**
      * 将集合对象转换成数组.
      */
-    public static Object toArray(ELContext elctx, Collection c, Class type) {
+    @Expando(scope={EXPANDO,GLOBAL})
+    public static Object toArray(ELContext elctx, Collection<?> c, Class<?> type) {
         int size = c.size();
         Object array = Array.newInstance(type, size);
-        Iterator it = c.iterator();
+        Iterator<?> it = c.iterator();
         for (int i = 0; i < size; i++) {
             Array.set(array, i, coerce(elctx, it.next(), type));
         }
@@ -931,7 +986,7 @@ public final class Builtin
 
     /**
      * 以指定数据填充列表内容.
-     *
+     * <p>
      * 用法: fill(list, item) 或 list.fill(item)
      */
     @Expando(scope={EXPANDO,GLOBAL})
@@ -1014,13 +1069,13 @@ public final class Builtin
 
     /**
      * 将数据项添加到列表的末尾.
-     *
+     * <p>
      * 用法: list.push(item)
      */
     @Expando
-    public static List push(List lst, Object item) {
-        if (item instanceof Collection) {
-            lst.addAll((Collection)item);
+    public static List<Object> push(List<Object> lst, Object item) {
+        if (item instanceof Collection c) {
+            lst.addAll(c);
         } else if (item != null && item.getClass().isArray()) {
             lst.addAll(new ArrayAsList(item));
         } else {
@@ -1031,11 +1086,11 @@ public final class Builtin
 
     /**
      * 从列表的末尾删除元素, 并返回被删除的元素. 当列表为空时返回null.
-     *
+     * <p>
      * 用法: list.pop()
      */
     @Expando
-    public static Object pop(List lst) {
+    public static Object pop(List<?> lst) {
         if (!lst.isEmpty()) {
             return lst.remove(lst.size()-1);
         } else {
@@ -1049,9 +1104,9 @@ public final class Builtin
      * 用法: list.unshift(item)
      */
     @Expando
-    public static List unshift(List lst, Object item) {
-        if (item instanceof Collection) {
-            lst.addAll(0, (Collection)item);
+    public static List<Object> unshift(List<Object> lst, Object item) {
+        if (item instanceof Collection c) {
+            lst.addAll(0, c);
         } else if (item != null && item.getClass().isArray()) {
             lst.addAll(0, new ArrayAsList(item));
         } else {
@@ -1062,11 +1117,11 @@ public final class Builtin
 
     /**
      * 从列表的开始删除元素并返回被删除的元素. 当列表为空时返回null.
-     *
+     * <p>
      * 用法: list.shift()
      */
     @Expando
-    public static Object shift(List lst) {
+    public static Object shift(List<?> lst) {
         if (!lst.isEmpty()) {
             return lst.remove(0);
         } else {
@@ -1076,7 +1131,7 @@ public final class Builtin
 
     /**
      * 遍历集合, 对集合的每个元素调用给定的过程, 过程的返回值组成一个新的集合.
-     *
+     * <p>
      * 用法: collection.map(proc)
      */
     @Expando(scope={EXPANDO,GLOBAL})
@@ -1121,8 +1176,8 @@ public final class Builtin
         return b;
     }
 
-    private static Object map_set(ELContext elctx, Set set, Closure proc) {
-        Set r = new LinkedHashSet();
+    private static Object map_set(ELContext elctx, Set<Object> set, Closure proc) {
+        Set<Object> r = new LinkedHashSet<>();
         for (Object o : set) {
             r.add(proc.call(elctx, o));
         }
@@ -1132,7 +1187,7 @@ public final class Builtin
     /**
      * 遍历两个集合, 对集合的每个元素调用给定的过程, 过程的返回值组成一个新的集合.
      * 返回集合的元素数是两个输入集合中元素数较小者.
-     *
+     * <p>
      * 用法: map2(collection1, collection2, proc)
      */
     public static Object map2(ELContext elctx, Object a, Object b, Closure proc) {
@@ -1159,7 +1214,7 @@ public final class Builtin
     
     private static Object map2_array(ELContext elctx, Object[] a, Object[] b, Closure proc) {
         int size = Math.min(a.length, b.length);
-        Object r[] = new Object[size];
+        Object[] r = new Object[size];
         for (int i = 0; i < size; i++) {
             r[i] = proc.call(elctx, a[i], b[i]);
         }
@@ -1177,7 +1232,7 @@ public final class Builtin
 
     /**
      * 遍历集合的每个元素, 调用给定的谓词, 当谓词返回值为true时将元素加入结果集合.
-     *
+     * <p>
      * 用法: collection.filter(proc)
      */
     @Expando(scope={EXPANDO,GLOBAL})
@@ -1202,8 +1257,8 @@ public final class Builtin
         return buf.toString();
     }
 
-    private static Set filter_set(ELContext elctx, Set set, Closure pred) {
-        Set r = new LinkedHashSet();
+    private static Set<Object> filter_set(ELContext elctx, Set<Object> set, Closure pred) {
+        Set<Object> r = new LinkedHashSet<>();
         for (Object o : set) {
             if (pred.test(elctx, o)) {
                 r.add(o);
@@ -1311,7 +1366,7 @@ public final class Builtin
      * 查找集合中符合谓词的第一个元素.
      */
     @Expando(scope={EXPANDO,GLOBAL})
-    public static Object find(ELContext elctx, Iterable c, Closure pred) {
+    public static Object find(ELContext elctx, Iterable<?> c, Closure pred) {
         for (Object e : c) {
             if (pred.test(elctx, e)) {
                 return e;
@@ -1329,27 +1384,26 @@ public final class Builtin
             return true;
         }
 
-        if (xs instanceof Iterable) {
-            for (Object e : (Iterable)xs) {
+        if (xs instanceof Iterable it) {
+            for (Object e : it) {
                 if (!pred.test(elctx, e)) {
                     return false;
                 }
             }
-        } else if (xs instanceof Map) {
-            for (Object e : ((Map)xs).entrySet()) {
+        } else if (xs instanceof Map map) {
+            for (Object e : map.entrySet()) {
                 if (!pred.test(elctx, e)) {
                     return false;
                 }
             }
-        } else if (xs instanceof CharSequence) {
-            CharSequence cs = (CharSequence)xs;
+        } else if (xs instanceof CharSequence cs) {
             for (int i = 0, len = cs.length(); i < len; i++) {
                 if (!pred.test(elctx, cs.charAt(i))) {
                     return false;
                 }
             }
-        } else if (xs instanceof Object[]) {
-            for (Object e : (Object[])xs) {
+        } else if (xs instanceof Object[] a) {
+            for (Object e : a) {
                 if (!pred.test(elctx, e)) {
                     return false;
                 }
@@ -1372,27 +1426,26 @@ public final class Builtin
      */
     @Expando(name={"exists", "forany"}, scope={EXPANDO,GLOBAL})
     public static boolean forany(ELContext elctx, Object xs, Closure pred) {
-        if (xs instanceof Iterable) {
-            for (Object e : (Iterable)xs) {
+        if (xs instanceof Iterable it) {
+            for (Object e : it) {
                 if (pred.test(elctx, e)) {
                     return true;
                 }
             }
-        } else if (xs instanceof Map) {
-            for (Object e : ((Map)xs).entrySet()) {
+        } else if (xs instanceof Map map) {
+            for (Object e : map.entrySet()) {
                 if (pred.test(elctx, e)) {
                     return true;
                 }
             }
-        } else if (xs instanceof CharSequence) {
-            CharSequence cs = (CharSequence)xs;
+        } else if (xs instanceof CharSequence cs) {
             for (int i = 0, len = cs.length(); i < len; i++) {
                 if (pred.test(elctx, cs.charAt(i))) {
                     return true;
                 }
             }
-        } else if (xs instanceof Object[]) {
-            for (Object e : (Object[])xs) {
+        } else if (xs instanceof Object[] a) {
+            for (Object e : a) {
                 if (pred.test(elctx, e)) {
                     return true;
                 }
@@ -1410,13 +1463,13 @@ public final class Builtin
 
     /**
      * 使用指定过程遍历调用集合的每一个元素.
-     *
+     * <p>
      * 用法: collection.each { x => block... }
      */
     @Expando(name={"each", "foreach", "iterate"}, scope={EXPANDO,GLOBAL})
     public static void each(ELContext elctx, Object xs, Closure proc) {
-        if (xs instanceof Iterable) {
-            for (Object e : (Iterable)xs) {
+        if (xs instanceof Iterable it) {
+            for (Object e : it) {
                 try {
                     proc.call(elctx, e);
                 } catch (Control.Continue c) {
@@ -1425,8 +1478,8 @@ public final class Builtin
                     break;
                 }
             }
-        } else if (xs instanceof Map) {
-            for (Object e : ((Map)xs).entrySet()) {
+        } else if (xs instanceof Map map) {
+            for (Object e : map.entrySet()) {
                 try {
                     proc.call(elctx, e);
                 } catch (Control.Continue c) {
@@ -1435,8 +1488,7 @@ public final class Builtin
                     break;
                 }
             }
-        } else if (xs instanceof CharSequence) {
-            CharSequence cs = (CharSequence)xs;
+        } else if (xs instanceof CharSequence cs) {
             for (int i = 0, len = cs.length(); i < len; i++) {
                 try {
                     proc.call(elctx, cs.charAt(i));
@@ -1446,8 +1498,8 @@ public final class Builtin
                     break;
                 }
             }
-        } else if (xs instanceof Object[]) {
-            for (Object e : (Object[])xs) {
+        } else if (xs instanceof Object[] a) {
+            for (Object e : a) {
                 try {
                     proc.call(elctx, e);
                 } catch (Control.Continue c) {
@@ -1475,8 +1527,8 @@ public final class Builtin
             return null;
         }
 
-        if (arg instanceof Iterable) {
-            for (Object e : (Iterable)arg) {
+        if (arg instanceof Iterable it) {
+            for (Object e : it) {
                 try {
                     proc.call_with(elctx, e);
                 } catch (Control.Continue c) {
@@ -1488,8 +1540,8 @@ public final class Builtin
             return null;
         }
 
-        if (arg instanceof Object[]) {
-            for (Object e : (Object[])arg) {
+        if (arg instanceof Object[] a) {
+            for (Object e : a) {
                 try {
                     proc.call_with(elctx, e);
                 } catch (Control.Continue c) {
@@ -1519,21 +1571,20 @@ public final class Builtin
 
     @Expando(name={"foldl", "foldLeft", "fold", "reduce"}, scope={EXPANDO,GLOBAL})
     public static Object foldl(ELContext elctx, Object lst, Object init, Closure proc) {
-        if (lst instanceof Iterable) {
-            for (Object e : (Iterable)lst) {
+        if (lst instanceof Iterable it) {
+            for (Object e : it) {
                 init = proc.call(elctx, init, e);
             }
-        } else if (lst instanceof Map) {
-            for (Object e : ((Map)lst).entrySet()) {
+        } else if (lst instanceof Map map) {
+            for (Object e : map.entrySet()) {
                 init = proc.call(elctx, init, e);
             }
-        } else if (lst instanceof CharSequence) {
-            CharSequence cs = (CharSequence)lst;
+        } else if (lst instanceof CharSequence cs) {
             for (int i = 0, len = cs.length(); i < len; i++) {
                 init = proc.call(elctx, init, cs.charAt(i));
             }
-        } else if (lst instanceof Object[]) {
-            for (Object e : (Object[])lst) {
+        } else if (lst instanceof Object[] a) {
+            for (Object e : a) {
                 init = proc.call(elctx, init, e);
             }
         } else if (lst != null && lst.getClass().isArray()) {
@@ -1554,13 +1605,11 @@ public final class Builtin
             }
         } else if (lst instanceof Collection) {
             return seq_foldr(elctx, coerceToSeq(lst), end, proc);
-        } else if (lst instanceof CharSequence) {
-            CharSequence cs = (CharSequence)lst;
+        } else if (lst instanceof CharSequence cs) {
             for (int i = cs.length(); --i >= 0; ) {
                 end = proc.call(elctx, cs.charAt(i), end);
             }
-        } else if (lst instanceof Object[]) {
-            Object[] a = (Object[])lst;
+        } else if (lst instanceof Object[] a) {
             for (int i = a.length; --i >= 0; ) {
                 end = proc.call(elctx, a[i], end);
             }
@@ -1628,9 +1677,7 @@ public final class Builtin
             while (ia.hasNext() && ib.hasNext()) {
                 z = p.call(elctx, z, ia.next(), ib.next());
             }
-        } else if (a instanceof Object[] && b instanceof Object[]) {
-            Object[] aa = (Object[])a;
-            Object[] ba = (Object[])b;
+        } else if (a instanceof Object[] aa && b instanceof Object[] ba) {
             int size = Math.min(aa.length, ba.length);
             for (int i = 0; i < size; i++) {
                 z = p.call(elctx, z, aa[i], ba[i]);
@@ -1712,7 +1759,7 @@ public final class Builtin
      * 对集合元素进行排序.
      */
     @Expando(scope={EXPANDO,GLOBAL})
-    public static Collection sort(Collection c) {
+    public static Collection<Object> sort(Collection<Object> c) {
         Object[] a = c.toArray();
         Arrays.sort(a);
         return ArraySeq.make(a);
@@ -1722,7 +1769,7 @@ public final class Builtin
      * 对集合元素进行排序.
      */
     @Expando(scope={EXPANDO,GLOBAL})
-    public static Collection sort(ELContext elctx, Collection c, Closure comp) {
+    public static Collection<Object> sort(ELContext elctx, Collection<Object> c, Closure comp) {
         Object[] a = c.toArray();
         Arrays.sort(a, make_comparator(elctx, comp));
         return ArraySeq.make(a);
@@ -1835,7 +1882,7 @@ public final class Builtin
             }
             return new String(cs);
         } else if (base instanceof Collection) {
-            ArrayList rev = new ArrayList((Collection)base);
+            ArrayList<Object> rev = new ArrayList<>((Collection<Object>)base);
             Collections.reverse(rev);
             return rev;
         } else if (base != null && base.getClass().isArray()) {
@@ -1852,7 +1899,7 @@ public final class Builtin
     @Expando(scope={EXPANDO,GLOBAL})
     public static Object shuffle(Object base) {
         if (base instanceof Collection) {
-            List lst = new ArrayList((Collection)base);
+            List<Object> lst = new ArrayList<>((Collection<Object>)base);
             Collections.shuffle(lst);
             return lst;
         } else if (base != null && base.getClass().isArray()) {
@@ -1867,7 +1914,7 @@ public final class Builtin
      * 将集合元素拼接成一个字符串.
      */
     @Expando(scope={EXPANDO,GLOBAL})
-    public static String join(Iterable c) {
+    public static String join(Iterable<Object> c) {
         return join(c, null);
     }
 
@@ -1875,9 +1922,9 @@ public final class Builtin
      * 使用指定的分隔符将集合元素拼接成一个字符串.
      */
     @Expando(scope={EXPANDO,GLOBAL})
-    public static String join(Iterable c, String sep) {
+    public static String join(Iterable<Object> c, String sep) {
         StringBuilder buf = new StringBuilder();
-        Iterator i = c.iterator();
+        Iterator<Object> i = c.iterator();
         boolean hasNext = i.hasNext();
         while (hasNext) {
             Object o = i.next();
@@ -2142,7 +2189,7 @@ public final class Builtin
 
     // Other functions
 
-    private static Random prng = new Random();
+    private static final Random prng = new Random();
 
     /**
      * 设置随机种子.
@@ -2198,12 +2245,10 @@ public final class Builtin
      * 创建一个线程, 线程启动时调用给定的过程.
      */
     public static Thread thread(final ELContext elctx, final Closure proc) {
-        return new Thread() {
-            public void run() {
-                // invoke procedure in the current context
-                proc.call(DelegatingELContext.get(elctx));
-            }
-        };
+        return new Thread(() -> {
+            // invoke procedure in the current context
+            proc.call(DelegatingELContext.get(elctx));
+        });
     }
 
     /**
@@ -2499,9 +2544,9 @@ public final class Builtin
     }
 
     @Expando(name="<<")
-    public static Object __lshift__(Collection lhs, Object rhs) {
+    public static Object __lshift__(Collection<Object> lhs, Object rhs) {
         if (rhs instanceof Collection) {
-            lhs.addAll((Collection)rhs);
+            lhs.addAll((Collection<Object>)rhs);
         } else {
             lhs.add(rhs);
         }
@@ -2518,20 +2563,15 @@ public final class Builtin
     }
 
     @Expando(name="+")
-    public static Collection __add__(Collection lhs, Object rhs) {
-        lhs = new ArrayList(lhs);
-        if (rhs instanceof Collection) {
-            lhs.addAll((Collection)rhs);
-        } else {
-            lhs.add(rhs);
-        }
-        return lhs;
+    public static Object __add__(Collection<Object> lhs, Object rhs) {
+        lhs = new ArrayList<>(lhs);
+        return __iadd__(lhs, rhs);
     }
 
     @Expando(name="+=")
-    public static Object __iadd__(Collection lhs, Object rhs) {
+    public static Object __iadd__(Collection<Object> lhs, Object rhs) {
         if (rhs instanceof Collection) {
-            lhs.addAll((Collection)rhs);
+            lhs.addAll((Collection<Object>)rhs);
         } else {
             lhs.add(rhs);
         }
@@ -2596,20 +2636,15 @@ public final class Builtin
     }
 
     @Expando(name="-")
-    public static Collection __sub__(Collection lhs, Object rhs) {
-        lhs = new ArrayList(lhs);
-        if (rhs instanceof Collection) {
-            lhs.removeAll((Collection)rhs);
-        } else {
-            lhs.remove(rhs);
-        }
-        return lhs;
+    public static Collection<Object> __sub__(Collection<Object> lhs, Object rhs) {
+        lhs = new ArrayList<>(lhs);
+        return __isub__(lhs, rhs);
     }
 
     @Expando(name="-=")
-    public static Collection __isub__(Collection lhs, Object rhs) {
+    public static Collection<Object> __isub__(Collection<Object> lhs, Object rhs) {
         if (rhs instanceof Collection) {
-            lhs.removeAll((Collection)rhs);
+            lhs.removeAll((Collection<Object>)rhs);
         } else {
             lhs.remove(rhs);
         }
@@ -2617,15 +2652,15 @@ public final class Builtin
     }
 
     @Expando(name=":|:")
-    public static Collection __union__(Collection lhs, Collection rhs) {
+    public static Collection<Object> __union__(Collection<Object> lhs, Collection<Object> rhs) {
         if (lhs instanceof SortedSet) {
-            lhs = new TreeSet(lhs);
+            lhs = new TreeSet<>(lhs);
             lhs.addAll(rhs);
         } else if (lhs instanceof Set) {
-            lhs = new HashSet(lhs);
+            lhs = new HashSet<>(lhs);
             lhs.addAll(rhs);
         } else {
-            lhs = new ArrayList(lhs);
+            lhs = new ArrayList<>(lhs);
             lhs.removeAll(rhs);
             lhs.addAll(rhs);
         }
@@ -2633,7 +2668,7 @@ public final class Builtin
     }
 
     @Expando(name=":|:=")
-    public static Collection __iunion__(Collection lhs, Collection rhs) {
+    public static Collection<Object> __iunion__(Collection<Object> lhs, Collection<Object> rhs) {
         if (lhs instanceof Set) {
             lhs.addAll(rhs);
         } else {
@@ -2644,22 +2679,22 @@ public final class Builtin
     }
 
     @Expando(name=":&:")
-    public static Collection __intersect__(Collection lhs, Collection rhs) {
+    public static Collection<Object> __intersect__(Collection<Object> lhs, Collection<Object> rhs) {
         if (lhs instanceof SortedSet) {
-            lhs = new TreeSet(lhs);
+            lhs = new TreeSet<>(lhs);
             lhs.retainAll(rhs);
         } else if (lhs instanceof Set) {
-            lhs = new HashSet(lhs);
+            lhs = new HashSet<>(lhs);
             lhs.retainAll(rhs);
         } else {
-            lhs = new ArrayList(lhs);
+            lhs = new ArrayList<>(lhs);
             lhs.retainAll(rhs);
         }
         return lhs;
     }
 
     @Expando(name=":&:=")
-    public static Collection __iintersect__(Collection lhs, Collection rhs) {
+    public static Collection<Object> __iintersect__(Collection<Object> lhs, Collection<Object> rhs) {
         lhs.retainAll(rhs);
         return lhs;
     }
@@ -2675,12 +2710,8 @@ public final class Builtin
         return result;
     }
 
-    private static Comparator make_comparator(final ELContext elctx, final Closure comp) {
-        return new Comparator() {
-            public int compare(Object o1, Object o2) {
-                return coerceToInt(comp.call(elctx, o1, o2));
-            }
-        };
+    private static Comparator<Object> make_comparator(final ELContext elctx, final Closure comp) {
+        return (o1, o2) -> coerceToInt(comp.call(elctx, o1, o2));
     }
 
     static Locale getLocale(ELContext elctx) {
@@ -2693,7 +2724,7 @@ public final class Builtin
         return Locale.getDefault();
     }
 
-    private static class ArrayAsList extends AbstractList
+    private static class ArrayAsList extends AbstractList<Object>
         implements RandomAccess, Serializable
     {
         private final Object a;
