@@ -542,13 +542,14 @@ public class Parser extends Scanner
             ELNode.IDENT ident = new ELNode.IDENT(p, id);
             if (e instanceof ELNode.TUPLE t)
                 return new ELNode.APPLY(p, ident, t.elems, null);
-            return new ELNode.XFORM(p, e, ident);
+            return new ELNode.APPLY(p, ident, new ELNode[]{e}, null);
           }
 
           case XFORM:
+            // x->f is syntax sugar of f(x)
             if (e instanceof ELNode.TUPLE t)
               return new ELNode.APPLY(scan(), parseTerm(), t.elems, null);
-            return new ELNode.XFORM(scan(), e, parseTerm());
+            return new ELNode.APPLY(scan(), parseTerm(), new ELNode[]{e}, null);
 
           case INC:
             return new ELNode.INC(scan(), e, false);
@@ -2362,7 +2363,7 @@ public class Parser extends Scanner
             scan();
             break;
 
-        case PREFIX: case ASSIGNOP: case XFORM:
+        case PREFIX: case ASSIGNOP:
         case NOT: case BITNOT: case INC: case DEC:
         case EQ: case NE: case LT: case LE: case GT: case GE:
             opname = operator.name;

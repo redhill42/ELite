@@ -98,7 +98,7 @@ ELite 是一个运行在 JVM 上的**动态、多范式编程语言**，以 `jav
 - 每个内部类同时是**解析树节点**和**可求值实体**
 - 直接实现 `javax.el.ValueExpression` 的行为——调用 `getValue()` 即可求值
 - 通过 Visitor 模式（`accept(Visitor v)`）支持树遍历
-- 内部类包括：`LAMBDA`, `BLOCK`, `IDENT`, `ACCESS`, `APPLY`, `XFORM`, `ASSIGN`, `ASSIGNOP`, `COND`, `COALESCE`, `OR`, `AND`, `EQ`, `NE`, `LT`, `LE`, `GT`, `GE`, `IN`, `INSTANCEOF`, `PREFIX`, `INFIX`, `BITOR`, `BITAND`, `XOR`, `SHL`, `SHR`, `USHR`, `Composite`, `DEFINE`, `CLASSDEF`, `UNDEF`, 等等
+- 内部类包括：`LAMBDA`, `BLOCK`, `IDENT`, `ACCESS`, `APPLY`, `ASSIGN`, `ASSIGNOP`, `COND`, `COALESCE`, `OR`, `AND`, `EQ`, `NE`, `LT`, `LE`, `GT`, `GE`, `IN`, `INSTANCEOF`, `PREFIX`, `INFIX`, `BITOR`, `BITAND`, `XOR`, `SHL`, `SHR`, `USHR`, `Composite`, `DEFINE`, `CLASSDEF`, `UNDEF`, 等等
 
 **B. `elite.ast.Expression`（抽象 AST）**
 - 独立的、层次更清晰的 AST 表示

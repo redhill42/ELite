@@ -356,9 +356,6 @@ public class IRBuilder {
         case Token.APPLY:
             buildApply((ELNode.APPLY)node);
             break;
-        case Token.XFORM:
-            buildXform((ELNode.XFORM)node);
-            break;
 
         case Token.ADD:
         case Token.SUB:
@@ -699,10 +696,9 @@ public class IRBuilder {
 
     // ── Apply ──
     private void buildApply(ELNode.APPLY node) {
-        // List comprehensions [expr | x <- list] and XFORM — fall back to AST
+        // List comprehensions [expr | x <- list]  — fall back to AST
         if (node.right instanceof ELNode.FOREACH ||
-            node.right instanceof ELNode.FOR ||
-            node.right instanceof ELNode.XFORM) {
+            node.right instanceof ELNode.FOR) {
             buildTrampoline(node);
             return;
         }
@@ -804,40 +800,6 @@ public class IRBuilder {
             inTailPosition = prev;
             current.emitInvokeDyn(node.args.length);
         }
-    }
-
-    private void buildXform(ELNode.XFORM node) {
-        if (node.right instanceof ELNode.IDENT) {
-            String id = ((ELNode.IDENT)node.right).id;
-            if (dataConstructorNames.contains(id)) {
-                buildTrampoline(node);
-                return;
-            }
-
-            boolean isTail =
-                    inTailPosition && lambdaName != null && lambdaName.equals(id);
-            boolean isDirect = !isTail && resolveKnownFunction(id) != null;
-
-            if (isTail) {
-                inTailPosition = false;
-                build(node.left);
-                inTailPosition = true;
-                current.emitInvokeTail(1);
-                return;
-            }
-
-            if (isDirect) {
-                boolean prev = inTailPosition;
-                inTailPosition = false;
-                build(node.left);
-                inTailPosition = prev;
-                Integer funcIdx = resolveKnownFunction(id);
-                current.emitInvokeDirect(funcIdx, 1);
-                return;
-            }
-        }
-
-        buildTrampoline(node);
     }
 
     // ── Literals: list, map, tuple, range ──
@@ -1544,6 +1506,10 @@ public class IRBuilder {
             // 3. Top-level, not captured → STORE_VAR + STORE_GLOBAL
             // (persistence)
 
+            // Named lambda already defined global name, no need to redefine.
+            boolean isNamedLambda = node.expr instanceof ELNode.LAMBDA lam &&
+                                    lam.name != null;
+
             if (!savedVarBindings.isEmpty()) {
                 // Inside a control-flow scope ({...} in if/while/for):
                 // save the old slot binding, allocate a new slot for the shadow
@@ -1557,12 +1523,14 @@ public class IRBuilder {
                 current.emitDup();
                 current.emitStoreVar(idx);
             } else if (isCaptured.contains(node.id)) {
-                // This variable is captured by an inner closure.
-                // All accesses must go through the EvaluationContext chain
-                // so that closures see the same binding.
-                current.emitDup();
-                int nameIdx = putConstant(node.id);
-                current.emitDefineGlobal(nameIdx);
+                if (!isNamedLambda) {
+                    // This variable is captured by an inner closure.
+                    // All accesses must go through the EvaluationContext chain
+                    // so that closures see the same binding.
+                    current.emitDup();
+                    int nameIdx = putConstant(node.id);
+                    current.emitDefineGlobal(nameIdx);
+                }
             } else if (parent != null) {
                 // Function-level define, not captured by any inner closure.
                 // Local slot only — dies with the IRInterpreter invocation.
@@ -1575,9 +1543,11 @@ public class IRBuilder {
                 int idx = ensureVar(node.id);
                 current.emitDup();
                 current.emitStoreVar(idx);
-                int nameIdx = putConstant(node.id);
-                current.emitDefineGlobal(nameIdx);
-                globalSlots.add(idx);
+                if (!isNamedLambda) {
+                    int nameIdx = putConstant(node.id);
+                    current.emitDefineGlobal(nameIdx);
+                    globalSlots.add(idx);
+                }
             }
         }
     }

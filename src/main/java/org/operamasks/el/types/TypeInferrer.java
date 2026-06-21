@@ -161,8 +161,6 @@ public class TypeInferrer {
                 result = inferLambda((ELNode.LAMBDA) node); break;
             case Token.APPLY:
                 result = inferApply((ELNode.APPLY) node); break;
-            case Token.XFORM:
-                result = inferXForm((ELNode.XFORM) node); break;
 
             // Data structures
             case Token.LBRACKET:
@@ -538,42 +536,6 @@ public class TypeInferrer {
             argTypes.get(i).unify(freshParams.get(i));
         }
         return freshRet instanceof VarType ? ((VarType) freshRet).resolve() : freshRet;
-    }
-
-    // =========== Pipe / Transform (x -> f) ===========
-
-    private Type inferXForm(ELNode.XFORM node) {
-        Type argType = node.left instanceof ELNode.TUPLE
-            ? inferTupleArgs(node.left)
-            : infer(node.left);
-        Type fnType = infer(node.right);
-
-        if (fnType instanceof FunctionType) {
-            FunctionType ft = (FunctionType) fnType;
-            // The first argument type should unify with the left-hand value
-            if (!ft.paramTypes.isEmpty() && argType != Type.DYNAMIC) {
-                argType.unify(ft.paramTypes.get(0));
-            }
-            return ft.returnType;
-        }
-
-        if (fnType instanceof VarType) {
-            return inferVarTypeFunctionCall((VarType) fnType, Collections.singletonList(argType));
-        }
-
-        return Type.DYNAMIC;
-    }
-
-    private Type inferTupleArgs(ELNode node) {
-        if (node instanceof ELNode.TUPLE) {
-            ELNode.TUPLE tup = (ELNode.TUPLE) node;
-            List<Type> types = new ArrayList<>();
-            for (ELNode e : tup.elems) {
-                types.add(infer(e));
-            }
-            return new FunctionType(types, Type.DYNAMIC);
-        }
-        return infer(node);
     }
 
     // =========== Data structures ===========

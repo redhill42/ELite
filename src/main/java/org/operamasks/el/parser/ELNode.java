@@ -95,10 +95,9 @@ public abstract class ELNode implements Serializable
         ADD_PREC        = 130,
         MUL_PREC        = 140,
         PREFIX_PREC     = 150,
-        XFORM_PREC      = 160,
-        POW_PREC        = 170,
-        POSTFIX_PREC    = 180,
-        DEFAULT_PREC    = 180,
+        POW_PREC        = 160,
+        POSTFIX_PREC    = 170,
+        DEFAULT_PREC    = 170,
         NO_PREC         = 500;
 
     // Operator overridden identifiers
@@ -1538,76 +1537,6 @@ public abstract class ELNode implements Serializable
             }
 
             return extra;
-        }
-
-        public void accept(Visitor v) {
-            v.visit(this);
-        }
-    }
-
-    /**
-     * The transform expression (x->f). A syntax sugar for lambda application (f(x)).
-     */
-    public static class XFORM extends Binary {
-        public XFORM(int pos, ELNode left, ELNode right) {
-            super(Token.XFORM, pos, left, right);
-        }
-
-        public int precedence() {
-            return XFORM_PREC;
-        }
-
-        public Object getValue(EvaluationContext context) {
-            ELContext elctx = context.getELContext();
-            Object lhs = left.getValue(context);
-
-            if (lhs instanceof ClosureObject) {
-                // invoke operator procedure on closure object
-                Closure[] args = {right.closure(context)};
-                Object result = ((ClosureObject)lhs).invokeSpecial(elctx, "->", args);
-                if (result != NO_RESULT) {
-                    return result;
-                }
-            } else if (lhs != null) {
-                // invoke expando operator procedure
-                MethodClosure method = MethodResolver.getInstance(elctx)
-                    .resolveMethod(lhs.getClass(), "->");
-                if (method != null) {
-                    Closure[] args = {right.closure(context)};
-                    return method.invoke(elctx, lhs, args);
-                }
-            }
-
-            return right.invoke(context, new Closure[]{new LiteralClosure(lhs)});
-        }
-        
-        public Class getType(EvaluationContext context) {
-            return right.getMethodInfo(context).getReturnType();
-        }
-
-        public MethodInfo getMethodInfo(EvaluationContext context) {
-            return right.getMethodInfo(context);
-        }
-
-        public Object invokeMethod(EvaluationContext context, Object[] args) {
-            // This method is called by MethodExpression, concatenate external
-            // arguments with our own parameters and invoke closure.
-            Closure[] extra = ELEngine.getCallArgs(args, this.getCallArgs(context));
-            return right.invoke(context, extra);
-        }
-
-        private Closure[] getCallArgs(EvaluationContext context) {
-            if (left instanceof TUPLE) {
-                // for the expression (a,b,c)->f, translate to f(a,b,c)
-                TUPLE a = (TUPLE)left;
-                Closure[] args = new Closure[a.elems.length];
-                for (int i = 0; i < args.length; i++) {
-                    args[i] = a.elems[i].closure(context);
-                }
-                return args;
-            } else {
-                return new Closure[] { left.closure(context) };
-            }
         }
 
         public void accept(Visitor v) {
@@ -6230,7 +6159,6 @@ public abstract class ELNode implements Serializable
         public void visit(IDENT e)      { visitNode(e); }
         public void visit(ACCESS e)     { visitNode(e); }
         public void visit(APPLY e)      { visitNode(e); }
-        public void visit(XFORM e)      { visitNode(e); }
         public void visit(PREFIX e)     { visitNode(e); }
         public void visit(INFIX e)      { visitNode(e); }
         public void visit(ASSIGN e)     { visitNode(e); }

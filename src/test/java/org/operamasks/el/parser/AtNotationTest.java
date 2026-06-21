@@ -15,8 +15,7 @@ import org.junit.jupiter.api.Test;
  *   expr{@literal @}func  ≡  func(expr)
  * </pre>
  *
- * The @ operator has left-to-right associativity (precedence 160,
- * XFORM_PREC), enabling pipeline-style chaining:
+ * The @ operator has left-to-right associativity enabling pipeline-style chaining:
  *   data{@literal @}filter{@literal @}map{@literal @}reduce
  */
 class AtNotationTest {
