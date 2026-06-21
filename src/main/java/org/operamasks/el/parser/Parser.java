@@ -1209,15 +1209,10 @@ public class Parser extends Scanner
         boolean exclude = false;
 
         expect(RANGE);
-        if (token == MUL) {
-            scan();
-            if (token != RBRACKET) {
-                end = parseExpression();
-                exclude = true;
-            }
-        } else {
+        if (scan(LT))
+            exclude = true;
+        if (token != RBRACKET)
             end = parseExpression();
-        }
         expect(RBRACKET);
         return new ELNode.RANGE(p, begin, next, end, exclude);
     }

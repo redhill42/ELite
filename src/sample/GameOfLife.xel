@@ -434,8 +434,8 @@ class GameOfLife extends Panel implements Runnable
             text << "!Variation: 23/3";
             text << lineSeperator;
 
-            for (row in [0..*dim.height]) {
-                for (col in [0..*dim.width]) {
+            for (row in [0..<dim.height]) {
+                for (col in [0..<dim.width]) {
                     if (grid.getCell(col, row)) {
                         if (row < rowStart)
                             rowStart = row;
@@ -773,10 +773,10 @@ class CellGridCanvas extends Canvas
             offScreenGraphicsDrawed.color = Color.gray;
             offScreenGraphicsDrawed.fillRect(0, 0, cellSize*dim.width-1, cellSize*dim.height-1);
             offScreenGraphicsDrawed.color = getBackground();
-            for (x in [1..*dim.width]) {
+            for (x in [1..<dim.width]) {
                 offScreenGraphicsDrawed.drawLine(x*cellSize-1, 0, x*cellSize-1, cellSize*dim.height-1);
             }
-            for (y in [1..*dim.height]) {
+            for (y in [1..<dim.height]) {
                 offScreenGraphicsDrawed.drawLine(0, y*cellSize-1, cellSize*dim.width-1, y*cellSize-1);
             }
         }
@@ -1132,9 +1132,9 @@ class GameOfLifeGrid
         this.nextShape = Collections.synchronizedSet(new HashSet());
 
         grid = new Object[cellCols];
-        for (c in [0..*cellCols]) {
+        for (c in [0..<cellCols]) {
             grid[c] = new Object[cellRows];
-            for (r in [0..*cellRows]) {
+            for (r in [0..<cellRows]) {
                 grid[c][r] = new Cell(c, r);
             }
         }
@@ -1257,9 +1257,9 @@ class GameOfLifeGrid
 
         // Create a new grid, reusing existing Cell's
         define gridNew = new Object[cellColsNew];
-        for (c in [0..*cellColsNew]) {
+        for (c in [0..<cellColsNew]) {
             gridNew[c] = new Object[cellRowsNew];
-            for (r in [0..*cellRowsNew]) {
+            for (r in [0..<cellRowsNew]) {
                 if (c < cellCols && r < cellRows) {
                     gridNew[c][r] = grid[c][r];
                 } else {
