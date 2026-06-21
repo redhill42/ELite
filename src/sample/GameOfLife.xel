@@ -404,7 +404,7 @@ class GameOfLife extends Panel implements Runnable
             grid.clear();
             file.eachLine { line =>
                 if (line.startsWith("#") || line.startsWith("!"))
-                    continue;
+                    return;
 
                 for (i, c in line) {
                     if (c in [#'*',#'O',#'o',#'X',#'x',#'1']) {

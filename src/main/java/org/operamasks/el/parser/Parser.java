@@ -47,6 +47,7 @@ import org.operamasks.el.resolver.ClassResolver;
 import org.operamasks.el.resolver.MethodResolver;
 import org.operamasks.util.SimpleCache;
 import static org.operamasks.el.parser.Token.*;
+import static org.operamasks.el.parser.ParseContext.ScopeState.*;
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -82,7 +83,11 @@ public class Parser extends Scanner
     }
 
     void open_scope() {
-        env.push();
+        env.push(ENTER_NESTED);
+    }
+
+    void open_scope(ParseContext.ScopeState state) {
+        env.push(state);
     }
 
     void close_scope() {
@@ -1355,7 +1360,7 @@ public class Parser extends Scanner
         }
         expect(ARROW);
 
-        open_scope();
+        open_scope(ENTER_CLOSURE);
         add_pattern_vars(pats);
         if (token == LBRACE) {
             body = parseCompoundExpression(scan());
@@ -1409,7 +1414,7 @@ public class Parser extends Scanner
             }
         }
 
-        open_scope();
+        open_scope(ENTER_CLOSURE);
         add_pattern_vars(pats);
         ELNode body = parseCompoundExpression(p);
         close_scope();
@@ -1476,7 +1481,7 @@ public class Parser extends Scanner
             }
         }
 
-        open_scope();
+        open_scope(ENTER_CLOSURE);
         add_pattern_vars(pats);
         ELNode body = parseCompoundExpression(p);
         expect(RBRACE);
@@ -1728,7 +1733,9 @@ public class Parser extends Scanner
                 }
                 body = parseMatchPatterns(pos, args);
             } else {
+                open_scope(ENTER_CLOSURE);
                 body = parseCompoundExpression(pos);
+                close_scope();
             }
             expect(RBRACE);
         } else {
@@ -2023,11 +2030,15 @@ public class Parser extends Scanner
             break;
 
         case BREAK:
+            if (!env.insideLoops())
+                throw parseError("break outside loop");
             e = new ELNode.BREAK(scan());
             expect(SEMI);
             break;
 
         case CONTINUE:
+            if (!env.insideLoops())
+                throw parseError("continue outside loop");
             e = new ELNode.CONTINUE(scan());
             expect(SEMI);
             break;
@@ -2772,7 +2783,7 @@ public class Parser extends Scanner
         expect(RPAREN);
 
         // parse body
-        open_scope();
+        open_scope(ENTER_CLOSURE);
         add_pattern_vars(pats);
         if (token == LBRACE) {
             body = parseCompoundExpression(scan());
@@ -2976,7 +2987,7 @@ public class Parser extends Scanner
 
         if (!foreach) {
             restore(mark);
-            open_scope();
+            open_scope(ENTER_LOOP);
 
             if (token != SEMI) {
                 if (local) {
@@ -3015,7 +3026,7 @@ public class Parser extends Scanner
         } else {
             ELNode.DEFINE var_def, idx_def = null;
 
-            open_scope();
+            open_scope(ENTER_LOOP);
             add_pattern_vars((ELNode.Pattern)var_pat);
             if (idx_pat != null)
                 add_pattern_vars((ELNode.Pattern)idx_pat);
@@ -3071,7 +3082,10 @@ public class Parser extends Scanner
         expect(LPAREN);
         ELNode cond = parseSyntaxExpression();
         expect(RPAREN);
-        return new ELNode.WHILE(p, cond, parseStatement());
+        open_scope(ENTER_LOOP);
+        ELNode body = parseStatement();
+        close_scope();
+        return new ELNode.WHILE(p, cond, body);
     }
 
     /**
@@ -3214,7 +3228,7 @@ public class Parser extends Scanner
                 expect(ARROW);
 
                 int p3 = pos;
-                open_scope();
+                open_scope(ENTER_CLOSURE);
                 add_pattern_vars(pats);
                 stmts.clear();
                 while (token != BAR && token != RBRACE)

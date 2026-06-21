@@ -4,5 +4,6 @@ target
 *.ipr
 *.iml
 *.iws
+*.swp
 .DS_Store
 bench/*.class
