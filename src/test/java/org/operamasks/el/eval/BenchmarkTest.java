@@ -274,7 +274,7 @@ class BenchmarkTest {
     private static double benchIR(String label, String expr, int warmup, int iters) {
         ELNode node = Parser.parseExpression(expr);
         IRFunction fn = IRBuilder.compile(node);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
 
         // Warmup
         for (int i = 0; i < warmup; i++) interp.execute(null);
@@ -366,7 +366,7 @@ class BenchmarkTest {
     private static double benchIR2(String label, String expr, int warmup, int iters,
                                     javax.el.ELContext ectx, org.operamasks.el.eval.EvaluationContext evalCtx) {
         IRFunction fn = IRBuilder.compile(Parser.parseExpression(expr));
-        IRInterpreter interp = new IRInterpreter(ectx, fn, evalCtx);
+        IRInterpreter interp = new IRInterpreter(evalCtx, fn);
         for (int i = 0; i < warmup; i++) interp.execute(null);
         long start = System.nanoTime();
         for (int i = 0; i < iters; i++) interp.execute(null);

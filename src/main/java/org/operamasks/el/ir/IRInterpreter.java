@@ -16,11 +16,7 @@
 
 package org.operamasks.el.ir;
 
-import org.operamasks.el.eval.ELEngine;
-import org.operamasks.el.eval.EvaluationContext;
-import org.operamasks.el.eval.EvaluationException;
-import org.operamasks.el.eval.Ranges;
-import org.operamasks.el.eval.TypeCoercion;
+import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.ClosureObject;
 import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.MethodClosure;
@@ -28,6 +24,7 @@ import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.MethodResolver;
+import org.operamasks.util.Utils;
 
 import javax.el.ELContext;
 import javax.el.ValueExpression;
@@ -58,6 +55,7 @@ public class IRInterpreter {
     private static final int DEFAULT_LOCALS_SIZE = 64;
 
     // ── Instance state ──
+    private EvaluationContext evalContext;
     private final ELContext elctx;
     private final IRFunction function;
     private final int[] code;
@@ -70,67 +68,65 @@ public class IRInterpreter {
     private Object[] locals;
     private int ip;  // instruction pointer (absolute offset into code[])
 
-    // ── Trampoline support ──
-    private EvaluationContext evalContext;
     // ── Debug support ──
     private final boolean debug;
     private org.operamasks.el.eval.Frame frame; // current stack frame (debug only)
 
-    public IRInterpreter(ELContext elctx, IRFunction function) {
-        this(elctx, function, null);
-    }
-
-    /**
-     * Create an interpreter that inherits variable bindings from an existing
-     * EvaluationContext.
-     */
-    public IRInterpreter(ELContext elctx, IRFunction function,
-                         EvaluationContext parentEnv) {
-        this.elctx = elctx;
+    public IRInterpreter(EvaluationContext context, IRFunction function) {
+        this.evalContext = context;
+        this.elctx = context.getELContext();
         this.function = function;
         this.code = function.code();
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
-        this.debug = org.operamasks.el.eval.ELProgram.DEBUG;
-        if (parentEnv == null)
-            parentEnv = (EvaluationContext)elctx.getContext(EvaluationContext.class);
-        this.evalContext = parentEnv != null ? parentEnv :
-                           new EvaluationContext(elctx);
+        this.debug = ELProgram.DEBUG;
     }
 
     // ── Entry point ──
 
     public Object execute(Object[] args) {
-        return execute(args, false);
+        return execute(args, null, false);
     }
 
-    public Object execute(Object[] args, boolean isTopLevel) {
+    public Object execute(Object[] args, Object[] captured) {
+        return execute(args, captured, false);
+    }
+
+    public Object execute(Object[] args, Object[] captured, boolean isTopLevel) {
         this.stack = new Object[DEFAULT_STACK_SIZE];
         this.sp = 0;
         this.locals = new Object[DEFAULT_LOCALS_SIZE];
 
-        // evalContext is set by constructor
+        int nvars = function.paramCount();
+        int argc = args != null ? args.length : 0;
+
+        Object[] defs = function.defaultValues();
+        if ((argc > nvars) || (argc < nvars && defs == null))
+            throw new EvaluationException(elctx, _T(EL_FN_BAD_ARG_COUNT,
+                function.name(), nvars, argc));
 
         // Bind arguments to locals (grow array if paramCount exceeds default)
-        int needed = Math.max(function.paramCount(), args != null ? args.length : 0);
+        int needed = nvars + (captured != null ? captured.length : 0);
         if (needed > locals.length) growLocals(needed);
+
         if (args != null) {
-            for (int i = 0; i < args.length; i++) {
-                locals[i] = args[i];
-            }
+            System.arraycopy(args, 0, locals, 0, args.length);
         }
 
         // Fill missing parameters with default values.
         // Use paramCount (not args.length) as the upper bound for provided args
         // because expanded args from INVOKE_DYN/IRClosure include capture slots
         // at the end, inflating args.length.
-        Object[] defs = function.defaultValues();
         if (defs != null) {
-            int provided = args != null ? Math.min(args.length, function.paramCount()) : 0;
-            for (int i = provided; i < function.paramCount(); i++) {
+            for (int i = argc; i < nvars; i++) {
                 if (defs[i] != null)
                     locals[i] = defs[i];
             }
+        }
+
+        // Copy captured variables.
+        if (captured != null) {
+            System.arraycopy(captured, 0, locals, nvars, captured.length);
         }
 
         // Start at first block
@@ -712,26 +708,19 @@ public class IRInterpreter {
                     break;
                 }
                 case INVOKE_DIRECT: {
-                    int funcIdx = pl;  // function pool index in payload
+                    // function pool index in payload
                     // argCount in first operand
+                    int funcIdx = pl;
                     int argc = oc == 0 ? 0 : code[ip + 1];
                     IRFunction targetFn = (IRFunction)constantPool[funcIdx];
+
                     // Pop arguments
                     Object[] args = new Object[argc];
                     for (int i = argc - 1; i >= 0; i--)
                         args[i] = pop();
-                    // Closures must go through dynamicInvoke so captured
-                    // values are expanded from the IRClosure object.
-                    if (targetFn.captureCount() > 0) {
-                        push(targetFn);
-                        for (int i = 0; i < argc; i++)
-                            push(args[i]);
-                        push(dynamicInvoke(argc));
-                    } else {
-                        IRInterpreter callee = new IRInterpreter(elctx, targetFn,
-                                evalContext);
-                        push(callee.execute(args));
-                    }
+
+                    IRInterpreter callee = new IRInterpreter(evalContext, targetFn);
+                    push(callee.execute(args));
                     ip += 1 + oc;
                     break;
                 }
@@ -1066,7 +1055,7 @@ public class IRInterpreter {
                     // Capture the current evalContext so captured variable
                     // reads and writes inside the closure resolve against
                     // the original enclosing scope.
-                    push(new IRClosure(fn, captured, evalContext));
+                    push(new IRClosure(evalContext, fn, captured));
                     ip += 1 + oc;
                     break;
                 }
@@ -1258,42 +1247,14 @@ public class IRInterpreter {
         // Stack layout: target below, args on top
         // Stack: ... target arg0 arg1 ... argN
         Object[] args = new Object[argCount];
-        for (int i = argCount - 1; i >= 0; i--) {
+        for (int i = argCount - 1; i >= 0; i--)
             args[i] = pop();
-        }
         Object target = pop();
-        // IRFunction/IRClosure expansion duplicated across 3 places:
-        // IRInterpreter.dynamicInvoke, Runtime.invokeDyn, ELEngine.invokeTarget.
-        // Consolidate into a shared helper if a 4th occurrence is needed.
-        // Handle IRFunction target (from inline lambda): execute directly
-        if (target instanceof IRFunction irFn) {
-            return new IRInterpreter(elctx, irFn, evalContext).execute(args);
-        }
-        // Handle IRClosure target: expand args with captured values.
-        // Use the closure's own evalContext so captured variable reads
-        // and writes resolve in the original enclosing scope.
-        if (target instanceof IRClosure closure) {
-            IRFunction irFn = closure.function;
-            int paramCount = irFn.paramCount();
-            int captureCount = irFn.captureCount();
-            int provided = Math.min(args.length, paramCount);
-            int total = provided + captureCount;
-            Object[] expandedArgs = new Object[total];
-            System.arraycopy(args, 0, expandedArgs, 0, provided);
-            System.arraycopy(closure.captured, 0, expandedArgs, provided,
-                    captureCount);
-            EvaluationContext closureCtx = closure.evalContext != null
-                ? closure.evalContext : evalContext;
-            return new IRInterpreter(elctx, irFn, closureCtx).execute(expandedArgs);
-        }
-        try {
-            // Use ELEngine's invoke mechanism with Closure[] conversion
-            javax.el.ELContext elctx = evalContext.getELContext();
-            elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
-            return ELEngine.invokeTarget(elctx, target, closures);
-        } catch (Exception e) {
-            throw new RuntimeException(_T(IR_DYNAMIC_INVOKE_FAILED), e);
-        }
+
+        // Use ELEngine's invoke mechanism with Closure[] conversion
+        javax.el.ELContext elctx = evalContext.getELContext();
+        elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
+        return ELEngine.invokeTarget(elctx, target, closures);
     }
 
     // ── Helpers ──

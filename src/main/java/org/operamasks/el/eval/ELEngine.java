@@ -87,7 +87,7 @@ public final class ELEngine
     /**
      * 注册一个ELContextListener, 当新的ELContext创建时将会得到通知.
      *
-     * @param ELContextListener ELContext侦听器
+     * @param listener ELContext侦听器
      */
     public static void addELContextListener(ELContextListener listener) {
         if (listener == null)
@@ -99,7 +99,7 @@ public final class ELEngine
     /**
      * 注销先前登记的ELContextListener.
      *
-     * @param ELContextListener ELContext侦听器
+     * @param listener ELContext侦听器
      */
     public static void removeELContextListener(ELContextListener listener) {
         if (listener == null)
@@ -504,24 +504,8 @@ public final class ELEngine
             throw new EvaluationException(elctx, new NullPointerException());
         } else if (target instanceof Closure) {
             return ((Closure)target).invoke(elctx, args);
-        } else if (target instanceof org.operamasks.el.ir.IRFunction irFn) {
-            EvaluationContext evalctx = null;
-            try { evalctx = (EvaluationContext) elctx.getContext(EvaluationContext.class); } catch (Exception ignored) {}
-            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, evalctx)
-                .execute(getArgValues(elctx, args));
-        } else if (target instanceof org.operamasks.el.ir.IRClosure closure) {
-            org.operamasks.el.ir.IRFunction irFn = closure.getFunction();
-            int paramCount = irFn.paramCount();
-            int captureCount = irFn.captureCount();
-            Object[] expandedArgs = new Object[paramCount + captureCount];
-            Object[] callArgs = getArgValues(elctx, args);
-            System.arraycopy(callArgs, 0, expandedArgs, 0, Math.min(callArgs.length, paramCount));
-            System.arraycopy(closure.getCaptured(), 0, expandedArgs, paramCount, captureCount);
-            EvaluationContext evalctx = null;
-            try { evalctx = (EvaluationContext) elctx.getContext(EvaluationContext.class); } catch (Exception ignored) {}
-            return new org.operamasks.el.ir.IRInterpreter(elctx, irFn, evalctx).execute(expandedArgs);
         } else if (target instanceof Class) {
-            return invokeClass(elctx, (Class)target, args);
+            return invokeClass(elctx, (Class<?>)target, args);
         } else if (target instanceof ClosureObject) {
             Object result = ((ClosureObject)target).invokeSpecial(elctx, "__call__", args);
             if (result != ELUtils.NO_RESULT) return result;

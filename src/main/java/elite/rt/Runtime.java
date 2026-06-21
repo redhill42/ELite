@@ -22,10 +22,7 @@ import elite.lang.Closure;
 import elite.lang.Decimal;
 import elite.lang.Rational;
 import elite.lang.Seq;
-import org.operamasks.el.eval.CharRanges;
-import org.operamasks.el.eval.ELEngine;
-import org.operamasks.el.eval.Ranges;
-import org.operamasks.el.eval.TypeCoercion;
+import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.ir.IRClosure;
 import org.operamasks.el.ir.IRFormat;
@@ -137,18 +134,6 @@ public final class Runtime {
     }
 
     public static Object invokeDyn(ELContext c, Object target, Object[] args) {
-        if (target instanceof IRFunction irFn) {
-            return new IRInterpreter(c, irFn, null).execute(args);
-        }
-        if (target instanceof IRClosure closure) {
-            IRFunction irFn = closure.getFunction();
-            int paramCount = irFn.paramCount();
-            int captureCount = irFn.captureCount();
-            Object[] expandedArgs = new Object[paramCount + captureCount];
-            System.arraycopy(args, 0, expandedArgs, 0, Math.min(args.length, paramCount));
-            System.arraycopy(closure.getCaptured(), 0, expandedArgs, paramCount, captureCount);
-            return new IRInterpreter(c, irFn, null).execute(expandedArgs);
-        }
         Closure[] closures = ELEngine.getCallArgs(args);
         return ELEngine.invokeTarget(c, target, closures);
     }
@@ -334,24 +319,18 @@ public final class Runtime {
     /** Clear the provided arg count (call after bytecode execution). */
     public static void clearProvidedArgCount() { providedArgCount.remove(); }
 
-    public static IRClosure createClosure(IRFunction fn, Object[] captured) {
-        return new IRClosure(fn, captured);
-    }
-
-    /** Create closure by pool index (for bytecode — LDC can't embed IRFunction). */
-    public static IRClosure createClosureById(int funcIdx, Object[] captured) {
-        IRFunction fn = (IRFunction) funcPool.get()[funcIdx];
+    public static IRClosure createClosure(ELContext elctx, IRFunction fn, Object[] captured) {
         // Capture evalContext so captured variables resolve in the
         // original enclosing scope. Try the ELContext first (bytecode
         // mode stores it there), then fall back to ThreadLocal.
-        org.operamasks.el.eval.EvaluationContext evalCtx = null;
-        try {
-            javax.el.ELContext elctx = ELEngine.getCurrentELContext();
-            if (elctx != null)
-                evalCtx = (org.operamasks.el.eval.EvaluationContext)
-                    elctx.getContext(org.operamasks.el.eval.EvaluationContext.class);
-        } catch (Exception ignored) {}
-        return new IRClosure(fn, captured, evalCtx);
+        EvaluationContext env = (EvaluationContext)elctx.getContext(EvaluationContext.class);
+        return new IRClosure(env, fn, captured);
+    }
+
+    /** Create closure by pool index (for bytecode — LDC can't embed IRFunction). */
+    public static IRClosure createClosureById(ELContext elctx, int funcIdx, Object[] captured) {
+        IRFunction fn = (IRFunction) funcPool.get()[funcIdx];
+        return createClosure(elctx, fn, captured);
     }
 
     // ── Locals / IncDec ──

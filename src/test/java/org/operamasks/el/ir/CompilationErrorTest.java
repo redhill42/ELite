@@ -54,7 +54,7 @@ class CompilationErrorTest {
         assertNotNull(simulated);
 
         // Fallback: execute via IR interpreter (what ELProgram does in catch block)
-        IRInterpreter interp = new IRInterpreter(elctx, fn, new EvaluationContext(elctx));
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object result = interp.execute(null);
         assertEquals(5L, ((Number) result).longValue(),
             "IR interpreter fallback should produce correct result after CompilationError");
@@ -65,7 +65,7 @@ class CompilationErrorTest {
         ELNode node = Parser.parseExpression("(10 + 5) * 3 - 8");
         IRFunction fn = IRBuilder.compile(node);
 
-        IRInterpreter interp = new IRInterpreter(elctx, fn, new EvaluationContext(elctx));
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object irResult = interp.execute(null);
         assertEquals(37L, ((Number) irResult).longValue(),
             "IR fallback should compute (10+5)*3-8 = 37 correctly");

@@ -210,13 +210,13 @@ public class ELProgram implements Serializable
                 // so there is no need for a full-program fallback.
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
                     Utils.getClassLoader(elctx), false, DEBUG, frame.getFileName());
-                return new IRInterpreter(elctx, irFn, env).execute(null, true);
+                return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 2: {
                 IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
                     Utils.getClassLoader(elctx), true, DEBUG, frame.getFileName());
-                return new IRInterpreter(elctx, irFn, env).execute(null, true);
+                return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 3: default: {
@@ -230,7 +230,7 @@ public class ELProgram implements Serializable
                     if (STRICT_BYTECODE)
                         throw new ELException(_T(IR_STRICT_BYTECODE_FAILED), e);
                     if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
-                    return new IRInterpreter(elctx, irFn, env).execute(null, true);
+                    return new IRInterpreter(env, irFn).execute(null, null, true);
                 }
                 // VerifyError and other Errors propagate — they're compiler bugs
             }

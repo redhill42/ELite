@@ -10,6 +10,7 @@ import javax.script.ScriptException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.EvaluationContext;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 
@@ -45,7 +46,7 @@ class IRBuilderTest {
         assertNotNull(fn);
         assertTrue(fn.code().length > 0);
         // Verify it evaluates correctly via IR interpreter
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(30L, ((Number) interp.execute(null)).longValue());
     }
 
@@ -53,7 +54,7 @@ class IRBuilderTest {
     void intMultiplication() {
         ELNode node = parse("7 * 8");
         IRFunction fn = IRBuilder.compile(node);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(56L, ((Number) interp.execute(null)).longValue());
     }
 
@@ -61,7 +62,7 @@ class IRBuilderTest {
     void doubleAddition() {
         ELNode node = parse("3.14 + 2.72");
         IRFunction fn = IRBuilder.compile(node);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(5.86, ((Number) interp.execute(null)).doubleValue(), 0.001);
     }
 
@@ -119,7 +120,7 @@ class IRBuilderTest {
         ELNode node = parse("100 == 100");
         IRFunction fn = IRBuilder.compile(node);
         // Comparison evaluates correctly
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(true, interp.execute(null));
     }
 

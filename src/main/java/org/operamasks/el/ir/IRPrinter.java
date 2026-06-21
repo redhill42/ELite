@@ -141,6 +141,17 @@ public final class IRPrinter {
         return sb.toString();
     }
 
+    private static void formatConstPool(StringBuilder sb, IRFunction fn, int idx) {
+        sb.append(" #").append(idx);
+        if (idx < fn.constantPool().length) {
+            Object val = fn.constantPool()[idx];
+            if (val instanceof IRFunction irf)
+                sb.append(" '").append(irf.name()).append("'");
+            else
+                sb.append(" '").append(val).append("'");
+        }
+    }
+
     private static String formatInst(InstructionView v, IRFunction fn) {
         int op = v.opcode();
         StringBuilder sb = new StringBuilder();
@@ -155,26 +166,20 @@ public final class IRPrinter {
                 }
             }
             case Opcode.PUSH_VAR -> sb.append(" v").append(v.varIndex());
-            case Opcode.PUSH_GLOBAL -> {
-                int idx = v.constPoolIndex();
-                sb.append(" #").append(idx);
-                if (idx < fn.constantPool().length) {
-                    sb.append(" '").append(fn.constantPool()[idx]).append("'");
-                }
-            }
             case Opcode.STORE_VAR -> sb.append(" v").append(v.payload() & 0xFFFF);
-            case Opcode.DEFINE_GLOBAL -> {
-                int idx = v.payload();
-                sb.append(" #").append(idx);
-                if (idx < fn.constantPool().length) {
-                    sb.append(" '").append(fn.constantPool()[idx]).append("'");
-                }
-            }
+            case Opcode.PUSH_GLOBAL -> formatConstPool(sb, fn, v.constPoolIndex());
+            case Opcode.DEFINE_GLOBAL -> formatConstPool(sb, fn, v.payload());
             case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
                  Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
                 sb.append(" B").append(v.jumpTarget());
-            case Opcode.INVOKE_DIRECT, Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
+            case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
+            case Opcode.INVOKE_DIRECT -> formatConstPool(sb, fn, v.payload());
+            case Opcode.CLOSURE -> {
+                formatConstPool(sb, fn, v.payload());
+                int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
+                sb.append(" capture=").append(captureCount);
+            }
             case Opcode.NEW_LIST, Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
                 sb.append(" ").append(v.payload());
             case Opcode.TRAMPOLINE -> {

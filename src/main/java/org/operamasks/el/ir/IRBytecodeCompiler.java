@@ -478,6 +478,9 @@ public class IRBytecodeCompiler {
             case CLOSURE -> {
                 int funcIdx = pl;
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
+                // Push funcIdx as int (not IRFunction via LDC — ASM doesn't support it)
+                mv.visitVarInsn(A_ALOAD, S_CTX);
+                emitIntConst(funcIdx);
                 // Pack captureCount values from stack into Object[]
                 if (captureCount > 0) {
                     int[] ts = new int[captureCount];
@@ -487,18 +490,16 @@ public class IRBytecodeCompiler {
                     mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
                     for (int i = 0; i < captureCount; i++) {
                         mv.visitInsn(A_DUP); emitIntConst(i);
-                        mv.visitVarInsn(A_ALOAD, ts[i]); mv.visitInsn(A_AASTORE);
+                        mv.visitVarInsn(A_ALOAD, ts[i]);
+                        mv.visitInsn(A_AASTORE);
                     }
                 } else {
                     mv.visitInsn(A_ICONST_0);
                     mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
                 }
-                // Push funcIdx as int (not IRFunction via LDC — ASM doesn't support it)
-                emitIntConst(funcIdx);
-                mv.visitInsn(A_SWAP);  // [capturedArray, int] → [int, capturedArray]
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/rt/Runtime",
                     "createClosureById",
-                    "(I[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
+                    "(Ljavax/el/ELContext;I[Ljava/lang/Object;)Lorg/operamasks/el/ir/IRClosure;", false);
             }
 
             case INVOKE_METHOD -> {

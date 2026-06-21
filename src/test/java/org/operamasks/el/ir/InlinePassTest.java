@@ -3,6 +3,8 @@ package org.operamasks.el.ir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.EvaluationContext;
 import org.operamasks.el.parser.Parser;
 
 class InlinePassTest {
@@ -22,9 +24,10 @@ class InlinePassTest {
         IRFunction inlined = pass.transform(fn);
 
         // Execute and verify correct result (deopt may prevent inlining for some functions)
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        Object orig = new IRInterpreter(ctx, fn).execute(null);
-        Object inl  = new IRInterpreter(ctx, inlined).execute(null);
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        Object orig = new IRInterpreter(env, fn).execute(null);
+        Object inl  = new IRInterpreter(env, inlined).execute(null);
         assertEquals(((Number)orig).longValue(), ((Number)inl).longValue());
     }
 
@@ -38,8 +41,9 @@ class InlinePassTest {
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
 
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        Object result = new IRInterpreter(ctx, inlined).execute(null);
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        Object result = new IRInterpreter(env, inlined).execute(null);
         assertEquals(15L, ((Number)result).longValue());
     }
 
@@ -55,8 +59,9 @@ class InlinePassTest {
 
         // Large function (many constant ops) — might still be under 20
         // Just verify it executes correctly
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        assertEquals(55L, ((Number)new IRInterpreter(ctx, result).execute(null)).longValue());
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        assertEquals(55L, ((Number)new IRInterpreter(env, result).execute(null)).longValue());
     }
 
     @Test
@@ -69,8 +74,9 @@ class InlinePassTest {
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
 
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        Object result = new IRInterpreter(ctx, inlined).execute(null);
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        Object result = new IRInterpreter(env, inlined).execute(null);
         assertEquals(25L, ((Number)result).longValue()); // 9 + 16 = 25
     }
 
@@ -84,8 +90,9 @@ class InlinePassTest {
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
 
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        Object result = new IRInterpreter(ctx, inlined).execute(null);
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        Object result = new IRInterpreter(env, inlined).execute(null);
         assertEquals(10L, ((Number) result).longValue()); // 3 + 7 = 10
     }
 
@@ -100,8 +107,9 @@ class InlinePassTest {
         IRFunction inlined = pass.transform(fn);
 
         // Execute and verify correct result (5*3 = 15)
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        Object result = new IRInterpreter(ctx, inlined).execute(null);
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        Object result = new IRInterpreter(env, inlined).execute(null);
         assertEquals(15L, ((Number) result).longValue());
     }
 
@@ -131,8 +139,9 @@ class InlinePassTest {
         // Actually, abs won't be inlined because it has JUMP.
         // The top-level call might use funcId path instead of INVOKE_DIRECT.
         // Just verify execution is correct
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        Object r = new IRInterpreter(ctx, result).execute(null);
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        Object r = new IRInterpreter(env, result).execute(null);
         assertEquals(5L, ((Number) r).longValue());
     }
 
@@ -146,8 +155,9 @@ class InlinePassTest {
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
 
-        javax.el.ELContext ctx = org.operamasks.el.eval.ELEngine.createELContext();
-        assertEquals(0L, ((Number) new IRInterpreter(ctx, inlined).execute(null)).longValue());
+        javax.el.ELContext ctx = ELEngine.createELContext();
+        EvaluationContext env = new EvaluationContext(ctx);
+        assertEquals(0L, ((Number) new IRInterpreter(env, inlined).execute(null)).longValue());
     }
 
     private static boolean scanOp(IRFunction fn, int op) {

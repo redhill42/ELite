@@ -16,14 +16,13 @@
 
 package org.operamasks.el.ir;
 
-import javax.el.ELContext;
-import javax.el.MethodInfo;
-import javax.el.PropertyNotWritableException;
-import javax.el.ValueExpression;
+import javax.el.*;
 
 import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.EvaluationContext;
+
+import java.util.Arrays;
 
 /**
  * A closure: an IRFunction bundled with captured variable values.
@@ -33,72 +32,45 @@ import org.operamasks.el.eval.EvaluationContext;
  * is accessed from AST-evaluated (trampolined) code.
  */
 public class IRClosure extends Closure {
-    public final IRFunction function;
-    public final Object[] captured;
+    private final IRFunction function;
+    private final Object[] captured;
+
     /**
      * The evalContext chain active when this closure was created.
      * Used as the basis for PUSH_GLOBAL/STORE_GLOBAL inside the closure body,
      * so captured variable reads and writes resolve against the original
      * enclosing scope rather than the caller's scope.
      */
-    public final EvaluationContext evalContext;
+    private transient EvaluationContext evalContext;
 
-    public IRClosure(IRFunction function, Object[] captured) {
-        this(function, captured, null);
-    }
-
-    public IRClosure(IRFunction function, Object[] captured, EvaluationContext evalContext) {
+    public IRClosure(EvaluationContext context, IRFunction function, Object[] captured) {
+        this.evalContext = context;
         this.function = function;
         this.captured = captured;
-        this.evalContext = evalContext;
-    }
-
-    public IRFunction getFunction() { return function; }
-    public Object[] getCaptured() { return captured; }
-
-    // ── Closure abstract methods ──
-
-    @Override
-    public Object invoke(ELContext elctx, Closure[] args) {
-        // IRClosures can be invoked from lazy sequence forcing where
-        // elctx may be null (getCurrentELContext returns null after
-        // the eval context has been torn down). Fall back to ThreadLocal.
-        if (elctx == null)
-            elctx = ELEngine.getCurrentELContext();
-        int paramCount = function.paramCount();
-        int captureCount = function.captureCount();
-        int provided = Math.min(args != null ? args.length : 0, paramCount);
-        Object[] expandedArgs = new Object[provided + captureCount];
-        Object[] callArgs = ELEngine.getArgValues(elctx, args);
-        System.arraycopy(callArgs, 0, expandedArgs, 0, provided);
-        System.arraycopy(captured, 0, expandedArgs, provided, captureCount);
-        EvaluationContext evalctx = null;
-        try {
-            evalctx = (EvaluationContext) elctx.getContext(
-                EvaluationContext.class);
-        } catch (Exception ignored) {}
-        // Prefer the closure's own evalContext so that captured variable
-        // reads and writes resolve in the original enclosing scope.
-        if (evalContext != null)
-            evalctx = evalContext;
-        return new IRInterpreter(elctx, function, evalctx)
-            .execute(expandedArgs);
     }
 
     @Override
-    public int arity(ELContext elctx) {
-        return function.paramCount();
+    public EvaluationContext getContext() {
+        return this.evalContext;
     }
 
     @Override
-    public MethodInfo getMethodInfo(ELContext elctx) {
-        Class<?>[] paramTypes = new Class<?>[function.paramCount()];
-        for (int i = 0; i < paramTypes.length; i++)
-            paramTypes[i] = Object.class;
-        return new MethodInfo(function.name(), Object.class, paramTypes);
+    public EvaluationContext getContext(ELContext elctx) {
+        if (this.evalContext == null) {
+            if (elctx == null)
+                elctx = ELEngine.getCurrentELContext();
+            this.evalContext = new EvaluationContext(elctx);
+        } else {
+            if (elctx != null)
+                this.evalContext.setELContext(elctx);
+        }
+        return evalContext;
     }
 
-    // ── ValueExpression methods ──
+    @Override
+    public void _setenv(ELContext elctx, VariableMapper env) {
+        this.evalContext = getContext(elctx).pushContext(env);
+    }
 
     @Override
     public Object getValue(ELContext elctx) {
@@ -110,7 +82,6 @@ public class IRClosure extends Closure {
         throw new PropertyNotWritableException();
     }
 
-    @Override
     public boolean isReadOnly(ELContext elctx) {
         return true;
     }
@@ -121,13 +92,31 @@ public class IRClosure extends Closure {
     }
 
     @Override
+    public int arity(ELContext elctx) {
+        return function.paramCount();
+    }
+
+    @Override
+    public MethodInfo getMethodInfo(ELContext elctx) {
+        Class<?>[] paramTypes = new Class<?>[function.paramCount()];
+        Arrays.fill(paramTypes, Object.class);
+        return new MethodInfo(function.name(), Object.class, paramTypes);
+    }
+
+    @Override
+    public Object invoke(ELContext elctx, Closure[] args) {
+        Object[] callArgs = ELEngine.getArgValues(elctx, args);
+        return new IRInterpreter(getContext(elctx), function).execute(callArgs, captured);
+    }
+
+    @Override
     public Class<?> getExpectedType() {
-        return Closure.class;
+        return Object.class;
     }
 
     @Override
     public String getExpressionString() {
-        return function.name() != null ? function.name() : "<closure>";
+        return null;
     }
 
     @Override
@@ -135,22 +124,15 @@ public class IRClosure extends Closure {
         return false;
     }
 
-    @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (!(obj instanceof IRClosure other)) return false;
-        return function.equals(other.function)
-            && java.util.Arrays.equals(captured, other.captured);
+        return this == obj;
     }
 
-    @Override
     public int hashCode() {
-        return function.hashCode() * 31
-            + java.util.Arrays.hashCode(captured);
+        return System.identityHashCode(this);
     }
 
-    @Override
     public String toString() {
-        return "IRClosure[" + function.name() + "]";
+        return "#<ir-closure:" + function.name() + ">";
     }
 }

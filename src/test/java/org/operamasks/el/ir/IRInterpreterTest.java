@@ -7,6 +7,7 @@ import javax.el.ELContext;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.EvaluationContext;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
 
@@ -22,13 +23,13 @@ class IRInterpreterTest {
     private Object interpret(String expr) {
         ELNode node = Parser.parseExpression(expr);
         IRFunction fn = IRBuilder.compile(node);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         return interp.execute(null);
     }
 
     private Object eval(String expr) {
         ELNode node = Parser.parseExpression(expr);
-        return node.getValue(new org.operamasks.el.eval.EvaluationContext(elctx));
+        return node.getValue(new EvaluationContext(elctx));
     }
 
     // ── Arithmetic ──
@@ -54,14 +55,14 @@ class IRInterpreterTest {
         // untyped parameters a,b → typeIdFromNode returns -1 → emitDynamicCmp
         ELNode expr = Parser.parseExpression("a != b");
         IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(true, interp.execute(new Object[]{1, 2}),  "1 != 2 should be true");
         assertEquals(false, interp.execute(new Object[]{5, 5}), "5 != 5 should be false");
     }
     @Test void dynamicInequalityDouble() {
         ELNode expr = Parser.parseExpression("a != b");
         IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(true, interp.execute(new Object[]{3.14, 2.72}), "3.14 != 2.72 should be true");
     }
     // Bug 2: emitTypedCmp (line 613) Token.NE non-numeric type falls to else emitDynEq()
@@ -73,7 +74,7 @@ class IRInterpreterTest {
     @Test void dynamicInequalityString() {
         ELNode expr = Parser.parseExpression("a != b");
         IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
-        IRInterpreter interp = new IRInterpreter(elctx, fn);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(true, interp.execute(new Object[]{"hello", "world"}), "'hello' != 'world' should be true");
         assertEquals(false, interp.execute(new Object[]{"x", "x"}), "'x' != 'x' should be false");
     }
