@@ -816,7 +816,6 @@ public class DefaultLexer extends Lexer
         shared.addOperator("]", RBRACKET, -1);
         shared.addOperator("?", QUESTIONMARK, -1);
         shared.addOperator("??", COALESCE, -1);
-        shared.addOperator("??=", ASSIGNOP, COALESCE);
         shared.addOperator(":", COLON, -1);
         shared.addOperator("::", COLONCOLON, -1);
         shared.addOperator("@", ATSIGN, -1);

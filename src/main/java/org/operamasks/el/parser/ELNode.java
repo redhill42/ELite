@@ -2176,15 +2176,6 @@ public abstract class ELNode implements Serializable
             return right.getType(context);
         }
 
-        protected Object assignop(EvaluationContext context) {
-            Object value = left.getValue(context);
-            if (value == null) {
-                value = right.getValue(context);
-                left.setValue(context, value);
-            }
-            return value;
-        }
-
         public void accept(Visitor v) {
             v.visit(this);
         }

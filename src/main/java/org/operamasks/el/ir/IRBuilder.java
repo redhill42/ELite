@@ -408,7 +408,7 @@ public class IRBuilder {
             buildConditional((ELNode.COND)node);
             break;
         case Token.COALESCE:
-            buildCoalesce(node);
+            buildCoalesce((ELNode.COALESCE)node);
             break;
 
         case Token.ASSIGN:
@@ -1338,25 +1338,24 @@ public class IRBuilder {
     private int runningPc;
 
     // ── Coalesce ──
-    private void buildCoalesce(ELNode node) {
-        if (!(node instanceof ELNode.Binary bin)) {
-            buildTrampoline(node);
-            return;
-        }
-
-        build(bin.left);
+    private void buildCoalesce(ELNode.COALESCE node) {
         int keepB = allocBlockId();
         int nullB = allocBlockId();
         int mergeB = allocBlockId();
+
+        build(node.left);
         current.emitDup();
         current.emitJumpIfNonNull(keepB);
         current.emitJump(nullB);
+
         startBlock(nullB);
         current.emitPop();
-        build(bin.right);
+        build(node.right);
         current.emitJump(mergeB);
+
         startBlock(keepB);
         current.emitJump(mergeB);
+
         startBlock(mergeB);
     }
 
@@ -1606,15 +1605,13 @@ public class IRBuilder {
     }
 
     private void buildCompound(ELNode.COMPOUND node) {
+        if (node.exps.length == 0)
+            emitPushNull();;
         for (int i = 0; i < node.exps.length - 1; i++) {
             build(node.exps[i]);
             current.emitPop();
         }
-        if (node.exps.length > 0) {
-            buildTail(node.exps[node.exps.length - 1]);
-        } else {
-            emitPushNull();
-        }
+        buildTail(node.exps[node.exps.length - 1]);
     }
 
     /**
@@ -1635,18 +1632,22 @@ public class IRBuilder {
 
         loopStack.push(new LoopTargets(header, exit));
         current.emitJump(header);
+
         startBlock(header);
         build(node.cond);
         current.emitJumpIfTrue(body);
         current.emitJump(exit);
+
         startBlock(body);
         enterControlScope();
         build(node.body);
         leaveControlScope();
         current.emitPop();
         current.emitJump(header);
+
         startBlock(exit);
         emitPushNull();
+
         // Exit block falls through to next — add RETURN at toplevel by caller
         loopStack.pop();
     }
