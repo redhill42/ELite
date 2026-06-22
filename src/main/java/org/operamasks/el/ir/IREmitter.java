@@ -552,12 +552,8 @@ public class IREmitter {
      * calls MethodClosure.invoke(elctx, base, args). Handles ELContext
      * injection.
      */
-    public IREmitter emitInvokeDynMethod(int keyPoolIdx, int argCount) {
-        if (fits16(keyPoolIdx))
-            return emit2(INVOKE_DYN_METHOD, K_NONE, keyPoolIdx, argCount);
-        else
-            return emit3(INVOKE_DYN_METHOD, K_NONE, keyPoolIdx >>> 16,
-                    keyPoolIdx & 0xFFFF, argCount);
+    public IREmitter emitInvokeDynMethod(int argCount) {
+        return emit1(INVOKE_DYN_METHOD, K_NONE, argCount);
     }
 
     /**

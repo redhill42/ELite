@@ -16,6 +16,7 @@
 
 package org.operamasks.el.ir;
 
+import elite.lang.Closure;
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.ClosureObject;
 import org.operamasks.el.eval.closure.LiteralClosure;
@@ -1013,42 +1014,13 @@ public class IRInterpreter {
             }
 
             case INVOKE_DYN_METHOD: {
-                String key = (String)constantPool[pl];
-                int argc = oc > 0 ? code[ip + 1] : 0;
+                int argc = pl;
                 Object[] args = new Object[argc];
                 for (int i = argc - 1; i >= 0; i--)
                     args[i] = pop();
+                Object key = pop();
                 Object base = pop();
-                elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
-
-                // 1) ClosureObject dynamic dispatch (mirrors AST ACCESS.invoke).
-                //    Monads and other custom objects handle method calls via
-                //    invokeSpecial / invokeDynamic.
-                if (base instanceof ClosureObject co) {
-                    Object result = co.invoke(evalContext.getELContext(), key, closures);
-                    if (result != NO_RESULT) {
-                        push(result);
-                        ip += 1 + oc;
-                        break;
-                    }
-                    // NO_RESULT: fall through to MethodResolver
-                }
-
-                // 2) Resolve method/property by name on base via loadProperty
-                //    (DataClass unwrap → ELResolver → MethodResolver fallback).
-                Object resolved = loadProperty(base, key);
-                if (resolved instanceof MethodClosure mc) {
-                    // Method found — invoke with base as this,
-                    // ELContext injection handled by invokeMethod.
-                    push(mc.invoke(elctx, base, closures));
-                } else if (argc == 0) {
-                    // 0-arg on a non-callable (bean property like .size()
-                    // on a Java List): return the value as-is.
-                    push(resolved);
-                } else {
-                    throw new RuntimeException(_T(EL_METHOD_NOT_FOUND,
-                            base.getClass().getName(), key));
-                }
+                push(elite.lang.Runtime.invokeDynMethod(elctx, base, key, args));
                 ip += 1 + oc;
                 break;
             }

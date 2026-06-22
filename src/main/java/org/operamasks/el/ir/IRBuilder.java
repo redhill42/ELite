@@ -693,11 +693,30 @@ public class IRBuilder {
 
     // ── Apply ──
     private void buildApply(ELNode.APPLY node) {
-        // List comprehensions [expr | x <- list]  — fall back to AST
-        if (node.right instanceof ELNode.FOREACH ||
-            node.right instanceof ELNode.FOR) {
-            buildTrampoline(node);
-            return;
+        if (node.right instanceof ELNode.IDENT) {
+            String id = ((ELNode.IDENT)node.right).id;
+
+            if (inTailPosition && id.equals(lambdaName)) {
+                // TCO: build args (never in tail position), emit INVOKE_TAIL
+                inTailPosition = false;
+                for (ELNode arg : node.args)
+                    build(arg);
+                inTailPosition = true;
+                current.emitInvokeTail(node.args.length);
+                return;
+            }
+
+            Integer funcIdx = resolveKnownFunction(id);
+            if (funcIdx != null) {
+                // Direct call: build args, emit INVOKE_DIRECT
+                boolean prev = inTailPosition;
+                inTailPosition = false;
+                for (ELNode arg : node.args)
+                    build(arg);
+                inTailPosition = prev;
+                current.emitInvokeDirect(funcIdx, node.args.length);
+                return;
+            }
         }
 
         // @data constructors have lazy fields (&tail) — AST must evaluate
@@ -706,39 +725,6 @@ public class IRBuilder {
         if (node.right instanceof ELNode.IDENT &&
             dataConstructorNames.contains(((ELNode.IDENT)node.right).id)) {
             buildTrampoline(node);
-            return;
-        }
-
-        // Determine if this will use direct call or TCO (avoids pushing target)
-        boolean isTail =
-                inTailPosition && lambdaName != null &&
-                node.right instanceof ELNode.IDENT &&
-                lambdaName.equals(((ELNode.IDENT)node.right).id);
-        boolean isDirect =
-                !isTail && node.right instanceof ELNode.IDENT &&
-                resolveKnownFunction(((ELNode.IDENT)node.right).id) != null;
-
-        if (isTail) {
-            // TCO: build args (never in tail position), emit INVOKE_TAIL
-            boolean prev = inTailPosition;
-            inTailPosition = false;
-            for (ELNode arg : node.args)
-                build(arg);
-            inTailPosition = prev;
-            current.emitInvokeTail(node.args.length);
-            return;
-        }
-
-        if (isDirect) {
-            // Direct call: build args, emit INVOKE_DIRECT
-            boolean prev = inTailPosition;
-            inTailPosition = false;
-            for (ELNode arg : node.args)
-                build(arg);
-            inTailPosition = prev;
-            Integer funcIdx =
-                    resolveKnownFunction(((ELNode.IDENT)node.right).id);
-            current.emitInvokeDirect(funcIdx, node.args.length);
             return;
         }
 
@@ -763,40 +749,28 @@ public class IRBuilder {
                     current.emitInvokeMethod(methodIdx, node.args.length);
                     return;
                 }
-                // Method not uniquely resolvable (ambiguous overloads) —
-                // trampoline
-                buildTrampoline(node);
-                return;
             }
         }
 
-        // 0-arg ACCESS: use INVOKE_DYN_METHOD which resolves the method
-        // by name at runtime and calls MethodClosure.invoke(elctx, base, args).
-        // This handles ELContext injection (e.g. tree.eval() → eval(ELContext))
-        // and preserves `this` for instance methods.
-        if (node.args.length == 0 && node.right instanceof ELNode.ACCESS access &&
-            isSimpleKey(access.index)) {
-            String methodName = getKeyName(access.index);
-            int keyIdx = putConstant(methodName);
+        if (node.right instanceof ELNode.ACCESS acc) {
             boolean prev = inTailPosition;
             inTailPosition = false;
-            build(access.right); // base
-            inTailPosition = prev;
-            current.emitInvokeDynMethod(keyIdx, 0);
-        } else if (node.right instanceof ELNode.ACCESS && node.args.length > 0) {
-            // args > 0 ACCESS: trampoline to AST which handles closure
-            // creation correctly (IR closures lose ELContext when lazy
-            // sequences are forced outside eval).
-            buildTrampoline(node);
-        } else {
-            boolean prev = inTailPosition;
-            inTailPosition = false;
-            build(node.right);
+            build(acc.right);
+            build(acc.index);
             for (ELNode arg : node.args)
                 build(arg);
             inTailPosition = prev;
-            current.emitInvokeDyn(node.args.length);
+            current.emitInvokeDynMethod(node.args.length);
+            return;
         }
+
+        boolean prev = inTailPosition;
+        inTailPosition = false;
+        build(node.right);
+        for (ELNode arg : node.args)
+            build(arg);
+        inTailPosition = prev;
+        current.emitInvokeDyn(node.args.length);
     }
 
     // ── Literals: list, map, tuple, range ──

@@ -21,6 +21,8 @@ import javax.el.*;
 import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.EvaluationContext;
+import org.operamasks.el.eval.closure.ClosureObject;
+import org.operamasks.el.eval.closure.EnvExtent;
 
 import java.util.Arrays;
 
@@ -92,6 +94,11 @@ public class IRClosure extends Closure {
     }
 
     @Override
+    public boolean isProcedure() {
+        return true;
+    }
+
+    @Override
     public int arity(ELContext elctx) {
         return function.paramCount();
     }
@@ -107,6 +114,27 @@ public class IRClosure extends Closure {
     public Object invoke(ELContext elctx, Closure[] args) {
         Object[] callArgs = ELEngine.getArgValues(elctx, args);
         return new IRInterpreter(getContext(elctx), function).execute(callArgs, captured);
+    }
+
+    /**
+     * Invoke the procedure within the given scope. The variables in the
+     * scope is visible to the procedure. The procedure is behaviors like
+     * a member procedure of scoped object.
+     *
+     * @param elctx the evaluation context
+     * @param scope the scoped object
+     * @param args the procedure arguments
+     * @return result of procedure execution
+     */
+    public Object call_with(ELContext elctx, Object scope, Closure... args) {
+        if (scope instanceof ClosureObject) {
+            scope = ((ClosureObject)scope).get_owner();
+        }
+
+        EvaluationContext env = getContext(elctx);
+        env = env.pushContext(new EnvExtent(env, scope));
+        Object[] callArgs = ELEngine.getArgValues(elctx, args);
+        return new IRInterpreter(env, function).execute(callArgs, captured);
     }
 
     @Override

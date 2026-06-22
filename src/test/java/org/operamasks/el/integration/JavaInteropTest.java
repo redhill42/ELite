@@ -47,17 +47,17 @@ class JavaInteropTest extends EliteTestBase {
 
     @Test
     void mathAbs() {
-        assertEquals(42, eval("Math.abs(-42)"));
+        assertEquals(42L, eval("Math.abs(-42)"));
     }
 
     @Test
     void mathMin() {
-        assertEquals(5, eval("Math.min(5, 10)"));
+        assertEquals(5L, eval("Math.min(5, 10)"));
     }
 
     @Test
     void mathMax() {
-        assertEquals(10, eval("Math.max(5, 10)"));
+        assertEquals(10L, eval("Math.max(5, 10)"));
     }
 
     @Test

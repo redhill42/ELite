@@ -328,7 +328,7 @@ class ELIntegrationTest extends EliteTestBase {
 
     @Test
     void javaStaticMethodCall() {
-        assertEquals(42, eval("Math.abs(-42)"));
+        assertEquals(42L, eval("Math.abs(-42)"));
     }
 
     @Test

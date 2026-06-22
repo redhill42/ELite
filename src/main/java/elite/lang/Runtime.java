@@ -19,12 +19,16 @@ package elite.lang;
 import javax.el.ELContext;
 
 import org.operamasks.el.eval.*;
+import org.operamasks.el.eval.closure.ClosureObject;
+import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.ir.IRClosure;
 import org.operamasks.el.ir.IRFormat;
 import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.ir.IRInterpreter;
 import org.operamasks.el.parser.ELNode;
+import org.operamasks.el.resolver.MethodResolver;
 
+import static org.operamasks.el.eval.ELUtils.NO_RESULT;
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -452,6 +456,74 @@ public final class Runtime {
 
     public static Object dynIn(ELContext elctx, Object coll, Object elem) {
         return __IN__.eval(elctx, elem, coll);
+    }
+
+    // ── Dynamic invocation ──
+
+    public static Object invokeDynMethod(ELContext elctx, Object base, Object key, Object[] args) {
+        if (base == null)
+            return null;
+        if (key == null)
+            throw new EvaluationException(elctx, _T(EL_METHOD_NOT_FOUND, base, "null"));
+
+        String name = TypeCoercion.coerceToString(key);
+        Closure[] callArgs = ELEngine.getCallArgs(args);
+
+        // Check global method
+        if (base == GlobalScope.SINGLETON) {
+            MethodResolver resolver = MethodResolver.getInstance(elctx);
+            Object target = resolver.resolveSystemMethod(name);
+            if (target != null)
+                return ELEngine.invokeTarget(elctx, target, callArgs);
+        }
+
+        // Invoke on closure object
+        if (base instanceof ClosureObject) {
+            Object result = ((ClosureObject)base).invoke(elctx, name, callArgs);
+            if (result != NO_RESULT)
+                return result;
+        }
+
+        // Resolve and invoke method closure
+        if (!(base instanceof MethodDelegate)) {
+            MethodResolver resolver = MethodResolver.getInstance(elctx);
+            MethodClosure method;
+            boolean usebase = false;
+
+            if (base == SystemScope.SINGLETON) {
+                method = resolver.resolveSystemMethod(name);
+            } else if (base instanceof Class) {
+                method = resolver.resolveStaticMethod((Class<?>)base, name);
+                if (method == null) {
+                    method = resolver.resolveMethod((Class<?>)base, name);
+                    if (method == null) {
+                        method = resolver.resolveMethod(Class.class, name);
+                        usebase = true;
+                    }
+                }
+            } else {
+                method = resolver.resolveMethod(base.getClass(), name);
+                usebase = true;
+            }
+
+            if (method != null) {
+                try {
+                    if (usebase)
+                        return method.invoke(elctx, base, callArgs);
+                    else
+                        return method.invoke(elctx, callArgs);
+                } catch (RuntimeException ex) {
+                    throw new EvaluationException(elctx, ex);
+                }
+            }
+        }
+
+        // Invoke dynamic object method.
+        if (base instanceof MethodResolvable) {
+            return ((MethodResolvable)base).invoke(elctx, name, callArgs);
+        }
+
+        throw new EvaluationException(elctx, _T(EL_METHOD_NOT_FOUND, base, name));
     }
 
     // ── Type guard ──
