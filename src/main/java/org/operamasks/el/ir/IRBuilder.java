@@ -363,24 +363,21 @@ public class IRBuilder {
         case Token.DIV:
         case Token.REM:
         case Token.POW:
-            buildBinaryOp(node);
-            break;
-        case Token.NEG:
-        case Token.POS:
-            buildUnaryOp(node);
-            break;
-        case Token.CAT:
-            buildCat(node);
-            break;
-
         case Token.BITOR:
         case Token.BITAND:
         case Token.XOR:
         case Token.SHL:
         case Token.SHR:
         case Token.USHR:
-        case Token.BITNOT:
             buildBinaryOp(node);
+            break;
+        case Token.NEG:
+        case Token.POS:
+        case Token.BITNOT:
+            buildUnaryOp(node);
+            break;
+        case Token.CAT:
+            buildCat(node);
             break;
 
         case Token.EQ:
@@ -906,30 +903,16 @@ public class IRBuilder {
             return;
         }
 
-        // User-defined class instances may have custom operators —
-        // trampoline to AST
-        if (isNonNumericClassType(bin.left) || isNonNumericClassType(bin.right)) {
-            buildTrampoline(node);
-            return;
-        }
-
-        int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
-        // Shift operators are overloaded for stream I/O vs bit shift.
-        // When types are unknown, trampoline to AST which handles
-        // overloading correctly.
-        if ((l < 0 || r < 0) && (node.op == Token.SHL || node.op == Token.SHR ||
-                                 node.op == Token.USHR)) {
-            buildTrampoline(node);
-            return;
-        }
-
         boolean prev = inTailPosition;
         inTailPosition = false; // sub-expressions of binary ops are NOT in
         // tail position
         build(bin.left);
         build(bin.right);
         inTailPosition = prev;
-        if (l >= 0 && r >= 0)
+
+        int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
+        if (l >= 0 && r >= 0 && !isNonNumericClassType(bin.left) &&
+            !isNonNumericClassType(bin.right))
             emitTypedOp(node.op, widerType(l, r));
         else
             emitDynamicOp(node.op);
@@ -1083,26 +1066,16 @@ public class IRBuilder {
         case Token.MUL -> current.emitDynMul();
         case Token.DIV -> current.emitDynDiv();
         case Token.REM -> current.emitDynRem();
-        case Token.NEG -> current.emitDynNeg();
         case Token.POW -> current.emitDynPow();
-        case Token.POS -> {
-            // unary plus is a no-op: value already on stack
-        }
-        // Bitwise: emit typed (int) by default for dynamic path
-        case Token.BITOR ->
-                current.emit1(Opcode.IOR, IRFormat.K_PRIM, IRFormat.T_INT);
-        case Token.BITAND ->
-                current.emit1(Opcode.IAND, IRFormat.K_PRIM, IRFormat.T_INT);
-        case Token.XOR ->
-                current.emit1(Opcode.IXOR, IRFormat.K_PRIM, IRFormat.T_INT);
-        case Token.SHL ->
-                current.emit1(Opcode.ISHL, IRFormat.K_PRIM, IRFormat.T_INT);
-        case Token.SHR ->
-                current.emit1(Opcode.ISHR, IRFormat.K_PRIM, IRFormat.T_INT);
-        case Token.USHR ->
-                current.emit1(Opcode.IUSHR, IRFormat.K_PRIM, IRFormat.T_INT);
-        case Token.BITNOT ->
-                current.emit1(Opcode.IBITNOT, IRFormat.K_PRIM, IRFormat.T_INT);
+        case Token.SHL -> current.emitDynShl();
+        case Token.SHR -> current.emitDynShr();
+        case Token.USHR -> current.emitDynUShr();
+        case Token.NEG -> current.emitDynNeg();
+        case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
+        case Token.BITAND -> current.emitDynBitAnd();
+        case Token.BITOR -> current.emitDynBitOr();
+        case Token.XOR -> current.emitDynXor();
+        case Token.BITNOT -> current.emitDynBitNot();
         default ->
                 throw new UnsupportedOperationException("Unsupported " +
                                                         "dynamic op: " + op);
@@ -1150,8 +1123,7 @@ public class IRBuilder {
             else if (t == T_DOUBLE)
                 current.emitDNe();
             else {
-                current.emitDynEq();
-                current.emitNot();
+                current.emitDynNe();
             }
         }
         case Token.LT -> {
@@ -1182,8 +1154,7 @@ public class IRBuilder {
             else if (t == T_DOUBLE)
                 current.emitDGt();
             else {
-                current.emitDynLe();
-                current.emitNot();
+                current.emitDynGt();
             }
         }
         case Token.GE -> {
@@ -1194,8 +1165,7 @@ public class IRBuilder {
             else if (t == T_DOUBLE)
                 current.emitDGe();
             else {
-                current.emitDynLt();
-                current.emitNot();
+                current.emitDynGe();
             }
         }
         default -> current.emitDynEq();
@@ -1329,9 +1299,9 @@ public class IRBuilder {
         build(node.right);
         inTailPosition = prev;
         if (node.op == Token.IDNE)
-            current.emitRefNe();
+            current.emitIdNe();
         else
-            current.emitRefEq();
+            current.emitIdEq();
     }
 
     // ── Compound assignment (+=, -=, etc.) ──
@@ -1576,7 +1546,7 @@ public class IRBuilder {
 
     private void buildCompound(ELNode.COMPOUND node) {
         if (node.exps.length == 0)
-            emitPushNull();;
+            emitPushNull();
         for (int i = 0; i < node.exps.length - 1; i++) {
             build(node.exps[i]);
             current.emitPop();
@@ -2610,7 +2580,9 @@ public class IRBuilder {
                                        boolean optimize, boolean isLambda) {
         if (optimize) {
             fn = FOLDER.transform(fn);
-            fn = IRSpecializer.specialize(fn, new int[paramCount]);
+            // FIXME: temporary disable type specializer until we finish IR
+            //  interpreter completely.
+            // fn = IRSpecializer.specialize(fn, new int[paramCount]);
             if (isLambda)
                 fn = FOLDER.transform(fn);  // fold constants in specialized
             // code

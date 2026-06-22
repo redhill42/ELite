@@ -291,12 +291,8 @@ public class IRBytecodeCompiler {
             case DGT -> { emitUnboxDouble(2); emitDCmp(A_IFGT); }
             case DGE -> { emitUnboxDouble(2); emitDCmp(A_IFGE); }
 
-            case REFEQ -> emitRefCmp(A_IF_ACMPEQ);
-            case REFNE -> emitRefCmp(A_IF_ACMPNE);
-
-            case DYNEQ  -> emitDynCall("dynEq", 2);
-            case DYNLT  -> emitDynCall("dynLt", 2);
-            case DYNLE  -> emitDynCall("dynLe", 2);
+            case IDEQ -> emitIdCmp(A_IF_ACMPEQ);
+            case IDNE -> emitIdCmp(A_IF_ACMPNE);
 
             case PUSH_VAR -> {
                 if (typedMode && v.varIndex() < argTypeIds.length) {
@@ -461,8 +457,6 @@ public class IRBytecodeCompiler {
                 mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL → done
             }
 
-            case DYNIN -> emitCall2("dynIn");
-
             // ─── Bitwise (via helpers) ───
             case IAND, LAND -> emitCall2("bitAnd");
             case IOR, LOR   -> emitCall2("bitOr");
@@ -566,23 +560,48 @@ public class IRBytecodeCompiler {
             }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
-            case DYNADD -> emitDynCall("dynAdd", 2);
-            case DYNSUB -> emitDynCall("dynSub", 2);
-            case DYNMUL -> emitDynCall("dynMul", 2);
-            case DYNDIV -> emitDynCall("dynDiv", 2);
-            case DYNREM -> emitDynCall("dynRem", 2);
-            case DYNNEG -> emitDynCall("dynNeg", 1);
-            case DYNPOW -> emitDynCall("dynPow", 2);
-            case DYNCAT -> {
-                // dynCat needs ELContext for TypeCoercion.coerce on array ops.
+            case DYNADD, DYNSUB, DYNMUL, DYNDIV, DYNREM, DYNPOW, DYNCAT, DYNIN,
+                 DYNSHL, DYNSHR, DYNUSHR, DYNEQ, DYNNE, DYNLT, DYNLE, DYNGT, DYNGE,
+                 DYNAND, DYNOR, DYNXOR -> {
+                // Binary dynamic operators, needs ELContext for runtime call.
                 // Stack: [x, y]. Need [ctx, x, y].
-                mv.visitVarInsn(A_ASTORE, S_TMP + 1);  // y → temp
-                mv.visitVarInsn(A_ASTORE, S_TMP);      // x → temp
-                mv.visitVarInsn(A_ALOAD, S_CTX);        // ctx
-                mv.visitVarInsn(A_ALOAD, S_TMP);        // x
-                mv.visitVarInsn(A_ALOAD, S_TMP + 1);    // y
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
-                    "dynCat", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitVarInsn(A_ASTORE, S_TMP + 1); // y -> temp
+                mv.visitVarInsn(A_ASTORE, S_TMP);     // x -> temp
+                mv.visitVarInsn(A_ALOAD, S_CTX);      // ctx
+                mv.visitVarInsn(A_ALOAD, S_TMP);      // x
+                mv.visitVarInsn(A_ALOAD, S_TMP + 1);  // y
+                switch (op) {
+                case DYNADD -> emitDynBinOp("dynAdd");
+                case DYNSUB -> emitDynBinOp("dynSub");
+                case DYNMUL -> emitDynBinOp("dynMul");
+                case DYNDIV -> emitDynBinOp("dynDiv");
+                case DYNREM -> emitDynBinOp("dynRem");
+                case DYNPOW -> emitDynBinOp("dynPow");
+                case DYNCAT -> emitDynBinOp("dynCat");
+                case DYNIN -> emitDynBinOp("dynIn");
+                case DYNSHL -> emitDynBinOp("dynShl");
+                case DYNSHR -> emitDynBinOp("dynShr");
+                case DYNUSHR -> emitDynBinOp("dynUShr");
+                case DYNEQ  -> emitDynBinOp("dynEq");
+                case DYNNE -> emitDynBinOp("dynNe");
+                case DYNLT  -> emitDynBinOp("dynLt");
+                case DYNLE  -> emitDynBinOp("dynLe");
+                case DYNGT -> emitDynBinOp("dynGt");
+                case DYNGE -> emitDynBinOp("dynGe");
+                case DYNAND -> emitDynBinOp("dynBitAnd");
+                case DYNOR -> emitDynBinOp("dynBitOr");
+                case DYNXOR -> emitDynBinOp("dynXor");
+                }
+            }
+            case DYNNEG, DYNNOT -> {
+                // Unary dynamic operators.
+                // Stack [x]. Need [ctx, x].
+                mv.visitVarInsn(A_ALOAD, S_CTX);
+                mv.visitInsn(A_SWAP);
+                switch (op) {
+                case DYNNEG -> emitDynUnaryOp("dynNeg");
+                case DYNNOT -> emitDynUnaryOp("dynBitNot");
+                }
             }
             default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, Opcode.name(op), op));
         }
@@ -613,7 +632,7 @@ public class IRBytecodeCompiler {
         mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
     }
     /** Reference identity comparison (=== / !==). Two Object refs on stack → Boolean. */
-    private void emitRefCmp(int jvmOp) {
+    private void emitIdCmp(int jvmOp) {
         Label t = new Label(), e = new Label();
         mv.visitJumpInsn(jvmOp, t);
         mv.visitInsn(A_ICONST_0); mv.visitJumpInsn(A_GOTO, e);
@@ -1106,6 +1125,17 @@ public class IRBytecodeCompiler {
             method, desc, false);
     }
 
+    private void emitDynBinOp(String method) {
+        String desc = "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;";
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
+            method, desc, false);
+    }
+
+    private void emitDynUnaryOp(String method) {
+        String desc = "(Ljavax/el/ELContext;Ljava/lang/Object;)Ljava/lang/Object;";
+        mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
+            method, desc, false);
+    }
 
     /**
      * Generate JVM exception table bytecode from a TryDescriptor.

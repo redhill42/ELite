@@ -497,9 +497,19 @@ public class IRInterpreter {
             case DYNNEG:
             case DYNPOW:
             case DYNCAT:
+            case DYNSHL:
+            case DYNSHR:
+            case DYNUSHR:
             case DYNEQ:
+            case DYNNE:
             case DYNLT:
-            case DYNLE: {
+            case DYNLE:
+            case DYNGT:
+            case DYNGE:
+            case DYNAND:
+            case DYNOR:
+            case DYNXOR:
+            case DYNNOT: {
                 push(dynamicOp(op));
                 ip += 1;
                 break;
@@ -936,7 +946,7 @@ public class IRInterpreter {
             case DYNIN: {
                 Object elem = pop();
                 Object coll = pop();
-                push(elite.lang.Runtime.dynIn(coll, elem));
+                push(elite.lang.Runtime.dynIn(elctx, coll, elem));
                 ip += 1;
                 break;
             }
@@ -1101,14 +1111,14 @@ public class IRInterpreter {
             }
 
             // ============ Identity comparison ============
-            case REFEQ: {
+            case IDEQ: {
                 Object r = pop();
                 Object l = pop();
                 push(l == r);
                 ip += 1;
                 break;
             }
-            case REFNE: {
+            case IDNE: {
                 Object r = pop();
                 Object l = pop();
                 push(l != r);
@@ -1180,67 +1190,39 @@ public class IRInterpreter {
         // Unary negate: only one operand on stack
         if (irOpcode == DYNNEG) {
             Object val = pop();
-            if (val instanceof ClosureObject)
-                return trampolineBinaryOp(irOpcode, val, null);
-            return elite.lang.Runtime.dynNeg(val);
+            return elite.lang.Runtime.dynNeg(elctx, val);
+        }
+        if (irOpcode == DYNNOT) {
+            Object val = pop();
+            return elite.lang.Runtime.dynBitNot(elctx, val);
         }
 
-        Object rhs = pop();
-        Object lhs = pop();
-        // For non-Number operands (e.g. ClosureObject from user-defined
-        // classes),
-        // delegate to AST operator resolution via trampoline node.
-        if (needsTrampolineDispatch(lhs, rhs)) {
-            return trampolineBinaryOp(irOpcode, lhs, rhs);
-        }
         // Delegate to Runtime for type-resolved arithmetic (shared with
         // bytecode path)
+        Object rhs = pop();
+        Object lhs = pop();
         return switch (irOpcode) {
-            case DYNADD -> elite.lang.Runtime.dynAdd(lhs, rhs);
-            case DYNSUB -> elite.lang.Runtime.dynSub(lhs, rhs);
-            case DYNMUL -> elite.lang.Runtime.dynMul(lhs, rhs);
-            case DYNDIV -> elite.lang.Runtime.dynDiv(lhs, rhs);
-            case DYNREM -> elite.lang.Runtime.dynRem(lhs, rhs);
-            case DYNPOW -> elite.lang.Runtime.dynPow(lhs, rhs);
+            case DYNADD -> elite.lang.Runtime.dynAdd(elctx, lhs, rhs);
+            case DYNSUB -> elite.lang.Runtime.dynSub(elctx, lhs, rhs);
+            case DYNMUL -> elite.lang.Runtime.dynMul(elctx, lhs, rhs);
+            case DYNDIV -> elite.lang.Runtime.dynDiv(elctx, lhs, rhs);
+            case DYNREM -> elite.lang.Runtime.dynRem(elctx, lhs, rhs);
+            case DYNPOW -> elite.lang.Runtime.dynPow(elctx, lhs, rhs);
             case DYNCAT -> elite.lang.Runtime.dynCat(elctx, lhs, rhs);
-            case DYNEQ -> elite.lang.Runtime.dynEq(lhs, rhs);
-            case DYNLT -> elite.lang.Runtime.dynLt(lhs, rhs);
-            case DYNLE -> elite.lang.Runtime.dynLe(lhs, rhs);
+            case DYNSHL -> elite.lang.Runtime.dynShl(elctx, lhs, rhs);
+            case DYNSHR -> elite.lang.Runtime.dynShr(elctx, lhs, rhs);
+            case DYNUSHR -> elite.lang.Runtime.dynUShr(elctx, lhs, rhs);
+            case DYNEQ -> elite.lang.Runtime.dynEq(elctx, lhs, rhs);
+            case DYNNE -> elite.lang.Runtime.dynNe(elctx, lhs, rhs);
+            case DYNLT -> elite.lang.Runtime.dynLt(elctx, lhs, rhs);
+            case DYNLE -> elite.lang.Runtime.dynLe(elctx, lhs, rhs);
+            case DYNGT -> elite.lang.Runtime.dynGt(elctx, lhs, rhs);
+            case DYNGE -> elite.lang.Runtime.dynGe(elctx, lhs, rhs);
+            case DYNAND -> elite.lang.Runtime.dynBitAnd(elctx, lhs, rhs);
+            case DYNOR -> elite.lang.Runtime.dynBitOr(elctx, lhs, rhs);
+            case DYNXOR -> elite.lang.Runtime.dynXor(elctx, lhs, rhs);
             default -> { assert (false); yield null; }
         };
-    }
-
-    private static boolean needsTrampolineDispatch(Object lhs, Object rhs) {
-        if (lhs instanceof ClosureObject || rhs instanceof ClosureObject)
-            return true;
-        // Non-numeric non-String operands (e.g. Measure, user-defined
-        // types) need AST operator resolution to find overloaded operators.
-        if (lhs != null && !(lhs instanceof Number) && !(lhs instanceof String))
-            return true;
-        if (rhs != null && !(rhs instanceof Number) && !(rhs instanceof String))
-            return true;
-        return false;
-    }
-
-    private Object trampolineBinaryOp(int irOpcode, Object lhs, Object rhs) {
-        int tokenOp = switch (irOpcode) {
-            case DYNADD -> Token.ADD;
-            case DYNSUB -> Token.SUB;
-            case DYNMUL -> Token.MUL;
-            case DYNDIV -> Token.DIV;
-            case DYNREM -> Token.REM;
-            case DYNPOW -> Token.POW;
-            case DYNCAT -> Token.CAT;
-            case DYNEQ -> Token.EQ;
-            case DYNLT -> Token.LT;
-            case DYNLE -> Token.LE;
-            default -> { assert (false); yield 0; }
-        };
-        int pos = Position.make(0, 0);
-        var leftC = new ELNode.CONST(pos, lhs);
-        var rightC = new ELNode.CONST(pos, rhs);
-        var infix = new ELNode.INFIX(pos, Token.opNames[tokenOp], 100, leftC, rightC);
-        return infix.getValue(evalContext);
     }
 
     // ── Dynamic invocation ──

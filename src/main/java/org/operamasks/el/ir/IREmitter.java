@@ -222,6 +222,34 @@ public class IREmitter {
         return emit1(DYNPOW, K_DYN, 0);
     }
 
+    public IREmitter emitDynBitAnd() {
+        return emit1(DYNAND, K_DYN, 0);
+    }
+
+    public IREmitter emitDynBitOr() {
+        return emit1(DYNOR, K_DYN, 0);
+    }
+
+    public IREmitter emitDynXor() {
+        return emit1(DYNXOR, K_DYN, 0);
+    }
+
+    public IREmitter emitDynBitNot() {
+        return emit1(DYNNOT, K_DYN, 0);
+    }
+
+    public IREmitter emitDynShl() {
+        return emit1(DYNSHL, K_DYN, 0);
+    }
+
+    public IREmitter emitDynShr() {
+        return emit1(DYNSHR, K_DYN, 0);
+    }
+
+    public IREmitter emitDynUShr() {
+        return emit1(DYNUSHR, K_DYN, 0);
+    }
+
     // ── Typed comparisons ──
 
     public IREmitter emitIEq() {
@@ -298,16 +326,21 @@ public class IREmitter {
 
     // ── Dynamic comparisons ──
 
+
+    public IREmitter emitIdEq() {
+        return emit1(IDEQ, K_DYN, 0);
+    }
+
+    public IREmitter emitIdNe() {
+        return emit1(IDNE, K_DYN, 0);
+    }
+
     public IREmitter emitDynEq() {
         return emit1(DYNEQ, K_DYN, 0);
     }
 
-    public IREmitter emitRefEq() {
-        return emit1(REFEQ, K_DYN, 0);
-    }
-
-    public IREmitter emitRefNe() {
-        return emit1(REFNE, K_DYN, 0);
+    public IREmitter emitDynNe() {
+        return emit1(DYNNE, K_DYN, 0);
     }
 
     public IREmitter emitDynLt() {
@@ -316,6 +349,14 @@ public class IREmitter {
 
     public IREmitter emitDynLe() {
         return emit1(DYNLE, K_DYN, 0);
+    }
+
+    public IREmitter emitDynGt() {
+        return emit1(DYNGT, K_DYN, 0);
+    }
+
+    public IREmitter emitDynGe() {
+        return emit1(DYNGE, K_DYN, 0);
     }
 
     // ── Boolean constants ──

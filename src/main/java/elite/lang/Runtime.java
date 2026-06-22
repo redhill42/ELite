@@ -19,20 +19,11 @@ package elite.lang;
 import javax.el.ELContext;
 
 import org.operamasks.el.eval.*;
-import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.ir.IRClosure;
 import org.operamasks.el.ir.IRFormat;
 import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.ir.IRInterpreter;
-import org.operamasks.el.parser.Token;
-
-import java.lang.reflect.Array;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.math.MathContext;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Collection;
+import org.operamasks.el.parser.ELNode;
 
 import static org.operamasks.el.resources.Resources.*;
 
@@ -203,40 +194,6 @@ public final class Runtime {
         }
     }
 
-    /** 'in' operator following ELNode.IN.eval() logic. */
-    public static Object dynIn(Object coll, Object elem) {
-        if (coll == null || elem == null) return false;
-
-        if (coll instanceof Object[] a) {
-            for (Object o : a) if (equality(elem, o, true)) return true;
-            return false;
-        }
-        if (coll.getClass().isArray()) {
-            int len = java.lang.reflect.Array.getLength(coll);
-            Class<?> ct = coll.getClass().getComponentType();
-            elem = tryCoerce(null, elem, ct);
-            for (int i = 0; i < len; i++) {
-                if (equality(elem, java.lang.reflect.Array.get(coll, i), true)) return true;
-            }
-            return false;
-        }
-        if (coll instanceof java.util.Collection<?> c) {
-            if (elem instanceof java.util.Collection) return c.containsAll((java.util.Collection<?>)elem);
-            if (c instanceof java.util.Set || c instanceof elite.lang.Range) return c.contains(elem);
-            if (c instanceof Seq seq) {
-                while (!seq.isEmpty()) {
-                    if (equality(elem, seq.head(), true)) return true;
-                    seq = seq.tail();
-                }
-                return false;
-            }
-            // Generic collection: iterate with equality comparison
-            for (Object o : c) if (equality(elem, o, true)) return true;
-            return false;
-        }
-        return false;
-    }
-
     public static Object getIter(Object coll) {
         return IRInterpreter.getIterator(coll);
     }
@@ -405,613 +362,96 @@ public final class Runtime {
 
     // ── Dynamic ops ──
 
-    // ── Type-resolution framework matching ELNode.Arithmetic.evaluate() ──
-
-    private interface ArithmeticOp {
-        Number eval(BigDecimal x, BigDecimal y);
-        Number eval(BigInteger x, BigInteger y);
-        Number eval(Decimal x, Decimal y);
-        Number eval(Rational x, Rational y);
-        Number eval(double x, double y);
-        Number eval(long x, long y);
-        Number eval(int x, int y);
+    public static Object dynAdd(ELContext elctx, Object x, Object y) {
+        return Builtin.__add__(elctx, x, y);
     }
 
-    /** Overflow detection constants (matching ELNode.Arithmetic). */
-    private static final long LONG_SIG_BIT = 1L << 63;
-    private static final int  INT_SIG_BIT  = 1 << 31;
-
-    private static final ArithmeticOp ADD_OP = new ArithmeticOp() {
-        @Override
-        public Number eval(BigDecimal x, BigDecimal y) {
-            return x.add(y);
-        }
-
-        @Override
-        public Number eval(BigInteger x, BigInteger y) {
-            return x.add(y);
-        }
-
-        @Override
-        public Number eval(Decimal x, Decimal y) {
-            return x.add(y);
-        }
-
-        @Override
-        public Number eval(Rational x, Rational y) {
-            return x.add(y).reduce();
-        }
-
-        @Override
-        public Number eval(double x, double y) {
-            return x + y;
-        }
-
-        @Override
-        public Number eval(long x, long y) {
-            long z = x + y;
-            if ((~(x ^ y) & (x ^ z) & LONG_SIG_BIT) != 0) {
-                return BigInteger.valueOf(x).add(BigInteger.valueOf(y));
-            } else {
-                return z;
-            }
-        }
-
-        @Override
-        public Number eval(int x, int y) {
-            int z = x + y;
-            if ((~(x ^ y) & (x ^ z) & INT_SIG_BIT) != 0) {
-                return (long)x + (long)y;
-            } else {
-                return z;
-            }
-        }
-    };
-
-    private static final ArithmeticOp SUB_OP = new ArithmeticOp() {
-        @Override
-        public Number eval(BigDecimal x, BigDecimal y) {
-            return x.subtract(y);
-        }
-
-        @Override
-        public Number eval(BigInteger x, BigInteger y) {
-            return x.subtract(y);
-        }
-
-        @Override
-        public Number eval(Decimal x, Decimal y) {
-            return x.subtract(y);
-        }
-
-        @Override
-        public Number eval(Rational x, Rational y) {
-            return x.subtract(y).reduce();
-        }
-
-        @Override
-        public Number eval(double x, double y) {
-            return x - y;
-        }
-
-        @Override
-        public Number eval(long x, long y) {
-            long z = x - y;
-            if ((~(x ^ ~y) & (x ^ z) & LONG_SIG_BIT) != 0) {
-                return BigInteger.valueOf(x).subtract(BigInteger.valueOf(y));
-            } else {
-                return z;
-            }
-        }
-
-        @Override
-        public Number eval(int x, int y) {
-            int z = x - y;
-            if ((~(x ^ -y) & (x ^ z) & INT_SIG_BIT) != 0) {
-                return (long)x - (long)y;
-            } else {
-                return z;
-            }
-        }
-    };
-
-    private static final ArithmeticOp MUL_OP = new ArithmeticOp() {
-        @Override
-        public Number eval(BigDecimal x, BigDecimal y) {
-            return x.multiply(y);
-        }
-
-        @Override
-        public Number eval(BigInteger x, BigInteger y) {
-            return x.multiply(y);
-        }
-
-        @Override
-        public Number eval(Decimal x, Decimal y) {
-            return x.multiply(y);
-        }
-
-        @Override
-        public Number eval(Rational x, Rational y) {
-            return x.multiply(y).reduce();
-        }
-
-        @Override
-        public Number eval(double x, double y) {
-            return x * y;
-        }
-
-        @Override
-        public Number eval(long x, long y) {
-            long z = x * y;
-            if (y != 0L && z/y != x) {       // overflowed
-                return BigInteger.valueOf(x).multiply(BigInteger.valueOf(y));
-            } else {
-                return z;
-            }
-        }
-
-        @Override
-        public Number eval(int x, int y) {
-            int z = x * y;
-            if (y != 0 && z/y != x) {       // overflowed
-                return (long)x * (long)y;
-            } else {
-                return z;
-            }
-        }
-    };
-
-    private static ArithmeticOp DIV_OP = new ArithmeticOp() {
-        @Override
-        public Number eval(BigDecimal x, BigDecimal y) {
-            MathContext mc = new MathContext(
-                    (int)Math.min(x.precision() +
-                                  (long)Math.ceil(10.0*y.precision()/3.0),
-                                  Integer.MAX_VALUE),
-                    RoundingMode.HALF_UP);
-            return x.divide(y, mc);
-        }
-
-        @Override
-        public Number eval(BigInteger x, BigInteger y) {
-            BigInteger[] r = x.divideAndRemainder(y);
-            if (r[1].equals(BigInteger.ZERO)) {
-                return r[0];
-            } else {
-                return eval(new BigDecimal(x), new BigDecimal(y));
-            }
-        }
-
-        @Override
-        public Number eval(Decimal x, Decimal y) {
-            return x.divide(y);
-        }
-
-        @Override
-        public Number eval(Rational x, Rational y) {
-            return x.divide(y).reduce();
-        }
-
-        @Override
-        public Number eval(double x, double y) {
-            return x / y;
-        }
-
-        @Override
-        public Number eval(long x, long y) {
-            if (x % y == 0)
-                return x / y;
-            else
-                return (double)x / (double)y;
-        }
-
-        @Override
-        public Number eval(int x, int y) {
-            if (x % y == 0)
-                return x / y;
-            else
-                return (double)x / (double)y;
-        }
-    };
-
-    private static final ArithmeticOp REM_OP = new ArithmeticOp() {
-        @Override
-        public Number eval(BigDecimal x, BigDecimal y) {
-            return x.remainder(y);
-        }
-
-        @Override
-        public Number eval(BigInteger x, BigInteger y) {
-            return x.remainder(y);
-        }
-
-        @Override
-        public Number eval(Decimal x, Decimal y) {
-            return x.remainder(y);
-        }
-
-        @Override
-        public Number eval(Rational x, Rational y) {
-            return x.remainder(y).reduce();
-        }
-
-        @Override
-        public Number eval(double x, double y) {
-            return x % y;
-        }
-
-        @Override
-        public Number eval(long x, long y) {
-            return x % y;
-        }
-
-        @Override
-        public Number eval(int x, int y) {
-            return x % y;
-        }
-    };
-
-    /** Shared type resolver for binary arithmetic. Matches AST's Arithmetic.evaluate(). */
-    private static Object resolveBinOp(Object x, Object y, String op, ArithmeticOp arith) {
-        if (x == null || y == null)
-            throw new NullPointerException(_T(EL_NULL_OPERAND, op));
-
-        if (x.getClass() == y.getClass()) {
-            // Integer: use int op with overflow detection → promote to Long if needed
-            if (x instanceof Long)
-                return arith.eval((Long)x, (Long)y);
-            if (x instanceof Integer)
-                return arith.eval((Integer)x, (Integer)y);
-            if (x instanceof Double)
-                return arith.eval((Double)x, (Double)y);
-            if (x instanceof Float)
-                return arith.eval((Float)x, (Float)y);
-            if (x instanceof Short)
-                return arith.eval(((Short)x).intValue(), ((Short)y).intValue());
-            if (x instanceof Byte)
-                return arith.eval(((Byte)x).intValue(), ((Byte)y).intValue());
-            if (x instanceof Decimal dx && y instanceof Decimal dy)
-                return arith.eval(dx, dy);
-            if (x instanceof Rational rx && y instanceof Rational ry)
-                return arith.eval(rx, ry);
-            if (x instanceof BigInteger bx && y instanceof BigInteger by)
-                return arith.eval(bx, by);
-            if (x instanceof BigDecimal bx && y instanceof BigDecimal by)
-                return arith.eval(bx, by);
-        }
-
-        // Mixed types: promote to the wider type
-        if (x instanceof BigDecimal || y instanceof BigDecimal)
-            return arith.eval(TypeCoercion.coerceToBigDecimal(x),
-                              TypeCoercion.coerceToBigDecimal(y));
-        if (x instanceof Decimal || y instanceof Decimal)
-            return arith.eval(TypeCoercion.coerceToDecimal(x),
-                              TypeCoercion.coerceToDecimal(y));
-        if (x instanceof Float || x instanceof Double ||
-            y instanceof Float || y instanceof Double ||
-            looksLikeFloat(x) || looksLikeFloat(y))
-            return arith.eval(TypeCoercion.coerceToDouble(x),
-                              TypeCoercion.coerceToDouble(y));
-        if (x instanceof Rational || y instanceof Rational)
-            return arith.eval(TypeCoercion.coerceToRational(x),
-                              TypeCoercion.coerceToRational(y));
-        if (x instanceof BigInteger || y instanceof BigInteger)
-            return arith.eval(TypeCoercion.coerceToBigInteger(x),
-                              TypeCoercion.coerceToBigInteger(y));
-        if (x instanceof Long || y instanceof Long)
-            return arith.eval(TypeCoercion.coerceToLong(x),
-                              TypeCoercion.coerceToLong(y));
-
-        // Fallback: promote to int (may lose precision for non-standard Number types)
-        return arith.eval(TypeCoercion.coerceToInt(x),
-                          TypeCoercion.coerceToInt(y));
+    public static Object dynSub(ELContext elctx, Object x, Object y) {
+        return Builtin.__sub__(elctx, x, y);
     }
 
-    private static boolean looksLikeFloat(Object v) {
-        if (v instanceof CharSequence s) {
-            int len = s.length();
-            for (int i = 0; i < len; i++) {
-                char c = s.charAt(i);
-                if (c == '.' || c == 'e' || c == 'E')
-                    return true;
-            }
-        }
-        return false;
+    public static Object dynMul(ELContext elctx, Object x, Object y) {
+        return Builtin.__mul__(elctx, x, y);
     }
 
-    public static Object dynAdd(Object x, Object y) {
-        return resolveBinOp(x, y, "+", ADD_OP);
+    public static Object dynDiv(ELContext elctx, Object x, Object y) {
+        return Builtin.__div__(elctx, x, y);
     }
 
-    public static Object dynSub(Object x, Object y) {
-        return resolveBinOp(x, y, "-", SUB_OP);
+    public static Object dynRem(ELContext elctx, Object x, Object y) {
+        return Builtin.__rem__(elctx, x, y);
     }
 
-    public static Object dynMul(Object x, Object y) {
-        return resolveBinOp(x, y, "*", MUL_OP);
+    public static Object dynPow(ELContext elctx, Object x, Object y) {
+        return Builtin.__pow__(elctx, x, y);
     }
 
-    public static Object dynDiv(Object x, Object y) {
-        return resolveBinOp(x, y, "/", DIV_OP);
+    public static Object dynCat(ELContext elctx, Object x, Object y) {
+        return Builtin.__cat__(elctx, x, y);
     }
 
-    public static Object dynRem(Object x, Object y) {
-        return resolveBinOp(x, y, "%", REM_OP);
+    private static final ELNode.NEG __NEG__ = new ELNode.NEG(-1, null);
+
+    public static Object dynNeg(ELContext elctx, Object x) {
+        return __NEG__.getValue(elctx, x);
     }
 
-    public static Object dynNeg(Object x) {
-        if (x == null)
-            throw new NullPointerException();
-        if (x instanceof Integer)
-            return -((Integer)x);
-        if (x instanceof Long)
-            return -((Long)x);
-        if (x instanceof Double)
-            return -((Double)x);
-        if (x instanceof Float)
-            return -((Float)x).doubleValue();
-        if (x instanceof Short)
-            return -((Short)x);
-        if (x instanceof Byte)
-            return -((Byte)x);
-        if (x instanceof BigDecimal bd)
-            return bd.negate();
-        if (x instanceof java.math.BigInteger bi)
-            return bi.negate();
-        if (x instanceof elite.lang.Rational r)
-            return r.negate();
-        if (x instanceof elite.lang.Decimal d)
-            return d.negate();
-        return -((Number)x).doubleValue();
+    public static Object dynShl(ELContext elctx, Object x, Object y) {
+        return Builtin.__shl__(elctx, x, y);
     }
 
-    public static Object dynPow(Object x, Object y) {
-        if (x == null || y == null)
-            throw new NullPointerException();
-        if (x instanceof Number xn && y instanceof Number yn)
-            return pow(xn, yn);
-        return Math.pow(TypeCoercion.coerceToDouble(x), TypeCoercion.coerceToDouble(y));
+    public static Object dynShr(ELContext elctx, Object x, Object y) {
+        return Builtin.__shr__(elctx, x, y);
     }
 
-    private static Number pow(Number x, Number y) {
-        if (y instanceof Long) {
-            long n = y.longValue();
-            if ((int)n == n)
-                return pow(x, (int)n);
-            else
-                return Math.pow(x.doubleValue(), n);
-        }
-        if (y instanceof Integer || y instanceof Short || y instanceof Byte)
-            return pow(x, y.intValue());
-        return Math.pow(x.doubleValue(), y.doubleValue());
+    public static Object dynUShr(ELContext elctx, Object x, Object y) {
+        return Builtin.__ushr__(elctx, x, y);
     }
 
-    private static Number pow(Number x, int n) {
-        if (x instanceof BigInteger bi) {
-            if (n == 0)
-                return 1;
-            if (n == 1)
-                return x;
-            if (n > 0)
-                return bi.pow(n);
-            return Math.pow(bi.doubleValue(), n);
-        }
-
-        if (x instanceof Long || x instanceof Integer || x instanceof Short || x instanceof Byte) {
-            long m = x.longValue();
-            if (n == 0)
-                return 1;
-            if (n == 1)
-                return m;
-            if (n > 0) {
-                BigInteger z = BigInteger.valueOf(m).pow(n);
-                return z.bitLength() < 32 ? z.intValue()
-                     : z.bitLength() < 64 ? z.longValue() : z;
-            }
-            return Math.pow(x.doubleValue(), n);
-        }
-
-        if (x instanceof BigDecimal bd) {
-            return bd.pow(n);
-        }
-        if (x instanceof Decimal d) {
-            return Decimal.valueOf(d.toBigDecimal().pow(n));
-        }
-        if (x instanceof Rational r) {
-            return r.pow(n).reduce();
-        }
-        return Math.pow(x.doubleValue(), n);
+    public static Object dynEq(ELContext elctx, Object x, Object y) {
+        return Builtin.__eq__(elctx, x, y);
     }
 
-    public static Object dynCat(ELContext c, Object x, Object y) {
-        // Java-compatible null handling: null → "null" for string operations
-        if (x == null) x = "null";
-        if (y == null) y = "null";
-
-        if (x instanceof Closure cx && y instanceof Closure cy) {
-            return cx.compose(cy);
-        }
-
-        if (x instanceof Seq sx) {
-            return y instanceof Collection<?>
-                ? sx.append(TypeCoercion.coerceToSeq(y))
-                : sx.append(Cons.make(y));
-        }
-        if (x instanceof Collection<?> cx) {
-            ArrayList<Object> result = new ArrayList<>(cx);
-            if (y instanceof Collection<?> cy)
-                result.addAll(cy);
-            else
-                result.add(y);
-            return result;
-        }
-        if (x.getClass().isArray()) {
-            Class<?> ct = x.getClass().getComponentType();
-            int xlen = Array.getLength(x);
-            if (y.getClass() == x.getClass()) {
-                // concatenate arraies with same type
-                int ylen = Array.getLength(y);
-                Object a = Array.newInstance(ct, xlen + ylen);
-                System.arraycopy(x, 0, a, 0, xlen);
-                System.arraycopy(y, 0, a, xlen, ylen);
-                return a;
-            } else if (y.getClass().isArray()) {
-                // concatenate arraies with different type
-                int ylen = Array.getLength(y);
-                Object[] a = new Object[xlen + ylen];
-                for (int i = 0; i < xlen; i++) a[i] = Array.get(x, i);
-                for (int i = 0; i < ylen; i++) a[xlen + i] = Array.get(y, i);
-                return a;
-            } else {
-                // concatenate an array with an element
-                Object a = Array.newInstance(ct, xlen + 1);
-                System.arraycopy(x, 0, a, 0, xlen);
-                Array.set(a, xlen, tryCoerce(c, y, ct));
-                return a;
-            }
-        }
-        if (y instanceof Seq sy) {
-            return new Cons(x, sy);
-        }
-        if (y instanceof Collection<?> cy) {
-            ArrayList<Object> result = new ArrayList<>();
-            result.add(x);
-            result.addAll(cy);
-            return result;
-        }
-        if (y.getClass().isArray()) {
-            Class<?> ct = y.getClass().getComponentType();
-            int len = Array.getLength(y);
-            Object a = Array.newInstance(ct, len + 1);
-            Array.set(a, 0, tryCoerce(c, x, ct));
-            System.arraycopy(y, 0, a, 1, len);
-            return a;
-        }
-        return String.valueOf(x) + y;
+    public static Object dynNe(ELContext elctx, Object x, Object y) {
+        return Builtin.__ne__(elctx, x, y);
     }
 
-    private static Object tryCoerce(ELContext c, Object v, Class<?> t) {
-        try { return c != null ? org.operamasks.el.eval.TypeCoercion.coerce(c, v, t) : v; }
-        catch (Exception e) { return v; }
+    public static Object dynLt(ELContext elctx, Object x, Object y) {
+        return Builtin.__lt__(elctx, x, y);
     }
 
-    /** Equality comparison following ELNode.Equality.evaluate() type resolution. */
-    public static Object dynEq(Object x, Object y) {
-        return equality(x, y, true);
-    }
-    public static Object dynNe(Object x, Object y) {
-        return equality(x, y, false);
-    }
-    private static boolean equality(Object x, Object y, boolean isEq) {
-        if (x == y) return isEq;
-        if (x == null || y == null) return !isEq;
-
-        Class<?> xc = x.getClass(), yc = y.getClass();
-        if (xc == yc) {
-            if (x instanceof Number) return isEq == numEq((Number)x, (Number)y);
-            if (x instanceof Object[]) return isEq == arrayEq((Object[])x, (Object[])y);
-            return isEq == x.equals(y);
-        }
-
-        if (x instanceof Number && y instanceof Number) {
-            if (x instanceof org.operamasks.el.eval.closure.ClosureObject) return isEq == x.equals(y);
-            if (x instanceof java.math.BigDecimal || y instanceof java.math.BigDecimal)
-                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToBigDecimal(x),
-                                    org.operamasks.el.eval.TypeCoercion.coerceToBigDecimal(y));
-            if (x instanceof elite.lang.Decimal || y instanceof elite.lang.Decimal)
-                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToDecimal(x),
-                                    org.operamasks.el.eval.TypeCoercion.coerceToDecimal(y));
-            if (x instanceof Float || y instanceof Float || x instanceof Double || y instanceof Double)
-                return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToDouble(x)
-                             == org.operamasks.el.eval.TypeCoercion.coerceToDouble(y));
-            if (x instanceof elite.lang.Rational || y instanceof elite.lang.Rational)
-                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToRational(x),
-                                    org.operamasks.el.eval.TypeCoercion.coerceToRational(y));
-            if (x instanceof java.math.BigInteger || y instanceof java.math.BigInteger)
-                return isEq == numEq(org.operamasks.el.eval.TypeCoercion.coerceToBigInteger(x),
-                                    org.operamasks.el.eval.TypeCoercion.coerceToBigInteger(y));
-            return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToLong(x)
-                         == org.operamasks.el.eval.TypeCoercion.coerceToLong(y));
-        }
-
-        if (x instanceof Boolean || y instanceof Boolean)
-            return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToBoolean(x)
-                         == org.operamasks.el.eval.TypeCoercion.coerceToBoolean(y));
-        if (x instanceof Enum || y instanceof Enum) {
-            if (!(x instanceof Enum)) x = org.operamasks.el.eval.TypeCoercion.coerceToEnum(x, ((Enum<?>)y).getClass());
-            if (!(y instanceof Enum)) y = org.operamasks.el.eval.TypeCoercion.coerceToEnum(y, ((Enum<?>)x).getClass());
-            return isEq == x.equals(y);
-        }
-        if (x instanceof String || y instanceof String)
-            return isEq == x.toString().equals(y.toString());
-        if (x instanceof Object[] && y instanceof Object[])
-            return isEq == arrayEq((Object[])x, (Object[])y);
-        if (x instanceof Character && y instanceof Number
-            || x instanceof Number && y instanceof Character)
-            return isEq == (org.operamasks.el.eval.TypeCoercion.coerceToCharacter(x)
-                         == org.operamasks.el.eval.TypeCoercion.coerceToCharacter(y));
-        return isEq == x.equals(y);
-    }
-    private static boolean numEq(Number x, Number y) {
-        return x.doubleValue() == y.doubleValue();
-    }
-    private static boolean arrayEq(Object[] x, Object[] y) {
-        if (x.length != y.length) return false;
-        for (int i = 0; i < x.length; i++) {
-            if (!equality(x[i], y[i], true)) return false;
-        }
-        return true;
+    public static Object dynLe(ELContext elctx, Object x, Object y) {
+        return Builtin.__le__(elctx, x, y);
     }
 
-    /** Comparison following ELNode.Comparison.evaluate() type resolution. */
-    public static Object dynLt(Object x, Object y) { return compare(x, y, Token.LT); }
-    public static Object dynLe(Object x, Object y) { return compare(x, y, Token.LE); }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static boolean compare(Object x, Object y, int op) {
-        if (x == y) return op == Token.LE || op == Token.GE;
-        if (x == null || y == null) return false;
-
-        Class<?> xc = x.getClass(), yc = y.getClass();
-        if (xc == yc) {
-            if (x instanceof Comparable) return cmp((Comparable)x, (Comparable)y, op);
-        }
-
-        if (x instanceof java.math.BigDecimal || y instanceof java.math.BigDecimal)
-            return cmp(org.operamasks.el.eval.TypeCoercion.coerceToBigDecimal(x),
-                       org.operamasks.el.eval.TypeCoercion.coerceToBigDecimal(y), op);
-        if (x instanceof elite.lang.Decimal || y instanceof elite.lang.Decimal)
-            return cmp(org.operamasks.el.eval.TypeCoercion.coerceToDecimal(x),
-                       org.operamasks.el.eval.TypeCoercion.coerceToDecimal(y), op);
-        if (x instanceof Float || y instanceof Float || x instanceof Double || y instanceof Double)
-            return cmp((Comparable)org.operamasks.el.eval.TypeCoercion.coerceToDouble(x),
-                       (Comparable)org.operamasks.el.eval.TypeCoercion.coerceToDouble(y), op);
-        if (x instanceof elite.lang.Rational || y instanceof elite.lang.Rational)
-            return cmp(org.operamasks.el.eval.TypeCoercion.coerceToRational(x),
-                       org.operamasks.el.eval.TypeCoercion.coerceToRational(y), op);
-        if (x instanceof java.math.BigInteger || y instanceof java.math.BigInteger)
-            return cmp(org.operamasks.el.eval.TypeCoercion.coerceToBigInteger(x),
-                       org.operamasks.el.eval.TypeCoercion.coerceToBigInteger(y), op);
-        if (x instanceof Number || y instanceof Number)
-            return cmp((Comparable)org.operamasks.el.eval.TypeCoercion.coerceToLong(x),
-                       (Comparable)org.operamasks.el.eval.TypeCoercion.coerceToLong(y), op);
-        if (x instanceof String || y instanceof String)
-            return cmp(x.toString(), y.toString(), op);
-        if (x instanceof Comparable && y instanceof Comparable)
-            return cmp((Comparable)x, (Comparable)y, op);
-        throw new RuntimeException(_T(EL_CANNOT_COMPARE, xc.getName(), yc.getName()));
+    public static Object dynGt(ELContext elctx, Object x, Object y) {
+        return Builtin.__gt__(elctx, x, y);
     }
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static boolean cmp(Comparable a, Comparable b, int op) {
-        int c = a.compareTo(b);
-        return switch (op) {
-            case Token.LT -> c < 0;
-            case Token.LE -> c <= 0;
-            case Token.GT -> c > 0;
-            case Token.GE -> c >= 0;
-            default -> false;
-        };
+
+    public static Object dynGe(ELContext elctx, Object x, Object y) {
+        return Builtin.__ge__(elctx, x, y);
+    }
+
+    public static Object dynBitAnd(ELContext elctx, Object x, Object y) {
+        return Builtin.__bitand__(elctx, x, y);
+    }
+
+    public static Object dynBitOr(ELContext elctx, Object x, Object y) {
+        return Builtin.__bitor__(elctx, x, y);
+    }
+
+    public static Object dynXor(ELContext elctx, Object x, Object y) {
+        return Builtin.__xor__(elctx, x, y);
+    }
+
+    public static Object dynBitNot(ELContext elctx, Object x) {
+        return Builtin.__bitnot__(elctx, x);
+    }
+
+    private static final ELNode.IN __IN__ = new ELNode.IN(-1, null, null, false);
+
+    public static Object dynIn(ELContext elctx, Object coll, Object elem) {
+        return __IN__.eval(elctx, elem, coll);
     }
 
     // ── Type guard ──

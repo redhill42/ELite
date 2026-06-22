@@ -2833,7 +2833,7 @@ public abstract class ELNode implements Serializable
             }
         }
 
-        private boolean eval(ELContext elctx, Object x, Object y) {
+        public boolean eval(ELContext elctx, Object x, Object y) {
             if (x == null || y == null) {
                 return false;
             }
