@@ -319,11 +319,8 @@ public class IRBuilder {
         case Token.NUMBER:
             buildNumber((ELNode.NUMBER)node);
             break;
-        case Token.STRINGVAL:
-            if (node instanceof ELNode.REGEXP re)
-                buildConst(re.value);
-            else
-                buildString((ELNode.STRINGVAL)node);
+        case Token.STRINGVAL, Token.LITERAL:
+            buildString(node);
             break;
         case Token.CHARVAL:
             buildConst(((ELNode.CHARVAL)node).value);
@@ -509,8 +506,13 @@ public class IRBuilder {
         }
     }
 
-    private void buildString(ELNode.STRINGVAL node) {
-        emitPushConst(T_STRING, node.value);
+    private void buildString(ELNode node) {
+        if (node instanceof ELNode.REGEXP n)
+            emitPushConst(K_NONE, n.value);
+        else if (node instanceof ELNode.STRINGVAL n)
+            emitPushConst(T_STRING, n.value);
+        else if (node instanceof ELNode.LITERAL n)
+            emitPushConst(T_STRING, n.value);
     }
 
     private void buildConst(Object value) {
@@ -2061,7 +2063,7 @@ public class IRBuilder {
                     yield T_DOUBLE;
                 yield -1;
             }
-            case Token.STRINGVAL -> T_STRING;
+            case Token.STRINGVAL, Token.LITERAL -> T_STRING;
             case Token.CHARVAL -> T_CHAR;
             case Token.TRUE, Token.FALSE -> T_BOOL;
             default -> -1;
