@@ -22,6 +22,7 @@ import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.operamasks.el.ir.IRFormat.*;
@@ -345,7 +346,7 @@ public class IRBuilder {
             break;
 
         case Token.IDENT:
-            buildIdent((ELNode.IDENT)node);
+            buildIdent(((ELNode.IDENT)node).id);
             break;
         case Token.ACCESS:
             buildAccess((ELNode.ACCESS)node);
@@ -657,17 +658,17 @@ public class IRBuilder {
     }
 
     // ── Identifiers ──
-    private void buildIdent(ELNode.IDENT node) {
+    private void buildIdent(String id) {
         // 1) Captured variable: must go through evaluation context
         //    (both in the enclosing scope and inside closures).
-        if (isCaptured.contains(node.id)) {
-            int nameIdx = putConstant(node.id);
+        if (isCaptured.contains(id)) {
+            int nameIdx = putConstant(id);
             current.emitPushGlobal(nameIdx);
             return;
         }
 
         // 2) Check local varIndex (non-captured locals + params)
-        Integer idx = varIndex.get(node.id);
+        Integer idx = varIndex.get(id);
         if (idx != null) {
             current.emitPushVar(idx);
             return;
@@ -676,21 +677,34 @@ public class IRBuilder {
         // 3) Free variable from enclosing scope, NOT captured by inner closures
         //    (capture by value — push from enclosing local slot at closure
         //    creation)
-        if (parent != null && parent.varIndex.containsKey(node.id) &&
-            !parent.isCaptured.contains(node.id)) {
-            Integer captureIdx = capturedVars.get(node.id);
-            if (captureIdx == null) {
-                capturedVars.put(node.id, capturedVars.size());
-                captureIdx = ensureVar(node.id, 0);
+        if (parent != null && parent.varIndex.containsKey(id) &&
+            !parent.isCaptured.contains(id)) {
+            if (!capturedVars.containsKey(id)) {
+                capturedVars.put(id, capturedVars.size());
+                ensureVar(id, 0);
             }
-            idx = varIndex.get(node.id);
+            idx = varIndex.get(id);
             current.emitPushVar(idx);
             return;
         }
 
         // 4) Global fallback — resolve by name in evaluation context
-        int nameIdx = putConstant(node.id);
+        int nameIdx = putConstant(id);
         current.emitPushGlobal(nameIdx);
+    }
+
+    private boolean isLocalVar(String id) {
+        if (isCaptured.contains(id))
+            return false;
+
+        if (varIndex.containsKey(id))
+            return true;
+
+        if (parent != null && parent.varIndex.containsKey(id) &&
+            !parent.isCaptured.contains(id))
+            return true;
+
+        return false;
     }
 
     // ── Apply ──
@@ -719,42 +733,53 @@ public class IRBuilder {
                 current.emitInvokeDirect(funcIdx, node.args.length);
                 return;
             }
-        }
 
-        // @data constructors have lazy fields (&tail) — AST must evaluate
-        // the call to wrap deferred arguments in EvalClosure. IR eagerly
-        // builds all arguments before INVOKE_DYN, causing infinite recursion.
-        if (node.right instanceof ELNode.IDENT &&
-            dataConstructorNames.contains(((ELNode.IDENT)node.right).id)) {
-            buildTrampoline(node);
-            return;
-        }
+            // FIXME: @data constructors have lazy fields (&tail) — AST must evaluate
+            // the call to wrap deferred arguments in EvalClosure. IR eagerly
+            // builds all arguments before INVOKE_DYN, causing infinite recursion.
+            if (node.right instanceof ELNode.IDENT &&
+                dataConstructorNames.contains(((ELNode.IDENT)node.right).id)) {
+                buildTrampoline(node);
+                return;
+            }
 
-        // Try to resolve direct method call for known Java types
-        if (node.right instanceof ELNode.ACCESS access && isSimpleKey(access.index)) {
-            String methodName = getKeyName(access.index);
-            org.operamasks.el.types.Type baseType = access.right != null ?
-                                                    access.right.inferredType : null;
-            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
-            if (javaClass != null && methodName != null) {
-                java.lang.reflect.Method method = resolveMethod(javaClass,
-                        methodName, node.args.length);
-                if (method != null) {
-                    // Direct method call: push base, push args, INVOKE_METHOD
-                    boolean prev2 = inTailPosition;
-                    inTailPosition = false;
-                    build(access.right); // base
-                    for (ELNode arg : node.args)
-                        build(arg); // args
-                    inTailPosition = prev2;
-                    int methodIdx = putConstant(method);
-                    current.emitInvokeMethod(methodIdx, node.args.length);
-                    return;
-                }
+            // resolve target at runtime if the given id is not a local var
+            if (!isLocalVar(id)) {
+                int nameIdx = putConstant(id);
+                boolean prev = inTailPosition;
+                inTailPosition = false;
+                for (ELNode arg : node.args)
+                    build(arg);
+                inTailPosition = prev;
+                current.emitInvokeTarget(nameIdx, node.args.length);
+                return;
             }
         }
 
         if (node.right instanceof ELNode.ACCESS acc) {
+            // Try to resolve direct method for known Java types.
+            if (acc.index instanceof ELNode.STRINGVAL && acc.right.inferredType != null) {
+                String methodName = ((ELNode.STRINGVAL)acc.index).value;
+                org.operamasks.el.types.Type baseType = acc.right.inferredType;
+                java.lang.Class<?> javaClass = resolveJavaClass(baseType);
+                if (javaClass != null) {
+                    Method method = resolveMethod(javaClass, methodName, node.args.length);
+                    if (method != null) {
+                        // Direct method call: push base, push args, INVOKE_METHOD
+                        int methodIdx = putConstant(method);
+                        boolean prev = inTailPosition;
+                        inTailPosition = false;
+                        build(acc.right); // base
+                        for (ELNode arg : node.args)
+                            build(arg); // args
+                        inTailPosition = prev;
+                        current.emitInvokeMethod(methodIdx, node.args.length);
+                        return;
+                    }
+                }
+            }
+
+            // resolve method at runtime
             boolean prev = inTailPosition;
             inTailPosition = false;
             build(acc.right);
@@ -766,6 +791,7 @@ public class IRBuilder {
             return;
         }
 
+        // evaluate base and generate dynamic call
         boolean prev = inTailPosition;
         inTailPosition = false;
         build(node.right);

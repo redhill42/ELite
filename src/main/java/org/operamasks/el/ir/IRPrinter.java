@@ -175,6 +175,7 @@ public final class IRPrinter {
             case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
             case Opcode.INVOKE_DIRECT -> formatConstPool(sb, fn, v.payload());
+            case Opcode.INVOKE_TARGET -> formatConstPool(sb, fn, v.payload());
             case Opcode.CLOSURE -> {
                 formatConstPool(sb, fn, v.payload());
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;

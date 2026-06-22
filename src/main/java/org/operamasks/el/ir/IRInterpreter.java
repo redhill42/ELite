@@ -16,14 +16,12 @@
 
 package org.operamasks.el.ir;
 
-import elite.lang.Closure;
+import elite.lang.Runtime;
 import org.operamasks.el.eval.*;
-import org.operamasks.el.eval.closure.ClosureObject;
 import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
-import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.MethodResolver;
 
 import javax.el.ELContext;
@@ -33,7 +31,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
 
-import static org.operamasks.el.eval.ELUtils.NO_RESULT;
 import static org.operamasks.el.ir.Opcode.*;
 import static org.operamasks.el.resources.Resources.*;
 
@@ -736,6 +733,23 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
+            case INVOKE_TARGET: {
+                // target name pool index in payload
+                // argCount in first operand
+                int nameIdx = pl;
+                int argc = oc == 0 ? 0 : code[ip + 1];
+                String id = (String)constantPool[nameIdx];
+
+                // Pop arguments
+                Object[] args = new Object[argc];
+                for (int i = argc - 1; i >= 0; i--)
+                    args[i] = pop();
+
+                push(Runtime.invokeTarget(evalContext, id, args));
+                ip += 1 + oc;
+                break;
+            }
+
             case INVOKE_DYN: {
                 int argc = pl;  // argCount is always in payload
                 Object result = dynamicInvoke(argc);
@@ -782,7 +796,7 @@ public class IRInterpreter {
             case PUSH_GLOBAL: {
                 int nameIdx = oc == 0 ? pl : code[ip + 1];
                 String name = (String)constantPool[nameIdx];
-                Object val = resolveGlobal(name);
+                Object val = Runtime.resolveGlobal(evalContext, name);
                 push(val);
                 ip += 1 + oc;
                 break;
@@ -903,7 +917,7 @@ public class IRInterpreter {
                 Object end = pop();
                 Object next = pop();
                 Object begin = pop();
-                push(elite.lang.Runtime.newRange(begin, next, end));
+                push(Runtime.newRange(begin, next, end));
                 ip += 1;
                 break;
             }
@@ -947,7 +961,7 @@ public class IRInterpreter {
             case DYNIN: {
                 Object elem = pop();
                 Object coll = pop();
-                push(elite.lang.Runtime.dynIn(elctx, coll, elem));
+                push(Runtime.dynIn(elctx, coll, elem));
                 ip += 1;
                 break;
             }
@@ -1020,7 +1034,7 @@ public class IRInterpreter {
                     args[i] = pop();
                 Object key = pop();
                 Object base = pop();
-                push(elite.lang.Runtime.invokeDynMethod(elctx, base, key, args));
+                push(Runtime.invokeDynMethod(elctx, base, key, args));
                 ip += 1 + oc;
                 break;
             }
@@ -1162,11 +1176,11 @@ public class IRInterpreter {
         // Unary negate: only one operand on stack
         if (irOpcode == DYNNEG) {
             Object val = pop();
-            return elite.lang.Runtime.dynNeg(elctx, val);
+            return Runtime.dynNeg(elctx, val);
         }
         if (irOpcode == DYNNOT) {
             Object val = pop();
-            return elite.lang.Runtime.dynBitNot(elctx, val);
+            return Runtime.dynBitNot(elctx, val);
         }
 
         // Delegate to Runtime for type-resolved arithmetic (shared with
@@ -1174,25 +1188,25 @@ public class IRInterpreter {
         Object rhs = pop();
         Object lhs = pop();
         return switch (irOpcode) {
-            case DYNADD -> elite.lang.Runtime.dynAdd(elctx, lhs, rhs);
-            case DYNSUB -> elite.lang.Runtime.dynSub(elctx, lhs, rhs);
-            case DYNMUL -> elite.lang.Runtime.dynMul(elctx, lhs, rhs);
-            case DYNDIV -> elite.lang.Runtime.dynDiv(elctx, lhs, rhs);
-            case DYNREM -> elite.lang.Runtime.dynRem(elctx, lhs, rhs);
-            case DYNPOW -> elite.lang.Runtime.dynPow(elctx, lhs, rhs);
-            case DYNCAT -> elite.lang.Runtime.dynCat(elctx, lhs, rhs);
-            case DYNSHL -> elite.lang.Runtime.dynShl(elctx, lhs, rhs);
-            case DYNSHR -> elite.lang.Runtime.dynShr(elctx, lhs, rhs);
-            case DYNUSHR -> elite.lang.Runtime.dynUShr(elctx, lhs, rhs);
-            case DYNEQ -> elite.lang.Runtime.dynEq(elctx, lhs, rhs);
-            case DYNNE -> elite.lang.Runtime.dynNe(elctx, lhs, rhs);
-            case DYNLT -> elite.lang.Runtime.dynLt(elctx, lhs, rhs);
-            case DYNLE -> elite.lang.Runtime.dynLe(elctx, lhs, rhs);
-            case DYNGT -> elite.lang.Runtime.dynGt(elctx, lhs, rhs);
-            case DYNGE -> elite.lang.Runtime.dynGe(elctx, lhs, rhs);
-            case DYNAND -> elite.lang.Runtime.dynBitAnd(elctx, lhs, rhs);
-            case DYNOR -> elite.lang.Runtime.dynBitOr(elctx, lhs, rhs);
-            case DYNXOR -> elite.lang.Runtime.dynXor(elctx, lhs, rhs);
+            case DYNADD -> Runtime.dynAdd(elctx, lhs, rhs);
+            case DYNSUB -> Runtime.dynSub(elctx, lhs, rhs);
+            case DYNMUL -> Runtime.dynMul(elctx, lhs, rhs);
+            case DYNDIV -> Runtime.dynDiv(elctx, lhs, rhs);
+            case DYNREM -> Runtime.dynRem(elctx, lhs, rhs);
+            case DYNPOW -> Runtime.dynPow(elctx, lhs, rhs);
+            case DYNCAT -> Runtime.dynCat(elctx, lhs, rhs);
+            case DYNSHL -> Runtime.dynShl(elctx, lhs, rhs);
+            case DYNSHR -> Runtime.dynShr(elctx, lhs, rhs);
+            case DYNUSHR -> Runtime.dynUShr(elctx, lhs, rhs);
+            case DYNEQ -> Runtime.dynEq(elctx, lhs, rhs);
+            case DYNNE -> Runtime.dynNe(elctx, lhs, rhs);
+            case DYNLT -> Runtime.dynLt(elctx, lhs, rhs);
+            case DYNLE -> Runtime.dynLe(elctx, lhs, rhs);
+            case DYNGT -> Runtime.dynGt(elctx, lhs, rhs);
+            case DYNGE -> Runtime.dynGe(elctx, lhs, rhs);
+            case DYNAND -> Runtime.dynBitAnd(elctx, lhs, rhs);
+            case DYNOR -> Runtime.dynBitOr(elctx, lhs, rhs);
+            case DYNXOR -> Runtime.dynXor(elctx, lhs, rhs);
             default -> { assert (false); yield null; }
         };
     }
@@ -1248,9 +1262,7 @@ public class IRInterpreter {
     private void defineGlobal(String name, Object value) {
         // define: create/update in current scope only (head-bounded search)
         LiteralClosure lc = new LiteralClosure(value);
-        if (evalContext != null) {
-            evalContext.setVariable(name, lc);
-        }
+        evalContext.setVariable(name, lc);
     }
 
     private void storeGlobal(String name, Object value) {
@@ -1382,34 +1394,6 @@ public class IRInterpreter {
     private void storeProperty(Object base, Object key, Object value) {
         ELContext elctx = evalContext.getELContext();
         elctx.getELResolver().setValue(elctx, base, key, value);
-    }
-
-    // ── Global variable resolution ──
-
-    private Object resolveGlobal(String name) {
-        ELContext elctx = evalContext.getELContext();
-
-        // 1) Check the EvaluationContext's own variable resolution chain
-        ValueExpression ve = evalContext.resolveVariable(name);
-        if (ve != null) {
-            return ve.getValue(elctx);
-        }
-
-        // 2) Check the FunctionMapper for global/imported functions
-        MethodResolver mr = MethodResolver.getInstance(elctx);
-        if (mr != null) {
-            MethodClosure mc = mr.resolveGlobalMethod(elctx.getFunctionMapper(), name);
-            if (mc != null)
-                return mc;
-        }
-
-        // 3) Try ELResolver chain
-        elctx.setPropertyResolved(false);
-        Object result = elctx.getELResolver().getValue(elctx, null, name);
-        if (elctx.isPropertyResolved())
-            return result;
-
-        throw new RuntimeException(_T(EL_UNDEFINED_IDENTIFIER, name));
     }
 
     // ── Iterator helpers ──

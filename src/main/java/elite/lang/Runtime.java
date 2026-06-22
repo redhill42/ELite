@@ -17,6 +17,7 @@
 package elite.lang;
 
 import javax.el.ELContext;
+import javax.el.ValueExpression;
 
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.ClosureObject;
@@ -459,6 +460,58 @@ public final class Runtime {
     }
 
     // ── Dynamic invocation ──
+
+    public static Object resolveGlobal(EvaluationContext context, String id) {
+        ELContext elctx = context.getELContext();
+
+        ValueExpression expr = context.resolveVariable(id);
+        if (expr != null) {
+            return expr.getValue(elctx);
+        }
+
+        elctx.setPropertyResolved(false);
+        Object value = elctx.getELResolver().getValue(elctx, null, id);
+        if (elctx.isPropertyResolved()) {
+            return value;
+        }
+
+        MethodClosure method = MethodResolver.getInstance(elctx)
+            .resolveGlobalMethod(context.getFunctionMapper(), id);
+        if (method != null) {
+            return method;
+        }
+
+        throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
+    }
+
+    public static Object resolveTarget(EvaluationContext context, String id) {
+        ELContext elctx = context.getELContext();
+
+        ValueExpression expr = context.resolveVariable(id);
+        if (expr != null)
+            return (expr instanceof Closure) ? expr : expr.getValue(elctx);
+
+        MethodClosure method = MethodResolver.getInstance(elctx)
+            .resolveGlobalMethod(context.getFunctionMapper(), id);
+        if (method != null)
+            return method;
+
+        elctx.setPropertyResolved(false);
+        return elctx.getELResolver().getValue(elctx, null, id);
+    }
+
+    public static Object invokeTarget(EvaluationContext context, String id, Object[] args) {
+        ELContext elctx = context.getELContext();
+        Object target = resolveTarget(context, id);
+        if (target == null)
+            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
+
+        try {
+            return ELEngine.invokeTarget(elctx, target, ELEngine.getCallArgs(args));
+        } catch (RuntimeException ex) {
+            throw new EvaluationException(elctx, ex);
+        }
+    }
 
     public static Object invokeDynMethod(ELContext elctx, Object base, Object key, Object[] args) {
         if (base == null)

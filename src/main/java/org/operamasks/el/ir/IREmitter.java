@@ -463,6 +463,17 @@ public class IREmitter {
                     funcPoolIdx & 0xFFFF, argCount);
     }
 
+    /**
+     * Resolve and invoke a target with name.
+     */
+    public IREmitter emitInvokeTarget(int funcPoolIdx, int argCount) {
+        if (fits16(funcPoolIdx))
+            return emit2(INVOKE_TARGET, K_NONE, funcPoolIdx, argCount);
+        else
+            return emit3(INVOKE_TARGET, K_NONE, funcPoolIdx >>> 16,
+                    funcPoolIdx & 0xFFFF, argCount);
+    }
+
     // ── Memory ──
 
     public IREmitter emitStoreVar(int varIndex) {

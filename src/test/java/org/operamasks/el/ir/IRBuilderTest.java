@@ -139,7 +139,8 @@ class IRBuilderTest {
         IRFunction fn = IRBuilder.compile(node);
         assertNotNull(fn);
         // Should compile to PUSH_CONST(3,4) + PUSH_GLOBAL("add") + INVOKE_DYN
-        assertTrue(scanOp(fn, Opcode.INVOKE_DYN) || scanOp(fn, Opcode.INVOKE_DIRECT),
+        assertTrue(scanOp(fn, Opcode.INVOKE_DYN) || scanOp(fn, Opcode.INVOKE_DIRECT) ||
+                   scanOp(fn, Opcode.INVOKE_TARGET),
             "function call should have invoke");
     }
 
