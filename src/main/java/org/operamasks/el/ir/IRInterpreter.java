@@ -18,6 +18,7 @@ package org.operamasks.el.ir;
 
 import elite.lang.Runtime;
 import org.operamasks.el.eval.*;
+import org.operamasks.el.eval.closure.DelayClosure;
 import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.parser.ELNode;
@@ -26,6 +27,7 @@ import org.operamasks.el.resolver.MethodResolver;
 
 import javax.el.ELContext;
 import javax.el.ValueExpression;
+import javax.el.VariableMapper;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -222,8 +224,8 @@ public class IRInterpreter {
                 int idx = pl & 0xFFFF;
                 ensureLocals(idx);
                 Object val = locals[idx];
-                if (val instanceof org.operamasks.el.eval.closure.DelayEvalClosure d)
-                    val = d.getValue(elctx);
+                if (val instanceof Thunk t)
+                    val = t.getValue(elctx);
                 push(val);
                 ip += 1;
                 break;
@@ -243,11 +245,7 @@ public class IRInterpreter {
                 for (int i = captureCount - 1; i >= 0; i--)
                     captured[i] = pop();
                 IRClosure thunkBody = new IRClosure(evalContext, fn, captured);
-                // DelayEvalClosure.force() calls eval.getValue(elctx).
-                // IRClosure.getValue() returns 'this', not the invoke result.
-                // So we wrap thunkBody in an adapter whose getValue() calls invoke().
-                push(new org.operamasks.el.eval.closure.DelayEvalClosure(
-                    new ThunkEvalAdapter(thunkBody)));
+                push(new Thunk(thunkBody)); // Encapsulate thunk into a delay evaluated closure.
                 ip += 1 + oc;
                 break;
             }
@@ -1260,22 +1258,44 @@ public class IRInterpreter {
      * and returns its result. Used by {@code DELAY} to create memoizing
      * thunks that execute IR-compiled code when forced.
      */
-    private static class ThunkEvalAdapter extends org.operamasks.el.eval.closure.AbstractClosure {
-        private final IRClosure thunk;
+    static class Thunk extends DelayClosure {
+        private IRClosure thunk;
 
-        ThunkEvalAdapter(IRClosure thunk) {
+        Thunk(IRClosure thunk) {
             this.thunk = thunk;
         }
 
         @Override
-        public Object getValue(javax.el.ELContext elctx) {
-            return new IRInterpreter(thunk.evalContext, thunk.function)
-                .execute(null, thunk.captured);
+        public EvaluationContext getContext() {
+            return thunk != null ? thunk.getContext() : null;
         }
 
         @Override
-        public Object invoke(javax.el.ELContext elctx, elite.lang.Closure[] args) {
-            return getValue(elctx);
+        public EvaluationContext getContext(ELContext elctx) {
+            return thunk != null ? thunk.getContext(elctx) : null;
+        }
+
+        @Override
+        public void _setenv(ELContext elctx, VariableMapper env) {
+            if (thunk != null) {
+                thunk._setenv(elctx, env);
+            }
+        }
+
+        @Override
+        protected Object force(ELContext elctx) {
+            if (thunk != null) {
+                Object result = thunk.invoke(elctx, null);
+                thunk = null;
+                return result;
+            } else {
+                return null;
+            }
+        }
+
+        @Override
+        protected void forget() {
+            thunk = null;
         }
     }
 

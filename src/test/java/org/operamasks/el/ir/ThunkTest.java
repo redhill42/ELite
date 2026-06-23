@@ -36,9 +36,9 @@ class ThunkTest {
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), program);
         Object result = interp.execute(null);
 
-        assertInstanceOf(DelayEvalClosure.class, result,
-            "buildThunk should produce a DelayEvalClosure");
-        assertEquals(42L, ((Number)((DelayEvalClosure)result).getValue(elctx)).longValue(),
+        assertInstanceOf(IRInterpreter.Thunk.class, result,
+            "buildThunk should produce a Thunk");
+        assertEquals(42L, ((Number)((IRInterpreter.Thunk)result).getValue(elctx)).longValue(),
             "getValue() should force and return 42");
     }
 
@@ -52,7 +52,7 @@ class ThunkTest {
         IRFunction program = b.finish("<test>", 0);
 
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), program);
-        DelayEvalClosure thunk = (DelayEvalClosure) interp.execute(null);
+        IRInterpreter.Thunk thunk = (IRInterpreter.Thunk) interp.execute(null);
 
         Object v1 = thunk.getValue(elctx);
         Object v2 = thunk.getValue(elctx);
@@ -146,8 +146,8 @@ class ThunkTest {
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object result = interp.execute(null);
 
-        assertInstanceOf(DelayEvalClosure.class, result,
-            "PUSH_VAR_RAW should NOT force — returns raw DelayEvalClosure");
+        assertInstanceOf(IRInterpreter.Thunk.class, result,
+            "PUSH_VAR_RAW should NOT force — returns raw Thunk");
     }
 
     // ── Phase 2: Lazy function parameters via INVOKE_DIRECT ──
