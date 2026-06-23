@@ -742,6 +742,14 @@ public class IRBuilder {
                 return;
             }
 
+            // Builtin.delay(expr): compile the argument as a thunk and
+            // return the DelayEvalClosure directly without calling delay().
+            if ("delay".equals(id) && node.args.length == 1
+                && resolveKnownFunction(id) == null) {
+                buildThunk(node.args[0]);
+                return;
+            }
+
             Integer funcIdx = resolveKnownFunction(id);
             if (funcIdx != null) {
                 // Direct call: check paramFlags for lazy (&) params.

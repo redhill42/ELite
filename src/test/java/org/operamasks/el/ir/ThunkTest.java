@@ -242,6 +242,36 @@ class ThunkTest {
     // TODO: delayCons with free variable capture (e.g., from(n) => [n : &from(n+1)])
     //       requires buildThunk to handle captured variables from enclosing scope.
 
+    // ── Phase 4: Builtin.delay() ──
+
+    @Test
+    void builtinDelayReturnsThunk() {
+        // delay(expr) should compile expr as a thunk and return
+        // a DelayEvalClosure without evaluating expr.
+        Object result = interpretProgram(
+            "define n = 0",
+            "define inc() => n = n + 1",
+            "define promise = delay(inc())",
+            "n"  // should be 0 — inc() has NOT been called yet
+        );
+        assertEquals(0L, ((Number)result).longValue(),
+            "delay(inc()) should not evaluate inc()");
+    }
+
+    @Test
+    void builtinDelayForcesOnGetValue() {
+        // force(promise) should evaluate the thunk.
+        Object result = interpretProgram(
+            "define n = 0",
+            "define inc() => n = n + 1",
+            "define promise = delay(inc())",
+            "force(promise)",   // forces inc() → n=1
+            "n"
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "force(promise) should evaluate the thunk");
+    }
+
     @Test
     void delayConsTailForcedOnlyOnce() {
         // The tail thunk should be memoized — forcing it repeatedly
