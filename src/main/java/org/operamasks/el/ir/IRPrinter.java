@@ -16,9 +16,7 @@
 
 package org.operamasks.el.ir;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.List;
+import java.util.*;
 
 import org.objectweb.asm.*;
 import org.operamasks.el.parser.ELNode;
@@ -44,41 +42,27 @@ public final class IRPrinter {
         List<ELNode> defs = program.getDefinitions();
         List<ELNode> exps = program.getExpressions();
 
-        StringBuilder sb = new StringBuilder();
-
-        if (!defs.isEmpty()) {
-            for (int i = 0; i < defs.size(); i++) {
-                ELNode def = defs.get(i);
-                sb.append("; definition ").append(nodeName(def)).append("\n");
-                try {
-                    IRFunction fn = IRBuilder.compile(def);
-                    sb.append(formatIR(fn));
-                    dumpLambdaBody(sb, def);
-                } catch (Exception e) {
-                    sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");
-                }
-            }
-        }
-
+        LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
+        ArrayDeque<IRFunction> worklist = new ArrayDeque<>();
         if (!exps.isEmpty()) {
-            for (int i = 0; i < exps.size(); i++) {
-                ELNode exp = exps.get(i);
-                sb.append("; expression ").append(nodeName(exp)).append("\n");
-                try {
-                    IRFunction fn = IRBuilder.compile(exp);
-                    sb.append(formatIR(fn));
-                } catch (Exception e) {
-                    sb.append("  [compile failed: ").append(e.getMessage()).append("]\n");
-                }
-            }
-        }
-
-        if (!exps.isEmpty()) {
-            sb.append("; combined\n");
             IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
-            sb.append(formatIR(fn));
+            worklist.addLast(fn);
         }
 
+        while (!worklist.isEmpty()) {
+            IRFunction fn = worklist.removeLast();
+            if (!funcs.contains(fn)) {
+                funcs.add(fn);
+                for (Object c : fn.constantPool()) {
+                    if (c instanceof IRFunction)
+                        worklist.addLast((IRFunction)c);
+                }
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (IRFunction fn : funcs)
+            sb.append(formatIR(fn));
         return sb.toString();
     }
 
@@ -176,7 +160,7 @@ public final class IRPrinter {
                 sb.append(" ").append(v.payload());
             case Opcode.INVOKE_DIRECT -> formatConstPool(sb, fn, v.payload());
             case Opcode.INVOKE_TARGET -> formatConstPool(sb, fn, v.payload());
-            case Opcode.CLOSURE -> {
+            case Opcode.CLOSURE, Opcode.DELAY -> {
                 formatConstPool(sb, fn, v.payload());
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
                 sb.append(" capture=").append(captureCount);
