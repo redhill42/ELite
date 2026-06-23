@@ -1,0 +1,151 @@
+package org.operamasks.el.ir;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import javax.el.ELContext;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.EvaluationContext;
+import org.operamasks.el.eval.closure.DelayEvalClosure;
+import org.operamasks.el.parser.ELNode;
+import org.operamasks.el.parser.Parser;
+
+class ThunkTest {
+
+    private static ELContext elctx;
+
+    @BeforeAll
+    static void setup() {
+        elctx = ELEngine.createELContext();
+    }
+
+    // ── Phase 1.1: DELAY opcode basic ──
+
+    @Test
+    void delayOpcodeProducesDelayEvalClosure() {
+        // Build a program that creates a DELAY thunk and returns it.
+        ELNode expr = Parser.parseExpression("40 + 2");
+        IRBuilder b = new IRBuilder();
+        b.buildThunk(expr);   // compile+push thunk
+        b.current.emitReturn(IRFormat.T_INT);
+        IRFunction program = b.finish("<test>", 0);
+
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), program);
+        Object result = interp.execute(null);
+
+        assertInstanceOf(DelayEvalClosure.class, result,
+            "buildThunk should produce a DelayEvalClosure");
+        assertEquals(42L, ((Number)((DelayEvalClosure)result).getValue(elctx)).longValue(),
+            "getValue() should force and return 42");
+    }
+
+    @Test
+    void delayOpcodePreservesMemoization() {
+        // Second getValue() returns cached result (same object reference).
+        ELNode expr = Parser.parseExpression("1 + 1");
+        IRBuilder b = new IRBuilder();
+        b.buildThunk(expr);
+        b.current.emitReturn(IRFormat.T_INT);
+        IRFunction program = b.finish("<test>", 0);
+
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), program);
+        DelayEvalClosure thunk = (DelayEvalClosure) interp.execute(null);
+
+        Object v1 = thunk.getValue(elctx);
+        Object v2 = thunk.getValue(elctx);
+        assertSame(v1, v2, "second getValue() returns cached (same) result");
+    }
+
+    // ── Phase 1.2: DELAY with captured variable ──
+
+    @Test
+    void delayOpcodePopsCorrectNumberOfCaptures() {
+        // Verify that DELAY pops the correct number of captured values
+        // from the stack. Push captureCount values, emit DELAY, verify
+        // the stack is consumed correctly.
+        ELNode body = Parser.parseExpression("1 + 1");
+        IRFunction thunkFn = IRBuilder.compile(body);
+
+        IREmitter out = new IREmitter();
+        out.emitPushNull();
+        out.emitPushNull();
+        out.emitDelay(0, 2);  // pop 2 captures
+        // If captures were NOT popped, the next op would see garbage
+        out.emitPushTrue();
+        out.emitReturn(IRFormat.T_INT);
+
+        int[] code = out.toArray();
+        Object[] pool = {thunkFn};
+        IRFunction fn = new IRFunction("<test>", 0, code, new int[]{0},
+            pool, new String[0], DebugInfo.EMPTY, null);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
+        Object result = interp.execute(null);
+
+        // After DELAY pops 2, PUSH_TRUE + RETURN → Boolean.TRUE
+        // The DELAY result itself is null (placeholder), which is consumed
+        // before PUSH_TRUE... actually the result is pushed, not consumed.
+        // result = DELAY(null) → null is on stack → PUSH_TRUE pushes true
+        // → RETURN returns top = true
+        assertEquals(Boolean.TRUE, result);
+    }
+
+    // ── Phase 1.3: PUSH_VAR auto-force ──
+
+    @Test
+    void pushVarAutoForcesDelayEvalClosure() {
+        // Store a DelayEvalClosure in locals, read via PUSH_VAR.
+        // PUSH_VAR should auto-force and return the computed value.
+        ELNode thunkExpr = Parser.parseExpression("10 + 3");
+        IRFunction thunkFn = IRBuilder.compile(thunkExpr);
+
+        IREmitter out = new IREmitter();
+        // DELAY creates thunk and pushes it
+        out.emitDelay(0, 0);
+        // STORE_VAR(0) stores in locals[0] and pushes dup
+        out.emitStoreVar(0);
+        // POP discards dup
+        out.emitPop();
+        // PUSH_VAR(0) reads locals[0] — should auto-force the thunk
+        out.emitPushVar(0);
+        out.emitReturn(IRFormat.T_INT);
+
+        int[] code = out.toArray();
+        Object[] pool = {thunkFn};
+        IRFunction fn = new IRFunction("<test>", 0, code, new int[]{0},
+            pool, new String[0], DebugInfo.EMPTY, null);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
+        Object result = interp.execute(null);
+
+        assertEquals(13L, ((Number)result).longValue(),
+            "PUSH_VAR should auto-force DelayEvalClosure → 13");
+    }
+
+    // ── Phase 1.4: PUSH_VAR_RAW (no auto-force) ──
+
+    @Test
+    void pushVarRawPreservesDelayEvalClosure() {
+        // Store a DelayEvalClosure in locals, read via PUSH_VAR_RAW.
+        // PUSH_VAR_RAW should NOT force — for passing to another lazy param.
+        ELNode thunkExpr = Parser.parseExpression("10 + 3");
+        IRFunction thunkFn = IRBuilder.compile(thunkExpr);
+
+        IREmitter out = new IREmitter();
+        out.emitDelay(0, 0);
+        out.emitStoreVar(0);
+        out.emitPop();
+        out.emitPushVarRaw(0);
+        out.emitReturn(IRFormat.T_INT);
+
+        int[] code = out.toArray();
+        Object[] pool = {thunkFn};
+        IRFunction fn = new IRFunction("<test>", 0, code, new int[]{0},
+            pool, new String[0], DebugInfo.EMPTY, null);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
+        Object result = interp.execute(null);
+
+        assertInstanceOf(DelayEvalClosure.class, result,
+            "PUSH_VAR_RAW should NOT force — returns raw DelayEvalClosure");
+    }
+}

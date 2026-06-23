@@ -516,6 +516,26 @@ public class IRBuilder {
             emitPushConst(T_STRING, n.value);
     }
 
+    /**
+     * Compile an expression as a lazy thunk. The expression is compiled into
+     * a zero-parameter IRFunction, and a DELAY opcode is emitted to create
+     * a DelayEvalClosure wrapping it at runtime.
+     */
+    void buildThunk(ELNode expr) {
+        IRBuilder nested = new IRBuilder(this);  // share parent pool
+        nested.inTailPosition = true;
+        nested.build(expr);
+        if (!endsWithReturn(nested)) {
+            int t = typeIdFromNode(expr);
+            nested.current.emitReturn(t >= 0 ? t : IRFormat.T_INT);
+        }
+        IRFunction rawFn = nested.finish("<thunk>", 0);
+        int poolIdx = putConstant(rawFn);
+
+        // TODO: handle captured free variables from enclosing scope
+        current.emitDelay(poolIdx, 0);
+    }
+
     private void buildConst(Object value) {
         emitPushConst(K_NONE, value);
     }

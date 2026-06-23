@@ -34,8 +34,8 @@ import java.util.Arrays;
  * is accessed from AST-evaluated (trampolined) code.
  */
 public class IRClosure extends Closure {
-    private final IRFunction function;
-    private final Object[] captured;
+    final IRFunction function;
+    final Object[] captured;
 
     /**
      * The evalContext chain active when this closure was created.
@@ -43,7 +43,7 @@ public class IRClosure extends Closure {
      * so captured variable reads and writes resolve against the original
      * enclosing scope rather than the caller's scope.
      */
-    private transient EvaluationContext evalContext;
+    transient EvaluationContext evalContext;
 
     public IRClosure(EvaluationContext context, IRFunction function, Object[] captured) {
         this.evalContext = context;

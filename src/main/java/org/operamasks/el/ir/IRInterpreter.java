@@ -219,10 +219,36 @@ public class IRInterpreter {
                 break;
             }
             case PUSH_VAR: {
-                int idx = pl & 0xFF;
+                int idx = pl & 0xFFFF;
                 ensureLocals(idx);
-                push(locals[idx]);
+                Object val = locals[idx];
+                if (val instanceof org.operamasks.el.eval.closure.DelayEvalClosure d)
+                    val = d.getValue(elctx);
+                push(val);
                 ip += 1;
+                break;
+            }
+            case PUSH_VAR_RAW: {
+                int idx = pl & 0xFFFF;
+                ensureLocals(idx);
+                push(locals[idx]);  // no auto-force
+                ip += 1;
+                break;
+            }
+            case DELAY: {
+                int funcIdx = pl;
+                int captureCount = oc > 0 && ip + 1 < code.length ? code[ip + 1] : 0;
+                IRFunction fn = (IRFunction) constantPool[funcIdx];
+                Object[] captured = new Object[captureCount];
+                for (int i = captureCount - 1; i >= 0; i--)
+                    captured[i] = pop();
+                IRClosure thunkBody = new IRClosure(evalContext, fn, captured);
+                // DelayEvalClosure.force() calls eval.getValue(elctx).
+                // IRClosure.getValue() returns 'this', not the invoke result.
+                // So we wrap thunkBody in an adapter whose getValue() calls invoke().
+                push(new org.operamasks.el.eval.closure.DelayEvalClosure(
+                    new ThunkEvalAdapter(thunkBody)));
+                ip += 1 + oc;
                 break;
             }
             case POP: {
@@ -1225,6 +1251,33 @@ public class IRInterpreter {
         javax.el.ELContext elctx = evalContext.getELContext();
         elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
         return ELEngine.invokeTarget(elctx, target, closures);
+    }
+
+    // ── Thunk adapter ──
+
+    /**
+     * Wraps an IRClosure so that {@code getValue()} invokes the thunk
+     * and returns its result. Used by {@code DELAY} to create memoizing
+     * thunks that execute IR-compiled code when forced.
+     */
+    private static class ThunkEvalAdapter extends org.operamasks.el.eval.closure.AbstractClosure {
+        private final IRClosure thunk;
+
+        ThunkEvalAdapter(IRClosure thunk) {
+            this.thunk = thunk;
+        }
+
+        @Override
+        public Object getValue(javax.el.ELContext elctx) {
+            Object[] args = new Object[thunk.captured.length];
+            System.arraycopy(thunk.captured, 0, args, 0, thunk.captured.length);
+            return new IRInterpreter(thunk.evalContext, thunk.function).execute(args);
+        }
+
+        @Override
+        public Object invoke(javax.el.ELContext elctx, elite.lang.Closure[] args) {
+            return getValue(elctx);
+        }
     }
 
     // ── Helpers ──
