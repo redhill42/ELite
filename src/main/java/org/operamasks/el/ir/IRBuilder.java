@@ -524,6 +524,22 @@ public class IRBuilder {
     void buildThunk(ELNode expr) {
         IRBuilder nested = new IRBuilder(this);  // share parent pool
         nested.inTailPosition = true;
+
+        // Scan the expression for free variables from the enclosing scope.
+        // A thunk is a zero-param lambda — capture semantics are identical.
+        expr.accept(new org.operamasks.el.parser.DefaultVisitor() {
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            public void visit(ELNode.IDENT e) {
+                if (seen.contains(e.id)
+                    || nested.varIndex.containsKey(e.id)
+                    || !varIndex.containsKey(e.id))
+                    return;
+                nested.capturedVars.put(e.id, nested.capturedVars.size());
+                nested.ensureVar(e.id, 0);
+                seen.add(e.id);
+            }
+        });
+
         nested.build(expr);
         if (!endsWithReturn(nested)) {
             int t = typeIdFromNode(expr);
@@ -532,8 +548,21 @@ public class IRBuilder {
         IRFunction rawFn = nested.finish("<thunk>", 0);
         int poolIdx = putConstant(rawFn);
 
-        // TODO: handle captured free variables from enclosing scope
-        current.emitDelay(poolIdx, 0);
+        // Push captured values (same pattern as buildLambda)
+        if (!nested.capturedVars.isEmpty()) {
+            for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
+                String varName = e.getKey();
+                if (isCaptured.contains(varName)) {
+                    int nameIdx = putConstant(varName);
+                    current.emitPushGlobal(nameIdx);
+                } else {
+                    Integer outerIdx = varIndex.get(varName);
+                    if (outerIdx != null)
+                        current.emitPushVar(outerIdx);
+                }
+            }
+        }
+        current.emitDelay(poolIdx, nested.capturedVars.size());
     }
 
     private void buildConst(Object value) {
@@ -841,10 +870,13 @@ public class IRBuilder {
     // ── Literals: list, map, tuple, range ──
 
     private void buildCons(ELNode.CONS node) {
-        // For delayed (lazy) sequences with a simple tail expression
-        // that has no free variables, compile as a thunk.
+        // For delayed (lazy) sequences with simple tail expressions,
+        // compile as a thunk. Free variable capture is handled by
+        // buildThunk. Complex tails fall back to AST trampoline because
+        // the resulting DelayCons.head()/tail() methods need dynamic
+        // method resolution which currently hangs.
         if (node.delay && !(node.tail instanceof ELNode.CONS)
-            && isSimpleExpression(node.tail)) {
+            && isSimpleThunkExpression(node.tail)) {
             build(node.head);           // eager head → value on stack
             buildThunk(node.tail);      // lazy tail → DelayEvalClosure on stack
             current.emitDelayCons();    // combine into DelayCons
@@ -861,16 +893,16 @@ public class IRBuilder {
         current.emitNewList(count);
     }
 
-    /** True if the expression contains only simple nodes (no free variables). */
-    private static boolean isSimpleExpression(ELNode node) {
+    /** True if the expression is simple enough for DELAY_CONS (no free vars
+     *  that would need dynamic .head()/.tail() method resolution). */
+    private static boolean isSimpleThunkExpression(ELNode node) {
         return node instanceof ELNode.NUMBER
             || node instanceof ELNode.STRINGVAL
             || node instanceof ELNode.CHARVAL
             || node.op == Token.TRUE
             || node.op == Token.FALSE
             || node.op == Token.NULL
-            || node.op == Token.NIL
-            || (node instanceof ELNode.Binary && node.op == Token.CONS);
+            || node.op == Token.NIL;
     }
 
     /**

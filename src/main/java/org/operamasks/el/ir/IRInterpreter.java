@@ -1276,9 +1276,8 @@ public class IRInterpreter {
 
         @Override
         public Object getValue(javax.el.ELContext elctx) {
-            Object[] args = new Object[thunk.captured.length];
-            System.arraycopy(thunk.captured, 0, args, 0, thunk.captured.length);
-            return new IRInterpreter(thunk.evalContext, thunk.function).execute(args);
+            return new IRInterpreter(thunk.evalContext, thunk.function)
+                .execute(null, thunk.captured);
         }
 
         @Override
