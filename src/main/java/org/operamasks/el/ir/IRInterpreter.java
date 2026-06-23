@@ -251,13 +251,6 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
-            case DELAY_CONS: {
-                Object tailThunk = pop();  // DelayEvalClosure
-                Object head = pop();      // raw value
-                push(elite.lang.Runtime.createDelayCons(head, tailThunk));
-                ip += 1;
-                break;
-            }
             case POP: {
                 pop();
                 ip += 1;
