@@ -833,9 +833,16 @@ public class IRBuilder {
     // ── Literals: list, map, tuple, range ──
 
     private void buildCons(ELNode.CONS node) {
-        // For delayed (lazy) sequences or dotted-pair tails, fall back to AST.
-        // The AST evaluator handles DelayCons and proper Cons cell
-        // construction.
+        // For delayed (lazy) sequences with a simple tail expression
+        // that has no free variables, compile as a thunk.
+        if (node.delay && !(node.tail instanceof ELNode.CONS)
+            && isSimpleExpression(node.tail)) {
+            build(node.head);           // eager head → value on stack
+            buildThunk(node.tail);      // lazy tail → DelayEvalClosure on stack
+            current.emitDelayCons();    // combine into DelayCons
+            return;
+        }
+        // For complex delayed chains or dotted-pair tails, fall back to AST.
         if (hasDelayOrDottedTail(node)) {
             buildTrampoline(node);
             return;
@@ -844,6 +851,18 @@ public class IRBuilder {
         int count = countCons(node);
         emitConsElements(node);
         current.emitNewList(count);
+    }
+
+    /** True if the expression contains only simple nodes (no free variables). */
+    private static boolean isSimpleExpression(ELNode node) {
+        return node instanceof ELNode.NUMBER
+            || node instanceof ELNode.STRINGVAL
+            || node instanceof ELNode.CHARVAL
+            || node.op == Token.TRUE
+            || node.op == Token.FALSE
+            || node.op == Token.NULL
+            || node.op == Token.NIL
+            || (node instanceof ELNode.Binary && node.op == Token.CONS);
     }
 
     /**

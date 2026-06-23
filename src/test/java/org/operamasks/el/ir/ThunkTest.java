@@ -224,4 +224,37 @@ class ThunkTest {
         assertEquals(2L, ((Number)result).longValue(),
             "without &: both args evaluated before call, n=2");
     }
+
+    // ── Phase 3: DelayCons ──
+
+    @Test
+    void simpleDelayCons() {
+        // Simplest possible delay cons: [1 : &[2]]
+        // The tail expression is a simple literal [2] — no free variables.
+        Object result = interpretProgram(
+            "define xs = [1 : &[2]]",
+            "xs.head()"
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "head of [1 : &[2]] should be 1");
+    }
+
+    // TODO: delayCons with free variable capture (e.g., from(n) => [n : &from(n+1)])
+    //       requires buildThunk to handle captured variables from enclosing scope.
+
+    @Test
+    void delayConsTailForcedOnlyOnce() {
+        // The tail thunk should be memoized — forcing it repeatedly
+        // should not re-evaluate.
+        Object result = interpretProgram(
+            "define n = 0",
+            "define inc() => n = n + 1",
+            "define xs = [1 : &[inc(), 3]]",
+            "xs.tail().head()",       // force first time → inc() → n=1
+            "xs.tail().head()",       // force again → cached, n stays 1
+            "n"
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "tail thunk memoized — inc() called only once");
+    }
 }

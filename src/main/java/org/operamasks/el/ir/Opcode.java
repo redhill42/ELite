@@ -150,6 +150,7 @@ public final class Opcode {
     // ── Thunk / lazy (0x76-0x77) ──
     public static final int DELAY         = 0x76;  // create DelayEvalClosure wrapping IRClosure thunk
     public static final int PUSH_VAR_RAW  = 0x77;  // push local without forcing lazy thunk
+    public static final int DELAY_CONS    = 0x78;  // pops tail thunk and head value → DelayCons(head, tail)
 
     // ── Function (0x80-0x8F) ──
     public static final int INVOKE        = 0x80;
@@ -303,6 +304,7 @@ public final class Opcode {
             case TABLE_SWITCH -> "TABLE_SWITCH";
             case DELAY -> "DELAY";
             case PUSH_VAR_RAW -> "PUSH_VAR_RAW";
+            case DELAY_CONS -> "DELAY_CONS";
             case INVOKE -> "INVOKE";
             case INVOKE_DYN -> "INVOKE_DYN";
             case INVOKE_TAIL -> "INVOKE_TAIL";

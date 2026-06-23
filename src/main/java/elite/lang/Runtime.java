@@ -19,9 +19,13 @@ package elite.lang;
 import javax.el.ELContext;
 import javax.el.ValueExpression;
 
+import elite.lang.Closure;
+import elite.lang.Seq;
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.ClosureObject;
+import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.MethodClosure;
+import org.operamasks.el.eval.seq.DelayCons;
 import org.operamasks.el.ir.IRClosure;
 import org.operamasks.el.ir.IRFormat;
 import org.operamasks.el.ir.IRFunction;
@@ -289,6 +293,16 @@ public final class Runtime {
     public static IRClosure createClosureById(ELContext elctx, int funcIdx, Object[] captured) {
         IRFunction fn = (IRFunction) funcPool.get()[funcIdx];
         return createClosure(elctx, fn, captured);
+    }
+
+    /**
+     * Create a lazy cons cell: head is an eager value, tail is a thunk
+     * (DelayEvalClosure) that is forced on first access.
+     */
+    public static Seq createDelayCons(Object head, Object tailThunk) {
+        return new DelayCons(
+            new org.operamasks.el.eval.closure.LiteralClosure(head),
+            (Closure) tailThunk);
     }
 
     // ── Locals / IncDec ──
