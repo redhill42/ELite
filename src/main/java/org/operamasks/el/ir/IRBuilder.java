@@ -58,7 +58,7 @@ public class IRBuilder {
 
     // ── Constant pool (maybe shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
-    private List<Object> constants = new ArrayList<>();
+    List<Object> constants = new ArrayList<>();
 
     // ── Compile-time class resolution ──
     // Mirrors ClassResolver: alias = simpleName→fqName (import foo.Bar);
@@ -744,11 +744,20 @@ public class IRBuilder {
 
             Integer funcIdx = resolveKnownFunction(id);
             if (funcIdx != null) {
-                // Direct call: build args, emit INVOKE_DIRECT
+                // Direct call: check paramFlags for lazy (&) params.
+                // Lazy params get compiled as thunks (DELAY), eager as normal.
+                IRFunction targetFn = (IRFunction) constants.get(funcIdx);
+                int[] pFlags = targetFn.paramFlags();
                 boolean prev = inTailPosition;
                 inTailPosition = false;
-                for (ELNode arg : node.args)
-                    build(arg);
+                for (int i = 0; i < node.args.length; i++) {
+                    if (pFlags != null && i < pFlags.length
+                        && (pFlags[i] & IRFunction.PARAM_LAZY) != 0) {
+                        buildThunk(node.args[i]);  // lazy → thunk
+                    } else {
+                        build(node.args[i]);       // eager → normal
+                    }
+                }
                 inTailPosition = prev;
                 current.emitInvokeDirect(funcIdx, node.args.length);
                 return;
@@ -1842,6 +1851,7 @@ public class IRBuilder {
             nested.currentFile = node.file;
         for (ELNode.DEFINE var : node.vars) {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
+            if (!var.immediate) flags |= IRFunction.PARAM_LAZY;
             nested.ensureVar(var.id, flags);
         }
 
@@ -2615,7 +2625,7 @@ public class IRBuilder {
     /**
      * Pre-compile a function definition and register it for direct calls.
      */
-    private static void registerDef(IRBuilder b, ELNode def, boolean optimize) {
+    static void registerDef(IRBuilder b, ELNode def, boolean optimize) {
         if (def instanceof ELNode.DEFINE d && d.expr instanceof ELNode.LAMBDA lam) {
             String name = lam.name != null ? lam.name : d.id;
             IRBuilder nested = new IRBuilder(b);  // share parent pool
@@ -2625,6 +2635,7 @@ public class IRBuilder {
             for (ELNode.DEFINE var : lam.vars) {
                 int flags = var.type != null ?
                             IRFunction.PARAM_EXPLICIT_TYPE : 0;
+                if (!var.immediate) flags |= IRFunction.PARAM_LAZY;
                 nested.ensureVar(var.id, flags);
             }
             // Run scope analysis to identify variables captured by inner

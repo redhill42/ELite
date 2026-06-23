@@ -147,6 +147,8 @@ public class IRFunction {
     public static final int PARAM_EXPLICIT_TYPE = 1;
     /** Parameter is captured by an inner closure — must be stored in evalContext. */
     public static final int PARAM_CAPTURED = 2;
+    /** Parameter is lazy (&param) — stores a DelayEvalClosure thunk in locals. */
+    public static final int PARAM_LAZY = 4;
 
     public int[] paramFlags() { return paramFlags; }
 

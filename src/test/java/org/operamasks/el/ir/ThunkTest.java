@@ -148,4 +148,80 @@ class ThunkTest {
         assertInstanceOf(DelayEvalClosure.class, result,
             "PUSH_VAR_RAW should NOT force — returns raw DelayEvalClosure");
     }
+
+    // ── Phase 2: Lazy function parameters via INVOKE_DIRECT ──
+
+    /** Compile and run a multi-statement program via IR. */
+    private Object interpretProgram(String... statements) {
+        String src = String.join("\n", statements);
+        var p = new Parser(src);
+        var prog = p.parse();
+        var defs = prog.getDefinitions();
+        var exps = prog.getExpressions();
+        // Merge defs into exps like ELProgram.evaluate() does
+        java.util.List<ELNode> all = new java.util.ArrayList<>();
+        if (defs != null) all.addAll(defs);
+        if (exps != null) all.addAll(exps);
+        ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(
+            defs, exps, null);
+        IRBuilder b = new IRBuilder(null, null, analysis);
+        for (ELNode def : defs != null ? defs : java.util.List.<ELNode>of())
+            IRBuilder.registerDef(b, def, true);
+        for (int i = 0; i < all.size() - 1; i++) {
+            b.build(all.get(i));
+            b.current.emitPop();
+        }
+        if (!all.isEmpty()) {
+            ELNode last = all.get(all.size() - 1);
+            b.build(last);
+            if (!IRBuilder.endsWithReturn(b))
+                b.current.emitReturn(IRFormat.T_INT);
+        }
+        IRFunction fn = b.finish("<program>", 0);
+        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
+        return interp.execute(null, null, true);
+    }
+
+    @Test
+    void lazyParamOnlyForcesTakenBranch() {
+        // conditional(true, &inc(), &inc()) — only the first inc() should execute.
+        // n starts at 0, only one inc() runs → n = 1.
+        Object result = interpretProgram(
+            "define conditional(test, &consequent, &alternate) { if (test) consequent; else alternate }",
+            "define n = 0",
+            "define inc() => n = n + 1",
+            "conditional(true, inc(), inc())",
+            "n"
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "only the taken branch should be forced");
+    }
+
+    @Test
+    void lazyParamElseBranchNotForced() {
+        // conditional(false, &inc(), &inc()) — only the else branch runs.
+        Object result = interpretProgram(
+            "define conditional(test, &consequent, &alternate) { if (test) consequent; else alternate }",
+            "define n = 0",
+            "define inc() => n = n + 1",
+            "conditional(false, inc(), inc())",
+            "n"
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "false branch: only alternate runs, n=1");
+    }
+
+    @Test
+    void eagerParamEvaluatedBeforeCall() {
+        // Without &, both inc() calls execute before conditional runs → n=2.
+        Object result = interpretProgram(
+            "define conditional(test, consequent, alternate) { if (test) consequent; else alternate }",
+            "define n = 0",
+            "define inc() => n = n + 1",
+            "conditional(true, inc(), inc())",
+            "n"
+        );
+        assertEquals(2L, ((Number)result).longValue(),
+            "without &: both args evaluated before call, n=2");
+    }
 }
