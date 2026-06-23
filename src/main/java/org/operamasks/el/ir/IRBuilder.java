@@ -372,6 +372,7 @@ public class IRBuilder {
         case Token.NEG:
         case Token.POS:
         case Token.BITNOT:
+        case Token.EMPTY:
             buildUnaryOp(node);
             break;
         case Token.CAT:
@@ -1139,6 +1140,7 @@ public class IRBuilder {
         case Token.USHR -> current.emitDynUShr();
         case Token.NEG -> current.emitDynNeg();
         case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
+        case Token.EMPTY -> current.emitDynEmpty();
         case Token.BITAND -> current.emitDynBitAnd();
         case Token.BITOR -> current.emitDynBitOr();
         case Token.XOR -> current.emitDynXor();

@@ -230,6 +230,10 @@ public class IREmitter {
         return emit1(DYNNEG, K_DYN, 0);
     }
 
+    public IREmitter emitDynEmpty() {
+        return emit1(DYNEMPTY, K_DYN, 0);
+    }
+
     public IREmitter emitDynPow() {
         return emit1(DYNPOW, K_DYN, 0);
     }

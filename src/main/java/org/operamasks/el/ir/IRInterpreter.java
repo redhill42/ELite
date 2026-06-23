@@ -516,7 +516,6 @@ public class IRInterpreter {
             case DYNMUL:
             case DYNDIV:
             case DYNREM:
-            case DYNNEG:
             case DYNPOW:
             case DYNCAT:
             case DYNSHL:
@@ -530,9 +529,16 @@ public class IRInterpreter {
             case DYNGE:
             case DYNAND:
             case DYNOR:
-            case DYNXOR:
-            case DYNNOT: {
-                push(dynamicOp(op));
+            case DYNXOR: {
+                push(dynamicBinaryOp(op));
+                ip += 1;
+                break;
+            }
+
+            case DYNNEG:
+            case DYNNOT:
+            case DYNEMPTY: {
+                push(dynamicUnaryOp(op));
                 ip += 1;
                 break;
             }
@@ -1196,17 +1202,7 @@ public class IRInterpreter {
 
     // ── Dynamic operation support ──
 
-    private Object dynamicOp(int irOpcode) {
-        // Unary negate: only one operand on stack
-        if (irOpcode == DYNNEG) {
-            Object val = pop();
-            return Runtime.dynNeg(elctx, val);
-        }
-        if (irOpcode == DYNNOT) {
-            Object val = pop();
-            return Runtime.dynBitNot(elctx, val);
-        }
-
+    private Object dynamicBinaryOp(int irOpcode) {
         // Delegate to Runtime for type-resolved arithmetic (shared with
         // bytecode path)
         Object rhs = pop();
@@ -1232,6 +1228,16 @@ public class IRInterpreter {
             case DYNOR -> Runtime.dynBitOr(elctx, lhs, rhs);
             case DYNXOR -> Runtime.dynXor(elctx, lhs, rhs);
             default -> { assert (false); yield null; }
+        };
+    }
+
+    private Object dynamicUnaryOp(int irOpcode) {
+        Object rhs = pop();
+        return switch (irOpcode) {
+            case DYNNEG -> Runtime.dynNeg(elctx, rhs);
+            case DYNNOT -> Runtime.dynBitNot(elctx, rhs);
+            case DYNEMPTY -> Runtime.dynEmpty(elctx, rhs);
+            default -> { assert(false); yield null; }
         };
     }
 

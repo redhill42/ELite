@@ -100,11 +100,12 @@ public final class Opcode {
     public static final int DYNSHR  = 0x42;
     public static final int DYNUSHR = 0x43;
     public static final int DYNNOT  = 0x44;
+    public static final int DYNEMPTY = 0x45;
 
-    // ── Unary (0x45-0x4F) ──
-    public static final int NOT = 0x45;
-    public static final int INC = 0x46;  // increment local variable
-    public static final int DEC = 0x47;  // decrement local variable
+    // ── Unary (0x46-0x4F) ──
+    public static final int NOT = 0x46;
+    public static final int INC = 0x47;  // increment local variable
+    public static final int DEC = 0x48;  // decrement local variable
 
     // ── Typed comparisons (0x50-0x63) ──
     public static final int IEQ = 0x50;
@@ -266,6 +267,7 @@ public final class Opcode {
             case DYNSHR -> "DYNSHR";
             case DYNUSHR -> "DYNUSHR";
             case DYNNOT -> "DYNNOT";
+            case DYNEMPTY -> "DYNEMPTY";
             case NOT -> "NOT";
             case INC -> "INC";
             case DEC -> "DEC";

@@ -453,8 +453,12 @@ public final class Runtime {
         return Builtin.__bitnot__(elctx, x);
     }
 
-    private static final ELNode.IN __IN__ = new ELNode.IN(-1, null, null, false);
+    private static final ELNode.EMPTY __EMPTY__ = new ELNode.EMPTY(-1, null);
+    public static Object dynEmpty(ELContext elctx, Object x) {
+        return __EMPTY__.getValue(elctx, x);
+    }
 
+    private static final ELNode.IN __IN__ = new ELNode.IN(-1, null, null, false);
     public static Object dynIn(ELContext elctx, Object coll, Object elem) {
         return __IN__.eval(elctx, elem, coll);
     }
