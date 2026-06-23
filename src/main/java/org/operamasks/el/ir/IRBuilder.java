@@ -16,13 +16,14 @@
 
 package org.operamasks.el.ir;
 
-import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.parser.DefaultVisitor;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.*;
 
 import static org.operamasks.el.ir.IRFormat.*;
@@ -38,7 +39,7 @@ import static org.operamasks.el.ir.Opcode.*;
  * the next block in memory. This ensures correctness regardless of block ID
  * order.
  */
-public class IRBuilder {
+public class IRBuilder extends ELNode.Visitor {
 
     // ── Block management (stored by ID, output in ID order) ──
     final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
@@ -79,8 +80,7 @@ public class IRBuilder {
     private final boolean debug;
     private String currentFile;       // source file name
     private int currentLine;          // line number of last built ELNode
-    private final List<Integer> pcLineTable = new ArrayList<>(); // [pc,
-    // line, ...]
+    private final List<Integer> pcLineTable = new ArrayList<>(); // [pc, line, ...]
 
     /**
      * Set the source file name for debug info (called before compilation).
@@ -90,7 +90,7 @@ public class IRBuilder {
     }
 
     // ── Scope analysis (from pre-pass) ──
-    private ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
+    private final ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
 
     /**
      * Variables in this scope that are captured by inner closures → use
@@ -111,8 +111,7 @@ public class IRBuilder {
     // When entering a control-flow scope ({...} block in if/while/for), we
     // save the current varIndex bindings for names that will be shadowed,
     // allocate new slots for the inner variables, and restore on scope exit.
-    private final Deque<Map<String, Integer>> savedVarBindings =
-            new ArrayDeque<>();
+    private final Deque<Map<String, Integer>> savedVarBindings = new ArrayDeque<>();
 
     private void enterControlScope() {
         savedVarBindings.push(new LinkedHashMap<>());
@@ -295,203 +294,22 @@ public class IRBuilder {
             }
         }
 
-        if (node instanceof ELNode.COMPOUND) {
-            buildCompound((ELNode.COMPOUND)node);
-            return;
-        }
-        if (node instanceof ELNode.Composite) {
-            buildComposite((ELNode.Composite)node);
-            return;
-        }
-        if (node instanceof ELNode.FOREACH) {
-            buildForEach((ELNode.FOREACH)node);
-            return;
-        }
-        if (node instanceof ELNode.CONST_MATCH) {
-            buildTrampoline(node);
-            return;
-        }
-        if (node instanceof ELNode.MATCH) {
-            buildTrampoline(node);
-            return;
-        }
+        node.accept(this);
+    }
 
-        switch (node.op) {
-        case Token.NUMBER:
-            buildNumber((ELNode.NUMBER)node);
-            break;
-        case Token.STRINGVAL, Token.LITERAL:
-            buildString(node);
-            break;
-        case Token.CHARVAL:
-            buildConst(((ELNode.CHARVAL)node).value);
-            break;
-        case Token.TRUE:
-            emitPushTrue();
-            break;
-        case Token.FALSE:
-            emitPushFalse();
-            break;
-        case Token.BOOLEANVAL:
-            if (((ELNode.BOOLEANVAL)node).value)
-                emitPushTrue();
-            else
-                emitPushFalse();
-            break;
-        case Token.NULL:
-            emitPushNull();
-            break;
-        case Token.SYMBOL:
-            buildConst(((ELNode.SYMBOL)node).value);
-            break;
-
-        case Token.IDENT:
-            buildIdent(((ELNode.IDENT)node).id);
-            break;
-        case Token.ACCESS:
-            buildAccess((ELNode.ACCESS)node);
-            break;
-        case Token.APPLY:
-            buildApply((ELNode.APPLY)node);
-            break;
-
-        case Token.ADD:
-        case Token.SUB:
-        case Token.MUL:
-        case Token.DIV:
-        case Token.REM:
-        case Token.POW:
-        case Token.BITOR:
-        case Token.BITAND:
-        case Token.XOR:
-        case Token.SHL:
-        case Token.SHR:
-        case Token.USHR:
-            buildBinaryOp(node);
-            break;
-        case Token.NEG:
-        case Token.POS:
-        case Token.BITNOT:
-        case Token.EMPTY:
-            buildUnaryOp(node);
-            break;
-        case Token.CAT:
-            buildCat(node);
-            break;
-
-        case Token.EQ:
-        case Token.NE:
-        case Token.LT:
-        case Token.LE:
-        case Token.GT:
-        case Token.GE:
-            buildComparison(node);
-            break;
-        case Token.IDEQ:
-        case Token.IDNE:
-            buildIdentityCmp((ELNode.Binary)node);
-            break;
-        case Token.AND:
-        case Token.OR:
-        case Token.NOT:
-            buildLogical(node);
-            break;
-
-        case Token.COND:
-            buildConditional((ELNode.COND)node);
-            break;
-        case Token.COALESCE:
-            buildCoalesce((ELNode.COALESCE)node);
-            break;
-
-        case Token.ASSIGN:
-            if (node instanceof ELNode.ASSIGNOP)
-                buildAssignOp((ELNode.ASSIGNOP)node);
-            else
-                buildAssign((ELNode.ASSIGN)node);
-            break;
-        case Token.DEFINE:
-            buildDefine((ELNode.DEFINE)node);
-            break;
-
-        case Token.EXPR:
-            if (node instanceof ELNode.EXPR)
-                buildExpr((ELNode.EXPR)node);
-            else
-                buildTrampoline(node);
-            break;
-
-        case Token.WHILE:
-            buildWhile((ELNode.WHILE)node);
-            break;
-        case Token.FOR:
-            if (node instanceof ELNode.FOR)
-                buildFor((ELNode.FOR)node);
-            else
-                buildTrampoline(node);
-            break;
-
-        case Token.BREAK:
-            buildBreak();
-            break;
-        case Token.CONTINUE:
-            buildContinue();
-            break;
-        case Token.THROW:
-            // ELNode.RETURN uses Token.THROW as its op (for Control.Return
-            // extends Control.Throw), but must be handled by buildReturn,
-            // not buildThrow.
-            if (node instanceof ELNode.RETURN)
-                buildReturn((ELNode.RETURN)node);
-            else
-                buildThrow((ELNode.THROW)node);
-            break;
-        case Token.TRY:
-            buildTry((ELNode.TRY)node);
-            break;
-        case Token.LAMBDA:
-            buildLambda((ELNode.LAMBDA)node);
-            break;
-
-        case Token.CONS:
-            buildCons((ELNode.CONS)node);
-            break;
-        case Token.MAP:
-            buildMap((ELNode.MAP)node);
-            break;
-        case Token.TUPLE:
-            buildTuple((ELNode.TUPLE)node);
-            break;
-        case Token.RANGE:
-            buildRange((ELNode.RANGE)node);
-            break;
-        case Token.IN:
-            buildContains(node);
-            break;
-        case Token.INSTANCEOF:
-            buildInstanceOf((ELNode.INSTANCEOF)node);
-            break;
-        case Token.NIL:
-            current.emitNewList(0);
-            break;  // [] = empty list
-        case Token.ARRAY:
-            buildTrampoline(node);
-            break;  // complex, rare
-        case Token.INC:
-            buildIncDec((ELNode.INC)node);
-            break;
-        case Token.DEC:
-            buildIncDec((ELNode.DEC)node);
-            break;
-
-        default:
-            buildTrampoline(node);
-        }
+    /**
+     * Build a node in tail position (preserves current tail status).
+     */
+    private void buildTail(ELNode node) {
+        boolean prev = inTailPosition;
+        inTailPosition = true;
+        build(node);
+        inTailPosition = prev;
     }
 
     // ── Literals ──
 
-    private void buildNumber(ELNode.NUMBER node) {
+    public void visit(ELNode.NUMBER node) {
         Number n = node.value;
         if (n instanceof Integer || n instanceof Short || n instanceof Byte) {
             emitPushConst(T_INT, n.intValue());
@@ -508,69 +326,42 @@ public class IRBuilder {
         }
     }
 
-    private void buildString(ELNode node) {
-        if (node instanceof ELNode.REGEXP n)
-            emitPushConst(K_NONE, n.value);
-        else if (node instanceof ELNode.STRINGVAL n)
-            emitPushConst(T_STRING, n.value);
-        else if (node instanceof ELNode.LITERAL n)
-            emitPushConst(T_STRING, n.value);
+    public void visit(ELNode.REGEXP node) {
+        emitPushConst(K_NONE, node.value);
     }
 
-    /**
-     * Compile an expression as a lazy thunk. The expression is compiled into
-     * a zero-parameter IRFunction, and a DELAY opcode is emitted to create
-     * a DelayEvalClosure wrapping it at runtime.
-     */
-    void buildThunk(ELNode expr) {
-        IRBuilder nested = new IRBuilder(this);  // share parent pool
-        nested.inTailPosition = true;
+    public void visit(ELNode.STRINGVAL node) {
+        emitPushConst(T_STRING, node.value);
+    }
 
-        // Scan the expression for free variables from the enclosing scope.
-        // A thunk is a zero-param lambda — capture semantics are identical.
-        expr.accept(new org.operamasks.el.parser.DefaultVisitor() {
-            java.util.Set<String> seen = new java.util.HashSet<>();
-            public void visit(ELNode.IDENT e) {
-                if (seen.contains(e.id)
-                    || nested.varIndex.containsKey(e.id)
-                    || !varIndex.containsKey(e.id))
-                    return;
-                nested.capturedVars.put(e.id, nested.capturedVars.size());
-                nested.ensureVar(e.id, 0);
-                seen.add(e.id);
-            }
-        });
+    public void visit(ELNode.LITERAL node) {
+        emitPushConst(T_STRING, node.value);
+    }
 
-        nested.build(expr);
-        if (!endsWithReturn(nested)) {
-            int t = typeIdFromNode(expr);
-            nested.current.emitReturn(t >= 0 ? t : IRFormat.T_INT);
-        }
-        IRFunction rawFn = nested.finish("<thunk>", 0);
-        int poolIdx = putConstant(rawFn);
+    public void visit(ELNode.CHARVAL node) {
+        buildConst(node.value);
+    }
 
-        // Push captured values (same pattern as buildLambda)
-        if (!nested.capturedVars.isEmpty()) {
-            for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
-                String varName = e.getKey();
-                if (isCaptured.contains(varName)) {
-                    int nameIdx = putConstant(varName);
-                    current.emitPushGlobal(nameIdx);
-                } else {
-                    Integer outerIdx = varIndex.get(varName);
-                    if (outerIdx != null)
-                        current.emitPushVar(outerIdx);
-                }
-            }
-        }
-        current.emitDelay(poolIdx, nested.capturedVars.size());
+    public void visit(ELNode.BOOLEANVAL node) {
+        if (node.value)
+            emitPushTrue();
+        else
+            emitPushFalse();
+    }
+
+    public void visit(ELNode.NULL node) {
+        emitPushNull();
+    }
+
+    public void visit(ELNode.SYMBOL node) {
+        buildConst(node.value);
     }
 
     private void buildConst(Object value) {
         emitPushConst(K_NONE, value);
     }
 
-    private void buildAccess(ELNode.ACCESS node) {
+    public void visit(ELNode.ACCESS node) {
         // For simple keys (identifiers, numbers, strings), use native
         // LOAD_PROPERTY
         if (isSimpleKey(node.index)) {
@@ -585,8 +376,7 @@ public class IRBuilder {
             if (javaClass != null && fieldName != null) {
                 // 1) Check for JavaBean getter: getXxx() or isXxx() (primary
                 // Java interface)
-                java.lang.reflect.Method getter = resolveGetter(javaClass,
-                        fieldName);
+                Method getter = resolveGetter(javaClass, fieldName);
                 if (getter != null) {
                     build(node.right); // push base
                     int methodIdx = putConstant(getter);
@@ -596,9 +386,8 @@ public class IRBuilder {
 
                 // 2) Check for public field (fallback)
                 try {
-                    java.lang.reflect.Field field =
-                            javaClass.getField(fieldName);
-                    if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
+                    Field field = javaClass.getField(fieldName);
+                    if (Modifier.isPublic(field.getModifiers())) {
                         build(node.right); // base
                         int nameIdx = putConstant(fieldName);
                         current.emitLoadField(nameIdx);
@@ -614,7 +403,7 @@ public class IRBuilder {
             build(node.index);   // key
             current.emitLoadProperty();
         } else {
-            buildTrampoline(node);
+            buildTrampoline(node); // FIXME
         }
     }
 
@@ -622,8 +411,7 @@ public class IRBuilder {
      * Resolve a JavaBean getter method (getXxx or isXxx) for the given
      * property name.
      */
-    static java.lang.reflect.Method resolveGetter(Class<?> cls,
-                                                  String propName) {
+    static Method resolveGetter(Class<?> cls, String propName) {
         String suffix =
                 Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
         // Try getXxx()
@@ -643,11 +431,11 @@ public class IRBuilder {
      * Resolve a public method by name and argument count. Returns null if
      * ambiguous.
      */
-    static java.lang.reflect.Method resolveMethod(Class<?> cls, String name,
-                                                  int argCount) {
-        java.lang.reflect.Method found = null;
-        for (java.lang.reflect.Method m : cls.getMethods()) {
-            if (m.getName().equals(name) && m.getParameterCount() == argCount && java.lang.reflect.Modifier.isPublic(m.getModifiers())) {
+    static Method resolveMethod(Class<?> cls, String name, int argCount) {
+        Method found = null;
+        for (Method m : cls.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == argCount &&
+                Modifier.isPublic(m.getModifiers())) {
                 if (found != null)
                     return null; // ambiguous overload
                 found = m;
@@ -659,8 +447,7 @@ public class IRBuilder {
     /**
      * Resolve a JavaBean setter method (setXxx) for the given property name.
      */
-    static java.lang.reflect.Method resolveSetter(Class<?> cls,
-                                                  String propName) {
+    static Method resolveSetter(Class<?> cls, String propName) {
         String suffix =
                 Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
         try {
@@ -679,7 +466,7 @@ public class IRBuilder {
     /**
      * Resolve a Type to a concrete Java Class, or null if unknown.
      */
-    private static java.lang.Class<?> resolveJavaClass(org.operamasks.el.types.Type type) {
+    private static Class<?> resolveJavaClass(org.operamasks.el.types.Type type) {
         if (type instanceof org.operamasks.el.types.ClassType ct) {
             return ct.javaClass;
         }
@@ -708,17 +495,17 @@ public class IRBuilder {
     }
 
     // ── Identifiers ──
-    private void buildIdent(String id) {
+    public void visit(ELNode.IDENT node) {
         // 1) Captured variable: must go through evaluation context
         //    (both in the enclosing scope and inside closures).
-        if (isCaptured.contains(id)) {
-            int nameIdx = putConstant(id);
+        if (isCaptured.contains(node.id)) {
+            int nameIdx = putConstant(node.id);
             current.emitPushGlobal(nameIdx);
             return;
         }
 
         // 2) Check local varIndex (non-captured locals + params)
-        Integer idx = varIndex.get(id);
+        Integer idx = varIndex.get(node.id);
         if (idx != null) {
             current.emitPushVar(idx);
             return;
@@ -727,19 +514,19 @@ public class IRBuilder {
         // 3) Free variable from enclosing scope, NOT captured by inner closures
         //    (capture by value — push from enclosing local slot at closure
         //    creation)
-        if (parent != null && parent.varIndex.containsKey(id) &&
-            !parent.isCaptured.contains(id)) {
-            if (!capturedVars.containsKey(id)) {
-                capturedVars.put(id, capturedVars.size());
-                ensureVar(id, 0);
+        if (parent != null && parent.varIndex.containsKey(node.id) &&
+            !parent.isCaptured.contains(node.id)) {
+            if (!capturedVars.containsKey(node.id)) {
+                capturedVars.put(node.id, capturedVars.size());
+                ensureVar(node.id, 0);
             }
-            idx = varIndex.get(id);
+            idx = varIndex.get(node.id);
             current.emitPushVar(idx);
             return;
         }
 
         // 4) Global fallback — resolve by name in evaluation context
-        int nameIdx = putConstant(id);
+        int nameIdx = putConstant(node.id);
         current.emitPushGlobal(nameIdx);
     }
 
@@ -758,7 +545,7 @@ public class IRBuilder {
     }
 
     // ── Apply ──
-    private void buildApply(ELNode.APPLY node) {
+    public void visit(ELNode.APPLY node) {
         if (node.right instanceof ELNode.IDENT) {
             String id = ((ELNode.IDENT)node.right).id;
 
@@ -773,9 +560,9 @@ public class IRBuilder {
             }
 
             // Builtin.delay(expr): compile the argument as a thunk and
-            // return the DelayEvalClosure directly without calling delay().
-            if ("delay".equals(id) && node.args.length == 1
-                && resolveKnownFunction(id) == null) {
+            // return the Thunk directly without calling delay().
+            if ("delay".equals(id) && node.args.length == 1 &&
+                resolveKnownFunction(id) == null) {
                 buildThunk(node.args[0]);
                 return;
             }
@@ -868,9 +655,58 @@ public class IRBuilder {
         current.emitInvokeDyn(node.args.length);
     }
 
+    /**
+     * Compile an expression as a lazy thunk. The expression is compiled into
+     * a zero-parameter IRFunction, and a DELAY opcode is emitted to create
+     * a Thunk wrapping it at runtime.
+     */
+    void buildThunk(ELNode expr) {
+        IRBuilder nested = new IRBuilder(this);  // share parent pool
+        nested.inTailPosition = true;
+
+        // Scan the expression for free variables from the enclosing scope.
+        // A thunk is a zero-param lambda — capture semantics are identical.
+        expr.accept(new DefaultVisitor() {
+            final java.util.Set<String> seen = new java.util.HashSet<>();
+            public void visit(ELNode.IDENT e) {
+                if (seen.contains(e.id)
+                    || nested.varIndex.containsKey(e.id)
+                    || !varIndex.containsKey(e.id))
+                    return;
+                nested.capturedVars.put(e.id, nested.capturedVars.size());
+                nested.ensureVar(e.id, 0);
+                seen.add(e.id);
+            }
+        });
+
+        nested.build(expr);
+        if (!endsWithReturn(nested)) {
+            int t = typeIdFromNode(expr);
+            nested.current.emitReturn(t >= 0 ? t : IRFormat.T_INT);
+        }
+        IRFunction rawFn = nested.finish("<thunk>", 0);
+        int poolIdx = putConstant(rawFn);
+
+        // Push captured values (same pattern as buildLambda)
+        if (!nested.capturedVars.isEmpty()) {
+            for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
+                String varName = e.getKey();
+                if (isCaptured.contains(varName)) {
+                    int nameIdx = putConstant(varName);
+                    current.emitPushGlobal(nameIdx);
+                } else {
+                    Integer outerIdx = varIndex.get(varName);
+                    if (outerIdx != null)
+                        current.emitPushVar(outerIdx);
+                }
+            }
+        }
+        current.emitDelay(poolIdx, nested.capturedVars.size());
+    }
+
     // ── Literals: list, map, tuple, range ──
 
-    private void buildCons(ELNode.CONS node) {
+    public void visit(ELNode.CONS node) {
         // For delayed (lazy) sequences or dotted-pair tails, fall back to AST.
         // The AST evaluator handles DelayCons and proper Cons cell construction.
         if (hasDelayOrDottedTail(node)) {
@@ -881,6 +717,10 @@ public class IRBuilder {
         int count = countCons(node);
         emitConsElements(node);
         current.emitNewList(count);
+    }
+
+    public void visit(ELNode.NIL node) {
+        current.emitNewList(0);
     }
 
     /**
@@ -917,7 +757,7 @@ public class IRBuilder {
         }
     }
 
-    private void buildMap(ELNode.MAP node) {
+    public void visit(ELNode.MAP node) {
         // Emit key-value pairs: key1, val1, key2, val2, ...
         for (int i = 0; i < node.keys.length; i++) {
             build(node.keys[i]);
@@ -926,13 +766,13 @@ public class IRBuilder {
         current.emitNewMap(node.keys.length);
     }
 
-    private void buildTuple(ELNode.TUPLE node) {
+    public void visit(ELNode.TUPLE node) {
         for (ELNode e : node.elems)
             build(e);
         current.emitNewTuple(node.elems.length);
     }
 
-    private void buildRange(ELNode.RANGE node) {
+    public void visit(ELNode.RANGE node) {
         build(node.begin);
         build(node.next);
         if (node.exclude && node.end != null) {
@@ -946,41 +786,52 @@ public class IRBuilder {
         current.emitNewRange();
     }
 
-    private void buildInstanceOf(ELNode.INSTANCEOF node) {
+    public void visit(ELNode.INSTANCEOF node) {
         build(node.right);  // evaluate the expression
         // Put type name in constant pool, emit INSTANCEOF trampoline
         int typeIdx = putConstant(node.type);
         current.emit2(TRAMPOLINE, K_DYN, typeIdx, node.negative ? 1 : 0);
     }
 
-    private void buildContains(ELNode node) {
-        if (node instanceof ELNode.IN in) {
-            build(in.right);  // container
-            build(in.left);   // element
-            current.emitDynIn();
-            if (in.negative) {
-                current.emitNot();
-            }
-        }
+    public void visit(ELNode.IN node) {
+        build(node.right);  // container
+        build(node.left);   // element
+        current.emitDynIn();
+        if (node.negative)
+            current.emitNot();
     }
 
     // ── Binary arithmetic ──
-    private void buildBinaryOp(ELNode node) {
-        if (!(node instanceof ELNode.Binary bin)) {
-            buildTrampoline(node);
-            return;
-        }
 
+    public void visit(ELNode.ADD node) { buildBinaryOp(node); }
+    public void visit(ELNode.SUB node) { buildBinaryOp(node); }
+    public void visit(ELNode.MUL node) { buildBinaryOp(node); }
+    public void visit(ELNode.DIV node) {
+        if (node.op == Token.DIV)
+            buildBinaryOp(node);
+        else
+            buildTrampoline(node); // FIXME
+    }
+    public void visit(ELNode.REM node)    { buildBinaryOp(node); }
+    public void visit(ELNode.POW node)    { buildBinaryOp(node); }
+    public void visit(ELNode.BITOR node)  { buildBinaryOp(node); }
+    public void visit(ELNode.BITAND node) { buildBinaryOp(node); }
+    public void visit(ELNode.XOR node)    { buildBinaryOp(node); }
+    public void visit(ELNode.SHL node)    { buildBinaryOp(node); }
+    public void visit(ELNode.SHR node)    { buildBinaryOp(node); }
+    public void visit(ELNode.USHR node)   { buildBinaryOp(node); }
+
+    private void buildBinaryOp(ELNode.Binary node) {
         boolean prev = inTailPosition;
         inTailPosition = false; // sub-expressions of binary ops are NOT in
         // tail position
-        build(bin.left);
-        build(bin.right);
+        build(node.left);
+        build(node.right);
         inTailPosition = prev;
 
-        int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
-        if (l >= 0 && r >= 0 && !isNonNumericClassType(bin.left) &&
-            !isNonNumericClassType(bin.right))
+        int l = typeIdFromNode(node.left), r = typeIdFromNode(node.right);
+        if (l >= 0 && r >= 0 && !isNonNumericClassType(node.left) &&
+            !isNonNumericClassType(node.right))
             emitTypedOp(node.op, widerType(l, r));
         else
             emitDynamicOp(node.op);
@@ -994,16 +845,31 @@ public class IRBuilder {
                !String.class.isAssignableFrom(ct.javaClass);
     }
 
+    public void visit(ELNode.NEG node)    { buildUnaryOp(node); }
+    public void visit(ELNode.POS node)    { /* nop */ }
+    public void visit(ELNode.BITNOT node) { buildUnaryOp(node); }
+    public void visit(ELNode.EMPTY node)  { buildUnaryOp(node); }
+
+    private void buildUnaryOp(ELNode.Unary node) {
+        boolean prev = inTailPosition;
+        inTailPosition = false;
+        build(node.right);
+        inTailPosition = prev;
+        emitDynamicOp(node.op);
+    }
+
+    public void visit(ELNode.INC node) {
+        buildIncDec(node, node.right, true, node.is_preincrement);
+    }
+
+    public void visit(ELNode.DEC node) {
+        buildIncDec(node, node.right, false, node.is_preincrement);
+    }
+
     /**
      * Expand ++x / x++ / --x / x-- for local variables.
      */
-    private void buildIncDec(ELNode node) {
-        boolean isInc = node.op == Token.INC;
-        boolean isPre = node instanceof ELNode.INC inc ? inc.is_preincrement
-                                                       :
-                        ((ELNode.DEC)node).is_preincrement;
-        ELNode target = ((ELNode.Unary)node).right;
-
+    private void buildIncDec(ELNode node, ELNode target, boolean isInc, boolean isPre) {
         if (target instanceof ELNode.IDENT ident) {
             Integer idx = varIndex.get(ident.id);
             if (idx != null && !isCaptured.contains(ident.id)) {
@@ -1044,33 +910,13 @@ public class IRBuilder {
         buildTrampoline(node);
     }
 
-    private void buildUnaryOp(ELNode node) {
-        if (node instanceof ELNode.Unary un) {
-            boolean prev = inTailPosition;
-            inTailPosition = false;
-            build(un.right);
-            inTailPosition = prev;
-            emitDynamicOp(node.op);
-        } else
-            buildTrampoline(node);
-    }
-
-    private void buildCat(ELNode node) {
-        if (node instanceof ELNode.Binary bin) {
-            // If both sides are strings, use native CAT; otherwise trampoline
-            int lt = typeIdFromNode(bin.left), rt = typeIdFromNode(bin.right);
-            if (lt == T_STRING && rt == T_STRING) {
-                boolean prev = inTailPosition;
-                inTailPosition = false;
-                build(bin.left);
-                build(bin.right);
-                inTailPosition = prev;
-                current.emitDynCat();
-            } else {
-                buildTrampoline(node);
-            }
-        } else
-            buildTrampoline(node);
+    public void visit(ELNode.CAT node) {
+        boolean prev = inTailPosition;
+        inTailPosition = false;
+        build(node.left);
+        build(node.right);
+        inTailPosition = prev;
+        current.emitDynCat();
     }
 
     private void emitTypedOp(int op, int t) {
@@ -1138,33 +984,33 @@ public class IRBuilder {
         case Token.SHL -> current.emitDynShl();
         case Token.SHR -> current.emitDynShr();
         case Token.USHR -> current.emitDynUShr();
-        case Token.NEG -> current.emitDynNeg();
-        case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
-        case Token.EMPTY -> current.emitDynEmpty();
         case Token.BITAND -> current.emitDynBitAnd();
         case Token.BITOR -> current.emitDynBitOr();
         case Token.XOR -> current.emitDynXor();
         case Token.BITNOT -> current.emitDynBitNot();
+        case Token.NEG -> current.emitDynNeg();
+        case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
+        case Token.EMPTY -> current.emitDynEmpty();
         default ->
                 throw new UnsupportedOperationException("Unsupported " +
                                                         "dynamic op: " + op);
         }
     }
 
-    // Shortcut for 'current' in emitter methods
-
     // ── Comparisons ──
-    private void buildComparison(ELNode node) {
-        if (!(node instanceof ELNode.Binary bin)) {
-            buildTrampoline(node);
-            return;
-        }
+    public void visit(ELNode.EQ node) { buildComparison(node); }
+    public void visit(ELNode.NE node) { buildComparison(node); }
+    public void visit(ELNode.LT node) { buildComparison(node); }
+    public void visit(ELNode.LE node) { buildComparison(node); }
+    public void visit(ELNode.GT node) { buildComparison(node); }
+    public void visit(ELNode.GE node) { buildComparison(node); }
 
-        int l = typeIdFromNode(bin.left), r = typeIdFromNode(bin.right);
+    private void buildComparison(ELNode.Binary node) {
+        int l = typeIdFromNode(node.left), r = typeIdFromNode(node.right);
         boolean prev = inTailPosition;
         inTailPosition = false;
-        build(bin.left);
-        build(bin.right);
+        build(node.left);
+        build(node.right);
         inTailPosition = prev;
         if (l >= 0 && r >= 0)
             emitTypedCmp(node.op, widerType(l, r));
@@ -1237,69 +1083,78 @@ public class IRBuilder {
                 current.emitDynGe();
             }
         }
-        default -> current.emitDynEq();
+        default -> throw new UnsupportedOperationException();
         }
     }
 
     private void emitDynamicCmp(int op) {
         switch (op) {
         case Token.EQ -> current.emitDynEq();
-        case Token.NE -> {
-            current.emitDynEq();
-            current.emitNot();
-        }
+        case Token.NE -> current.emitDynNe();
         case Token.LT -> current.emitDynLt();
         case Token.LE -> current.emitDynLe();
-        case Token.GT -> {
-            current.emitDynLe();
-            current.emitNot();
+        case Token.GT -> current.emitDynGt();
+        case Token.GE -> current.emitDynGe();
+        default -> throw new UnsupportedOperationException();
         }
-        case Token.GE -> {
-            current.emitDynLt();
-            current.emitNot();
-        }
-        default -> current.emitDynEq();
-        }
+    }
+
+    // ── Identity comparison (=== / !==) ──
+    public void visit(ELNode.IDEQ node) { buildIdentityCmp(node); }
+    public void visit(ELNode.IDNE node) { buildIdentityCmp(node); }
+
+    private void buildIdentityCmp(ELNode.Binary node) {
+        boolean prev = inTailPosition;
+        inTailPosition = false;
+        build(node.left);
+        build(node.right);
+        inTailPosition = prev;
+        if (node.op == Token.IDNE)
+            current.emitIdNe();
+        else
+            current.emitIdEq();
     }
 
     // ── Logical AND/OR/NOT ──
-    private void buildLogical(ELNode node) {
-        if (node.op == Token.NOT) {
-            build(((ELNode.Unary)node).right);
-            current.emitNot();
-            return;
-        }
 
-        ELNode.Binary bin = (ELNode.Binary)node;
+    public void visit(ELNode.AND node) {
         int contB = allocBlockId(), endB = allocBlockId();
-        if (node.op == Token.AND) {
-            build(bin.left);
-            current.emitDup();
-            current.emitJumpIfFalse(endB);
-            current.emitPop();
-            build(bin.right);
-            current.emitJump(contB);
-            startBlock(endB);
-            current.emitPop();
-            emitPushFalse();
-            current.emitJump(contB);
-        } else {
-            build(bin.left);
-            current.emitDup();
-            current.emitJumpIfTrue(endB);
-            current.emitPop();
-            build(bin.right);
-            current.emitJump(contB);
-            startBlock(endB);
-            current.emitPop();
-            emitPushTrue();
-            current.emitJump(contB);
-        }
+        build(node.left);
+        current.emitDup();
+        current.emitJumpIfFalse(endB);
+        current.emitPop();
+        build(node.right);
+        current.emitJump(contB);
+        startBlock(endB);
+        current.emitPop();
+        emitPushFalse();
+        current.emitJump(contB);
         startBlock(contB);
     }
 
+
+    public void visit(ELNode.OR node) {
+        int contB = allocBlockId(), endB = allocBlockId();
+        build(node.left);
+        current.emitDup();
+        current.emitJumpIfTrue(endB);
+        current.emitPop();
+        build(node.right);
+        current.emitJump(contB);
+        startBlock(endB);
+        current.emitPop();
+        emitPushTrue();
+        current.emitJump(contB);
+        startBlock(contB);
+    }
+
+    public void visit(ELNode.NOT node) {
+        build(node.right);
+        current.emitNot();
+    }
+
     // ── Conditional (if/else / ?:) ──
-    private void buildConditional(ELNode.COND node) {
+    public void visit(ELNode.COND node) {
         int thenB = allocBlockId();
         int elseB = allocBlockId();
         int mergeB = allocBlockId();
@@ -1339,7 +1194,7 @@ public class IRBuilder {
     private int runningPc;
 
     // ── Coalesce ──
-    private void buildCoalesce(ELNode.COALESCE node) {
+    public void visit(ELNode.COALESCE node) {
         int keepB = allocBlockId();
         int nullB = allocBlockId();
         int mergeB = allocBlockId();
@@ -1360,21 +1215,14 @@ public class IRBuilder {
         startBlock(mergeB);
     }
 
-    // ── Identity comparison (=== / !==) ──
-    private void buildIdentityCmp(ELNode.Binary node) {
-        boolean prev = inTailPosition;
-        inTailPosition = false;
-        build(node.left);
-        build(node.right);
-        inTailPosition = prev;
-        if (node.op == Token.IDNE)
-            current.emitIdNe();
+    public void visit(ELNode.ASSIGN node) {
+        if (node instanceof ELNode.ASSIGNOP)
+            buildAssignOp((ELNode.ASSIGNOP)node);
         else
-            current.emitIdEq();
+            buildAssign(node);
     }
 
     // ── Compound assignment (+=, -=, etc.) ──
-    // 在 IR 层面展开为 x = x op y，不依赖 AST 节点结构
     private void buildAssignOp(ELNode.ASSIGNOP node) {
         if (node.left instanceof ELNode.IDENT ident) {
             // Build: left-value op right-value, then store back
@@ -1450,8 +1298,7 @@ public class IRBuilder {
             if (javaClass != null && fieldName != null) {
                 // 1) Check for JavaBean setter: setXxx(type) (primary Java
                 // interface)
-                java.lang.reflect.Method setter = resolveSetter(javaClass,
-                        fieldName);
+                Method setter = resolveSetter(javaClass, fieldName);
                 if (setter != null) {
                     build(access.right); // base below value: [value, base]
                     int methodIdx = putConstant(setter);
@@ -1461,9 +1308,9 @@ public class IRBuilder {
 
                 // 2) Check for public field (fallback)
                 try {
-                    java.lang.reflect.Field field =
-                            javaClass.getField(fieldName);
-                    if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
+                    Field field =
+                        javaClass.getField(fieldName);
+                    if (Modifier.isPublic(field.getModifiers())) {
                         build(access.right); // base below value: [value, base]
                         int nameIdx = putConstant(fieldName);
                         current.emitStoreField(nameIdx);
@@ -1478,7 +1325,7 @@ public class IRBuilder {
             buildTrampoline(node);
     }
 
-    private void buildDefine(ELNode.DEFINE node) {
+    public void visit(ELNode.DEFINE node) {
         if (node.expr != null) {
             // @data constructors (CLASSDEF) have lazy fields (&tail)
             // that must be wrapped in EvalClosure by AST.
@@ -1591,7 +1438,7 @@ public class IRBuilder {
         }
     }
 
-    private void buildExpr(ELNode.EXPR node) {
+    public void visit(ELNode.EXPR node) {
         build(node.right);
     }
 
@@ -1601,7 +1448,7 @@ public class IRBuilder {
      * toString().
      * Uses DYNCAT chain to concatenate elements with type coercion.
      */
-    private void buildComposite(ELNode.Composite node) {
+    public void visit(ELNode.Composite node) {
         if (node.elems.length == 0) {
             emitPushConst(T_STRING, "");
             return;
@@ -1613,7 +1460,7 @@ public class IRBuilder {
         }
     }
 
-    private void buildCompound(ELNode.COMPOUND node) {
+    public void visit(ELNode.COMPOUND node) {
         if (node.exps.length == 0)
             emitPushNull();
         for (int i = 0; i < node.exps.length - 1; i++) {
@@ -1623,18 +1470,8 @@ public class IRBuilder {
         buildTail(node.exps[node.exps.length - 1]);
     }
 
-    /**
-     * Build a node in tail position (preserves current tail status).
-     */
-    private void buildTail(ELNode node) {
-        boolean prev = inTailPosition;
-        inTailPosition = true;
-        build(node);
-        inTailPosition = prev;
-    }
-
     // ── While ──
-    private void buildWhile(ELNode.WHILE node) {
+    public void visit(ELNode.WHILE node) {
         int header = allocBlockId();
         int body = allocBlockId();
         int exit = allocBlockId();
@@ -1662,7 +1499,7 @@ public class IRBuilder {
     }
 
     // ── For ──
-    private void buildFor(ELNode.FOR node) {
+    public void visit(ELNode.FOR node) {
         if (node.init != null)
             for (ELNode e : node.init) {
                 build(e);
@@ -1703,7 +1540,7 @@ public class IRBuilder {
         loopStack.pop();
     }
 
-    private void buildForEach(ELNode.FOREACH node) {
+    public void visit(ELNode.FOREACH node) {
         // Optimize: simple integer ranges use indexed loop instead of iterator
         if (canOptimizeRange(node)) {
             buildOptimizedRangeFor(node);
@@ -1719,7 +1556,7 @@ public class IRBuilder {
 
     /**
      * Check if the for-each iterates over a simple integer range [start.
-     * .end] or [start..<end).
+     * .end] or [start..&lt;end].
      */
     private static boolean canOptimizeRange(ELNode.FOREACH node) {
         if (node.var == null || node.index != null)
@@ -1800,15 +1637,15 @@ public class IRBuilder {
     }
 
     // ── Break / Continue / Return ──
-    private void buildBreak() {
+    public void visit(ELNode.BREAK node) {
         current.emitJump(loopStack.peek().breakBlock());
     }
 
-    private void buildContinue() {
+    public void visit(ELNode.CONTINUE node) {
         current.emitJump(loopStack.peek().continueBlock());
     }
 
-    private void buildReturn(ELNode.RETURN node) {
+    public void visit(ELNode.RETURN node) {
         if (node.right != null) {
             build(node.right);
             int t = typeIdFromNode(node.right);
@@ -1817,12 +1654,12 @@ public class IRBuilder {
             current.emitReturnVoid();
     }
 
-    private void buildThrow(ELNode.THROW node) {
+    public void visit(ELNode.THROW node) {
         build(node.cause);
         current.emitThrow();
     }
 
-    private void buildTry(ELNode.TRY node) {
+    public void visit(ELNode.TRY node) {
         // Compile try body, catch handlers, and finally block as nested IR
         // functions.
         // Bytecode compiler uses these to generate JVM exception tables.
@@ -1874,7 +1711,7 @@ public class IRBuilder {
     }
 
     // ── Lambda ──
-    private void buildLambda(ELNode.LAMBDA node) {
+    public void visit(ELNode.LAMBDA node) {
         // Compute scope analysis for this lambda: determine which variables
         // it captures from the enclosing scope and whether they are mutated.
         Set<String> lambdaFreeVars = new HashSet<>();
@@ -1934,9 +1771,9 @@ public class IRBuilder {
             nested.current.emitReturn(t >= 0 ? t : T_INT);
         }
 
-        IRFunction rawFn = nested.finish(node.name != null ? node.name :
-                                         "lambda", node.vars.length,
-                nested.capturedVars);
+        IRFunction rawFn = nested.finish(
+            node.name != null ? node.name : "lambda",
+            node.vars.length, nested.capturedVars);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
         // Register this function in the enclosing scope for direct calls.
@@ -2091,6 +1928,12 @@ public class IRBuilder {
     }
 
     // ── Trampoline ──
+
+    public void visitNode(ELNode node) {
+        // Default fallback.
+        buildTrampoline(node);
+    }
+
     private void buildTrampoline(ELNode node) {
         int poolIdx = putConstant(node);
         current.emit2(TRAMPOLINE, K_DYN, poolIdx, 0);
@@ -2211,7 +2054,8 @@ public class IRBuilder {
         }
         node.body.accept(new org.operamasks.el.parser.DefaultVisitor() {
             public void visit(ELNode.IDENT e) {
-                if (seen.contains(e.id) || nested.varIndex.get(e.id) != null || !enclosing.varIndex.containsKey(e.id))
+                if (seen.contains(e.id) || nested.varIndex.get(e.id) != null ||
+                    !enclosing.varIndex.containsKey(e.id))
                     return;
                 // Skip self-referencing name — handled by STORE_GLOBAL
                 if (e.id.equals(node.name))
@@ -2235,8 +2079,7 @@ public class IRBuilder {
             if (lastOp == RETURN || lastOp == RETURN_VOID)
                 return true;
         }
-        int maxId =
-                b.blockMap.keySet().stream().max(Integer::compare).orElse(-1);
+        int maxId = b.blockMap.keySet().stream().max(Integer::compare).orElse(-1);
         if (maxId < 0)
             return false;
         int[] lb = b.blockMap.get(maxId);
@@ -2249,10 +2092,6 @@ public class IRBuilder {
             v.advance();
         }
         return lastOp == RETURN || lastOp == RETURN_VOID;
-    }
-
-    IRFunction finish(String name, int paramCount) {
-        return finish(name, paramCount, null);
     }
 
     /**
@@ -2299,6 +2138,10 @@ public class IRBuilder {
         return new DebugInfo(currentFile, name, blockPos, pcLines, n / 2);
     }
 
+    IRFunction finish(String name, int paramCount) {
+        return finish(name, paramCount, null);
+    }
+
     IRFunction finish(String name, int paramCount,
                       Map<String, Integer> captures) {
         // Seal current block and record its debug line
@@ -2326,8 +2169,7 @@ public class IRBuilder {
         int[][] ordered = new int[count][];
         for (int i = 0; i < count; i++) {
             int[] code = blockMap.get(i);
-            ordered[i] = code != null ? code :
-                         new IREmitter().emitNop().toArray();
+            ordered[i] = code != null ? code : new IREmitter().emitNop().toArray();
         }
         IntList merged = new IntList();
         int[] offsets = new int[count];
@@ -2346,8 +2188,7 @@ public class IRBuilder {
                 pf[i] = paramFlags.get(i);
         }
 
-        return new IRFunction(name, paramCount, captures != null ?
-                                                captures.size() : 0,
+        return new IRFunction(name, paramCount, captures != null ? captures.size() : 0,
                 merged.toArray(), offsets, constants.toArray(new Object[0]),
                 varNames.toArray(new String[0]), buildDebugInfo(name, count,
                 offsets), pf);
@@ -2414,16 +2255,15 @@ public class IRBuilder {
             return s.value;
         if (node instanceof ELNode.CHARVAL c)
             return c.value;
+        if (node instanceof ELNode.BOOLEANVAL b)
+            return b.value;
+        if (node instanceof ELNode.SYMBOL s)
+            return s.value;
         if (node.op == Token.NULL)
             return null;
-        if (node.op == Token.TRUE)
-            return Boolean.TRUE;
-        if (node.op == Token.FALSE)
-            return Boolean.FALSE;
-        if (node.op == Token.SYMBOL && node instanceof ELNode.SYMBOL s)
-            return s.value;
         // Negative number: (- literal)
-        if (node.op == Token.NEG && node instanceof ELNode.Unary u && u.right instanceof ELNode.NUMBER n) {
+        if (node.op == Token.NEG && node instanceof ELNode.Unary u &&
+            u.right instanceof ELNode.NUMBER n) {
             Number v = n.value;
             if (v instanceof Integer)
                 return -v.intValue();
