@@ -60,10 +60,10 @@ import static org.operamasks.el.eval.ELUtils.*;
  *   <li><b>集合操作</b> — {@code list}, {@code cons}, {@code map},
  *       {@code filter}, {@code foldl/foldr}, {@code each}, {@code sort},
  *       {@code reverse}, {@code join}</li>
- *   <li><b>惰性序列</b> — {@code iterate}, {@code repeat}, {@code cycle},
+ *   <li><b>惰性序列</b> — {@code iterate}, {@code replicate}, {@code cycle},
  *       {@code take}, {@code takeWhile}, {@code zip}, {@code unfold}</li>
  *   <li><b>字符串/正则</b> — {@code matches}, {@code replace}, {@code join}</li>
- *   <li><b>Java 互操作</b> — {@code __new__}, {@code attach},
+ *   <li><b>Java 互操作</b> — {@code attach},
  *       {@code populate}, {@code asList}, {@code toArray}</li>
  *   <li><b>BitSet</b> — 通过 {@code []}, {@code :!:}, {@code :&:},
  *       {@code :|:}, {@code :^:} 运算符操作</li>
@@ -115,16 +115,6 @@ public final class Builtin
         } else {
             return false;
         }
-    }
-
-    /**
-     * 创建一个Java对象实例.
-     * <p>
-     * 用法: myclass.new(args...)
-     */
-    @Expando(name="new")
-    public static Object __new__(ELContext elctx, Class<?> cls, Closure... args) {
-        return ELEngine.newInstance(elctx, cls, args);
     }
 
     /**
@@ -299,8 +289,8 @@ public final class Builtin
      * 用法: n.times { block ... }
      */
     @Expando
-    public static void times(ELContext elctx, Integer n, Closure p) {
-        for (int i = 0; i < n; i++) {
+    public static void times(ELContext elctx, Number n, Closure p) {
+        for (int i = 0; i < n.longValue(); i++) {
             try {
                 p.call(elctx, i);
             } catch (Control.Break b) {
@@ -355,7 +345,7 @@ public final class Builtin
      * <pre>
      *   String.attach('capitalize') { s =>
      *       if (s.length > 0) {
-     *          Character.toUpperCase(s[0]) + s[1..*];
+     *          Character.toUpperCase(s[0]) ~ s[1..];
      *       } else {
      *          s;
      *       }
@@ -614,14 +604,14 @@ public final class Builtin
      * Creates an infinite list where all items are the specified object.
      */
     @Expando(scope={EXPANDO,GLOBAL})
-    public static Seq repeat(Object x) {
-        return new RepeatSeq(x);
+    public static Seq replicate(Object x) {
+        return new ReplicateInfinitySeq(x);
     }
 
-    private static class RepeatSeq extends AbstractSeq {
+    private static class ReplicateInfinitySeq extends AbstractSeq {
         private final Object value;
 
-        RepeatSeq(Object value) {
+        ReplicateInfinitySeq(Object value) {
             this.value = value;
         }
 
@@ -1466,7 +1456,7 @@ public final class Builtin
      * <p>
      * 用法: collection.each { x => block... }
      */
-    @Expando(name={"each", "foreach", "iterate"}, scope={EXPANDO,GLOBAL})
+    @Expando(name={"each", "foreach"}, scope={EXPANDO,GLOBAL})
     public static void each(ELContext elctx, Object xs, Closure proc) {
         if (xs instanceof Iterable it) {
             for (Object e : it) {
