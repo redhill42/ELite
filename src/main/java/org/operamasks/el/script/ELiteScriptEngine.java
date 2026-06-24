@@ -21,9 +21,6 @@ import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.security.AccessControlContext;
-import java.security.AccessController;
-import java.security.PrivilegedExceptionAction;
 import javax.el.ELContext;
 import javax.el.ELException;
 import javax.el.ValueExpression;
@@ -45,6 +42,10 @@ import org.operamasks.el.eval.ELProgram;
 import org.operamasks.el.eval.EvaluationException;
 import org.operamasks.el.eval.ELUtils;
 import org.operamasks.el.eval.closure.ClosureObject;
+import org.operamasks.el.ir.CompilationError;
+import org.operamasks.el.ir.IRBuilder;
+import org.operamasks.el.ir.IRBytecodeCompiler;
+import org.operamasks.el.ir.IRFunction;
 import org.operamasks.el.parser.Parser;
 import org.operamasks.el.parser.ParseException;
 import elite.lang.Closure;
@@ -52,7 +53,7 @@ import elite.lang.Closure;
 class ELiteScriptEngine extends AbstractScriptEngine
     implements Invocable, Compilable
 {
-    private ELiteScriptEngineFactory factory;
+    private final ELiteScriptEngineFactory factory;
     private Parser parser;
 
     // the key used to give back ELContext from ScriptContext
@@ -212,7 +213,34 @@ class ELiteScriptEngine extends AbstractScriptEngine
 
     public CompiledScript compile(String script) throws ScriptException {
         try {
-            return new ELiteCompiledScript(this, parse(script));
+            ELProgram program = parse(script);
+
+            switch (ELProgram.OPT_LEVEL) {
+            case 0:
+                return new ASTCompiledScript(this, program);
+
+            case 1: {
+                ELContext elctx = getELContext(getContext());
+                IRFunction fn = IRBuilder.compile(elctx, program, false, null);
+                return new IRCompiledScript(this, fn);
+            }
+
+            case 2: default: {
+                ELContext elctx = getELContext(getContext());
+                IRFunction fn = IRBuilder.compile(elctx, program, true, null);
+                return new IRCompiledScript(this, fn);
+            }
+            case 3: {
+                ELContext elctx = getELContext(getContext());
+                IRFunction fn = IRBuilder.compile(elctx, program, true, null);
+                try {
+                    var cf = IRBytecodeCompiler.compile(fn);
+                    return new BytecodeCompiledScript(this, cf);
+                } catch (CompilationError e) {
+                    return new IRCompiledScript(this, fn);
+                }
+            }
+            }
         } catch (ParseException ex) {
             ScriptException ex2 = new ScriptException(ex.getMessage(),
                                                       ex.getFileName(),
@@ -278,12 +306,10 @@ class ELiteScriptEngine extends AbstractScriptEngine
     private final class InterfaceImplementorInvocationHandler
         implements InvocationHandler
     {
-        private Object thiz;
-        private AccessControlContext acc;
+        private final Object thiz;
 
         InterfaceImplementorInvocationHandler(Object thiz) {
             this.thiz = thiz;
-            this.acc = AccessController.getContext();
         }
 
         public Object invoke(Object proxy, Method method, Object[] args)
@@ -291,15 +317,11 @@ class ELiteScriptEngine extends AbstractScriptEngine
         {
             final String name = method.getName();
             final Object[] a = args == null ? new Object[0] : args;
-            return AccessController.doPrivileged(new PrivilegedExceptionAction<Object>() {
-                public Object run() throws Exception {
-                    if (thiz == null) {
-                        return invokeFunction(name, a);
-                    } else {
-                        return invokeMethod(thiz, name, a);
-                    }
-                }
-            }, acc);
+            if (thiz == null) {
+                return invokeFunction(name, a);
+            } else {
+                return invokeMethod(thiz, name, a);
+            }
         }
     }
 }

@@ -155,7 +155,7 @@ class BenchmarkTest {
         bench("recursive factorial(10)",  "factorial(10)", WARMUP, ITERS);
 
         exec("define fib(n) { if (n <= 1) { n } else { fib(n-1) + fib(n-2) } }");
-        bench("recursive fib(15)",        "fib(15)", WARMUP, ITERS);
+        bench("recursive fib(10)",        "fib(10)", WARMUP, ITERS);
     }
 
     // ==================== Variables ====================

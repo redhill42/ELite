@@ -62,7 +62,7 @@ public class ELProgram implements Serializable
      * </ul>
      * Read from system property {@code elite.opt.level}; defaults to 2 (IR).
      */
-    static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
+    public static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
 
     /**
      * When true, bytecode/IR failures throw instead of silently falling back.

@@ -16,28 +16,28 @@
 
 package org.operamasks.el.script;
 
+import org.operamasks.el.eval.EvaluationException;
+import org.operamasks.el.ir.IRBytecodeCompiler;
+
+import javax.el.ELException;
 import javax.script.CompiledScript;
 import javax.script.ScriptContext;
-import javax.script.ScriptException;
 import javax.script.ScriptEngine;
-import javax.el.ELException;
+import javax.script.ScriptException;
 
-import org.operamasks.el.eval.ELProgram;
-import org.operamasks.el.eval.EvaluationException;
+class BytecodeCompiledScript extends CompiledScript {
+    private final ELiteScriptEngine engine;
+    private final IRBytecodeCompiler.CompiledFunction function;
 
-class ELiteCompiledScript extends CompiledScript
-{
-    private ELiteScriptEngine engine;
-    private ELProgram program;
-
-    public ELiteCompiledScript(ELiteScriptEngine engine, ELProgram program) {
+    BytecodeCompiledScript(ELiteScriptEngine engine,
+                           IRBytecodeCompiler.CompiledFunction function) {
         this.engine = engine;
-        this.program = program;
+        this.function = function;
     }
 
     public Object eval(ScriptContext context) throws ScriptException {
         try {
-            return program.execute(engine.getELContext(context));
+            return function.execute(engine.getELContext(context), null);
         } catch (EvaluationException ex) {
             ScriptException ex2 = new ScriptException(ex.getMessage());
             ex2.setStackTrace(ex.getStackTrace());
