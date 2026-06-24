@@ -39,23 +39,19 @@ public final class IRPrinter {
     public static String dumpProgramIR(String source) {
         Parser parser = new Parser(source);
         var program = parser.parse();
-        List<ELNode> defs = program.getDefinitions();
-        List<ELNode> exps = program.getExpressions();
 
         LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
         ArrayDeque<IRFunction> worklist = new ArrayDeque<>();
-        if (!exps.isEmpty()) {
-            IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
-            worklist.addLast(fn);
-        }
+        IRFunction top = IRBuilder.compile(program);
+        worklist.push(top);
 
         while (!worklist.isEmpty()) {
-            IRFunction fn = worklist.removeLast();
+            IRFunction fn = worklist.pop();
             if (!funcs.contains(fn)) {
                 funcs.add(fn);
                 for (Object c : fn.constantPool()) {
                     if (c instanceof IRFunction)
-                        worklist.addLast((IRFunction)c);
+                        worklist.push((IRFunction)c);
                 }
             }
         }
@@ -70,14 +66,10 @@ public final class IRPrinter {
     public static String dumpProgramBC(String source) {
         Parser parser = new Parser(source);
         var program = parser.parse();
-        List<ELNode> defs = program.getDefinitions();
-        List<ELNode> exps = program.getExpressions();
-
-        if (exps.isEmpty() && defs.isEmpty()) return "";
 
         StringBuilder sb = new StringBuilder();
         sb.append("; bytecode\n");
-        IRFunction fn = IRBuilder.compileWithDefs(defs, exps);
+        IRFunction fn = IRBuilder.compile(program);
         sb.append(dumpBytecode(fn));
         return sb.toString();
     }

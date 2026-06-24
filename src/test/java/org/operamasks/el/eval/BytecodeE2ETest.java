@@ -47,7 +47,7 @@ class BytecodeE2ETest {
     private Object bcEvalProgram(String src) {
         var p = new Parser(src);
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf);
         return cf.execute(elctx, null);

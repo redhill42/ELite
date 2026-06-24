@@ -57,7 +57,7 @@ class BytecodeCompilerTest {
     @Test void simpleCall() {
         org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser("define add(x,y) => x + y; add(3, 4)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertEquals(7L, ((Number)cf.execute(elctx, null)).longValue());
     }
@@ -65,7 +65,7 @@ class BytecodeCompilerTest {
     @Test void callWithSingleArg() {
         org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser("define sq(x) => x * x; sq(5)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertEquals(25L, ((Number)cf.execute(elctx, null)).longValue());
     }

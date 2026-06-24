@@ -165,7 +165,8 @@ class ThunkTest {
         if (exps != null) all.addAll(exps);
         ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(
             defs, exps, null);
-        IRBuilder b = new IRBuilder(null, null, analysis);
+        IRBuilder b = new IRBuilder();
+        b.analyze(analysis);
         for (ELNode def : defs != null ? defs : java.util.List.<ELNode>of())
             IRBuilder.registerDef(b, def, true);
         for (int i = 0; i < all.size() - 1; i++) {

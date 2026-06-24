@@ -14,7 +14,7 @@ class InlinePassTest {
         // define add(a,b)=>a+b; add(3,4)
         Parser p = new Parser("define add(a,b) => a + b; add(3, 4)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         // Verify original has INVOKE_DIRECT
         assertTrue(scanOp(fn, Opcode.INVOKE_DIRECT), "Should have INVOKE_DIRECT before inline");
@@ -36,7 +36,7 @@ class InlinePassTest {
         // define mul3(x)=>x*3; mul3(5) — has constant 3, specialized + possibly inlined
         Parser p = new Parser("define mul3(x) => x * 3; mul3(5)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
@@ -52,7 +52,7 @@ class InlinePassTest {
         // A function with many instructions should not be inlined
         Parser p = new Parser("define big(x) => x+1+2+3+4+5+6+7+8+9+10; big(0)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         InlinePass pass = new InlinePass();
         IRFunction result = pass.transform(fn);
@@ -69,7 +69,7 @@ class InlinePassTest {
         // define sq(x)=>x*x; define sumSq(a,b)=>sq(a)+sq(b); sumSq(3,4)
         Parser p = new Parser("define sq(x) => x * x; define sumSq(a,b) => sq(a) + sq(b); sumSq(3, 4)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
@@ -85,7 +85,7 @@ class InlinePassTest {
         // define add(a,b)=>a+b; add(1,2)+add(3,4) — two calls, result must be correct
         Parser p = new Parser("define add(a,b) => a + b; add(1, 2) + add(3, 4)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
@@ -101,7 +101,7 @@ class InlinePassTest {
         // mul3(x)=>x*3 uses constant 3 from its own pool
         Parser p = new Parser("define mul3(x) => x * 3; mul3(5)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);
@@ -117,7 +117,7 @@ class InlinePassTest {
     void inlineDoesNotModifyOriginal() {
         Parser p = new Parser("define add(a,b) => a + b; add(3, 4)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
         String orig = fn.toString();
 
         new InlinePass().transform(fn);
@@ -129,7 +129,7 @@ class InlinePassTest {
         // Function with if/else should NOT be inlined (has control flow)
         Parser p = new Parser("define abs(x) { if (x >= 0) { x } else { -x } }; abs(-5)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         // abs has JUMP_IF_TRUE — should not be inlined
         InlinePass pass = new InlinePass();
@@ -150,7 +150,7 @@ class InlinePassTest {
         // A function with no body should not be inlined
         Parser p = new Parser("define nop() => 0; nop()");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compileWithDefs(prog.getDefinitions(), prog.getExpressions());
+        IRFunction fn = IRBuilder.compile(prog);
 
         InlinePass pass = new InlinePass();
         IRFunction inlined = pass.transform(fn);

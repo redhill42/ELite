@@ -16,11 +16,15 @@
 
 package org.operamasks.el.ir;
 
+import org.operamasks.el.eval.ELEngine;
+import org.operamasks.el.eval.ELProgram;
 import org.operamasks.el.parser.DefaultVisitor;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
+import org.operamasks.el.resolver.ClassResolver;
 
+import javax.el.ELContext;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -40,6 +44,9 @@ import static org.operamasks.el.ir.Opcode.*;
  * order.
  */
 public class IRBuilder extends ELNode.Visitor {
+
+    // Context used to resolve global method and Java class.
+    private final ELContext elctx;
 
     // ── Block management (stored by ID, output in ID order) ──
     final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
@@ -61,15 +68,6 @@ public class IRBuilder extends ELNode.Visitor {
     private Map<Object, Integer> constIndex = new HashMap<>();
     List<Object> constants = new ArrayList<>();
 
-    // ── Compile-time class resolution ──
-    // Mirrors ClassResolver: alias = simpleName→fqName (import foo.Bar);
-    // packages = "foo.bar" prefixes (import foo.bar.*).
-    private final ClassLoader classLoader;
-    private final Map<String, String> importAliases;   // simpleName → fully
-    // .qualified.Name
-    private final List<String> importPackages;   // package prefixes for
-    // wildcard imports
-
     // ── Loop stack ──
     private record LoopTargets(int continueBlock, int breakBlock) {
     }
@@ -77,7 +75,6 @@ public class IRBuilder extends ELNode.Visitor {
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
     // ── Debug info ──
-    private final boolean debug;
     private String currentFile;       // source file name
     private int currentLine;          // line number of last built ELNode
     private final List<Integer> pcLineTable = new ArrayList<>(); // [pc, line, ...]
@@ -90,7 +87,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // ── Scope analysis (from pre-pass) ──
-    private final ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
+    private ScopeAnalyzer.ScopeAnalysis scopeAnalysis;
 
     /**
      * Variables in this scope that are captured by inner closures → use
@@ -133,43 +130,18 @@ public class IRBuilder extends ELNode.Visitor {
     boolean inTailPosition = false;
 
     IRBuilder() {
-        this(null, null, null, false);
-    }
-
-    /**
-     * Create a top-level builder with optional import context for CLASS
-     * resolution.
-     */
-    IRBuilder(ClassLoader loader, List<String> imps) {
-        this(loader, imps, null, false);
-    }
-
-    /**
-     * Create a top-level builder with import context and scope analysis.
-     */
-    IRBuilder(ClassLoader loader, List<String> imps,
-              ScopeAnalyzer.ScopeAnalysis analysis) {
-        this(loader, imps, analysis, false);
+        this(ELEngine.createELContext());
     }
 
     /**
      * Create a top-level builder with import context, scope analysis, and
      * debug flag.
      */
-    IRBuilder(ClassLoader loader, List<String> imps,
-              ScopeAnalyzer.ScopeAnalysis analysis, boolean debug) {
+    IRBuilder(ELContext elctx) {
+        this.elctx = elctx;
         this.parent = null;
-        this.classLoader = loader;
-        this.importAliases = new LinkedHashMap<>();
-        this.importPackages = new ArrayList<>();
-        seedImports(imps);
         this.currentBlockId = 0;
         this.current = new IREmitter();
-        this.debug = debug;
-        this.scopeAnalysis = analysis;
-        if (analysis != null) {
-            this.isCaptured.addAll(analysis.capturedByInner);
-        }
     }
 
     /**
@@ -177,64 +149,17 @@ public class IRBuilder extends ELNode.Visitor {
      * context.
      */
     private IRBuilder(IRBuilder parent) {
-        this(parent, null);
-    }
-
-    /**
-     * Create a nested builder with optional scope analysis for this lambda.
-     */
-    private IRBuilder(IRBuilder parent, ScopeAnalyzer.ScopeAnalysis analysis) {
+        assert(parent != null);
         this.parent = parent;
-        this.classLoader = parent != null ? parent.classLoader : null;
-        this.importAliases = parent != null ? parent.importAliases :
-                             new LinkedHashMap<>();
-        this.importPackages = parent != null ? parent.importPackages :
-                              new ArrayList<>();
+        this.elctx = parent.elctx;
         this.currentBlockId = 0;
         this.current = new IREmitter();
-        this.debug = parent != null && parent.debug;
-        this.currentFile = parent != null ? parent.currentFile : null;
-        this.scopeAnalysis = analysis;
-        if (analysis != null) {
-            this.isCaptured.addAll(analysis.capturedByInner);
-        }
-        if (parent != null) {
-            this.lambdaName = parent.lambdaName;
-            // Share constants with parent so pool indices are consistent
-            this.constants = parent.constants;
-            this.constIndex = parent.constIndex;
-        }
-    }
+        this.currentFile = parent.currentFile;
+        this.lambdaName = parent.lambdaName;
 
-    /**
-     * Seed import aliases and package prefixes from the program's import list.
-     * Built-in defaults mirror ClassResolver's defaults.
-     */
-    private void seedImports(List<String> imps) {
-        // Built-in imports (mirrors ClassResolver constructor)
-        importPackages.add("elite.lang");
-        importPackages.add("java.lang");
-        importPackages.add("java.util");
-        addImportAlias("java.lang.reflect.Array");
-        addImportAlias("java.math.BigInteger");
-        addImportAlias("java.math.BigDecimal");
-
-        if (imps != null) {
-            for (String imp : imps) {
-                if (imp.endsWith(".*")) {
-                    String pkg = imp.substring(0, imp.length() - 2);
-                    if (!importPackages.contains(pkg))
-                        importPackages.add(pkg);
-                } else {
-                    addImportAlias(imp);
-                }
-            }
-        }
-    }
-
-    private void addImportAlias(String fqName) {
-        String simpleName = fqName.substring(fqName.lastIndexOf('.') + 1);
-        importAliases.putIfAbsent(simpleName, fqName);
+        // Share constants with parent so pool indices are consistent
+        this.constants = parent.constants;
+        this.constIndex = parent.constIndex;
     }
 
     /**
@@ -242,39 +167,19 @@ public class IRBuilder extends ELNode.Visitor {
      * Returns null if resolution fails (caller should fall back to trampoline).
      */
     Class<?> resolveClassAtCompileTime(String name) {
-        if (classLoader == null)
+        try {
+            return ClassResolver.getInstance(elctx).resolveClass(name);
+        } catch (ClassNotFoundException ex) {
             return null;
-
-        // Fully-qualified name: try directly
-        if (name.indexOf('.') != -1) {
-            try {
-                return Class.forName(name, false, classLoader);
-            } catch (ClassNotFoundException e) {
-                return null;
-            }
         }
-
-        // Check simple-name alias (from import foo.bar.Baz)
-        String fqName = importAliases.get(name);
-        if (fqName != null) {
-            try {
-                return Class.forName(fqName, false, classLoader);
-            } catch (ClassNotFoundException e) {
-                // fall through to package search
-            }
-        }
-
-        // Search wildcard-imported packages (import foo.bar.*)
-        for (String pkg : importPackages) {
-            try {
-                return Class.forName(pkg + "." + name, false, classLoader);
-            } catch (ClassNotFoundException e) { /* continue */ }
-        }
-
-        return null;
     }
 
     // ============ MAIN DISPATCH ============
+
+    public void analyze(ScopeAnalyzer.ScopeAnalysis analysis) {
+        this.scopeAnalysis = analysis;
+        isCaptured.addAll(analysis.capturedByInner);
+    }
 
     void build(ELNode node) {
         if (node == null) {
@@ -282,7 +187,7 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        if (debug) {
+        if (ELProgram.DEBUG) {
             int line = Position.line(node.pos);
             if (line > 0) {
                 currentLine = line;
@@ -417,13 +322,11 @@ public class IRBuilder extends ELNode.Visitor {
         // Try getXxx()
         try {
             return cls.getMethod("get" + suffix);
-        } catch (NoSuchMethodException e) {
-        }
+        } catch (NoSuchMethodException e) { /* ignore */ }
         // Try isXxx() (for booleans)
         try {
             return cls.getMethod("is" + suffix);
-        } catch (NoSuchMethodException e) {
-        }
+        } catch (NoSuchMethodException e) { /* ignore */ }
         return null;
     }
 
@@ -1183,7 +1086,7 @@ public class IRBuilder extends ELNode.Visitor {
         int[] code = current.toArray();
         blockMap.put(currentBlockId, code);
         runningPc += code.length;
-        if (debug && currentLine > 0) {
+        if (ELProgram.DEBUG && currentLine > 0) {
             recordDebugLine(runningPc);
         }
         current.clear();
@@ -1695,7 +1598,7 @@ public class IRBuilder extends ELNode.Visitor {
     private IRFunction compileSubtree(ELNode node, String varToBind) {
         // No parent → no variable capture from enclosing scope.
         // External variables fall through to PUSH_GLOBAL/STORE_GLOBAL.
-        IRBuilder nested = new IRBuilder(null);
+        IRBuilder nested = new IRBuilder();
         // Still share the constant pool so pool indices are consistent.
         nested.constants = this.constants;
         nested.constIndex = this.constIndex;
@@ -1949,7 +1852,7 @@ public class IRBuilder extends ELNode.Visitor {
             int[] code = current.toArray();
             blockMap.put(currentBlockId, code);
             runningPc += code.length;
-            if (debug && currentLine > 0) {
+            if (ELProgram.DEBUG && currentLine > 0) {
                 recordDebugLine(runningPc);
             }
             current.clear();
@@ -2098,7 +2001,7 @@ public class IRBuilder extends ELNode.Visitor {
      * Record the current line for the given PC (used by debug info).
      */
     private void recordDebugLine(int pc) {
-        if (debug && currentLine > 0 && pc >= 0) {
+        if (ELProgram.DEBUG && currentLine > 0 && pc >= 0) {
             int n = pcLineTable.size();
             // Deduplicate consecutive same-line entries
             if (n >= 2 && pcLineTable.get(n - 1) == currentLine)
@@ -2113,7 +2016,7 @@ public class IRBuilder extends ELNode.Visitor {
      */
     private DebugInfo buildDebugInfo(String name, int blockCount,
                                      int[] offsets) {
-        if (!debug || pcLineTable.isEmpty())
+        if (!ELProgram.DEBUG || pcLineTable.isEmpty())
             return DebugInfo.EMPTY;
         // Compute block start positions: for each block, find the first
         // pcLineTable entry whose PC is >= the block's start offset.
@@ -2149,7 +2052,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (!current.isEmpty()) {
                 int[] code = current.toArray();
                 blockMap.put(currentBlockId, code);
-                if (debug && currentLine > 0) {
+                if (ELProgram.DEBUG && currentLine > 0) {
                     runningPc += code.length;
                     recordDebugLine(runningPc);
                 }
@@ -2157,7 +2060,7 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emitReturnVoid();
                 int[] code = current.toArray();
                 blockMap.put(currentBlockId, code);
-                if (debug && currentLine > 0) {
+                if (ELProgram.DEBUG && currentLine > 0) {
                     runningPc += code.length;
                     recordDebugLine(runningPc);
                 }
@@ -2206,11 +2109,11 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private void emitPushConst(int typeId, long value) {
-        emitPushConst(typeId, (Object)Long.valueOf(value));
+        emitPushConst(typeId, Long.valueOf(value));
     }
 
     private void emitPushConst(int typeId, double value) {
-        emitPushConst(typeId, (Object)Double.valueOf(value));
+        emitPushConst(typeId, Double.valueOf(value));
     }
 
     private void emitPushTrue() {
@@ -2281,7 +2184,7 @@ public class IRBuilder extends ELNode.Visitor {
     // pop on scope exit. Lookups search from innermost outward.
     private static final ThreadLocal<Deque<Map<String, Integer>>> knownFunctions = ThreadLocal.withInitial(ArrayDeque::new);
     /**
-     * @data constructor names whose calls need AST trampoline (lazy args).
+     * &#064;data constructor names whose calls need AST trampoline (lazy args).
      */
     private static final Set<String> dataConstructorNames = new HashSet<>();
 
@@ -2356,28 +2259,21 @@ public class IRBuilder extends ELNode.Visitor {
     private static void clearKnownFunctions() {
         knownFunctions.get().clear();
         knownFunctions.remove();  // also remove ThreadLocal to prevent
-        // cross-test pollution
+                                  // cross-test pollution
         dataConstructorNames.clear();
     }
 
     public static IRFunction compile(ELNode node) {
-        return compile(node, true);
+        return compile(ELEngine.createELContext(), node, true);
     }
 
-    /**
-     * Compile a single expression, optionally applying optimization passes.
-     */
-    public static IRFunction compile(ELNode node, boolean optimize) {
-        return compile(node, optimize, false);
-    }
-
-    public static IRFunction compile(ELNode node, boolean optimize,
-                                     boolean debug) {
+    public static IRFunction compile(ELContext elctx, ELNode node, boolean optimize) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();
-        ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(null,
-                java.util.List.of(node), null);
-        IRBuilder b = new IRBuilder(null, null, analysis, debug);
+        ScopeAnalyzer.ScopeAnalysis analysis =
+            ScopeAnalyzer.analyze(null, List.of(node), null);
+        IRBuilder b = new IRBuilder(elctx);
+        b.analyze(analysis);
         b.build(node);
         if (!endsWithReturn(b)) {
             int typeId = b.typeIdFromNode(node);
@@ -2386,100 +2282,54 @@ public class IRBuilder extends ELNode.Visitor {
         return finishIR(b.finish("<expr>", 0), 0, optimize, false);
     }
 
-    public static IRFunction compile(List<ELNode> expressions) {
-        return compileWithDefs(null, expressions, null, null, true);
+    public static IRFunction compile(ELProgram program) {
+        return compile(ELEngine.createELContext(), program, false, null);
     }
 
-    /**
-     * Compile expressions with prior function definitions for direct call
-     * optimization.
-     */
-    public static IRFunction compileWithDefs(List<ELNode> defs,
-                                             List<ELNode> expressions) {
-        return compileWithDefs(defs, expressions, true);
-    }
+    public static IRFunction compile(ELContext elctx, ELProgram program,
+                                     boolean optimize, String file) {
+        List<ELNode> defs = program.getDefinitions();
+        List<ELNode> exps = program.getExpressions();
 
-    /**
-     * Compile expressions with optional optimization passes and import context.
-     * <p>
-     * When {@code optimize} is false, constant folding and type specialization
-     * (GUARD_TYPE, DEOPT splitting) are skipped. This is used by opt level 1
-     * to produce conservative IR for comparison with optimized IR.
-     * <p>
-     * {@code imps} and {@code loader} enable compile-time resolution of CLASS
-     * nodes (from {@code import} statements) without falling back to
-     * TRAMPOLINE.
-     */
-    public static IRFunction compileWithDefs(List<ELNode> defs,
-                                             List<ELNode> expressions,
-                                             boolean optimize) {
-        return compileWithDefs(defs, expressions, null, null, optimize);
-    }
-
-    /**
-     * Compile with import context for compile-time class resolution.
-     *
-     * @param defs     function/class definition nodes
-     * @param exps     expression nodes
-     * @param imps     import list (e.g. ["java.util.*", "dsl.UnitFormat"])
-     * @param loader   ClassLoader for resolving class names
-     * @param optimize whether to run optimization passes
-     */
-    public static IRFunction compileWithDefs(List<ELNode> defs,
-                                             List<ELNode> exps,
-                                             List<String> imps,
-                                             ClassLoader loader,
-                                             boolean optimize) {
-        return compileWithDefs(defs, exps, imps, loader, optimize, false, null);
-    }
-
-    public static IRFunction compileWithDefs(List<ELNode> defs,
-                                             List<ELNode> exps,
-                                             List<String> imps,
-                                             ClassLoader loader,
-                                             boolean optimize, boolean debug) {
-        return compileWithDefs(defs, exps, imps, loader, optimize, debug, null);
-    }
-
-    public static IRFunction compileWithDefs(List<ELNode> defs,
-                                             List<ELNode> exps,
-                                             List<String> imps,
-                                             ClassLoader loader,
-                                             boolean optimize, boolean debug,
-                                             String file) {
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry
-        // per compilation
 
         // Run scope analysis before building IR to determine which variables
         // are captured by closures and need to go through the evaluation
         // context.
-        ScopeAnalyzer.ScopeAnalysis analysis = ScopeAnalyzer.analyze(defs,
-                exps, null);
-        IRBuilder b = new IRBuilder(loader, imps, analysis, debug);
+        ScopeAnalyzer.ScopeAnalysis analysis =
+            ScopeAnalyzer.analyze(defs, exps, null);
+        IRBuilder b = new IRBuilder(elctx);
+        b.analyze(analysis);
         if (file != null)
             b.setFile(file);
 
-        // Pre-register function definitions for direct call optimization
-        if (defs != null) {
-            for (ELNode def : defs) {
-                registerDef(b, def, optimize);
-            }
+        // Compile definitions for forward declaration.
+        for (ELNode def : defs) {
+            b.build(def);
+            b.current.emitPop();
         }
 
         // Compile expressions
-        for (int i = 0; i < exps.size() - 1; i++) {
-            b.build(exps.get(i));
-            b.current.emitPop();
-        }
+        ELNode last = null;
         if (!exps.isEmpty()) {
-            ELNode last = exps.get(exps.size() - 1);
+            for (int i = 0; i < exps.size() - 1; i++) {
+                b.build(exps.get(i));
+                b.current.emitPop();
+            }
+            last = exps.get(exps.size() - 1);
             b.build(last);
-            if (!endsWithReturn(b)) {
+        }
+
+        if (!endsWithReturn(b)) {
+            if (last == null) {
+                b.current.emitReturnVoid();
+            } else {
                 int t = b.typeIdFromNode(last);
                 b.current.emitReturn(t >= 0 ? t : T_INT);
             }
         }
+
         return finishIR(b.finish("<program>", 0), 0, optimize, false);
     }
 

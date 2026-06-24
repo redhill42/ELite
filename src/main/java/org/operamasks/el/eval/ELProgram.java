@@ -16,12 +16,14 @@
 
 package org.operamasks.el.eval;
 
+import java.io.Serial;
 import java.util.List;
 import java.util.ArrayList;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.Objects;
 import javax.el.ELContext;
 import javax.el.FunctionMapper;
 import javax.el.VariableMapper;
@@ -44,14 +46,11 @@ import static org.operamasks.el.resources.Resources.*;
 
 public class ELProgram implements Serializable
 {
-    private List<Module> mods;
-    private List<String> libs;
-    private List<String> imps;
-    private List<ELNode> defs;
-    private List<ELNode> exps;
-
-    /** Enable IR-based evaluation for this program. Default: true (IR native). */
-    private boolean useIREvaluation = true;
+    private final List<Module> mods;
+    private final List<String> libs;
+    private final List<String> imps;
+    private final List<ELNode> defs;
+    private final List<ELNode> exps;
 
     /**
      * Optimization level for expression evaluation.
@@ -80,19 +79,15 @@ public class ELProgram implements Serializable
     /** @return the list of expression/statement nodes */
     public List<ELNode> getExpressions() { return exps; }
 
-    /** Enable or disable IR-based evaluation. */
-    public void setIREvaluation(boolean enabled) { this.useIREvaluation = enabled; }
-    /** @return whether IR-based evaluation is enabled. */
-    public boolean isIREvaluation() { return useIREvaluation; }
-
+    @Serial
     private static final long serialVersionUID = 3112245719728771823L;
 
     public ELProgram() {
-        this.mods = new ArrayList<Module>();
-        this.libs = new ArrayList<String>();
-        this.imps = new ArrayList<String>();
-        this.defs = new ArrayList<ELNode>();
-        this.exps = new ArrayList<ELNode>();
+        this.mods = new ArrayList<>();
+        this.libs = new ArrayList<>();
+        this.imps = new ArrayList<>();
+        this.defs = new ArrayList<>();
+        this.exps = new ArrayList<>();
     }
 
     public void addModule(String name, String prefix) {
@@ -150,81 +145,36 @@ public class ELProgram implements Serializable
         EvaluationContext env = new EvaluationContext(elctx, fm, vm);
         Frame frame = StackTrace.addFrame(elctx, "__toplevel__", file, Position.make(line, 1));
 
-        // Execute program in three steps:
         try {
-            // 1) import modules and classes
+            // Import modules and classes to populate global context. The global
+            // context is used by compilation and execution.
             importModules(elctx);
             importFunctions(elctx);
             importPackages(elctx);
 
-            // 2) define function and class for forward reference
-            for (ELNode node : defs) {
-                frame.setPos(node.pos);
-                node.getValue(env);
-            }
-
-            // 3) execute statements using selected evaluation strategy
-            return evaluate(defs, exps, env, elctx, frame);
-        } finally {
-            StackTrace.removeFrame(elctx);
-        }
-    }
-
-    /**
-     * Execute expressions using the selected optimization level.
-     * <p>
-     * Level 0 (AST): always use AST interpreter.
-     * Level 1 (IR):  use unoptimized IR interpreter.
-     * Level 2 (IR):  use optimized IR interpreter.
-     * Level 3 (BC):  compile to JVM bytecode; on CompilationError, fall back to IR.
-     * <p>
-     * TRAMPOLINE opcodes are handled inline by the IR interpreter and bytecode
-     * compiler (calling back to AST for individual expressions), so there is
-     * no full-program fallback. Exceptions during execution propagate directly.
-     */
-    private Object evaluate(List<ELNode> defs, List<ELNode> exps,
-                            EvaluationContext env, javax.el.ELContext elctx,
-                            Frame frame) {
-        // For IR evaluation, merge function definitions into the expression
-        // list so they go through the full IR build pipeline (buildDefine →
-        // buildLambda → STORE_GLOBAL). This ensures all code executes through
-        // IR, not AST. The AST forward-declaration loop (lines 161-164)
-        // already ran and stored definitions for forward reference.
-        if (OPT_LEVEL > 0 && !defs.isEmpty()) {
-            List<ELNode> merged = new ArrayList<>(defs.size() + exps.size());
-            merged.addAll(defs);
-            merged.addAll(exps);
-            exps = merged;
-            defs = java.util.Collections.emptyList();
-        }
-
-        if (exps.isEmpty()) return null;
-
-        switch (OPT_LEVEL) {
+            // Execute statements using selected evaluation strategy
+            switch (OPT_LEVEL) {
             case 0:
-                return evaluateAST(exps, frame, env);
+                return evaluateAST(frame, env);
 
             case 1: {
-                // Conservative IR — no optimization passes (constant folding, type specialization skipped)
-                // The IR interpreter handles TRAMPOLINE opcodes inline via AST evaluation,
-                // so there is no need for a full-program fallback.
-                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), false, DEBUG, frame.getFileName());
+                // Conservative IR — no optimization passes (constant folding, type
+                // specialization skipped). The IR interpreter handles TRAMPOLINE
+                // opcodes inline via AST evaluation, so there is no need for a
+                // full-program fallback.
+                IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 2: {
-                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), true, DEBUG, frame.getFileName());
+                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 3: default: {
-                IRFunction irFn = IRBuilder.compileWithDefs(defs, exps, imps,
-                    Utils.getClassLoader(elctx), true, DEBUG, frame.getFileName());
+                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 try {
-                    IRBytecodeCompiler.CompiledFunction cf =
-                        IRBytecodeCompiler.compile(irFn);
+                    IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
                     return cf.execute(elctx, null);
                 } catch (CompilationError e) {
                     if (STRICT_BYTECODE)
@@ -234,12 +184,20 @@ public class ELProgram implements Serializable
                 }
                 // VerifyError and other Errors propagate — they're compiler bugs
             }
+            }
+        } finally {
+            StackTrace.removeFrame(elctx);
         }
     }
 
     /** Execute expressions using the AST tree-walking interpreter. */
-    private static Object evaluateAST(List<ELNode> exps, Frame frame,
-                                       EvaluationContext env) {
+    private Object evaluateAST(Frame frame, EvaluationContext env) {
+        // Define function and class for forward reference
+        for (ELNode node : defs) {
+            frame.setPos(node.pos);
+            node.getValue(env);
+        }
+
         Object result = null;
         for (ELNode node : exps) {
             frame.setPos(node.pos);
@@ -262,10 +220,9 @@ public class ELProgram implements Serializable
         public boolean equals(Object obj) {
             if (obj == this) {
                 return true;
-            } else if (obj instanceof Module) {
-                Module other = (Module)obj;
+            } else if (obj instanceof Module other) {
                 return name.equals(other.name) &&
-                       (prefix == null ? other.prefix == null : prefix.equals(other.prefix));
+                       (Objects.equals(prefix, other.prefix));
             } else {
                 return false;
             }
@@ -276,7 +233,7 @@ public class ELProgram implements Serializable
         if (!mods.isEmpty()) {
             MethodResolver resolver = MethodResolver.getInstance(elctx);
             for (Module mod : mods) {
-                Class cls = findClass(elctx, mod.name);
+                Class<?> cls = findClass(elctx, mod.name);
                 resolver.addModule(elctx, cls, mod.prefix);
                 for (Field field : cls.getFields()) {
                     importField(elctx, field, mod.prefix);
@@ -297,7 +254,7 @@ public class ELProgram implements Serializable
 
                 String clsname = name.substring(0, sep);
                 name = name.substring(sep+1);
-                Class cls = findClass(elctx, clsname);
+                Class<?> cls = findClass(elctx, clsname);
 
                 if (name.equals("*")) {
                     resolver.addGlobalMethods(cls);
@@ -350,7 +307,7 @@ public class ELProgram implements Serializable
         }
     }
 
-    private static Class findClass(ELContext elctx, String name) {
+    private static Class<?> findClass(ELContext elctx, String name) {
         try {
             ClassLoader loader = Utils.getClassLoader(elctx);
             return Utils.findClass(name, loader);
