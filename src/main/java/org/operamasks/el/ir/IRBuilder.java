@@ -23,8 +23,10 @@ import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.ClassResolver;
+import org.operamasks.util.BeanUtils;
 
 import javax.el.ELContext;
+import java.beans.IntrospectionException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -267,29 +269,28 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.ACCESS node) {
-        // For simple keys (identifiers, numbers, strings), use native
-        // LOAD_PROPERTY
-        if (isSimpleKey(node.index)) {
+        // For simple string keys, use native LOAD_PROPERTY
+        if (node.index instanceof ELNode.STRINGVAL) {
             // Try to resolve field/getter access at compile time for known
             // Java types
-            String fieldName = getKeyName(node.index);
+            String fieldName = ((ELNode.STRINGVAL)node.index).value;
             org.operamasks.el.types.Type baseType = node.right != null ?
                                                     node.right.inferredType :
                                                     null;
             java.lang.Class<?> javaClass = resolveJavaClass(baseType);
 
-            if (javaClass != null && fieldName != null) {
-                // 1) Check for JavaBean getter: getXxx() or isXxx() (primary
-                // Java interface)
-                Method getter = resolveGetter(javaClass, fieldName);
-                if (getter != null) {
-                    build(node.right); // push base
-                    int methodIdx = putConstant(getter);
-                    current.emit2(INVOKE_GETTER, K_FN, methodIdx, 0);
-                    return;
-                }
+            if (javaClass != null) {
+                try {
+                    Method getter = BeanUtils.getReadMethod(javaClass, fieldName);
+                    if (getter != null) {
+                        build(node.right); // push base
+                        int methodIdx = putConstant(getter);
+                        current.emit2(INVOKE_GETTER, K_FN, methodIdx, 0);
+                        return;
+                    }
+                } catch (IntrospectionException ex) { /* fallthrough */ }
 
-                // 2) Check for public field (fallback)
+                // Check for public field (fallback)
                 try {
                     Field field = javaClass.getField(fieldName);
                     if (Modifier.isPublic(field.getModifiers())) {
@@ -299,35 +300,14 @@ public class IRBuilder extends ELNode.Visitor {
                         return;
                     }
                 } catch (NoSuchFieldException e) { /* fall through */ }
-
-                // 3) Neither getter nor field — fall back to ELResolver
-                // (could be a method reference, static member, or nested class)
             }
-
-            build(node.right);   // base object
-            build(node.index);   // key
-            current.emitLoadProperty();
-        } else {
-            buildTrampoline(node); // FIXME
         }
-    }
 
-    /**
-     * Resolve a JavaBean getter method (getXxx or isXxx) for the given
-     * property name.
-     */
-    static Method resolveGetter(Class<?> cls, String propName) {
-        String suffix =
-                Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
-        // Try getXxx()
-        try {
-            return cls.getMethod("get" + suffix);
-        } catch (NoSuchMethodException e) { /* ignore */ }
-        // Try isXxx() (for booleans)
-        try {
-            return cls.getMethod("is" + suffix);
-        } catch (NoSuchMethodException e) { /* ignore */ }
-        return null;
+        // Neither getter nor field — fall back to ELResolver
+        // (could be a method reference, static member, or nested class)
+        build(node.right);   // base object
+        build(node.index);   // key
+        current.emitLoadProperty();
     }
 
     /**
@@ -345,25 +325,6 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
         return found;
-    }
-
-    /**
-     * Resolve a JavaBean setter method (setXxx) for the given property name.
-     */
-    static Method resolveSetter(Class<?> cls, String propName) {
-        String suffix =
-                Character.toUpperCase(propName.charAt(0)) + propName.substring(1);
-        try {
-            return cls.getMethod("set" + suffix, getGetterReturnType(cls,
-                    propName));
-        } catch (NoSuchMethodException e) {
-            return null;
-        }
-    }
-
-    private static Class<?> getGetterReturnType(Class<?> cls, String propName) {
-        java.lang.reflect.Method getter = resolveGetter(cls, propName);
-        return getter != null ? getter.getReturnType() : Object.class;
     }
 
     /**
@@ -1119,10 +1080,12 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.ASSIGN node) {
-        if (node instanceof ELNode.ASSIGNOP)
+        if (node instanceof ELNode.ASSIGNOP) {
             buildAssignOp((ELNode.ASSIGNOP)node);
-        else
-            buildAssign(node);
+        } else {
+            if (!buildAssign(node.left, node.right))
+                buildTrampoline(node);
+        }
     }
 
     // ── Compound assignment (+=, -=, etc.) ──
@@ -1145,74 +1108,84 @@ public class IRBuilder extends ELNode.Visitor {
             // at define time (top-level, captured). Slot-only variables
             // (function locals, control-flow shadows) don't have global
             // bindings and STORE_GLOBAL would throw PropertyNotFoundException.
-            current.emitDup();
-            if (isCaptured.contains(ident.id)) {
-                int nameIdx = putConstant(ident.id);
-                current.emitStoreGlobal(nameIdx);
-            } else {
-                int idx = varIndex.getOrDefault(ident.id, -1);
-                if (idx >= 0) {
-                    current.emitStoreVar(idx);
-                    if (globalSlots.contains(idx)) {
-                        int nameIdx = putConstant(ident.id);
-                        current.emitStoreGlobal(nameIdx);
-                    }
-                } else {
-                    // Variable from previous eval — only global binding exists
-                    int nameIdx = putConstant(ident.id);
-                    current.emitStoreGlobal(nameIdx);
-                }
-            }
+            buildStoreVariable(ident.id);
         } else {
             buildTrampoline(node);
         }
     }
 
     // ── Assign/Define ──
-    private void buildAssign(ELNode.ASSIGN node) {
-        build(node.right); // value to assign
-        if (node.left instanceof ELNode.IDENT ident) {
-            current.emitDup();
-            if (isCaptured.contains(ident.id)) {
-                // Captured by inner closure: search full eval context chain
-                int nameIdx = putConstant(ident.id);
-                current.emitStoreGlobal(nameIdx);
-            } else {
-                int idx = varIndex.getOrDefault(ident.id, -1);
-                if (idx >= 0) {
-                    current.emitStoreVar(idx);
-                    if (globalSlots.contains(idx)) {
-                        int nameIdx = putConstant(ident.id);
-                        current.emitStoreGlobal(nameIdx);
-                    }
-                } else {
-                    // Variable from previous eval — only global binding exists
-                    int nameIdx = putConstant(ident.id);
+    private boolean buildAssign(ELNode left, ELNode right) {
+        while (left instanceof ELNode.EXPR) {
+            left = ((ELNode.EXPR)left).right;
+        }
+
+        if (left instanceof ELNode.IDENT ident) {
+            build(right);
+            buildStoreVariable(ident.id);
+            return true;
+        }
+
+        if (left instanceof ELNode.ACCESS access) {
+            build(right);
+            buildStoreProperty(access);
+            return true;
+        }
+
+        if (left instanceof ELNode.TUPLE lhs &&
+            right instanceof ELNode.TUPLE rhs &&
+            isAssignableTuple(lhs, rhs)) {
+            buildTupleAssign(lhs, rhs);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void buildStoreVariable(String name) {
+        if (isCaptured.contains(name)) {
+            // Captured by inner closure: search full eval context chain
+            int nameIdx = putConstant(name);
+            current.emitStoreGlobal(nameIdx);
+        } else {
+            int idx = varIndex.getOrDefault(name, -1);
+            if (idx >= 0) {
+                current.emitStoreVar(idx);
+                if (globalSlots.contains(idx)) {
+                    int nameIdx = putConstant(name);
                     current.emitStoreGlobal(nameIdx);
                 }
+            } else {
+                // Variable from previous eval — only global binding exists
+                int nameIdx = putConstant(name);
+                current.emitStoreGlobal(nameIdx);
             }
-        } else if (node.left instanceof ELNode.ACCESS access &&
-                   isSimpleKey(access.index)) {
-            // obj.prop = value — try direct field store for known Java types
-            String fieldName = getKeyName(access.index);
-            org.operamasks.el.types.Type baseType = access.right != null ?
-                                                    access.right.inferredType : null;
-            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
-            if (javaClass != null && fieldName != null) {
-                // 1) Check for JavaBean setter: setXxx(type) (primary Java
-                // interface)
-                Method setter = resolveSetter(javaClass, fieldName);
-                if (setter != null) {
-                    build(access.right); // base below value: [value, base]
-                    int methodIdx = putConstant(setter);
-                    current.emit2(INVOKE_SETTER, K_FN, methodIdx, 0);
-                    return;
-                }
+        }
+    }
 
-                // 2) Check for public field (fallback)
+    private void buildStoreProperty(ELNode.ACCESS access) {
+        if (access.index instanceof ELNode.STRINGVAL) {
+            // obj.prop = value — try direct field store for known Java types
+            String fieldName = ((ELNode.STRINGVAL)access.index).value;
+            org.operamasks.el.types.Type baseType =
+                access.right != null ? access.right.inferredType : null;
+            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
+            if (javaClass != null) {
+                // Check for JavaBean setter: setXxx(type) (primary Java
+                // interface)
                 try {
-                    Field field =
-                        javaClass.getField(fieldName);
+                    var setter = BeanUtils.getWriteMethod(javaClass, fieldName);
+                    if (setter != null) {
+                        build(access.right); // base below value: [value, base]
+                        int methodIdx = putConstant(setter);
+                        current.emit2(INVOKE_SETTER, K_FN, methodIdx, 0);
+                        return;
+                    }
+                } catch (IntrospectionException ex) { /* fallthrough */ }
+
+                // Check for public field (fallback)
+                try {
+                    Field field = javaClass.getField(fieldName);
                     if (Modifier.isPublic(field.getModifiers())) {
                         build(access.right); // base below value: [value, base]
                         int nameIdx = putConstant(fieldName);
@@ -1221,11 +1194,79 @@ public class IRBuilder extends ELNode.Visitor {
                     }
                 } catch (NoSuchFieldException e) { /* fall through */ }
             }
-            build(access.right); // base
-            build(access.index); // key
-            current.emitStoreProperty();
-        } else
-            buildTrampoline(node);
+        }
+
+        build(access.right);
+        build(access.index);
+        current.emitStoreProperty();
+    }
+
+    private boolean isAssignableTuple(ELNode.TUPLE lhs, ELNode.TUPLE rhs) {
+        if (lhs.elems.length != rhs.elems.length)
+            return false;
+
+        for (int i = 0; i < lhs.elems.length; i++) {
+            ELNode elem = lhs.elems[i];
+            if (elem instanceof ELNode.IDENT)
+                continue;
+            if (elem instanceof ELNode.ACCESS)
+                continue;
+            if (elem instanceof ELNode.TUPLE t1 &&
+                rhs.elems[i] instanceof ELNode.TUPLE t2 &&
+                isAssignableTuple(t1, t2))
+                continue;
+            return false;
+        }
+
+        return true;
+    }
+
+    private void buildTupleAssign(ELNode.TUPLE lhs, ELNode.TUPLE rhs) {
+        assert(lhs.elems.length == rhs.elems.length);
+        if (lhs.elems.length == 0) {
+            current.emitNewTuple(0);
+            return;
+        }
+
+        // Must evaluate all right values before assign to left values.
+        List<Integer> tmpVars = new ArrayList<>();
+        buildFlattenTuple(rhs.elems, tmpVars);
+
+        // Assign to left values sequentially.
+        buildAssignFlattenTuple(lhs.elems, tmpVars);
+    }
+
+    private void buildFlattenTuple(ELNode[] elems, List<Integer> tmpVars) {
+        for (ELNode elem : elems) {
+            if (elem instanceof ELNode.TUPLE tt) {
+                buildFlattenTuple(tt.elems, tmpVars);
+            } else {
+                int varIdx = ensureVar("*t*" + tmpVars.size());
+                tmpVars.add(varIdx);
+                build(elem);
+                current.emitStoreVar(varIdx);
+                current.emitPop();
+            }
+        }
+    }
+
+    private void buildAssignFlattenTuple(ELNode[] elems, List<Integer> tmpVars) {
+        for (ELNode elem : elems) {
+            if (elem instanceof ELNode.TUPLE tt) {
+                buildAssignFlattenTuple(tt.elems, tmpVars);
+            } else if (elem instanceof ELNode.IDENT ident) {
+                current.emitPushVar(tmpVars.remove(0));
+                buildStoreVariable(ident.id);
+            } else if (elem instanceof ELNode.ACCESS access) {
+                current.emitPushVar(tmpVars.remove(0));
+                buildStoreProperty(access);
+            } else {
+                assert(false); // already checked by isAssignableTuple
+            }
+        }
+
+        // Elements kept in stack, build a tuple as assign result.
+        current.emitNewTuple(elems.length);
     }
 
     public void visit(ELNode.DEFINE node) {
@@ -1260,22 +1301,18 @@ public class IRBuilder extends ELNode.Visitor {
                             saved.put(node.id, varIndex.remove(node.id));
                         }
                         int idx = ensureVar(node.id);
-                        current.emitDup();
                         current.emitStoreVar(idx);
                     } else if (isCaptured.contains(node.id)) {
                         // Captured by inner closure: STORE_GLOBAL only
-                        current.emitDup();
                         int nameIdx = putConstant(node.id);
                         current.emitDefineGlobal(nameIdx);
                     } else if (parent != null) {
                         // In a function, not captured: STORE_VAR only
                         int idx = ensureVar(node.id);
-                        current.emitDup();
                         current.emitStoreVar(idx);
                     } else {
                         // Top-level: STORE_VAR + STORE_GLOBAL (persistence)
                         int idx = ensureVar(node.id);
-                        current.emitDup();
                         current.emitStoreVar(idx);
                         int nameIdx = putConstant(node.id);
                         current.emitDefineGlobal(nameIdx);
@@ -1309,14 +1346,12 @@ public class IRBuilder extends ELNode.Visitor {
                     saved.put(node.id, varIndex.remove(node.id));
                 }
                 int idx = ensureVar(node.id);
-                current.emitDup();
                 current.emitStoreVar(idx);
             } else if (isCaptured.contains(node.id)) {
                 if (!isNamedLambda) {
                     // This variable is captured by an inner closure.
                     // All accesses must go through the EvaluationContext chain
                     // so that closures see the same binding.
-                    current.emitDup();
                     int nameIdx = putConstant(node.id);
                     current.emitDefineGlobal(nameIdx);
                 }
@@ -1324,13 +1359,11 @@ public class IRBuilder extends ELNode.Visitor {
                 // Function-level define, not captured by any inner closure.
                 // Local slot only — dies with the IRInterpreter invocation.
                 int idx = ensureVar(node.id);
-                current.emitDup();
                 current.emitStoreVar(idx);
             } else {
                 // Top-level define: store locally (for fast access) AND
                 // globally (for cross-eval persistence).
                 int idx = ensureVar(node.id);
-                current.emitDup();
                 current.emitStoreVar(idx);
                 if (!isNamedLambda) {
                     int nameIdx = putConstant(node.id);
@@ -1715,7 +1748,6 @@ public class IRBuilder extends ELNode.Visitor {
         // prevent the function from leaking out of the block.
         if (node.name != null && !node.name.isEmpty() &&
             savedVarBindings.isEmpty()) {
-            current.emitDup();
             int nameIdx = putConstant(node.name);
             current.emitDefineGlobal(nameIdx);
         }

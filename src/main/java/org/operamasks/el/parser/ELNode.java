@@ -175,8 +175,8 @@ public abstract class ELNode implements Serializable
     /**
      * The interface implemented by an AST node that support pattern matching.
      */
-    public static interface Pattern {
-        public boolean matches(EvaluationContext context, Object value);
+    public interface Pattern {
+        boolean matches(EvaluationContext context, Object value);
     }
 
     /**
@@ -341,14 +341,14 @@ public abstract class ELNode implements Serializable
     /**
      * Throws an evaluation exception.
      */
-    ELException runtimeError(ELContext elctx, String message) {
+    static ELException runtimeError(ELContext elctx, String message) {
         return new EvaluationException(elctx, message);
     }
 
     /**
      * Throws an evaluation exception with cause.
      */
-    ELException runtimeError(ELContext elctx, Throwable cause) {
+    static ELException runtimeError(ELContext elctx, Throwable cause) {
         if (cause instanceof EvaluationException) {
             throw (EvaluationException)cause;
         } else if (cause instanceof Control) {
@@ -363,14 +363,14 @@ public abstract class ELNode implements Serializable
     /**
      * Throws an evaluation exception with message and cause.
      */
-    ELException runtimeError(ELContext elctx, String message, Throwable cause) {
+    static ELException runtimeError(ELContext elctx, String message, Throwable cause) {
         return new EvaluationException(elctx, message, cause);
     }
 
     /**
      * Throws a property not found exception.
      */
-    ELException propertyNotFound(ELContext elctx, Object base, Object property) {
+    static ELException propertyNotFound(ELContext elctx, Object base, Object property) {
         String message;
         if (base != null && property == null) {
             if (base instanceof String) {
@@ -394,7 +394,7 @@ public abstract class ELNode implements Serializable
     /**
      * Throws a property not writable exception.
      */
-    ELException propertyNotWritable(ELContext elctx, Object base, Object property) {
+    static ELException propertyNotWritable(ELContext elctx, Object base, Object property) {
         String message;
         if (base != null && property == null) {
             if (base instanceof String) {
@@ -418,7 +418,8 @@ public abstract class ELNode implements Serializable
     /**
      * Throws a method not found exception.
      */
-    ELException methodNotFound(ELContext elctx, Object base, Object property, MethodNotFoundException cause) {
+    static ELException methodNotFound(ELContext elctx, Object base, Object property,
+                                      MethodNotFoundException cause) {
         String msg = (cause == null) ? null : cause.getMessage();
         if (msg == null) {
             if (base instanceof ClosureObject) {
@@ -1216,7 +1217,10 @@ public abstract class ELNode implements Serializable
             ELContext elctx = context.getELContext();
             Object base = right.getValue(context);
             Object property = index.getValue(context);
+            return getValue(elctx, base, property);
+        }
 
+        public static Object getValue(ELContext elctx, Object base, Object property) {
             if (base == null || property == null) {
                 return null;
             }
@@ -1255,9 +1259,12 @@ public abstract class ELNode implements Serializable
             ELContext elctx = context.getELContext();
             Object base = right.getValue(context);
             Object property = index.getValue(context);
+            setValue(elctx, base, property, value);
+        }
 
+        public static void setValue(ELContext elctx, Object base, Object property, Object value) {
             if (base == null || property == null) {
-                throw propertyNotFound(elctx, base, index.getValue(context));
+                throw propertyNotFound(elctx, base, property);
             }
 
             try {
@@ -1275,7 +1282,7 @@ public abstract class ELNode implements Serializable
             throw propertyNotFound(elctx, base, property);
         }
 
-        public Class getType(EvaluationContext context) {
+        public Class<?> getType(EvaluationContext context) {
             ELContext elctx = context.getELContext();
             Object base = right.getValue(context);
             Object property = index.getValue(context);
@@ -1286,7 +1293,7 @@ public abstract class ELNode implements Serializable
 
             try {
                 elctx.setPropertyResolved(false);
-                Class type = elctx.getELResolver().getType(elctx, base, property);
+                Class<?> type = elctx.getELResolver().getType(elctx, base, property);
                 if (elctx.isPropertyResolved()) return type;
             } catch (PropertyNotFoundException ex) {
                 // fallthrough
@@ -1368,7 +1375,11 @@ public abstract class ELNode implements Serializable
             ELContext elctx = context.getELContext();
             Object base = right.getValue(context);
             Object property = index.getValue(context);
+            return invoke(elctx, base, property, args);
+        }
 
+        public static Object invoke(ELContext elctx, Object base, Object property,
+                                    Closure[] args) {
             if (base == null)
                 return null;
             if (property == null)
@@ -1377,7 +1388,7 @@ public abstract class ELNode implements Serializable
             String name = coerceToString(property);
 
             if (base == GlobalScope.SINGLETON) {
-                Object target = getValue(context);
+                Object target = getValue(elctx, base, property);
                 try {
                     return ELEngine.invokeTarget(elctx, target, args);
                 } catch (MethodNotFoundException ex) {
@@ -1404,9 +1415,9 @@ public abstract class ELNode implements Serializable
                 if (base == SystemScope.SINGLETON) {
                     method = resolver.resolveSystemMethod(name);
                 } else if (base instanceof Class) {
-                    method = resolver.resolveStaticMethod((Class)base, name);
+                    method = resolver.resolveStaticMethod((Class<?>)base, name);
                     if (method == null) {
-                        method = resolver.resolveMethod((Class)base, name);
+                        method = resolver.resolveMethod((Class<?>)base, name);
                         if (method == null) {
                             method = resolver.resolveMethod(Class.class, name);
                             usebase = true;
@@ -1440,14 +1451,14 @@ public abstract class ELNode implements Serializable
             throw methodNotFound(elctx, base, name, null);
         }
 
-        private Closure resolveMethod(ELContext elctx, Object base, String name) {
+        private static Closure resolveMethod(ELContext elctx, Object base, String name) {
             MethodResolver resolver = MethodResolver.getInstance(elctx);
             if (base == SystemScope.SINGLETON) {
                 return resolver.resolveSystemMethod(name);
             } else if (base instanceof Class) {
-                MethodClosure c = resolver.resolveStaticMethod((Class)base, name);
+                MethodClosure c = resolver.resolveStaticMethod((Class<?>)base, name);
                 if (c != null) return c;
-                c = resolver.resolveMethod((Class)base, name);
+                c = resolver.resolveMethod((Class<?>)base, name);
                 if (c != null) return c;
                 c = resolver.resolveMethod(Class.class, name);
                 return (c == null) ? null : new TargetMethodClosure(base, c);
@@ -1455,14 +1466,6 @@ public abstract class ELNode implements Serializable
                 MethodClosure c = resolver.resolveMethod(base.getClass(), name);
                 return c == null ? null : new TargetMethodClosure(base, c);
             }
-        }
-
-        private Closure resolveGlobalMethod(ELContext elctx, String name) {
-            ValueExpression expr = elctx.getVariableMapper().resolveVariable(name);
-            if (expr != null && expr instanceof Closure) {
-                return (Closure)expr;
-            }
-            return MethodResolver.getInstance(elctx).resolveGlobalMethod(name);
         }
 
         public void accept(Visitor v) {

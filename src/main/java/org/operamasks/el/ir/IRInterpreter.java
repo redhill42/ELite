@@ -20,10 +20,8 @@ import elite.lang.Runtime;
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.DelayClosure;
 import org.operamasks.el.eval.closure.LiteralClosure;
-import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
-import org.operamasks.el.resolver.MethodResolver;
 
 import javax.el.ELContext;
 import javax.el.ValueExpression;
@@ -886,7 +884,7 @@ public class IRInterpreter {
             case LOAD_PROPERTY: {
                 Object key = pop();
                 Object base = pop();
-                push(loadProperty(base, key));
+                push(Runtime.loadProperty(elctx, base, key));
                 ip += 1;
                 break;
             }
@@ -894,8 +892,7 @@ public class IRInterpreter {
                 Object key = pop();
                 Object base = pop();
                 Object value = pop();
-                storeProperty(base, key, value);
-                push(value);
+                push(Runtime.storeProperty(elctx, base, key, value));
                 ip += 1;
                 break;
             }
@@ -1422,56 +1419,6 @@ public class IRInterpreter {
         } catch (IllegalAccessException e) {
             throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
         }
-    }
-
-    // ── Property / index access ──
-
-    private Object loadProperty(Object base, Object key) {
-        if (base == null)
-            return null;
-        // DataClass wraps a Java Class (e.g. from import). Unwrap to
-        // the underlying java.lang.Class so the ELResolver can find
-        // static methods (getInstance, etc.).
-        if (base instanceof org.operamasks.el.eval.closure.DataClass dc)
-            base = dc.getJavaClass();
-        ELContext elctx = evalContext.getELContext();
-        Object result;
-        try {
-            elctx.setPropertyResolved(false);
-            result = elctx.getELResolver().getValue(elctx, base, key);
-            if (elctx.isPropertyResolved())
-                return result;
-        } catch (javax.el.PropertyNotFoundException e) {
-            // Some ELResolvers (BeanELResolver) throw instead of
-            // setting isPropertyResolved(false). Catch and fall
-            // through to method resolution below.
-        }
-        // Property not found — try method resolution (mirrors ELNode.ACCESS.invoke).
-        // Static methods like UnitFormat.getInstance() resolve through this path.
-        if (key instanceof String) {
-            String name = (String)key;
-            MethodResolver mr = MethodResolver.getInstance(elctx);
-            MethodClosure mc = null;
-            if (base instanceof Class<?> cls) {
-                // Static method first, then instance method on Class itself
-                mc = mr.resolveStaticMethod(cls, name);
-                if (mc == null)
-                    mc = mr.resolveMethod(cls, name);
-                if (mc == null)
-                    mc = mr.resolveMethod(Class.class, name);
-            } else {
-                mc = mr.resolveMethod(base.getClass(), name);
-            }
-            if (mc != null)
-                return mc;
-        }
-        throw new RuntimeException(_T(EL_PROPERTY_NOT_FOUND,
-                base.getClass().getName(), key));
-    }
-
-    private void storeProperty(Object base, Object key, Object value) {
-        ELContext elctx = evalContext.getELContext();
-        elctx.getELResolver().setValue(elctx, base, key, value);
     }
 
     // ── Iterator helpers ──

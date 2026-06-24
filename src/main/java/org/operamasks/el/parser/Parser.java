@@ -588,9 +588,13 @@ public class Parser extends Scanner
               }
           }
 
-          case ASSIGN:
-            expect_lvalue(e);
-            return new ELNode.ASSIGN(scan(), e, parseTerm());
+          case ASSIGN: {
+              expect_lvalue(e);
+              int p = scan();
+              ELNode right = parseTerm();
+              checkTupleAssign(e, right);
+              return new ELNode.ASSIGN(p, e, right);
+          }
 
           case ASSIGNOP: {
               expect_lvalue(e);
@@ -681,6 +685,28 @@ public class Parser extends Scanner
 
           default:
             return null; // mark end of binary expressions
+        }
+    }
+
+    private void checkTupleAssign(ELNode left, ELNode right) {
+        if (left instanceof ELNode.TUPLE lhs) {
+            if (right instanceof ELNode.Constant ||
+                right instanceof ELNode.Composite ||
+                right instanceof ELNode.MAP ||
+                right instanceof ELNode.RANGE ||
+                right instanceof ELNode.CONS ||
+                right instanceof ELNode.LAMBDA ||
+                right instanceof ELNode.XML)
+                throw parseError(_T(EL_TUPLE_PATTERN_NOT_MATCH));
+
+            if (right instanceof ELNode.TUPLE rhs) {
+                if (lhs.elems.length != rhs.elems.length) {
+                    throw parseError(_T(EL_TUPLE_PATTERN_NOT_MATCH));
+                }
+                for (int i = 0; i < lhs.elems.length; i++) {
+                    checkTupleAssign(lhs.elems[i], rhs.elems[i]);
+                }
+            }
         }
     }
 

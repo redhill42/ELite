@@ -305,6 +305,7 @@ public class IRBytecodeCompiler {
             }
             case STORE_VAR -> {
                 int varIdx = pl & 0xFFFF;
+                mv.visitInsn(A_DUP);
                 if (typedMode && varIdx < argTypeIds.length) {
                     int t = argTypeIds[varIdx];
                     // Store typed value AND keep on stack (assignment returns value)
@@ -392,7 +393,7 @@ public class IRBytecodeCompiler {
                 mv.visitInsn(A_SWAP);                    // [ctx, base]
                 mv.visitVarInsn(A_ALOAD, S_TMP);        // [ctx, base, key]
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
-                    "loadProp", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    "loadProperty", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case STORE_PROPERTY -> {
                 // Stack: [value, base, key]. Need [ctx, base, key, value].
@@ -404,7 +405,7 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, S_TMP + 2);   // key
                 mv.visitVarInsn(A_ALOAD, S_TMP);       // value
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
-                    "storeProp", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    "storeProperty", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case LOAD_FIELD -> {
                 int idx = v.payload();
