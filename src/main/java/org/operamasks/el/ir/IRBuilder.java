@@ -1336,11 +1336,9 @@ public class IRBuilder extends ELNode.Visitor {
             emitPushConst(T_STRING, "");
             return;
         }
-        build(node.elems[0]);
-        for (int i = 1; i < node.elems.length; i++) {
-            build(node.elems[i]);
-            current.emitDynCat();
-        }
+        for (ELNode elem : node.elems)
+            build(elem);
+        current.emitCat(node.elems.length);
     }
 
     public void visit(ELNode.COMPOUND node) {

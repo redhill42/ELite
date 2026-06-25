@@ -960,8 +960,11 @@ public class IRInterpreter {
 
             // ============ Concatenation ============
             case CAT: {
-                Object r = pop(), l = pop();
-                push(String.valueOf(l) + String.valueOf(r));
+                int count = pl;
+                StringBuilder sb = new StringBuilder();
+                for (int i = count - 1; i >= 0; i--)
+                    sb.insert(0, pop());
+                push(sb.toString());
                 ip += 1;
                 break;
             }

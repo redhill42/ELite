@@ -669,8 +669,8 @@ public class IREmitter {
 
     // ── Concatenation ──
 
-    public IREmitter emitCat() {
-        return emit1(CAT, K_NONE, 0);
+    public IREmitter emitCat(int count) {
+        return emit1(CAT, K_NONE, count);
     }
 
     public IREmitter emitDynCat() {
