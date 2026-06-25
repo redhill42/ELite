@@ -32,9 +32,10 @@ public class InlinePass implements IRPass {
 
     private static final int MAX_INLINE_SIZE = 20;
 
-    // State accumulated during transform
-    private Object[] mergedPool;
     private Map<IRFunction, Integer> poolBaseMap; // fn → base index in merged pool
+
+    private int baseSlot;
+    private int tempSlots;
 
     @Override
     public IRFunction transform(IRFunction input) {
@@ -42,6 +43,9 @@ public class InlinePass implements IRPass {
         int[] offsets = input.blockOffsets();
         int blockCount = input.blockCount();
         Object[] pool = input.constantPool();
+
+        this.baseSlot = input.maxLocalCount();
+        this.tempSlots = 0;
 
         // Pass 1: collect all inline targets and their constant pools
         this.poolBaseMap = new HashMap<>();
@@ -58,7 +62,7 @@ public class InlinePass implements IRPass {
             return input; // nothing to inline
 
         // Build merged pool
-        this.mergedPool = new Object[pool.length + extraConstants.size()];
+        Object[] mergedPool = new Object[pool.length + extraConstants.size()];
         System.arraycopy(pool, 0, mergedPool, 0, pool.length);
         for (int i = 0; i < extraConstants.size(); i++) {
             mergedPool[pool.length + i] = extraConstants.get(i);
@@ -91,9 +95,13 @@ public class InlinePass implements IRPass {
             merged.addAll(newBlocks[b]);
         }
 
-        return new IRFunction(input.name(), input.paramCount(),
+        // Add temp locals.
+        String[] varNames = new String[input.varNames().length + tempSlots];
+        System.arraycopy(input.varNames(), 0, varNames, 0, input.varNames().length);
+
+        return new IRFunction(input.name(), input.paramCount(), input.captureCount(),
                 merged.toArray(), newOffsets, mergedPool,
-                input.varNames(), input.debugInfo(), input.paramFlags());
+                varNames, input.debugInfo(), input.paramFlags(), input.defaultValues());
     }
 
     /** Get the full function pool index from an INVOKE_DIRECT instruction. */
@@ -109,14 +117,13 @@ public class InlinePass implements IRPass {
             Set<IRFunction> targets, List<Object> extra) {
         InstructionView v = new InstructionView(code, start);
         while (v.inBounds() && v.offset() < end) {
-            if (v.opcode() == INVOKE_DIRECT && canInlineTarget(code, v, pool)) {
+            if (v.opcode() == INVOKE_DIRECT && canInlineTarget(v, pool)) {
                 IRFunction callee = (IRFunction) pool[directFuncIdx(v)];
                 if (targets.add(callee)) {
                     // First time seeing this callee: add its constants to extra pool
                     int base = pool.length + extra.size();
                     poolBaseMap.put(callee, base);
-                    for (Object c : callee.constantPool())
-                        extra.add(c);
+                    Collections.addAll(extra, callee.constantPool());
                 }
             }
             v.advance();
@@ -162,7 +169,7 @@ public class InlinePass implements IRPass {
         return out.toArray();
     }
 
-    private boolean canInlineTarget(int[] code, InstructionView v, Object[] pool) {
+    private boolean canInlineTarget(InstructionView v, Object[] pool) {
         int funcIdx = directFuncIdx(v);
         if (funcIdx >= pool.length)
             return false;
@@ -185,7 +192,7 @@ public class InlinePass implements IRPass {
                 return false;
             v.advance();
         }
-        return count <= MAX_INLINE_SIZE;
+        return true;
     }
 
     private int[] inferArgTypes(int[] code, int blockStart, int callOffset, int argc) {
@@ -220,7 +227,7 @@ public class InlinePass implements IRPass {
     private void emitInlinedBody(IntList out, IRFunction callee, int argc,
             int[] argTypes, int poolBase) {
         IRFunction body = IRSpecializer.specialize(callee, argTypes);
-        int baseSlot = 8;
+        tempSlots = Math.max(tempSlots, argc);
 
         // Pop args into temp locals (argN-1 first)
         for (int i = argc - 1; i >= 0; i--) {

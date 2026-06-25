@@ -1241,7 +1241,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (elem instanceof ELNode.TUPLE tt) {
                 buildFlattenTuple(tt.elems, tmpVars);
             } else {
-                int varIdx = ensureVar("*t*" + tmpVars.size());
+                int varIdx = ensureVar("*t" + tmpVars.size() + "*");
                 tmpVars.add(varIdx);
                 build(elem);
                 current.emitStoreVar(varIdx);
@@ -2380,60 +2380,5 @@ public class IRBuilder extends ELNode.Visitor {
             // code
         }
         return fn;
-    }
-
-    /**
-     * Pre-compile a function definition and register it for direct calls.
-     */
-    static void registerDef(IRBuilder b, ELNode def, boolean optimize) {
-        if (def instanceof ELNode.DEFINE d && d.expr instanceof ELNode.LAMBDA lam) {
-            String name = lam.name != null ? lam.name : d.id;
-            IRBuilder nested = new IRBuilder(b);  // share parent pool
-            nested.lambdaName = lam.name;
-            if (lam.file != null)
-                nested.currentFile = lam.file;
-            for (ELNode.DEFINE var : lam.vars) {
-                int flags = var.type != null ?
-                            IRFunction.PARAM_EXPLICIT_TYPE : 0;
-                if (!var.immediate) flags |= IRFunction.PARAM_LAZY;
-                nested.ensureVar(var.id, flags);
-            }
-            // Run scope analysis to identify variables captured by inner
-            // closures. These must use STORE_GLOBAL (eval context chain)
-            // so inner closures can read and modify them.
-            ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
-                lam, Set.of(), new HashSet<>());
-            nested.isCaptured.addAll(lamAnaly.capturedByInner);
-
-            // Mark captured parameters for evalContext sync at function entry
-            for (ELNode.DEFINE var : lam.vars) {
-                if (lamAnaly.capturedByInner.contains(var.id)) {
-                    Integer idx = nested.varIndex.get(var.id);
-                    if (idx != null) {
-                        int flags = nested.paramFlags.get(idx);
-                        nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
-                    }
-                }
-            }
-
-            nested.inTailPosition = true;
-            // Build the body in its own scope — functions defined inside
-            // are registered locally and won't leak to the outer scope.
-            nested.pushFunctionScope();
-            try {
-                nested.build(lam.body);
-            } finally {
-                nested.popFunctionScope();
-            }
-            if (!endsWithReturn(nested)) {
-                int t = nested.typeIdFromNode(lam.body);
-                nested.current.emitReturn(t >= 0 ? t : T_INT);
-            }
-            IRFunction rawFn = nested.finish(name, lam.vars.length);
-            rawFn = rawFn.withDefaults(extractDefaults(lam.vars));
-            IRFunction fn = finishIR(rawFn, lam.vars.length, optimize, true);
-            int poolIdx = b.putConstant(fn);
-            b.registerFunction(name, poolIdx);
-        }
     }
 }

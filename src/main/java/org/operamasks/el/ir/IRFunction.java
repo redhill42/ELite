@@ -63,49 +63,6 @@ public class IRFunction {
      */
     private final Object[] defaultValues;
 
-    IRFunction(String name, int paramCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames) {
-        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             DebugInfo.EMPTY, null, null);
-    }
-
-    // Backward-compatible: accepts int[] sourcePositions (ignored)
-    IRFunction(String name, int paramCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames,
-               int[] sourcePositions) {
-        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             DebugInfo.EMPTY, null, null);
-    }
-
-    // Backward-compatible: sourcePositions + paramFlags
-    IRFunction(String name, int paramCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames,
-               int[] sourcePositions, int[] paramFlags) {
-        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             DebugInfo.EMPTY, paramFlags, null);
-    }
-
-    IRFunction(String name, int paramCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames,
-               DebugInfo debugInfo, int[] paramFlags) {
-        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             debugInfo, paramFlags, null);
-    }
-
-    // For ConstantFolder which passes defaultValues as last arg
-    IRFunction(String name, int paramCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames,
-               DebugInfo debugInfo, int[] paramFlags,
-               Object[] defaultValues) {
-        this(name, paramCount, 0, code, blockOffsets, constantPool, varNames,
-             debugInfo, paramFlags, defaultValues);
-    }
-
     IRFunction(String name, int paramCount, int captureCount,
                int[] code, int[] blockOffsets,
                Object[] constantPool, String[] varNames,
@@ -173,7 +130,7 @@ public class IRFunction {
 
     /** Maximum local variable index (params + define'd vars). */
     public int maxLocalCount() {
-        return Math.max(paramCount, varNames != null ? varNames.length : 0);
+        return varNames.length;
     }
 
     /** Check if this function contains ops that the IR interpreter cannot handle. */
@@ -206,6 +163,7 @@ public class IRFunction {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("IRFunction[").append(name).append("] params=").append(paramCount)
+          .append(" locals=").append(varNames.length)
           .append(" blocks=").append(blockOffsets.length)
           .append(" codeWords=").append(code.length)
           .append("\n");

@@ -92,6 +92,7 @@ public final class IRPrinter {
     public static String formatIR(IRFunction fn) {
         StringBuilder sb = new StringBuilder();
         sb.append(fn.name()).append(" params=").append(fn.paramCount())
+          .append(" locals=").append(fn.maxLocalCount())
           .append(" blocks=").append(fn.blockCount())
           .append(" words=").append(fn.code().length)
           .append("\n");
@@ -99,8 +100,14 @@ public final class IRPrinter {
         Object[] pool = fn.constantPool();
         if (pool.length > 0) {
             for (int i = 0; i < pool.length; i++) {
-                sb.append("  #").append(i).append(" = ").append(formatConst(pool[i])).append("\n");
+                sb.append("  #").append(i).append(" = ")
+                  .append(formatConst(pool[i])).append("\n");
             }
+        }
+
+        Object[] vars = fn.varNames();
+        for (int i = 0; i < vars.length; i++) {
+            sb.append("  v").append(i).append(" = ").append(vars[i]).append("\n");
         }
 
         for (int b = 0; b < fn.blockCount(); b++) {

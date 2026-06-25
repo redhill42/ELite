@@ -8,7 +8,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.EvaluationContext;
-import org.operamasks.el.eval.closure.DelayEvalClosure;
 import org.operamasks.el.parser.ELNode;
 import org.junit.jupiter.api.Disabled;
 import org.operamasks.el.parser.Parser;
@@ -79,7 +78,7 @@ class ThunkTest {
 
         int[] code = out.toArray();
         Object[] pool = {thunkFn};
-        IRFunction fn = new IRFunction("<test>", 0, code, new int[]{0},
+        IRFunction fn = new IRFunction("<test>", 0, 0, code, new int[]{0},
             pool, new String[0], DebugInfo.EMPTY, null);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object result = interp.execute(null);
@@ -114,8 +113,8 @@ class ThunkTest {
 
         int[] code = out.toArray();
         Object[] pool = {thunkFn};
-        IRFunction fn = new IRFunction("<test>", 0, code, new int[]{0},
-            pool, new String[0], DebugInfo.EMPTY, null);
+        IRFunction fn = new IRFunction("<test>", 0, 0, code, new int[]{0},
+            pool, new String[]{"tmp"}, DebugInfo.EMPTY, null);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object result = interp.execute(null);
 
@@ -141,8 +140,8 @@ class ThunkTest {
 
         int[] code = out.toArray();
         Object[] pool = {thunkFn};
-        IRFunction fn = new IRFunction("<test>", 0, code, new int[]{0},
-            pool, new String[0], DebugInfo.EMPTY, null);
+        IRFunction fn = new IRFunction("<test>", 0, 0, code, new int[]{0},
+            pool, new String[]{"tmp"}, DebugInfo.EMPTY, null);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object result = interp.execute(null);
 
@@ -167,8 +166,6 @@ class ThunkTest {
             defs, exps, null);
         IRBuilder b = new IRBuilder();
         b.analyze(analysis);
-        for (ELNode def : defs != null ? defs : java.util.List.<ELNode>of())
-            IRBuilder.registerDef(b, def, true);
         for (int i = 0; i < all.size() - 1; i++) {
             b.build(all.get(i));
             b.current.emitPop();

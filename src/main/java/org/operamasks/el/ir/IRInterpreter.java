@@ -50,7 +50,6 @@ public class IRInterpreter {
 
     // ── Key tuning parameters ──
     private static final int DEFAULT_STACK_SIZE = 256;
-    private static final int DEFAULT_LOCALS_SIZE = 64;
 
     // ── Instance state ──
     private EvaluationContext evalContext;
@@ -75,6 +74,7 @@ public class IRInterpreter {
         this.elctx = context.getELContext();
         this.function = function;
         this.code = function.code();
+        this.locals = new Object[function.maxLocalCount()];
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
         this.debug = ELProgram.DEBUG;
@@ -94,19 +94,14 @@ public class IRInterpreter {
                           boolean isTopLevel) {
         this.stack = new Object[DEFAULT_STACK_SIZE];
         this.sp = 0;
-        this.locals = new Object[DEFAULT_LOCALS_SIZE];
 
         int nvars = function.paramCount();
         int argc = args != null ? args.length : 0;
 
         Object[] defs = function.defaultValues();
         if ((argc > nvars) || (argc < nvars && defs == null))
-            throw new EvaluationException(elctx, _T(EL_FN_BAD_ARG_COUNT, function.name(), nvars, argc));
-
-        // Bind arguments to locals (grow array if paramCount exceeds default)
-        int needed = nvars + (captured != null ? captured.length : 0);
-        if (needed > locals.length)
-            growLocals(needed);
+            throw new EvaluationException(elctx, _T(EL_FN_BAD_ARG_COUNT,
+                                          function.name(), nvars, argc));
 
         if (args != null) {
             System.arraycopy(args, 0, locals, 0, args.length);
@@ -130,12 +125,6 @@ public class IRInterpreter {
 
         // Start at first block
         ip = blockOffsets.length > 0 ? blockOffsets[0] : 0;
-
-        // Ensure lazy sequences (DelaySeq, MappendSeq, etc.) can access the
-        // ELContext via ELEngine.getCurrentELContext() when forced outside of
-        // a Frame.addFrame() scope (e.g. by Java code calling .size() on a
-        // lazy sequence returned from eval).
-        javax.el.ELContext savedElCtx = ELEngine.setCurrentELContext(elctx);
 
         // Scope management:
         // - Top-level program: no pushContext — variables go directly
@@ -170,11 +159,6 @@ public class IRInterpreter {
             frame = StackTrace.addFrame(elctx, fnName, fileName, blockPos);
         }
 
-        // Store current EvaluationContext on ELContext so invokeTarget
-        // can retrieve it for nested IRClosure/IRFunction calls.
-        Object savedCtx = elctx.getContext(EvaluationContext.class);
-        elctx.putContext(EvaluationContext.class, evalContext);
-
         try {
             return interpret();
         } catch (RuntimeException e) {
@@ -195,9 +179,6 @@ public class IRInterpreter {
                 StackTrace.removeFrame(elctx);
                 frame = null;
             }
-            if (savedCtx != null)
-                elctx.putContext(EvaluationContext.class, savedCtx);
-            ELEngine.setCurrentELContext(savedElCtx);
         }
     }
 
@@ -220,7 +201,6 @@ public class IRInterpreter {
             }
             case PUSH_VAR: {
                 int idx = pl & 0xFFFF;
-                ensureLocals(idx);
                 Object val = locals[idx];
                 if (val instanceof Thunk t)
                     val = t.getValue(elctx);
@@ -230,7 +210,6 @@ public class IRInterpreter {
             }
             case PUSH_VAR_RAW: {
                 int idx = pl & 0xFFFF;
-                ensureLocals(idx);
                 push(locals[idx]);  // no auto-force
                 ip += 1;
                 break;
@@ -735,7 +714,6 @@ public class IRInterpreter {
             case INVOKE_TAIL: {
                 int argc = pl;
                 for (int i = argc - 1; i >= 0; i--) {
-                    ensureLocals(i);
                     locals[i] = pop();
                 }
                 // Reset operand stack — old intermediate values
@@ -1179,24 +1157,6 @@ public class IRInterpreter {
         stack = newStack;
     }
 
-    /**
-     * Ensure locals array has at least minCapacity slots.
-     */
-    private void growLocals(int minCapacity) {
-        int newSize = Math.max(locals.length * 2, minCapacity);
-        Object[] newLocals = new Object[newSize];
-        System.arraycopy(locals, 0, newLocals, 0, locals.length);
-        locals = newLocals;
-    }
-
-    /**
-     * Ensure locals[idx] is accessible, growing the array if needed.
-     */
-    private void ensureLocals(int idx) {
-        if (idx >= locals.length)
-            growLocals(idx + 1);
-    }
-
     // ── Dynamic operation support ──
 
     private Object dynamicBinaryOp(int irOpcode) {
@@ -1360,7 +1320,6 @@ public class IRInterpreter {
             return;
         for (int i = 0; i < names.length && i < locals.length; i++) {
             if (names[i] != null) {
-                ensureLocals(i);
                 evalContext.setVariable(names[i], new LiteralClosure(locals[i]));
             }
         }
@@ -1377,7 +1336,6 @@ public class IRInterpreter {
             return;
         for (int i = 0; i < names.length && i < locals.length; i++) {
             if (names[i] != null) {
-                ensureLocals(i);
                 ValueExpression ve = evalContext.resolveVariable(names[i]);
                 if (ve != null) {
                     locals[i] = ve.getValue(elctx);

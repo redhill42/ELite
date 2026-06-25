@@ -157,8 +157,8 @@ class IRInterpreterTest {
     // ── helpers ──
 
     private static IRFunction buildFn(String name, int[] code, int paramCount) {
-        return new IRFunction(name, paramCount, code, new int[]{0},
-                new Object[]{0,1}, new String[]{"n","acc"}, new int[]{0});
+        return new IRFunction(name, paramCount, 0, code, new int[]{0},
+                new Object[]{0,1}, new String[]{"n","acc"}, null, null);
     }
 
     private static boolean scanOp(IRFunction fn, int op) {
