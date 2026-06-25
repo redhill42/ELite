@@ -224,6 +224,24 @@ class ThunkTest {
             "without &: both args evaluated before call, n=2");
     }
 
+    // ── Capture: function parameter captured by inner lambda ──
+
+    @Test
+    void functionParameterCapturedByInnerLambda() {
+        // Parameter `n` of make_counter is captured by the lambda \=> n++.
+        // The lambda must mutate the original parameter (not a copy).
+        // Before the fix this output 0, 0 (captured by value).
+        // After the fix it should output 0, 1 (captured by reference).
+        Object result = interpretProgram(
+            "define make_counter(n) { \\=> n++ }",
+            "define c = make_counter(0)",
+            "c()",   // should return 0 (n++, post-increment)
+            "c()"    // should return 1
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "second call should return 1 — parameter n is shared via evalContext");
+    }
+
     // ── Self-referential lazy definitions ──
 
     @Test

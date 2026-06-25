@@ -1599,8 +1599,34 @@ public class IRBuilder extends ELNode.Visitor {
         Set<String> lambdaMutableFree = new HashSet<>();
         computeLambdaCaptures(node, lambdaFreeVars, lambdaMutableFree);
 
+        // Mark enclosing-scope variables that this lambda captures so they
+        // use STORE_GLOBAL/PUSH_GLOBAL (evalContext chain). Without this,
+        // captured parameters are stored only in locals[] and the closure
+        // captures them by VALUE (copy) — mutations inside the closure
+        // don't propagate back to the outer scope.
+        for (String varName : lambdaFreeVars) {
+            if (!isCaptured.contains(varName) && varIndex.containsKey(varName)) {
+                isCaptured.add(varName);
+                // If this is a parameter, mark PARAM_CAPTURED so the
+                // interpreter syncs its initial value to evalContext at entry.
+                Integer idx = varIndex.get(varName);
+                if (idx != null && idx < paramFlags.size()) {
+                    int flags = paramFlags.get(idx);
+                    paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
+                }
+            }
+        }
+
         IRBuilder nested = new IRBuilder(this);
         nested.lambdaName = node.name;
+
+        // Propagate free-variable captures into the nested builder so that
+        // both reads (PUSH_GLOBAL) and writes (STORE_GLOBAL) go through the
+        // evalContext chain. The enclosing scope was already marked by the
+        // block above; this ensures the nested scope is consistent.
+        for (String varName : lambdaFreeVars) {
+            nested.isCaptured.add(varName);
+        }
 
         // Propagate source file from the AST node
         if (node.file != null)
@@ -1747,8 +1773,8 @@ public class IRBuilder extends ELNode.Visitor {
 
         for (String ref : bodyRefs) {
             if (!paramNames.contains(ref) &&
-                (parent.varIndex.containsKey(ref) ||
-                 parent.isCaptured.contains(ref))) {
+                (varIndex.containsKey(ref) || isCaptured.contains(ref) ||
+                 parent.varIndex.containsKey(ref) || parent.isCaptured.contains(ref))) {
                 freeVarsOut.add(ref);
                 if (bodyMutations.contains(ref)) {
                     mutableFreeOut.add(ref);
@@ -1794,11 +1820,16 @@ public class IRBuilder extends ELNode.Visitor {
                 scan(e.right);
             }
 
-            // Skip nested lambdas — their body references are their own
-            // captures, not captures of THIS lambda.
+            // Recursively collect refs from nested lambda bodies, excluding
+            // the nested lambda's own parameters. This ensures that outer
+            // functions know about variables captured by deeply nested
+            // closures (e.g., outer(a) => \b => \c => a + b + c).
             public void visit(ELNode.LAMBDA e) {
-                // Don't recurse into nested lambdas for THIS lambda's
-                // capture analysis
+                Set<String> nestedExcludes = new HashSet<>(excludeNames);
+                for (ELNode.DEFINE v : e.vars) {
+                    nestedExcludes.add(v.id);
+                }
+                collectVarRefs(e.body, nestedExcludes, refsOut, mutationsOut);
             }
 
             public void visit(ELNode.BLOCK e) {
