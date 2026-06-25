@@ -997,17 +997,14 @@ public class IRInterpreter {
             case INVOKE_METHOD: {
                 Method m = (Method)constantPool[pl];
                 int argc = oc > 0 ? code[ip + 1] : 0;
-                Object[] args = new Object[argc];
-                for (int i = argc - 1; i >= 0; i--)
-                    args[i] = pop();
+                Closure[] args = new Closure[argc];
+                for (int i = argc - 1; i >= 0; i--) {
+                    Object arg = pop();
+                    args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
+                }
                 Object base = pop();
                 try {
-                    // Coerce args to match method's parameter types
-                    Class<?>[] paramTypes = m.getParameterTypes();
-                    for (int i = 0; i < argc && i < paramTypes.length; i++) {
-                        args[i] = coerceArg(args[i], paramTypes[i]);
-                    }
-                    push(m.invoke(base, args));
+                    push(ELEngine.invokeMethod(elctx, base, m, args));
                 } catch (Exception e) {
                     throw new RuntimeException(_T(IR_METHOD_INVOKE_FAILED), e);
                 }

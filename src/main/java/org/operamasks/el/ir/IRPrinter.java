@@ -16,6 +16,7 @@
 
 package org.operamasks.el.ir;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 import org.objectweb.asm.*;
@@ -130,6 +131,8 @@ public final class IRPrinter {
             Object val = fn.constantPool()[idx];
             if (val instanceof IRFunction irf)
                 sb.append(" '").append(irf.name()).append("'");
+            else if (val instanceof Method m)
+                sb.append(" '").append(m.getName()).append("'");
             else
                 sb.append(" '").append(val).append("'");
         }
@@ -157,8 +160,8 @@ public final class IRPrinter {
                 sb.append(" B").append(v.jumpTarget());
             case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
-            case Opcode.INVOKE_DIRECT -> formatConstPool(sb, fn, v.payload());
-            case Opcode.INVOKE_TARGET -> formatConstPool(sb, fn, v.payload());
+            case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET, Opcode.INVOKE_METHOD
+                -> formatConstPool(sb, fn, v.payload());
             case Opcode.CLOSURE, Opcode.DELAY -> {
                 formatConstPool(sb, fn, v.payload());
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
@@ -212,6 +215,7 @@ public final class IRPrinter {
         if (c instanceof String s) return "\"" + s + "\"";
         if (c instanceof Number || c instanceof Boolean) return c.toString();
         if (c instanceof IRFunction fn) return "<IRFunction " + fn.name() + ">";
+        if (c instanceof Method m) return "<Method " + m.getName() + ">";
         if (c instanceof ELNode n) return "<" + n.getClass().getSimpleName() + ">";
         return c.getClass().getSimpleName();
     }

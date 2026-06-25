@@ -20,6 +20,8 @@ import javax.el.ELContext;
 import javax.el.MethodNotFoundException;
 import elite.lang.Closure;
 
+import java.lang.reflect.Method;
+
 /**
  * Java方法的包装对象, 使Java对象方法融入ELite的对象体系.
  */
@@ -29,6 +31,13 @@ public abstract class MethodClosure extends AbstractClosure
      * 返回方法名.
      */
     public abstract String getName();
+
+    /**
+     * 返回Java方法，如果方法不存在或存在多个重载方法，则返回null.
+     */
+    public Method getJavaMethod() {
+        return null;
+    }
 
     /**
      * 调用Java方法, 如果方法对象包含多个Java方法则需要按参数类型进行匹配.

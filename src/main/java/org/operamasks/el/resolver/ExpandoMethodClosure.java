@@ -48,7 +48,13 @@ class ExpandoMethodClosure extends MethodClosure
             delegate = ((JavaMethodClosure)delegate).addMethod(method);
         }
     }
-    
+
+    public Method getJavaMethod() {
+        if (delegate instanceof MethodClosure)
+            return ((MethodClosure)delegate).getJavaMethod();
+        return null;
+    }
+
     public int arity(ELContext elctx) {
         return delegate.arity(elctx);
     }

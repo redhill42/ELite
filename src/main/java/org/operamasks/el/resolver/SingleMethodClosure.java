@@ -61,6 +61,10 @@ class SingleMethodClosure extends JavaMethodClosure
         }
     }
 
+    public Method getJavaMethod() {
+        return method;
+    }
+
     public int arity(ELContext elctx) {
         return nargs;
     }

@@ -16,16 +16,20 @@
 
 package org.operamasks.el.ir;
 
+import elite.lang.Closure;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.ELProgram;
+import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.parser.DefaultVisitor;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.ClassResolver;
+import org.operamasks.el.resolver.MethodResolver;
 import org.operamasks.util.BeanUtils;
 
 import javax.el.ELContext;
+import javax.el.ValueExpression;
 import java.beans.IntrospectionException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
@@ -426,11 +430,31 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
-            // Builtin.delay(expr): compile the argument as a thunk and
-            // return the Thunk directly without calling delay().
-            if ("delay".equals(id) && node.args.length == 1) {
-                buildThunk(node.args[0]);
-                return;
+            // Resolve builtin function.
+            MethodResolver mr = MethodResolver.getInstance(elctx);
+            MethodClosure mc = mr.resolveGlobalMethod(id);
+            if (mc != null && mc.arity(elctx) == node.args.length) {
+                Method method = mc.getJavaMethod();
+                if (method != null) {
+                    boolean prev = inTailPosition;
+                    inTailPosition = false;
+                    emitPushNull(); // static method, base==null
+                    Class<?>[] types = method.getParameterTypes();
+                    int iarg = 0;
+                    if (types.length > 0 && types[0] == ELContext.class)
+                        iarg++;
+                    for (int i = 0; i < node.args.length; i++) {
+                        if (delayed(types[iarg]) && !(node.args[i] instanceof ELNode.LAMBDA)) {
+                            buildThunk(node.args[i]);
+                        } else {
+                            build(node.args[i]);
+                        }
+                    }
+                    inTailPosition = prev;
+                    int methodIdx = putConstant(method);
+                    current.emitInvokeMethod(methodIdx, node.args.length);
+                    return;
+                }
             }
 
             // FIXME: @data constructors have lazy fields (&tail) — AST must evaluate
@@ -498,6 +522,10 @@ public class IRBuilder extends ELNode.Visitor {
             build(arg);
         inTailPosition = prev;
         current.emitInvokeDyn(node.args.length);
+    }
+
+    private static boolean delayed(Class<?> type) {
+        return type == ValueExpression.class || type == Closure.class;
     }
 
     /**
