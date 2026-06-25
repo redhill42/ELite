@@ -104,8 +104,6 @@ public final class Opcode {
 
     // ── Unary (0x46-0x4F) ──
     public static final int NOT = 0x46;
-    public static final int INC = 0x47;  // increment local variable
-    public static final int DEC = 0x48;  // decrement local variable
 
     // ── Typed comparisons (0x50-0x63) ──
     public static final int IEQ = 0x50;
@@ -269,8 +267,6 @@ public final class Opcode {
             case DYNNOT -> "DYNNOT";
             case DYNEMPTY -> "DYNEMPTY";
             case NOT -> "NOT";
-            case INC -> "INC";
-            case DEC -> "DEC";
             case IEQ -> "IEQ";
             case INE -> "INE";
             case ILT -> "ILT";

@@ -285,36 +285,6 @@ public final class Runtime {
         return createClosure(elctx, fn, captured);
     }
 
-    // ── Locals / IncDec ──
-
-    public static Object incLocal(Object[] locals, int idx) {
-        Object val = locals[idx];
-        if (val instanceof Long l)
-            val = l + 1;
-        else if (val instanceof Integer i)
-            val = i + 1;
-        else if (val instanceof Double d)
-            val = d + 1.0;
-        else
-            val = ((Number) val).longValue() + 1;
-        locals[idx] = val;
-        return val;
-    }
-
-    public static Object decLocal(Object[] locals, int idx) {
-        Object val = locals[idx];
-        if (val instanceof Long l)
-            val = l - 1;
-        else if (val instanceof Integer i)
-            val = i - 1;
-        else if (val instanceof Double d)
-            val = d - 1.0;
-        else
-            val = ((Number) val).longValue() - 1;
-        locals[idx] = val;
-        return val;
-    }
-
     // ── Math ──
 
     public static Object intPow(Object x, Object y) {

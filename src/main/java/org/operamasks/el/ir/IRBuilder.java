@@ -340,24 +340,6 @@ public class IRBuilder extends ELNode.Visitor {
         return null;
     }
 
-    /**
-     * Extract the key name from a simple key node.
-     */
-    private static String getKeyName(ELNode key) {
-        if (key instanceof ELNode.IDENT ident)
-            return ident.id;
-        if (key instanceof ELNode.STRINGVAL s)
-            return s.value;
-        return null;
-    }
-
-    private static boolean isSimpleKey(ELNode key) {
-        return key instanceof ELNode.IDENT ||
-               key instanceof ELNode.NUMBER ||
-               key instanceof ELNode.STRINGVAL ||
-               key instanceof ELNode.CHARVAL;
-    }
-
     // ── Identifiers ──
     public void visit(ELNode.IDENT node) {
         // 1) Captured variable: must go through evaluation context
@@ -723,55 +705,45 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.INC node) {
-        buildIncDec(node, node.right, true, node.is_preincrement);
+        buildIncDec(node.right, true, node.is_preincrement);
     }
 
     public void visit(ELNode.DEC node) {
-        buildIncDec(node, node.right, false, node.is_preincrement);
+        buildIncDec(node.right, false, node.is_preincrement);
     }
 
     /**
      * Expand ++x / x++ / --x / x-- for local variables.
      */
-    private void buildIncDec(ELNode node, ELNode target, boolean isInc, boolean isPre) {
-        if (target instanceof ELNode.IDENT ident) {
-            Integer idx = varIndex.get(ident.id);
-            if (idx != null && !isCaptured.contains(ident.id)) {
-                // Local variable (not captured): emit INC/DEC opcode
-                if (isPre) {
-                    current.emit1(isInc ? INC : DEC, K_PRIM, idx);
-                } else {
-                    current.emitPushVar(idx);
-                    current.emit1(isInc ? INC : DEC, K_PRIM, idx);
-                    current.emitPop(); // discard new value, leave old value
-                }
-                return;
-            }
-            if (isCaptured.contains(ident.id)) {
-                // Captured variable: read from evalContext, mutate, store back
-                // via STORE_GLOBAL so the enclosing scope sees the change.
-                int nameIdx = putConstant(ident.id);
-                int oneIdx = putConstant(1L);
-                if (isPre) {
-                    current.emitPushGlobal(nameIdx);
-                    current.emitPushConst(oneIdx);
-                    emitDynamicOp(isInc ? Token.ADD : Token.SUB);
-                    current.emitDup(); // keep new value on stack for return
-                    current.emitStoreGlobal(nameIdx);
-                } else {
-                    current.emitPushGlobal(nameIdx); // old value
-                    current.emitDup();               // dup for return
-                    current.emitPushConst(oneIdx);
-                    emitDynamicOp(isInc ? Token.ADD : Token.SUB);
-                    current.emitStoreGlobal(nameIdx);
-                    current.emitPop(); // discard new value, keep old value
-                }
-                return;
-            }
-        }
+    private void buildIncDec(ELNode target, boolean isInc, boolean isPre) {
+        // Handle parentheses expression.
+        while (target instanceof ELNode.EXPR)
+            target = ((ELNode.EXPR)target).right;
 
-        // Non-local or complex target → trampoline
-        buildTrampoline(node);
+        // Evaluate right value.
+        build(target);
+        if (!isPre)
+            current.emitDup();
+
+        // Increment or decrement the value.
+        emitPushConst(T_INT, 1);
+        if (isInc)
+            current.emitDynAdd();
+        else
+            current.emitDynSub();
+
+        // Assign to right value itself.
+        if (target instanceof ELNode.IDENT ident)
+            buildStoreVariable(ident.id);
+        else if (target instanceof ELNode.ACCESS access)
+            buildStoreProperty(access);
+        else // could not happen, parser doesn't allow increment/decrement on other expression
+            throw new UnsupportedOperationException("Invalid increment/decrement");
+
+        // If preincrement, stack top is the return value, otherwise pop and
+        // keep duped value on top.
+        if (!isPre)
+            current.emitPop();
     }
 
     public void visit(ELNode.CAT node) {

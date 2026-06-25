@@ -826,38 +826,6 @@ public class IRInterpreter {
                 break;
             }
 
-            // ============ Increment / Decrement ============
-            case INC: {
-                int idx = pl;
-                Object val = locals[idx];
-                if (val instanceof Long l)
-                    locals[idx] = l + 1;
-                else if (val instanceof Integer i)
-                    locals[idx] = i + 1;
-                else if (val instanceof Double d)
-                    locals[idx] = d + 1.0;
-                else
-                    locals[idx] = ((Number)val).longValue() + 1;
-                push(locals[idx]);
-                ip += 1;
-                break;
-            }
-            case DEC: {
-                int idx = pl;
-                Object val = locals[idx];
-                if (val instanceof Long l)
-                    locals[idx] = l - 1;
-                else if (val instanceof Integer i)
-                    locals[idx] = i - 1;
-                else if (val instanceof Double d)
-                    locals[idx] = d - 1.0;
-                else
-                    locals[idx] = ((Number)val).longValue() - 1;
-                push(locals[idx]);
-                ip += 1;
-                break;
-            }
-
             // ============ Property / index access ============
             case LOAD_PROPERTY: {
                 Object key = pop();

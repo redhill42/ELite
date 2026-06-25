@@ -545,20 +545,6 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
                     "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
             }
-            case INC -> {
-                int varIdx = pl;
-                mv.visitVarInsn(A_ALOAD, S_LOCALS);
-                emitIntConst(varIdx);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
-                    "incLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
-            }
-            case DEC -> {
-                int varIdx = pl;
-                mv.visitVarInsn(A_ALOAD, S_LOCALS);
-                emitIntConst(varIdx);
-                mv.visitMethodInsn(A_INVOKESTATIC, "elite/lang/Runtime",
-                    "decLocal", "([Ljava/lang/Object;I)Ljava/lang/Object;", false);
-            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
             case DYNADD, DYNSUB, DYNMUL, DYNDIV, DYNREM, DYNPOW, DYNCAT, DYNIN,
