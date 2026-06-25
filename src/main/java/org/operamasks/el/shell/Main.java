@@ -36,6 +36,7 @@ import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.AttributedString;
 import org.jline.utils.AttributedStyle;
 
+import org.operamasks.el.eval.ELProgram;
 import org.operamasks.el.shell.command.Command;
 import org.operamasks.el.shell.command.CommandProvider;
 import org.operamasks.el.parser.IncompleteException;
@@ -242,6 +243,7 @@ public class Main
             }
 
             try {
+                shellContext.setLastScript(buffer);
                 Object value = engine.eval(buffer);
                 engine.put("_", value);
                 if (value != null) {
@@ -318,11 +320,8 @@ public class Main
 
     private static String dumpAST(String script) {
         Parser parser = new Parser(script);
-        org.operamasks.el.eval.ELProgram program = parser.parse();
-        java.util.List<ELNode> all = new java.util.ArrayList<>();
-        all.addAll(program.getDefinitions());
-        all.addAll(program.getExpressions());
-        return ASTDumper.dump(all);
+        ELProgram program = parser.parse();
+        return ASTDumper.dump(program);
     }
 
     private ScriptEngine createScriptEngine(String[] args) {

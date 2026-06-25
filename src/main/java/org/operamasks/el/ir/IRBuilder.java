@@ -17,9 +17,9 @@
 package org.operamasks.el.ir;
 
 import elite.lang.Closure;
+import elite.lang.annotation.Expando;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.ELProgram;
-import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.parser.DefaultVisitor;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
@@ -431,31 +431,8 @@ public class IRBuilder extends ELNode.Visitor {
             }
 
             // Resolve builtin function.
-            MethodResolver mr = MethodResolver.getInstance(elctx);
-            MethodClosure mc = mr.resolveGlobalMethod(id);
-            if (mc != null && mc.arity(elctx) == node.args.length) {
-                Method method = mc.getJavaMethod();
-                if (method != null) {
-                    boolean prev = inTailPosition;
-                    inTailPosition = false;
-                    emitPushNull(); // static method, base==null
-                    Class<?>[] types = method.getParameterTypes();
-                    int iarg = 0;
-                    if (types.length > 0 && types[0] == ELContext.class)
-                        iarg++;
-                    for (int i = 0; i < node.args.length; i++) {
-                        if (delayed(types[iarg]) && !(node.args[i] instanceof ELNode.LAMBDA)) {
-                            buildThunk(node.args[i]);
-                        } else {
-                            build(node.args[i]);
-                        }
-                    }
-                    inTailPosition = prev;
-                    int methodIdx = putConstant(method);
-                    current.emitInvokeMethod(methodIdx, node.args.length);
-                    return;
-                }
-            }
+            if (tryBuildGlobalMethodCall(id, node.args))
+                return;
 
             // FIXME: @data constructors have lazy fields (&tail) — AST must evaluate
             // the call to wrap deferred arguments in EvalClosure. IR eagerly
@@ -481,25 +458,9 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (node.right instanceof ELNode.ACCESS acc) {
             // Try to resolve direct method for known Java types.
-            if (acc.index instanceof ELNode.STRINGVAL && acc.right.inferredType != null) {
-                String methodName = ((ELNode.STRINGVAL)acc.index).value;
-                org.operamasks.el.types.Type baseType = acc.right.inferredType;
-                java.lang.Class<?> javaClass = resolveJavaClass(baseType);
-                if (javaClass != null) {
-                    Method method = resolveMethod(javaClass, methodName, node.args.length);
-                    if (method != null) {
-                        // Direct method call: push base, push args, INVOKE_METHOD
-                        int methodIdx = putConstant(method);
-                        boolean prev = inTailPosition;
-                        inTailPosition = false;
-                        build(acc.right); // base
-                        for (ELNode arg : node.args)
-                            build(arg); // args
-                        inTailPosition = prev;
-                        current.emitInvokeMethod(methodIdx, node.args.length);
-                        return;
-                    }
-                }
+            if (acc.index instanceof ELNode.STRINGVAL key) {
+                if (tryBuildDirectMethodCall(acc.right, key.value, node.args))
+                    return;
             }
 
             // resolve method at runtime
@@ -524,8 +485,91 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitInvokeDyn(node.args.length);
     }
 
-    private static boolean delayed(Class<?> type) {
-        return type == ValueExpression.class || type == Closure.class;
+    private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {
+        var mc = MethodResolver.getInstance(elctx).resolveGlobalMethod(name);
+        if (mc == null)
+            return false;
+
+        Method method = mc.getJavaMethod();
+        if (method == null)
+            return false;
+
+        return buildMethodCall(method, null, args);
+    }
+
+    private boolean tryBuildDirectMethodCall(ELNode base, String name, ELNode[] args) {
+        Class<?> baseClass = null;
+        if (base.inferredType != null)
+            baseClass = resolveJavaClass(base.inferredType);
+        if (baseClass == null)
+            baseClass = Object.class;
+
+        var mc = MethodResolver.getInstance(elctx).resolveMethod(baseClass, name);
+        if (mc == null)
+            return false;
+
+        Method method = mc.getJavaMethod();
+        if (method == null)
+            return false;
+
+        return buildMethodCall(method, base, args);
+    }
+
+    private boolean buildMethodCall(Method method, ELNode base, ELNode[] args) {
+        Class<?>[] types = method.getParameterTypes();
+        int nargs = types.length;
+        int iarg = 0;
+        boolean vargs = method.isVarArgs();
+        boolean expando = base != null && Modifier.isStatic(method.getModifiers()) &&
+                          method.getAnnotation(Expando.class) != null;
+
+        if (nargs > 0 && types[0] == ELContext.class)
+            iarg++;
+        if (expando)
+            iarg++;
+
+        if (vargs) {
+            if (args.length < nargs - iarg)
+                return false;
+            nargs--;
+        } else if (args.length != nargs - iarg) {
+            return false;
+        }
+
+        build(base);
+
+        // Build fixed arguments in the extra values.
+        int i = 0;
+        for (; iarg < nargs; iarg++, i++) {
+            if (delayed(types[iarg], args[i]))
+                buildThunk(args[i]);
+            else
+                build(args[i]);
+        }
+
+        // Copy variable arguments in the extra values
+        if (vargs) {
+            assert types[nargs].isArray();
+            Class<?> argtype = types[nargs].getComponentType();
+            for (; i < args.length; i++) {
+                if (delayed(argtype, args[i]))
+                    buildThunk(args[i]);
+                else
+                    build(args[i]);
+            }
+        }
+
+        int methodIdx = putConstant(method);
+        if (expando)
+            current.emitInvokeExpando(methodIdx, args.length);
+        else
+            current.emitInvokeMethod(methodIdx, args.length);
+        return true;
+    }
+
+    private static boolean delayed(Class<?> type, ELNode arg) {
+        return (type == ValueExpression.class || type == Closure.class) &&
+               !(arg instanceof ELNode.LAMBDA);
     }
 
     /**

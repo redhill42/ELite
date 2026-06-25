@@ -1012,6 +1012,24 @@ public class IRInterpreter {
                 break;
             }
 
+            case INVOKE_EXPANDO: {
+                Method m = (Method)constantPool[pl];
+                int argc = oc > 0 ? code[ip + 1] : 0;
+                Closure[] args = new Closure[argc + 1]; // +1 for expando base
+                for (int i = argc; i >= 1; i--) {
+                    Object arg = pop();
+                    args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
+                }
+                args[0] = new LiteralClosure(pop());
+                try {
+                    push(ELEngine.invokeMethod(elctx, null, m, args));
+                } catch (Exception e) {
+                    throw new RuntimeException(_T(IR_METHOD_INVOKE_FAILED), e);
+                }
+                ip += 1 + oc;
+                break;
+            }
+
             case INVOKE_DYN_METHOD: {
                 int argc = pl;
                 Object[] args = new Object[argc];

@@ -579,6 +579,14 @@ public class IREmitter {
                     methodPoolIdx & 0xFFFF, argCount);
     }
 
+    public IREmitter emitInvokeExpando(int methodPoolIdx, int argCount) {
+        if (fits16(methodPoolIdx))
+            return emit2(INVOKE_EXPANDO, K_FN, methodPoolIdx, argCount);
+        else
+            return emit3(INVOKE_EXPANDO, K_FN, methodPoolIdx >>> 16,
+                methodPoolIdx & 0xFFFF, argCount);
+    }
+
     /**
      * Dynamic method call by name: pops argc args + base, resolves key on base,
      * calls MethodClosure.invoke(elctx, base, args). Handles ELContext

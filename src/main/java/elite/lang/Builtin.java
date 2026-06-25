@@ -2253,6 +2253,7 @@ public final class Builtin
     /**
      * 在控制台输出给定的对象.
      */
+    @Expando(scope = {EXPANDO, GLOBAL})
     public static void print(ELContext elctx, Object obj) {
         PrintWriter out = getPrintWriter(elctx);
         try {

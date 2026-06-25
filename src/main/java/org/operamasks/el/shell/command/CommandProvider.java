@@ -28,7 +28,11 @@ import javax.el.ELContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 
+import org.operamasks.el.eval.ELProgram;
 import org.operamasks.el.eval.VariableMapperImpl;
+import org.operamasks.el.ir.IRPrinter;
+import org.operamasks.el.parser.ASTDumper;
+import org.operamasks.el.parser.Parser;
 import org.operamasks.el.resolver.MethodResolver;
 import org.operamasks.el.shell.ShellContext;
 
@@ -72,6 +76,26 @@ public final class CommandProvider {
     public static void quit(ShellContext shellContext, String args) {
         System.out.println("Bye!");
         shellContext.setCompleted(true);
+    }
+
+    public static void dump(ShellContext shellContext, String script) {
+        if (script.isBlank())
+            script = shellContext.getLastScript();
+        if (script.isBlank())
+            return;
+        System.out.println(IRPrinter.dumpProgramIR(script));
+    }
+
+    @Command("dump-ast")
+    public static void dump_ast(ShellContext shellContext, String script) {
+        if (script.isBlank())
+            script = shellContext.getLastScript();
+        if (script.isBlank())
+            return;
+
+        Parser parser = new Parser(script);
+        ELProgram program = parser.parse();
+        System.out.println(ASTDumper.dump(program));
     }
 
     public static void ls(ShellContext shellContext, String args) {

@@ -25,6 +25,7 @@ public final class ShellContext {
     private ScriptEngine engine;
     private String[] arguments;
     private boolean completed;
+    private String lastScript;
 
     public boolean isCompleted() {
         return completed;
@@ -42,8 +43,12 @@ public final class ShellContext {
         this.arguments = arguments;
     }
 
-    public void setAttributes(Map<String, Object> attributes) {
-        this.attributes = attributes;
+    public String getLastScript() {
+        return lastScript;
+    }
+
+    public void setLastScript(String script) {
+        lastScript = script;
     }
 
     public String getEncoding() {
@@ -69,10 +74,4 @@ public final class ShellContext {
     public void setEngine(ScriptEngine engine) {
         this.engine = engine;
     }
-
-    public Map<String, Object> getAttributes() {
-        return attributes;
-    }
-
-    private Map<String, Object> attributes;
 }

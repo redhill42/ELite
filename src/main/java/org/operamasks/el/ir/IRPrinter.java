@@ -20,8 +20,12 @@ import java.lang.reflect.Method;
 import java.util.*;
 
 import org.objectweb.asm.*;
+import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Parser;
+import org.operamasks.el.types.TypeChecker;
+
+import javax.el.ELContext;
 
 /**
  * Debugging utility: parses an ELite program and dumps the compiled IR.
@@ -41,9 +45,14 @@ public final class IRPrinter {
         Parser parser = new Parser(source);
         var program = parser.parse();
 
+        // Run TypeChecker for type inference. Ignore errors.
+        ELContext elctx = ELEngine.createELContext();
+        TypeChecker checker = new TypeChecker(elctx, null);
+        checker.checkProgram(program.getDefinitions(), program.getExpressions());
+
         LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
         ArrayDeque<IRFunction> worklist = new ArrayDeque<>();
-        IRFunction top = IRBuilder.compile(program);
+        IRFunction top = IRBuilder.compile(elctx, program, false, null);
         worklist.push(top);
 
         while (!worklist.isEmpty()) {
@@ -160,7 +169,8 @@ public final class IRPrinter {
                 sb.append(" B").append(v.jumpTarget());
             case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
-            case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET, Opcode.INVOKE_METHOD
+            case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET,
+                 Opcode.INVOKE_METHOD, Opcode.INVOKE_EXPANDO
                 -> formatConstPool(sb, fn, v.payload());
             case Opcode.CLOSURE, Opcode.DELAY -> {
                 formatConstPool(sb, fn, v.payload());

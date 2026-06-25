@@ -16,6 +16,8 @@
 
 package org.operamasks.el.parser;
 
+import org.operamasks.el.eval.ELProgram;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.List;
@@ -41,6 +43,19 @@ public final class ASTDumper {
     public static String dump(ELNode node) {
         StringBuilder sb = new StringBuilder();
         dumpNode(node, sb, "", true, true);
+        return sb.toString();
+    }
+
+    public static String dump(ELProgram program) {
+        StringBuilder sb = new StringBuilder();
+        for (ELNode node : program.getDefinitions()) {
+            dumpNode(node, sb, "", true, true);
+            sb.append('\n');
+        }
+        for (ELNode node : program.getExpressions()) {
+            dumpNode(node, sb, "", true, true);
+            sb.append('\n');
+        }
         return sb.toString();
     }
 
