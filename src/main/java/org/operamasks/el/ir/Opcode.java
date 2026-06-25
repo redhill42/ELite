@@ -162,27 +162,31 @@ public final class Opcode {
     public static final int THROW         = 0x88;
 
     // ── Memory / allocation (0x90-0x9F) ──
-    public static final int STORE_VAR      = 0x90;
-    public static final int LOAD_FIELD     = 0x91;
-    public static final int STORE_FIELD    = 0x92;
-    public static final int CAPTURE        = 0x93;
-    public static final int NEW_LIST       = 0x94;
-    public static final int NEW_MAP        = 0x95;
-    public static final int NEW_TUPLE      = 0x96;
-    public static final int NEW_RANGE      = 0x97;
-    public static final int LOAD_PROPERTY  = 0x98;  // pops key, base → base[key]
-    public static final int STORE_PROPERTY = 0x99;  // pops val, key, base → base[key]=val
-    public static final int STORE_GLOBAL   = 0x9A;  // assign to global, full chain search, throw if undefined
-    public static final int DEFINE_GLOBAL  = 0x9B;  // define in current scope, create if new
-    public static final int GET_ITER       = 0x9C;
-    public static final int ITER_NEXT      = 0x9D;
-    public static final int ITER_DONE      = 0x9E;
+    public static final int DEFINE_GLOBAL  = 0x90;  // define in current scope, create if new
+    public static final int STORE_GLOBAL   = 0x91;  // assign to global, full chain search, throw if undefined
+    public static final int STORE_VAR      = 0x92;
+    public static final int LOAD_FIELD     = 0x93;
+    public static final int STORE_FIELD    = 0x94;
+    public static final int LOAD_PROPERTY  = 0x95;  // pops key, base → base[key]
+    public static final int STORE_PROPERTY = 0x96;  // pops val, key, base → base[key]=val
+    public static final int GET_ITER       = 0x97;
+    public static final int ITER_NEXT      = 0x98;
+    public static final int ITER_DONE      = 0x99;
+    public static final int CAPTURE        = 0x9A;
+
+    // ── Data structure ──
+    public static final int NEW_CONS       = 0xA0;
+    public static final int NEW_DELAY_CONS = 0xA1;
+    public static final int NIL            = 0xA2;
+    public static final int NEW_MAP        = 0xA3;
+    public static final int NEW_TUPLE      = 0xA4;
+    public static final int NEW_RANGE      = 0xA5;
 
     // ── Type guards (0xA0-0xAF) ──
     // GUARD_TYPE typeId, deoptBlockId: check stack top type.
     //   Match → continue. Mismatch → jump to deoptBlockId.
     //   deoptBlockId == STRICT_GUARD (0xFFFF): throw TypeMismatchError instead of deopt.
-    public static final int GUARD_TYPE      = 0xA0;
+    public static final int GUARD_TYPE      = 0xB0;
     public static final int STRICT_GUARD    = 0xFFFF;  // sentinel: throw error on mismatch
 
     // ── Trampoline (0xE0) ──
@@ -310,21 +314,23 @@ public final class Opcode {
             case RETURN -> "RETURN";
             case RETURN_VOID -> "RETURN_VOID";
             case THROW -> "THROW";
+            case DEFINE_GLOBAL -> "DEFINE_GLOBAL";
+            case STORE_GLOBAL -> "STORE_GLOBAL";
             case STORE_VAR -> "STORE_VAR";
             case LOAD_FIELD -> "LOAD_FIELD";
             case STORE_FIELD -> "STORE_FIELD";
-            case CAPTURE -> "CAPTURE";
-            case NEW_LIST -> "NEW_LIST";
-            case NEW_MAP -> "NEW_MAP";
-            case NEW_TUPLE -> "NEW_TUPLE";
-            case NEW_RANGE -> "NEW_RANGE";
             case LOAD_PROPERTY -> "LOAD_PROPERTY";
             case STORE_PROPERTY -> "STORE_PROPERTY";
-            case STORE_GLOBAL -> "STORE_GLOBAL";
-            case DEFINE_GLOBAL -> "DEFINE_GLOBAL";
             case GET_ITER -> "GET_ITER";
             case ITER_NEXT -> "ITER_NEXT";
             case ITER_DONE -> "ITER_DONE";
+            case CAPTURE -> "CAPTURE";
+            case NEW_CONS -> "NEW_CONS";
+            case NEW_DELAY_CONS -> "NEW_DELAY_CONS";
+            case NIL -> "NIL";
+            case NEW_MAP -> "NEW_MAP";
+            case NEW_TUPLE -> "NEW_TUPLE";
+            case NEW_RANGE -> "NEW_RANGE";
             case GUARD_TYPE -> "GUARD_TYPE";
             case INVOKE_GETTER -> "INVOKE_GETTER";
             case INVOKE_SETTER -> "INVOKE_SETTER";

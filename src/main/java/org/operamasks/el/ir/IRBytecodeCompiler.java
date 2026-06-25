@@ -444,10 +444,15 @@ public class IRBytecodeCompiler {
             }
 
             // ─── Collections ───
-            case NEW_LIST  -> emitCallN("newList", pl);
             case NEW_MAP   -> emitCallN("newMap", pl * 2); // pl = pair count, 2 stack values per pair
             case NEW_TUPLE -> emitCallN("newTuple", pl);
             case NEW_RANGE -> emitCall3("newRange");
+
+            // ─── Cons ───
+            case NEW_CONS -> emitCall2("newCons");
+            case NIL ->
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/eval/seq/Cons",
+                    "nil", "()Lorg/operamasks/el/eval/seq/Cons;");
 
             // ─── Iteration ───
             case GET_ITER  -> emitCall1Obj("getIter");

@@ -224,6 +224,34 @@ class ThunkTest {
             "without &: both args evaluated before call, n=2");
     }
 
+    // ── Self-referential lazy definitions ──
+
+    @Test
+    void selfReferentialLazyConsDefinesWithoutError() {
+        // define ones = [1 : &ones] — the variable appears inside its own
+        // lazy (&) tail. The thunk must resolve 'ones' via evalContext
+        // (DEFINE_GLOBAL), not just locals (STORE_VAR).
+        // Before the fix this threw "标识符未定义: ones".
+        Object result = interpretProgram(
+            "define ones = [1 : &ones]",
+            "1"
+        );
+        assertEquals(1L, ((Number)result).longValue(),
+            "self-referential lazy cons should define without error");
+    }
+
+    @Test
+    void selfReferentialLazyConsVariableAccessible() {
+        // After defining a self-referential lazy cons, reading the variable
+        // should return the cons (not throw "undefined").
+        Object result = interpretProgram(
+            "define ones = [1 : &ones]",
+            "ones"
+        );
+        assertNotNull(result,
+            "self-referential lazy cons variable should be accessible");
+    }
+
     // ── Phase 3: DelayCons ──
 
     @Test @Disabled("dynamic .head()/.tail() resolution on DelayCons hangs — needs INVOKE_DYN_METHOD fix")

@@ -164,7 +164,7 @@ public final class IRPrinter {
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
                 sb.append(" capture=").append(captureCount);
             }
-            case Opcode.NEW_LIST, Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
+            case Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
                 sb.append(" ").append(v.payload());
             case Opcode.TRAMPOLINE -> {
                 int idx = v.constPoolIndex();

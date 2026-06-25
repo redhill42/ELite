@@ -405,14 +405,6 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
-            // Builtin.delay(expr): compile the argument as a thunk and
-            // return the Thunk directly without calling delay().
-            if ("delay".equals(id) && node.args.length == 1 &&
-                resolveKnownFunction(id) == null) {
-                buildThunk(node.args[0]);
-                return;
-            }
-
             Integer funcIdx = resolveKnownFunction(id);
             if (funcIdx != null) {
                 // Direct call: check paramFlags for lazy (&) params.
@@ -431,6 +423,13 @@ public class IRBuilder extends ELNode.Visitor {
                 }
                 inTailPosition = prev;
                 current.emitInvokeDirect(funcIdx, node.args.length);
+                return;
+            }
+
+            // Builtin.delay(expr): compile the argument as a thunk and
+            // return the Thunk directly without calling delay().
+            if ("delay".equals(id) && node.args.length == 1) {
+                buildThunk(node.args[0]);
                 return;
             }
 
@@ -509,6 +508,7 @@ public class IRBuilder extends ELNode.Visitor {
     void buildThunk(ELNode expr) {
         IRBuilder nested = new IRBuilder(this);  // share parent pool
         nested.inTailPosition = true;
+        nested.lambdaName = null;   // thunk is anonymous — no recursive TCO target
 
         // Scan the expression for free variables from the enclosing scope.
         // A thunk is a zero-param lambda — capture semantics are identical.
@@ -553,54 +553,19 @@ public class IRBuilder extends ELNode.Visitor {
     // ── Literals: list, map, tuple, range ──
 
     public void visit(ELNode.CONS node) {
-        // For delayed (lazy) sequences or dotted-pair tails, fall back to AST.
-        // The AST evaluator handles DelayCons and proper Cons cell construction.
-        if (hasDelayOrDottedTail(node)) {
-            buildTrampoline(node);
-            return;
+        if (node.delay) {
+            buildThunk(node.head);
+            buildThunk(node.tail);
+            current.emitNewDelayCons();
+        } else {
+            build(node.head);
+            build(node.tail);
+            current.emitNewCons();
         }
-        // Simple list cons: [a, b, c] → NEW_LIST
-        int count = countCons(node);
-        emitConsElements(node);
-        current.emitNewList(count);
     }
 
     public void visit(ELNode.NIL node) {
-        current.emitNewList(0);
-    }
-
-    /**
-     * Check if any CONS in the chain has delay=true or a non-CONS/non-NIL tail.
-     */
-    private static boolean hasDelayOrDottedTail(ELNode.CONS node) {
-        ELNode cur = node;
-        while (cur instanceof ELNode.CONS c) {
-            if (c.delay)
-                return true;
-            cur = c.tail;
-        }
-        return cur != null && cur.op != Token.NIL;
-    }
-
-    private static int countCons(ELNode.CONS node) {
-        int n = 0;
-        ELNode cur = node;
-        while (cur instanceof ELNode.CONS c) {
-            n++;
-            cur = c.tail;
-        }
-        return cur != null && cur.op != Token.NIL ? n + 1 : n;
-    }
-
-    private void emitConsElements(ELNode.CONS node) {
-        ELNode cur = node;
-        while (cur instanceof ELNode.CONS c) {
-            build(c.head);
-            cur = c.tail;
-        }
-        if (cur != null && cur.op != Token.NIL) {
-            build(cur);  // dotted tail
-        }
+        current.emitNil();
     }
 
     public void visit(ELNode.MAP node) {
@@ -1296,6 +1261,16 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
+            // Detect self-referential definitions where the variable appears
+            // inside a lazy context (e.g. &thunk in delay cons). The lazy
+            // expression is evaluated by AST trampoline or buildThunk, both
+            // of which need the variable in evalContext. Mark as captured
+            // so DEFINE_GLOBAL is emitted instead of STORE_VAR.
+            if (!isCaptured.contains(node.id)
+                && hasSelfReference(node.expr, node.id)) {
+                isCaptured.add(node.id);
+            }
+
             build(node.expr);
 
             // Three-tier variable storage strategy:
@@ -1938,6 +1913,27 @@ public class IRBuilder extends ELNode.Visitor {
         if (a == T_LONG || b == T_LONG)
             return T_LONG;
         return a >= 0 ? a : (b >= 0 ? b : T_INT);
+    }
+
+    /**
+     * Check whether an expression tree contains a reference to the given
+     * variable name. Used to detect self-referential definitions like
+     * {@code define x = [1 : &f(x)]} that need STORE_GLOBAL.
+     */
+    private static boolean hasSelfReference(ELNode expr, String name) {
+        boolean[] found = {false};
+        expr.accept(new DefaultVisitor() {
+            public void visit(ELNode.IDENT e) {
+                if (name.equals(e.id))
+                    found[0] = true;
+            }
+            // Don't descend into nested definitions, blocks, or lambdas —
+            // those have their own scope and can't refer to the outer var
+            // being defined.
+            public void visit(ELNode.DEFINE e) {}
+            public void visit(ELNode.LAMBDA e) {}
+        });
+        return found[0];
     }
 
     /**

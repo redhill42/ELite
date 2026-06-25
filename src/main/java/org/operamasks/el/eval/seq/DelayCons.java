@@ -41,4 +41,8 @@ public class DelayCons extends DelaySeq
             tail_promise = null;
         }
     }
+
+    public String toString() {
+        return "#<delay-cons>";
+    }
 }

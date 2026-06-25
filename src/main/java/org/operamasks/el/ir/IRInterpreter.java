@@ -16,10 +16,14 @@
 
 package org.operamasks.el.ir;
 
+import elite.lang.Closure;
 import elite.lang.Runtime;
+import elite.lang.Seq;
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.DelayClosure;
 import org.operamasks.el.eval.closure.LiteralClosure;
+import org.operamasks.el.eval.seq.Cons;
+import org.operamasks.el.eval.seq.DelayCons;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.parser.Position;
 
@@ -861,16 +865,24 @@ public class IRInterpreter {
             }
 
             // ============ Collections ============
-            case NEW_LIST: {
-                int count = pl;
-                Object[] elements = new Object[count];
-                for (int i = count - 1; i >= 0; i--)
-                    elements[i] = pop();
-                // Wrap in ListSeq so Seq methods (mappend, map, etc.)
-                // are available and JVM module restrictions on
-                // java.util.Arrays$ArrayList are avoided.
-                java.util.List<Object> raw = java.util.Arrays.asList(elements);
-                push(org.operamasks.el.eval.seq.ListSeq.make(raw));
+            case NEW_CONS: {
+                Object tail = pop();
+                Object head = pop();
+                if (!(tail instanceof Seq))
+                    tail = TypeCoercion.coerceToSeq(tail);
+                push(new Cons(head, (Seq)tail));
+                ip += 1;
+                break;
+            }
+            case NEW_DELAY_CONS: {
+                Closure tail = (Closure)pop();
+                Closure head = (Closure)pop();
+                push(new DelayCons(head, tail));
+                ip += 1;
+                break;
+            }
+            case NIL: {
+                push(Cons.nil());
                 ip += 1;
                 break;
             }

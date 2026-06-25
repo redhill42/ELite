@@ -459,8 +459,7 @@ public class IRSpecializer implements IRPass {
                 // to drift out of sync with the real operand stack. This masked
                 // a bug where specializeBlockSimple would emit GUARD_TYPE for
                 // list/range/string comparisons (stack had stale INT types from
-                // the element pushes before NEW_LIST/NEW_MAP).
-                case NEW_LIST    -> { int n = v.payload(); popN(n); pushType(-1, false, -1); copyInst(out, code, v); }
+                // the element pushes before NEW_MAP).
                 case NEW_MAP     -> { int n = v.payload(); popN(n * 2); pushType(-1, false, -1); copyInst(out, code, v); }
                 case NEW_TUPLE   -> { int n = v.payload(); popN(n); pushType(-1, false, -1); copyInst(out, code, v); }
                 case NEW_RANGE   -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }

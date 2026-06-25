@@ -21,6 +21,7 @@ import javax.el.ValueExpression;
 
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.MethodClosure;
+import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.ir.IRClosure;
 import org.operamasks.el.ir.IRFormat;
 import org.operamasks.el.ir.IRFunction;
@@ -138,6 +139,12 @@ public final class Runtime {
     /** Reference/identity inequality (!==). */
     public static Object refNe(Object x, Object y) {
         return x != y;
+    }
+
+    public static Object newCons(Object head, Object tail) {
+        if (!(tail instanceof Seq))
+            tail = TypeCoercion.coerceToSeq(tail);
+        return new Cons(head, (Seq)tail);
     }
 
     public static Object newMap(Object[] kvs) {

@@ -166,7 +166,7 @@ class IRBuilderTest {
         ELNode node = parse("[1, 2, 3]");
         IRFunction fn = IRBuilder.compile(node);
         assertNotNull(fn);
-        assertTrue(scanOp(fn, Opcode.NEW_LIST), "list literal should use NEW_LIST");
+        assertTrue(scanOp(fn, Opcode.NEW_CONS), "list literal should use NEW_CONS");
     }
 
     @Test void mapLiteralCompiles() {

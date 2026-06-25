@@ -496,11 +496,16 @@ public class IREmitter {
         return emit2(STORE_VAR, K_NONE, varIndex & 0xFFFF, 0);
     }
 
-    /**
-     * Pop `count` values off the stack and create a list.
-     */
-    public IREmitter emitNewList(int count) {
-        return emit1(NEW_LIST, K_NONE, count);
+    public IREmitter emitNewCons() {
+        return emit1(NEW_CONS, K_NONE, 0);
+    }
+
+    public IREmitter emitNewDelayCons() {
+        return emit1(NEW_DELAY_CONS, K_NONE, 0);
+    }
+
+    public IREmitter emitNil() {
+        return emit1(NIL, K_NONE, 0);
     }
 
     /**
