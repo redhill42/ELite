@@ -148,9 +148,7 @@ public class ELProgram implements Serializable
         try {
             // Import modules and classes to populate global context. The global
             // context is used by compilation and execution.
-            importModules(elctx);
-            importFunctions(elctx);
-            importPackages(elctx);
+            importExternal(elctx);
 
             // Execute statements using selected evaluation strategy
             switch (OPT_LEVEL) {
@@ -227,6 +225,12 @@ public class ELProgram implements Serializable
                 return false;
             }
         }
+    }
+
+    public void importExternal(ELContext elctx) {
+        importModules(elctx);
+        importFunctions(elctx);
+        importPackages(elctx);
     }
 
     private void importModules(ELContext elctx) {

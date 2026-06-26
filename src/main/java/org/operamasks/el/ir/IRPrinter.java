@@ -45,8 +45,10 @@ public final class IRPrinter {
         Parser parser = new Parser(source);
         var program = parser.parse();
 
-        // Run TypeChecker for type inference. Ignore errors.
         ELContext elctx = ELEngine.createELContext();
+        program.importExternal(elctx);
+
+        // Run TypeChecker for type inference. Ignore errors.
         TypeChecker checker = new TypeChecker(elctx, null);
         checker.checkProgram(program.getDefinitions(), program.getExpressions());
 

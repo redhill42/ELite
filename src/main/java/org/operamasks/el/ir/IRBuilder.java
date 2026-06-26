@@ -529,12 +529,15 @@ public class IRBuilder extends ELNode.Visitor {
             iarg++;
 
         if (vargs) {
-            if (args.length < nargs - iarg)
+            if (args.length < nargs - iarg - 1)
                 return false;
             nargs--;
         } else if (args.length != nargs - iarg) {
             return false;
         }
+
+        if (buildBuiltin(method.getName(), base, args))
+            return true;
 
         build(base);
 
@@ -570,6 +573,76 @@ public class IRBuilder extends ELNode.Visitor {
     private static boolean delayed(Class<?> type, ELNode arg) {
         return (type == ValueExpression.class || type == Closure.class) &&
                !(arg instanceof ELNode.LAMBDA);
+    }
+
+    /**
+     * Build direct IR for well known builtin functions.
+     */
+    private boolean buildBuiltin(String name, ELNode base, ELNode[] args) {
+        switch (name) {
+        case "begin":
+            if (args.length == 0) {
+                emitPushNull();
+                return true;
+            }
+            for (int i = 0; i < args.length-1; i++) {
+                build(args[i]);
+                current.emitPop();
+            }
+            build(args[args.length-1]);
+            return true;
+
+        case "delay":
+            assert args.length == 1;
+            buildThunk(args[0]);
+            return true;
+
+        case "coalesce": {
+            if (args.length == 0) {
+                current.emitPushNull();
+                return true;
+            }
+            if (args.length == 1) {
+                build(args[0]);
+                return true;
+            }
+
+            // Create a chained coalesce expression and build it.
+            ELNode exp = args[args.length - 1];
+            for (int i = args.length - 2; i >= 0; i--) {
+                exp = new ELNode.COALESCE(args[i].pos, args[i], exp);
+            }
+            exp.accept(this);
+            return true;
+        }
+
+        case "list":
+            for (ELNode arg : args)
+                build(arg);
+            current.emitNil();
+            for (int i = 0; i < args.length; i++)
+                current.emitNewCons();
+            return true;
+
+        case "cons":
+            assert args.length == 2;
+            buildThunk(args[0]);
+            buildThunk(args[1]);
+            current.emitNewDelayCons();
+            return true;
+
+        case "range":
+            assert args.length == 3;
+            build(args[0]);
+            current.emitDup();
+            build(args[2]);
+            current.emitDynAdd();
+            build(args[1]);
+            current.emitNewRange();
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1068,6 +1141,16 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Coalesce ──
     public void visit(ELNode.COALESCE node) {
+        if (node.left.op == Token.NULL) {
+            build(node.right);
+            return;
+        }
+
+        if (!nullable(node.left)) {
+            build(node.left);
+            return;
+        }
+
         int keepB = allocBlockId();
         int nullB = allocBlockId();
         int mergeB = allocBlockId();
@@ -1086,6 +1169,18 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(mergeB);
 
         startBlock(mergeB);
+    }
+
+    private boolean nullable(ELNode node) {
+        while (node instanceof ELNode.EXPR)
+            node = ((ELNode.EXPR)node).right;
+        return !(node instanceof ELNode.Constant ||
+                 node instanceof ELNode.Composite ||
+                 node instanceof ELNode.CONS ||
+                 node instanceof ELNode.MAP ||
+                 node instanceof ELNode.TUPLE ||
+                 node instanceof ELNode.RANGE ||
+                 node instanceof ELNode.LAMBDA);
     }
 
     public void visit(ELNode.ASSIGN node) {

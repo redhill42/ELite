@@ -2270,11 +2270,17 @@ public final class Builtin
         if (obj == null) {
             out.print("null");
         } else if (obj instanceof Range || obj instanceof CharRange) {
-            out.print(obj.toString());
+            out.print(obj);
         } else if (obj instanceof Seq) {
             boolean sep = false;
+            int count = 100;
             out.print("[");
             for (Seq xs = (Seq)obj; !xs.isEmpty(); xs = xs.tail()) {
+                if (count-- == 0) {
+                    // May be infinity seq, stop printing.
+                    out.print(", ...");
+                    break;
+                }
                 Object x = xs.head();
                 if (sep) out.print(", ");
                 sep = true;
