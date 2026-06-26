@@ -146,7 +146,9 @@ public final class Token
     public static final int ELSE            = 1 + IF;
     public static final int FOR             = 1 + ELSE;
     public static final int WHILE           = 1 + FOR;
-    public static final int SWITCH          = 1 + WHILE;
+    public static final int UNTIL           = 1 + WHILE;
+    public static final int REPEAT          = 1 + UNTIL;
+    public static final int SWITCH          = 1 + REPEAT;
     public static final int MATCH           = 1 + SWITCH;
     public static final int CASE            = 1 + MATCH;
     public static final int DEFAULT         = 1 + CASE;
@@ -163,7 +165,7 @@ public final class Token
     public static final int MAX_TOKEN       = 1 + LALR;
 
     // Operator names
-    public static final String opNames[] = {
+    public static final String[] opNames = {
         "unknown", "=", "?=", "prefix", "infix", "keyword", "?:", "??", "||", "&&",
         ":|:", ":^:", ":&:", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "<<", ">>", ">>>",
         "~", "+", "-", "*", "/", "div", "%", "^", "instanceof", "in", "not",
@@ -174,7 +176,7 @@ public final class Token
         "abstract", "synchronized", "true", "false", "null", "void",
         ":", "::", "?", "(", ")", "[", "]", "{", "}", "|", "&", "@", "#", "=>", "...", ",", ";",
         "require", "import", "module", "grammar", "define", "class", "extends", "implements",
-        "undef", "let", "do", "if", "else", "for", "while", "switch", "case", "case",
+        "undef", "let", "do", "if", "else", "for", "while", "until", "repeat", "switch", "case", "case",
         "default", "break", "continue", "return", "throw", "try", "catch", "finally", "assert", "LALR"
     };
 

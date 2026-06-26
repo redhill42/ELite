@@ -135,12 +135,12 @@ The following words are reserved and may not be used as identifiers:
 
 ```
 abstract    break       case        catch       class       continue
-default     define      do          else        extends     false
-for         grammar     if          import      in          instanceof
-let         match       new         null        private     protected
-public      require     return      static      switch      this
-throw       true        try         type        void        while
-yield
+default     define      else        extends     false       for
+grammar     if          import      in          instanceof  let
+match       new         null        private     protected   public
+repeat      require     return      static      switch      this
+throw       true        try         type        until       void
+while       yield
 ```
 
 Additionally, `and`, `or`, `not` are keyword aliases for `&&`, `||`, `!` respectively.
@@ -752,8 +752,10 @@ Multiple generators iterate in nested fashion: the rightmost generator varies fa
 ### 5.6 While Loop
 
 ```
-while_stmt   := 'while' '(' expression ')' block
-do_while_stmt := 'do' block 'while' '(' expression ')'
+while_stmt        := 'while' '(' expression ')' block
+until_stmt        := 'until' '(' expression ')' block
+repeat_while_stmt := 'repeat' block 'while' '(' expression ')'
+repeat_until_stmt := 'repeat' block 'until' '(' expression ')'
 ```
 
 ```elite
@@ -762,9 +764,20 @@ while (i < 10) {
     i = i + 1
 }
 
-do {
+// until is syntax sugar: until (cond) body  ≡  while (!cond) body
+until (done) {
     x = next(x)
-} while (not converged(x))
+}
+
+// repeat-while: body executes at least once (post-test loop)
+repeat {
+    x = next(x)
+} while (!converged(x))
+
+// repeat-until is syntax sugar: repeat body until (cond)  ≡  repeat body while (!cond)
+repeat {
+    x = next(x)
+} until (converged(x))
 ```
 
 ### 5.7 Break and Continue
@@ -1318,22 +1331,26 @@ action expression.
 
 ### 11.4 Example: Custom Control Flow
 
+The `repeat`/`until` constructs are built into the language. As an example of
+how the grammar extension system could define similar custom syntax, here is how
+a hypothetical `loop`/`times` construct might be defined:
+
 ```elite
 grammar {
     goal
-        : 'repeat' #body 'until' #condition
+        : 'loop' #body 'times' #n
           -> {
-              do {
+              for (i in [0..<n]) {
                   body
-              } while (!condition)
+              }
           }
 }
 
 define x = 0
-repeat {
+loop {
     print(x)
     x = x + 1
-} until (x >= 5)
+} times (5)
 ```
 
 ### 11.5 Limitations
@@ -1726,22 +1743,24 @@ arguments       := expression { ',' expression }
 ### 17.4 Statements
 
 ```
-statement       := if_stmt | for_stmt | while_stmt | do_while_stmt
-                |  try_stmt | throw_stmt | return_stmt | break_stmt
-                |  continue_stmt | assert_stmt | expression
+statement        := if_stmt | for_stmt | while_stmt | until_stmt
+                 |  repeat_stmt | try_stmt | throw_stmt | return_stmt
+                 |  break_stmt | continue_stmt | assert_stmt | expression
 
-block           := '{' { statement [ ';' | '\n' ] } [ expression ] '}'
+block            := '{' { statement [ ';' | '\n' ] } [ expression ] '}'
 
-if_stmt         := 'if' '(' expression ')' block
-                   { 'else' 'if' '(' expression ')' block }
-                   [ 'else' block ]
+if_stmt          := 'if' '(' expression ')' block
+                    { 'else' 'if' '(' expression ')' block }
+                    [ 'else' block ]
 
-for_stmt        := 'for' '(' pattern 'in' expression
-                           { ',' pattern 'in' expression } ')' block
+for_stmt         := 'for' '(' pattern 'in' expression
+                            { ',' pattern 'in' expression } ')' block
 
-while_stmt      := 'while' '(' expression ')' block
+while_stmt       := 'while' '(' expression ')' block
 
-do_while_stmt   := 'do' block 'while' '(' expression ')'
+until_stmt       := 'until' '(' expression ')' block
+
+repeat_stmt      := 'repeat' block ( 'while' | 'until' ) '(' expression ')'
 
 try_stmt        := 'try' block
                    { 'catch' '(' [ identifier '::' type ] ')' block }

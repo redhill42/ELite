@@ -1685,6 +1685,38 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.pop();
     }
 
+    // ── Repeat (post-test loop: body executes at least once) ──
+    public void visit(ELNode.REPEAT node) {
+        int body = allocBlockId();
+        int cont = allocBlockId();   // condition-check block
+        int exit = allocBlockId();
+
+        // continue → condition check (matching C/Java do-while semantics)
+        // break → exit
+        loopStack.push(new LoopTargets(cont, exit));
+
+        // Explicit jump to body from the current block so nested loops
+        // have a proper terminator (same pattern as WHILE).
+        current.emitJump(body);
+
+        startBlock(body);
+        enterControlScope();
+        build(node.body);
+        leaveControlScope();
+        current.emitPop();           // discard body result
+        current.emitJump(cont);      // → check condition
+
+        startBlock(cont);
+        build(node.cond);            // evaluate condition
+        current.emitJumpIfTrue(body);
+        current.emitJump(exit);
+
+        startBlock(exit);
+        emitPushNull();
+
+        loopStack.pop();
+    }
+
     // ── For ──
     public void visit(ELNode.FOR node) {
         if (node.init != null)

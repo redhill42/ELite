@@ -3981,6 +3981,42 @@ public abstract class ELNode implements Serializable
     }
 
     /**
+     * The repeat (do-while style) expression.
+     */
+    public static class REPEAT extends ELNode {
+        public final ELNode cond;
+        public final ELNode body;
+
+        public REPEAT(int pos, ELNode cond, ELNode body) {
+            super(Token.REPEAT, pos);
+            this.cond = cond;
+            this.body = body;
+        }
+
+        public Object getValue(EvaluationContext context) {
+            Frame f = context.getFrame();
+            do {
+                try {
+                    body.pos(f).getValue(context);
+                } catch (Control.Break b) {
+                    break;
+                } catch (Control.Continue c) {
+                    // continue
+                }
+            } while (cond.pos(f).getBoolean(context));
+            return null;
+        }
+
+        public Class getType(EvaluationContext context) {
+            return null;
+        }
+
+        public void accept(Visitor v) {
+            v.visit(this);
+        }
+    }
+
+    /**
      * The for loop expression.
      */
     public static class FOR extends ELNode {
@@ -6202,6 +6238,7 @@ public abstract class ELNode implements Serializable
         public void visit(EXPR e)       { visitNode(e); }
         public void visit(COMPOUND e)   { visitNode(e); }
         public void visit(WHILE e)      { visitNode(e); }
+        public void visit(REPEAT e)     { visitNode(e); }
         public void visit(FOR e)        { visitNode(e); }
         public void visit(FOREACH e)    { visitNode(e); }
         public void visit(MATCH e)      { visitNode(e); }
