@@ -16,7 +16,12 @@
 
 package elite.lang;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.*;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.lang.reflect.Array;
@@ -1126,7 +1131,9 @@ public final class Builtin
      */
     @Expando(scope={EXPANDO,GLOBAL})
     public static Object map(ELContext elctx, Object base, Closure proc) {
-        if (base instanceof CharSequence) {
+        if (base == null) {
+            return null;
+        } else if (base instanceof CharSequence) {
             return map_string(elctx, (CharSequence)base, proc);
         } else if (base instanceof Object[]) {
             return map_array(elctx, (Object[])base, proc);
@@ -1135,6 +1142,17 @@ public final class Builtin
         } else if (base instanceof Set) {
             return map_set(elctx, (Set)base, proc);
         } else {
+            try {
+                Method method = base.getClass().getMethod("map", Function.class);
+                int mod = method.getModifiers();
+                if (Modifier.isPublic(mod) && !Modifier.isStatic(mod) && !Modifier.isAbstract(mod))
+                    return method.invoke(base, (Function<Object, Object>)x -> proc.call(elctx, x));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                // fallthrough
+            } catch (InvocationTargetException ex) {
+                throw new EvaluationException(elctx, ex.getTargetException());
+            }
+
             return MappedSeq.make(coerceToSeq(base), proc);
         }
     }
@@ -1227,11 +1245,25 @@ public final class Builtin
      */
     @Expando(scope={EXPANDO,GLOBAL})
     public static Object filter(ELContext elctx, Object base, Closure pred) {
-        if (base instanceof CharSequence) {
+        if (base == null) {
+            return null;
+        } else if (base instanceof CharSequence) {
             return filter_string(elctx, (CharSequence)base, pred);
         } else if (base instanceof Set) {
             return filter_set(elctx, (Set)base, pred);
         } else {
+            try {
+                Method method = base.getClass().getMethod("filter", Predicate.class);
+                int mod = method.getModifiers();
+                if (Modifier.isPublic(mod) && !Modifier.isStatic(mod) && !Modifier.isAbstract(mod))
+                    return method.invoke(base, (Predicate<Object>)x ->
+                        coerceToBoolean(pred.call(elctx, x)));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                // fallthrough
+            } catch (InvocationTargetException ex) {
+                throw new EvaluationException(elctx, ex.getTargetException());
+            }
+
             return FilteredSeq.make(coerceToSeq(base), pred);
         }
     }

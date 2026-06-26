@@ -881,17 +881,24 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitNewRange();
     }
 
-    public void visit(ELNode.INSTANCEOF node) {
-        build(node.right);  // evaluate the expression
-        // Put type name in constant pool, emit INSTANCEOF trampoline
-        int typeIdx = putConstant(node.type);
-        current.emit2(TRAMPOLINE, K_DYN, typeIdx, node.negative ? 1 : 0);
-    }
-
     public void visit(ELNode.IN node) {
         build(node.right);  // container
         build(node.left);   // element
         current.emitDynIn();
+        if (node.negative)
+            current.emitNot();
+    }
+
+    public void visit(ELNode.INSTANCEOF node) {
+        int clsid;
+        build(node.right);
+        try {
+            Class<?> cls = ClassResolver.getInstance(elctx).resolveClass(node.type);
+            clsid = putConstant(cls);
+        } catch (ClassNotFoundException e) {
+            clsid = putConstant(node.type);
+        }
+        current.emit1(INSTOF, K_BOOL, clsid);
         if (node.negative)
             current.emitNot();
     }

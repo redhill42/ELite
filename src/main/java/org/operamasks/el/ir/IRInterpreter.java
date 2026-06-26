@@ -22,6 +22,7 @@ import elite.lang.Seq;
 import org.operamasks.el.eval.*;
 import org.operamasks.el.eval.closure.DelayClosure;
 import org.operamasks.el.eval.closure.LiteralClosure;
+import org.operamasks.el.eval.closure.TypedClosure;
 import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.eval.seq.DelayCons;
 import org.operamasks.el.parser.ELNode;
@@ -956,6 +957,17 @@ public class IRInterpreter {
                 break;
             }
 
+            case INSTOF: {
+                Object obj = pop();
+                Object cls = constantPool[pl];
+                if (cls instanceof Class<?>)
+                    push(((Class<?>)cls).isInstance(obj));
+                else
+                    push(TypedClosure.typecheck(evalContext, (String)cls, obj));
+                ip += 1;
+                break;
+            }
+
             // ============ Unary logic ============
             case NOT: {
                 push(!TypeCoercion.coerceToBoolean(pop()));
@@ -1008,11 +1020,7 @@ public class IRInterpreter {
                     args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
                 }
                 Object base = pop();
-                try {
-                    push(ELEngine.invokeMethod(elctx, base, m, args));
-                } catch (Exception e) {
-                    throw new RuntimeException(_T(IR_METHOD_INVOKE_FAILED), e);
-                }
+                push(ELEngine.invokeMethod(elctx, base, m, args));
                 ip += 1 + oc;
                 break;
             }
@@ -1026,11 +1034,7 @@ public class IRInterpreter {
                     args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
                 }
                 args[0] = new LiteralClosure(pop());
-                try {
-                    push(ELEngine.invokeMethod(elctx, null, m, args));
-                } catch (Exception e) {
-                    throw new RuntimeException(_T(IR_METHOD_INVOKE_FAILED), e);
-                }
+                push(ELEngine.invokeMethod(elctx, null, m, args));
                 ip += 1 + oc;
                 break;
             }

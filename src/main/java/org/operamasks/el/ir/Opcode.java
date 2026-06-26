@@ -72,9 +72,11 @@ public final class Opcode {
     public static final int DYNPOW  = 0x2B;
     public static final int DYNIN   = 0x2C;
 
+    public static final int INSTOF = 0x2D;
+
     // ── Concatenation (0x2C-2D) ──
-    public static final int CAT    = 0x2D;
-    public static final int DYNCAT = 0x2E;
+    public static final int CAT    = 0x2E;
+    public static final int DYNCAT = 0x2F;
 
     // ── Bitwise ops (0x30-0x4F) ──
     public static final int IAND    = 0x30;
@@ -248,6 +250,7 @@ public final class Opcode {
             case DYNNEG -> "DYNNEG";
             case DYNPOW -> "DYNPOW";
             case DYNIN -> "DYNIN";
+            case INSTOF -> "INSTOF";
             case CAT -> "CAT";
             case DYNCAT -> "DYNCAT";
             case IAND -> "IAND";
