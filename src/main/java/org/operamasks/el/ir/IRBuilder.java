@@ -16,7 +16,9 @@
 
 package org.operamasks.el.ir;
 
+import elite.lang.Builtin;
 import elite.lang.Closure;
+import elite.lang.MathLib;
 import elite.lang.annotation.Expando;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.ELProgram;
@@ -536,7 +538,7 @@ public class IRBuilder extends ELNode.Visitor {
             return false;
         }
 
-        if (buildBuiltin(method.getName(), base, args))
+        if (buildBuiltin(method, base, args))
             return true;
 
         build(base);
@@ -578,71 +580,198 @@ public class IRBuilder extends ELNode.Visitor {
     /**
      * Build direct IR for well known builtin functions.
      */
-    private boolean buildBuiltin(String name, ELNode base, ELNode[] args) {
-        switch (name) {
-        case "begin":
-            if (args.length == 0) {
-                emitPushNull();
+    private boolean buildBuiltin(Method method, ELNode base, ELNode[] args) {
+        if (method.getDeclaringClass() == Builtin.class) {
+            switch (method.getName()) {
+            case "begin":
+                if (args.length == 0) {
+                    emitPushNull();
+                    return true;
+                }
+                for (int i = 0; i < args.length - 1; i++) {
+                    build(args[i]);
+                    current.emitPop();
+                }
+                build(args[args.length - 1]);
+                return true;
+
+            case "delay":
+                assert args.length == 1;
+                buildThunk(args[0]);
+                return true;
+
+            case "coalesce": {
+                if (args.length == 0) {
+                    current.emitPushNull();
+                    return true;
+                }
+                if (args.length == 1) {
+                    build(args[0]);
+                    return true;
+                }
+
+                // Create a chained coalesce expression and build it.
+                ELNode exp = args[args.length - 1];
+                for (int i = args.length - 2; i >= 0; i--) {
+                    exp = new ELNode.COALESCE(args[i].pos, args[i], exp);
+                }
+                exp.accept(this);
                 return true;
             }
-            for (int i = 0; i < args.length-1; i++) {
-                build(args[i]);
-                current.emitPop();
-            }
-            build(args[args.length-1]);
-            return true;
 
-        case "delay":
-            assert args.length == 1;
-            buildThunk(args[0]);
-            return true;
-
-        case "coalesce": {
-            if (args.length == 0) {
-                current.emitPushNull();
+            case "list":
+                for (ELNode arg : args)
+                    build(arg);
+                current.emitNil();
+                for (int i = 0; i < args.length; i++)
+                    current.emitNewCons();
                 return true;
-            }
-            if (args.length == 1) {
+
+            case "cons":
+                assert args.length == 2;
+                buildThunk(args[0]);
+                buildThunk(args[1]);
+                current.emitNewDelayCons();
+                return true;
+
+            case "range":
+                assert args.length == 3;
                 build(args[0]);
+                current.emitDup();
+                build(args[2]);
+                current.emitDynAdd();
+                build(args[1]);
+                current.emitNewRange();
                 return true;
-            }
 
-            // Create a chained coalesce expression and build it.
-            ELNode exp = args[args.length - 1];
-            for (int i = args.length - 2; i >= 0; i--) {
-                exp = new ELNode.COALESCE(args[i].pos, args[i], exp);
+            case "upto":
+                return buildStepBuiltin(base, args[0], args[1], 1, DYNLE);
+            case "downto":
+                return buildStepBuiltin(base, args[0], args[1], -1, DYNGE);
+            case "step":
+                assert args.length == 3;
+                if (args[1] instanceof ELNode.NUMBER n) {
+                    int step = n.value.intValue();
+                    if (step != 0)
+                        return buildStepBuiltin(base, args[0], args[2], step,
+                                                step > 0 ? DYNLE : DYNGE);
+                }
+                return false;
+            case "times":
+                return buildStepBuiltin(new ELNode.NUMBER(-1, 0), base, args[0], 1, DYNLT);
             }
-            exp.accept(this);
-            return true;
         }
 
-        case "list":
-            for (ELNode arg : args)
-                build(arg);
-            current.emitNil();
-            for (int i = 0; i < args.length; i++)
-                current.emitNewCons();
-            return true;
+        if (method.getDeclaringClass() == MathLib.class) {
+            switch (method.getName()) {
+            case "sum":
+                return buildMathReduce(args, DYNADD);
+            case "difference":
+                return buildMathReduce(args, DYNSUB);
+            case "product":
+                return buildMathReduce(args, DYNMUL);
+            case "divide":
+                return buildMathReduce(args, DYNDIV);
 
-        case "cons":
-            assert args.length == 2;
-            buildThunk(args[0]);
-            buildThunk(args[1]);
-            current.emitNewDelayCons();
-            return true;
+            case "remainder":
+                build(args[0]);
+                build(args[1]);
+                current.emitDynRem();
+                return true;
 
-        case "range":
-            assert args.length == 3;
-            build(args[0]);
-            current.emitDup();
-            build(args[2]);
-            current.emitDynAdd();
-            build(args[1]);
-            current.emitNewRange();
-            return true;
+            case "pow":
+                build(args[0]);
+                build(args[1]);
+                current.emitDynPow();
+                return true;
+            }
         }
 
         return false;
+    }
+
+    private boolean buildStepBuiltin(ELNode begin, ELNode end, ELNode body,
+                                     int step, int cmpop) {
+        if (body instanceof ELNode.LAMBDA b) {
+            if (b.vars.length > 1 || b.varargs)
+                return false;
+        } else {
+            return false; // FIXME: support closure invocation
+        }
+
+        String indId = b.vars.length == 1 ? b.vars[0].id : "*t0*";
+        String endId = "*t1*";
+
+        // Initialize temporary variables.
+        enterControlScope();
+        assert !savedVarBindings.isEmpty();
+        Map<String, Integer> saved = savedVarBindings.peek();
+        if (!saved.containsKey(indId))
+            saved.put(indId, varIndex.remove(indId));
+        if (!saved.containsKey(endId))
+            saved.put(endId, varIndex.remove(endId));
+        int indvar = ensureVar(indId);
+        int endvar = ensureVar(endId);
+
+        // FIXME: induction variable may be captured, should put in evaluation context.
+        build(begin);
+        current.emitStoreVar(indvar);
+        current.emitPop();
+        build(end);
+        current.emitStoreVar(endvar);
+        current.emitPop();
+
+        // Begin loop.
+        int headerB = allocBlockId();
+        int bodyB = allocBlockId();
+        int exitB = allocBlockId();
+
+        loopStack.push(new LoopTargets(headerB, exitB));
+        current.emitJump(headerB);
+
+        // Generate loop condition.
+        startBlock(headerB);
+        current.emitPushVar(indvar);
+        current.emitPushVar(endvar);
+        current.emit1(cmpop, K_DYN, 0);
+        current.emitJumpIfTrue(bodyB);
+        current.emitJump(exitB);
+
+        // Generate loop body.
+        startBlock(bodyB);
+        build(b.body);
+        current.emitPop();
+
+        // Increment induction variable.
+        current.emitPushVar(indvar);
+        emitPushConst(T_INT, Math.abs(step));
+        if (step > 0)
+            current.emitDynAdd();
+        else
+            current.emitDynSub();
+        current.emitStoreVar(indvar);
+        current.emitPop();
+        current.emitJump(headerB);
+
+        // Cleanup.
+        startBlock(exitB);
+        emitPushNull();
+        leaveControlScope();
+        loopStack.pop();
+        return true;
+    }
+
+    private boolean buildMathReduce(ELNode[] args, int op) {
+        if (args.length == 0) {
+            emitPushConst(T_INT, 0);
+        } else {
+            build(args[0]);
+            for (int i = 1; i < args.length; i++) {
+                build(args[i]);
+                current.emit1(op, K_DYN, 0);
+            }
+        }
+        return true;
     }
 
     /**
@@ -651,6 +780,16 @@ public class IRBuilder extends ELNode.Visitor {
      * a Thunk wrapping it at runtime.
      */
     void buildThunk(ELNode expr) {
+        while (expr instanceof ELNode.EXPR) {
+            expr = ((ELNode.EXPR)expr).right;
+        }
+        if (expr instanceof ELNode.Constant) {
+            // Create a LiteralWrapper for constants.
+            build(expr);
+            current.emitLiteral();
+            return;
+        }
+
         IRBuilder nested = new IRBuilder(this);  // share parent pool
         nested.inTailPosition = true;
         nested.lambdaName = null;   // thunk is anonymous — no recursive TCO target

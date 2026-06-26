@@ -41,11 +41,9 @@ public final class IRPrinter {
     }
 
     /** Dump full program IR (definitions + expressions + combined). */
-    public static String dumpProgramIR(String source) {
+    public static String dumpProgramIR(ELContext elctx, String source) {
         Parser parser = new Parser(source);
         var program = parser.parse();
-
-        ELContext elctx = ELEngine.createELContext();
         program.importExternal(elctx);
 
         // Run TypeChecker for type inference. Ignore errors.

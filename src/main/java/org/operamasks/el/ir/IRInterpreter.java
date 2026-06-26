@@ -230,6 +230,11 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
+            case LITERAL: {
+                push(new LiteralClosure(pop()));
+                ip += 1;
+                break;
+            }
             case POP: {
                 pop();
                 ip += 1;

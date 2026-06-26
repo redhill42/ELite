@@ -83,7 +83,9 @@ public final class CommandProvider {
             script = shellContext.getLastScript();
         if (script.isBlank())
             return;
-        System.out.println(IRPrinter.dumpProgramIR(script));
+        ScriptEngine engine = shellContext.getEngine();
+        ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
+        System.out.println(IRPrinter.dumpProgramIR(elctx, script));
     }
 
     @Command("dump-ast")

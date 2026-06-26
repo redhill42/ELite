@@ -30,6 +30,7 @@ import org.operamasks.el.resolver.ClassResolver;
 /**
  * Input/Output functions
  */
+@SuppressWarnings("unused")
 public final class IO
 {
     private IO() {}
@@ -50,11 +51,8 @@ public final class IO
     public static void read(ELContext elctx, File file, Closure proc)
         throws IOException
     {
-        InputStream stream = new FileInputStream(file);
-        try {
+        try (InputStream stream = new FileInputStream(file)) {
             proc.call(elctx, stream);
-        } finally {
-            stream.close();
         }
     }
 
@@ -65,11 +63,8 @@ public final class IO
     public static void write(ELContext elctx, File file, Closure proc)
         throws IOException
     {
-        OutputStream stream = new FileOutputStream(file);
-        try {
+        try (OutputStream stream = new FileOutputStream(file)) {
             proc.call(elctx, stream);
-        } finally {
-            stream.close();
         }
     }
 
@@ -80,12 +75,9 @@ public final class IO
     public static void readText(ELContext elctx, File file, Closure proc)
         throws IOException
     {
-        InputStream stream = new FileInputStream(file);
-        try {
+        try (InputStream stream = new FileInputStream(file)) {
             Reader reader = new BufferedReader(new InputStreamReader(stream));
             proc.call(elctx, reader);
-        } finally {
-            stream.close();
         }
     }
 
@@ -96,12 +88,9 @@ public final class IO
     public static void readText(ELContext elctx, File file, String charset, Closure proc)
         throws IOException
     {
-        InputStream stream = new FileInputStream(file);
-        try {
+        try (InputStream stream = new FileInputStream(file)) {
             Reader reader = new BufferedReader(new InputStreamReader(stream, charset));
             proc.call(elctx, reader);
-        } finally {
-            stream.close();
         }
     }
 
@@ -112,13 +101,10 @@ public final class IO
     public static void writeText(ELContext elctx, File file, Closure proc)
         throws IOException
     {
-        OutputStream stream = new FileOutputStream(file);
-        try {
+        try (OutputStream stream = new FileOutputStream(file)) {
             Writer writer = new OutputStreamWriter(stream);
             proc.call(elctx, writer);
             writer.flush();
-        } finally {
-            stream.close();
         }
     }
 
@@ -129,13 +115,10 @@ public final class IO
     public static void writeText(ELContext elctx, File file, String charset, Closure proc)
         throws IOException
     {
-        OutputStream stream = new FileOutputStream(file);
-        try {
+        try (OutputStream stream = new FileOutputStream(file)) {
             Writer writer = new OutputStreamWriter(stream, charset);
             proc.call(elctx, writer);
             writer.flush();
-        } finally {
-            stream.close();
         }
     }
 
@@ -146,8 +129,7 @@ public final class IO
     public static void eachLine(ELContext elctx, File file, Closure proc)
         throws IOException
     {
-        InputStream stream = new FileInputStream(file);
-        try {
+        try (InputStream stream = new FileInputStream(file)) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
             String line;
             while ((line = reader.readLine()) != null) {
@@ -159,8 +141,6 @@ public final class IO
                     break;
                 }
             }
-        } finally {
-            stream.close();
         }
     }
 
@@ -171,8 +151,7 @@ public final class IO
     public static void eachLine(ELContext elctx, File file, String charset, Closure proc)
         throws IOException
     {
-        InputStream stream = new FileInputStream(file);
-        try {
+        try (InputStream stream = new FileInputStream(file)) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(stream, charset));
             String line;
             while ((line = reader.readLine()) != null) {
@@ -184,8 +163,6 @@ public final class IO
                     break;
                 }
             }
-        } finally {
-            stream.close();
         }
     }
 
@@ -194,14 +171,11 @@ public final class IO
      */
     @Expando
     public static byte[] getBytes(File file) throws IOException {
-        FileInputStream stream = new FileInputStream(file);
-        try {
+        try (FileInputStream stream = new FileInputStream(file)) {
             FileChannel channel = stream.getChannel();
             byte[] bytes = new byte[(int)channel.size()];
             channel.read(ByteBuffer.wrap(bytes));
             return bytes;
-        } finally {
-            stream.close();
         }
     }
 
@@ -220,8 +194,7 @@ public final class IO
             throw new IllegalArgumentException(range.toString());
         }
 
-        FileInputStream stream = new FileInputStream(file);
-        try {
+        try (FileInputStream stream = new FileInputStream(file)) {
             FileChannel channel = stream.getChannel();
             channel.position(begin);
             if (end >= channel.size())
@@ -232,8 +205,6 @@ public final class IO
             byte[] bytes = new byte[size];
             channel.read(ByteBuffer.wrap(bytes));
             return bytes;
-        } finally {
-            stream.close();
         }
     }
 
@@ -242,16 +213,13 @@ public final class IO
      */
     @Expando
     public static String getText(File file) throws IOException {
-        FileInputStream stream = new FileInputStream(file);
-        try {
+        try (FileInputStream stream = new FileInputStream(file)) {
             Reader reader = new InputStreamReader(stream);
             StringBuilder buf = new StringBuilder((int)stream.getChannel().size());
             for (int c; (c = reader.read()) != -1; ) {
                 buf.append((char)c);
             }
             return buf.toString();
-        } finally {
-            stream.close();
         }
     }
 
@@ -260,16 +228,13 @@ public final class IO
      */
     @Expando
     public static String getText(File file, String charset) throws IOException {
-        FileInputStream stream = new FileInputStream(file);
-        try {
+        try (FileInputStream stream = new FileInputStream(file)) {
             Reader reader = new InputStreamReader(stream, charset);
             StringBuilder buf = new StringBuilder((int)stream.getChannel().size());
             for (int c; (c = reader.read()) != -1; ) {
                 buf.append((char)c);
             }
             return buf.toString();
-        } finally {
-            stream.close();
         }
     }
 
@@ -282,11 +247,8 @@ public final class IO
     public static void read(ELContext elctx, URL url, Closure proc)
         throws IOException
     {
-        InputStream stream = url.openStream();
-        try {
+        try (InputStream stream = url.openStream()) {
             proc.call(elctx, stream);
-        } finally {
-            stream.close();
         }
     }
 
@@ -299,11 +261,8 @@ public final class IO
     {
         URLConnection uc = url.openConnection();
         uc.setDoOutput(true);
-        OutputStream stream = uc.getOutputStream();
-        try {
+        try (OutputStream stream = uc.getOutputStream()) {
             proc.call(elctx, stream);
-        } finally {
-            stream.close();
         }
     }
 
@@ -314,12 +273,9 @@ public final class IO
     public static void readText(ELContext elctx, URL url, Closure proc)
         throws IOException
     {
-        InputStream stream = url.openStream();
-        try {
+        try (InputStream stream = url.openStream()) {
             Reader reader = new BufferedReader(new InputStreamReader(stream));
             proc.call(elctx, reader);
-        } finally {
-            stream.close();
         }
     }
 
@@ -332,13 +288,10 @@ public final class IO
     {
         URLConnection uc = url.openConnection();
         uc.setDoOutput(true);
-        OutputStream stream = uc.getOutputStream();
-        try {
+        try (OutputStream stream = uc.getOutputStream()) {
             Writer writer = new OutputStreamWriter(stream);
             proc.call(elctx, writer);
             writer.flush();
-        } finally {
-            stream.close();
         }
     }
 
@@ -351,13 +304,10 @@ public final class IO
     {
         URLConnection uc = url.openConnection();
         uc.setDoOutput(true);
-        OutputStream stream = uc.getOutputStream();
-        try {
+        try (OutputStream stream = uc.getOutputStream()) {
             Writer writer = new OutputStreamWriter(stream, charset);
             proc.call(elctx, writer);
             writer.flush();
-        } finally {
-            stream.close();
         }
     }
 
@@ -368,8 +318,7 @@ public final class IO
     public static void eachLine(ELContext elctx, URL url, Closure proc)
         throws IOException
     {
-        InputStream stream = url.openStream();
-        try {
+        try (InputStream stream = url.openStream()) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
             String line;
             while ((line = reader.readLine()) != null) {
@@ -381,8 +330,6 @@ public final class IO
                     break;
                 }
             }
-        } finally {
-            stream.close();
         }
     }
 
@@ -393,8 +340,7 @@ public final class IO
     public static void eachLine(ELContext elctx, URL url, String charset, Closure proc)
         throws IOException
     {
-        InputStream stream = url.openStream();
-        try {
+        try (InputStream stream = url.openStream()) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(stream, charset));
             String line;
             while ((line = reader.readLine()) != null) {
@@ -406,8 +352,6 @@ public final class IO
                     break;
                 }
             }
-        } finally {
-            stream.close();
         }
     }
 
@@ -416,15 +360,12 @@ public final class IO
      */
     @Expando
     public static byte[] getBytes(URL url) throws IOException {
-        InputStream stream = new BufferedInputStream(url.openStream());
-        try {
+        try (InputStream stream = new BufferedInputStream(url.openStream())) {
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
             for (int b; (b = stream.read()) != -1; ) {
                 buf.write(b);
             }
             return buf.toByteArray();
-        } finally {
-            stream.close();
         }
     }
 
@@ -433,16 +374,13 @@ public final class IO
      */
     @Expando
     public static String getText(URL url) throws IOException {
-        InputStream stream = url.openStream();
-        try {
+        try (InputStream stream = url.openStream()) {
             Reader reader = new InputStreamReader(stream);
             StringBuilder buf = new StringBuilder();
             for (int c; (c = reader.read()) != -1; ) {
                 buf.append((char)c);
             }
             return buf.toString();
-        } finally {
-            stream.close();
         }
     }
 
@@ -451,16 +389,13 @@ public final class IO
      */
     @Expando
     public static String getText(URL url, String charset) throws IOException {
-        InputStream stream = url.openStream();
-        try {
+        try (InputStream stream = url.openStream()) {
             Reader reader = new InputStreamReader(stream, charset);
             StringBuilder buf = new StringBuilder();
             for (int c; (c = reader.read()) != -1; ) {
                 buf.append((char)c);
             }
             return buf.toString();
-        } finally {
-            stream.close();
         }
     }
 
@@ -471,13 +406,10 @@ public final class IO
      */
     @Expando
     public static void dump(File file, Object obj) throws IOException {
-        OutputStream stream = new FileOutputStream(file);
-        try {
+        try (OutputStream stream = new FileOutputStream(file)) {
             ObjectOutputStream out = new ObjectOutputStream(stream);
             out.writeObject(obj);
             out.flush();
-        } finally {
-            stream.close();
         }
     }
 
@@ -486,12 +418,9 @@ public final class IO
      */
     @Expando
     public static Object load(File file) throws IOException, ClassNotFoundException {
-        InputStream stream = new FileInputStream(file);
-        try {
+        try (InputStream stream = new FileInputStream(file)) {
             ObjectInputStream in = new ObjectInputStream(stream);
             return in.readObject();
-        } finally {
-            stream.close();
         }
     }
 

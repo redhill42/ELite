@@ -147,8 +147,9 @@ public final class Opcode {
     public static final int TABLE_SWITCH    = 0x75;
 
     // ── Thunk / lazy (0x76-0x77) ──
-    public static final int DELAY         = 0x76;  // create DelayEvalClosure wrapping IRClosure thunk
-    public static final int PUSH_VAR_RAW  = 0x77;  // push local without forcing lazy thunk
+    public static final int DELAY         = 0x76;  // create IRClosure thunk
+    public static final int LITERAL       = 0x77;  // create LiteralClosure wrapper
+    public static final int PUSH_VAR_RAW  = 0x78;  // push local without forcing lazy thunk
 
     // ── Function (0x80-0x8F) ──
     public static final int INVOKE        = 0x80;
@@ -305,6 +306,7 @@ public final class Opcode {
             case JUMP_IF_NONNULL -> "JUMP_IF_NONNULL";
             case TABLE_SWITCH -> "TABLE_SWITCH";
             case DELAY -> "DELAY";
+            case LITERAL -> "LITERAL";
             case PUSH_VAR_RAW -> "PUSH_VAR_RAW";
             case INVOKE -> "INVOKE";
             case INVOKE_DYN -> "INVOKE_DYN";

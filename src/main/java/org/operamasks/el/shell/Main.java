@@ -92,13 +92,15 @@ public class Main
                 if (dumpAST || dumpIR || dumpBC) {
                     String source = new String(java.nio.file.Files.readAllBytes(
                         java.nio.file.Paths.get(filename)));
-                    dumpWithFlags(source);
+                    ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
+                    dumpWithFlags(elctx, source);
                     return 0;
                 }
                 status = CommandProvider.exec(shellContext, filename);
             } else if (script != null) {
                 if (dumpAST || dumpIR || dumpBC) {
-                    dumpWithFlags(script);
+                    ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
+                    dumpWithFlags(elctx, script);
                     return 0;
                 }
                 status = exec_script(engine, script);
@@ -297,7 +299,7 @@ public class Main
     private static final String DUMP_SEPARATOR =
         "\n" + "═".repeat(60) + "\n";
 
-    private void dumpWithFlags(String source) throws IOException {
+    private void dumpWithFlags(ELContext elctx, String source) throws IOException {
         int count = 0;
         if (dumpAST) count++;
         if (dumpIR)  count++;
@@ -309,7 +311,7 @@ public class Main
             if (++emitted < count) System.out.print(DUMP_SEPARATOR);
         }
         if (dumpIR) {
-            System.out.print(IRPrinter.dumpProgramIR(source));
+            System.out.print(IRPrinter.dumpProgramIR(elctx, source));
             if (++emitted < count) System.out.print(DUMP_SEPARATOR);
         }
         if (dumpBC) {

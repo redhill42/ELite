@@ -117,6 +117,10 @@ public class IREmitter {
                     funcPoolIdx & 0xFFFF, captureCount);
     }
 
+    public IREmitter emitLiteral() {
+        return emit1(LITERAL, K_NONE, 0);
+    }
+
     public IREmitter emitPushGlobal(int nameIndex) {
         if (fits16(nameIndex)) {
             return emit1(PUSH_GLOBAL, K_NONE, nameIndex);
