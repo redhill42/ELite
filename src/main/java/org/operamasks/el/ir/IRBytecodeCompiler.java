@@ -454,15 +454,6 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/operamasks/el/eval/seq/Cons",
                     "nil", "()Lorg/operamasks/el/eval/seq/Cons;");
 
-            // ─── Iteration ───
-            case GET_ITER  -> emitCall1Obj("getIter");
-            case ITER_NEXT -> emitCall1Obj("iterNext");
-            case ITER_DONE -> {
-                // Stack: [iterator, next_value_on_top]
-                // Pop next_value, jump to exit if null
-                mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL → done
-            }
-
             // ─── Bitwise (via helpers) ───
             case IAND, LAND -> emitCall2("bitAnd");
             case IOR, LOR   -> emitCall2("bitOr");

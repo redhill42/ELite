@@ -635,31 +635,6 @@ public class IREmitter {
     }
 
     /**
-     * Pop collection → push iterator.
-     */
-    public IREmitter emitGetIter() {
-        return emit1(GET_ITER, K_NONE, 0);
-    }
-
-    /**
-     * Pop iterator → push next value (or null if done).
-     */
-    public IREmitter emitIterNext() {
-        return emit1(ITER_NEXT, K_NONE, 0);
-    }
-
-    /**
-     * Pop value → if null (iteration done), jump to target block.
-     */
-    public IREmitter emitIterDone(int doneBlock) {
-        if (fits16(doneBlock))
-            return emit1(ITER_DONE, K_NONE, doneBlock);
-        else
-            return emit2(ITER_DONE, K_NONE, doneBlock >>> 16,
-                    doneBlock & 0xFFFF);
-    }
-
-    /**
      * Pop container, element → push boolean (element in container).
      */
     public IREmitter emitDynIn() {

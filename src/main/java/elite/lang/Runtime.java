@@ -29,6 +29,12 @@ import org.operamasks.el.ir.IRInterpreter;
 import org.operamasks.el.parser.ELNode;
 import org.operamasks.el.resolver.MethodResolver;
 
+import java.lang.reflect.Array;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.NoSuchElementException;
+
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -200,13 +206,43 @@ public final class Runtime {
         }
     }
 
-    public static Object getIter(Object coll) {
-        return IRInterpreter.getIterator(coll);
+    public static java.util.Iterator<?> getIterator(Object coll) {
+        if (coll instanceof Iterable<?>)
+            return ((Iterable<?>)coll).iterator();
+        if (coll instanceof Map<?,?>)
+            return ((Map<?,?>)coll).entrySet().iterator(); // FIXME: need kv pair binding
+        if (coll instanceof Object[])
+            return Arrays.asList((Object[])coll).iterator();
+        if (coll.getClass().isArray())
+            return new ArrayItr(coll);
+        if (coll instanceof String)
+            return new ArrayItr(((String)coll).toCharArray());
+        return null;
     }
 
-    public static Object iterNext(Object it) {
-        java.util.Iterator<?> iter = (java.util.Iterator<?>) it;
-        return iter.hasNext() ? iter.next() : null;
+    private static class ArrayItr implements Iterator<Object> {
+        private int cursor;
+        private final Object a;
+        private final int length;
+
+        ArrayItr(Object a) {
+            this.a = a;
+            this.length = Array.getLength(a);
+        }
+
+        @Override
+        public boolean hasNext() {
+            return cursor < length;
+        }
+
+        @Override
+        public Object next() {
+            int i = cursor;
+            if (i >= length)
+                throw new NoSuchElementException();
+            cursor = i + 1;
+            return Array.get(a, i);
+        }
     }
 
     // ── Field access ──

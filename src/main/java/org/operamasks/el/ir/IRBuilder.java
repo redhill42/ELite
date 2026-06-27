@@ -19,6 +19,7 @@ package org.operamasks.el.ir;
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.lang.MathLib;
+import elite.lang.Runtime;
 import elite.lang.annotation.Expando;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.ELProgram;
@@ -311,23 +312,6 @@ public class IRBuilder extends ELNode.Visitor {
         build(node.right);   // base object
         build(node.index);   // key
         current.emitLoadProperty();
-    }
-
-    /**
-     * Resolve a public method by name and argument count. Returns null if
-     * ambiguous.
-     */
-    static Method resolveMethod(Class<?> cls, String name, int argCount) {
-        Method found = null;
-        for (Method m : cls.getMethods()) {
-            if (m.getName().equals(name) && m.getParameterCount() == argCount &&
-                Modifier.isPublic(m.getModifiers())) {
-                if (found != null)
-                    return null; // ambiguous overload
-                found = m;
-            }
-        }
-        return found;
     }
 
     /**
@@ -894,15 +878,10 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Binary arithmetic ──
 
-    public void visit(ELNode.ADD node) { buildBinaryOp(node); }
-    public void visit(ELNode.SUB node) { buildBinaryOp(node); }
-    public void visit(ELNode.MUL node) { buildBinaryOp(node); }
-    public void visit(ELNode.DIV node) {
-        if (node.op == Token.DIV)
-            buildBinaryOp(node);
-        else
-            buildTrampoline(node); // FIXME
-    }
+    public void visit(ELNode.ADD node)    { buildBinaryOp(node); }
+    public void visit(ELNode.SUB node)    { buildBinaryOp(node); }
+    public void visit(ELNode.MUL node)    { buildBinaryOp(node); }
+    public void visit(ELNode.DIV node)    { buildBinaryOp(node); }
     public void visit(ELNode.REM node)    { buildBinaryOp(node); }
     public void visit(ELNode.POW node)    { buildBinaryOp(node); }
     public void visit(ELNode.BITOR node)  { buildBinaryOp(node); }
@@ -1060,6 +1039,7 @@ public class IRBuilder extends ELNode.Visitor {
         case Token.SUB -> current.emitDynSub();
         case Token.MUL -> current.emitDynMul();
         case Token.DIV -> current.emitDynDiv();
+        case Token.IDIV -> current.emitLDiv();
         case Token.REM -> current.emitDynRem();
         case Token.POW -> current.emitDynPow();
         case Token.SHL -> current.emitDynShl();
@@ -1199,32 +1179,24 @@ public class IRBuilder extends ELNode.Visitor {
     // ── Logical AND/OR/NOT ──
 
     public void visit(ELNode.AND node) {
-        int contB = allocBlockId(), endB = allocBlockId();
+        int contB = allocBlockId();
         build(node.left);
         current.emitDup();
-        current.emitJumpIfFalse(endB);
+        current.emitJumpIfFalse(contB);
         current.emitPop();
         build(node.right);
-        current.emitJump(contB);
-        startBlock(endB);
-        current.emitPop();
-        emitPushFalse();
         current.emitJump(contB);
         startBlock(contB);
     }
 
 
     public void visit(ELNode.OR node) {
-        int contB = allocBlockId(), endB = allocBlockId();
+        int contB = allocBlockId();
         build(node.left);
         current.emitDup();
-        current.emitJumpIfTrue(endB);
+        current.emitJumpIfTrue(contB);
         current.emitPop();
         build(node.right);
-        current.emitJump(contB);
-        startBlock(endB);
-        current.emitPop();
-        emitPushTrue();
         current.emitJump(contB);
         startBlock(contB);
     }
@@ -1241,19 +1213,21 @@ public class IRBuilder extends ELNode.Visitor {
         int mergeB = allocBlockId();
 
         build(node.cond);
-        // Ensure jumps are in the same block as condition
         current.emitJumpIfTrue(thenB);
         current.emitJump(elseB);
+
         sealAndStart(thenB);
         enterControlScope();
         buildTail(node.left);
         leaveControlScope();
         current.emitJump(mergeB);
+
         sealAndStart(elseB);
         enterControlScope();
         buildTail(node.right);
         leaveControlScope();
         current.emitJump(mergeB);
+
         sealAndStart(mergeB);
     }
 
@@ -1286,24 +1260,14 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        int keepB = allocBlockId();
-        int nullB = allocBlockId();
-        int mergeB = allocBlockId();
-
+        int contB = allocBlockId();
         build(node.left);
         current.emitDup();
-        current.emitJumpIfNonNull(keepB);
-        current.emitJump(nullB);
-
-        startBlock(nullB);
+        current.emitJumpIfNonNull(contB);
         current.emitPop();
         build(node.right);
-        current.emitJump(mergeB);
-
-        startBlock(keepB);
-        current.emitJump(mergeB);
-
-        startBlock(mergeB);
+        current.emitJump(contB);
+        startBlock(contB);
     }
 
     private boolean nullable(ELNode node) {
@@ -1774,14 +1738,9 @@ public class IRBuilder extends ELNode.Visitor {
                 buildConstantRangedFor(node.var, node.index, r, node.body);
             else
                 buildDynamicRangedFor(node.var, node.index, r, node.body);
-            return;
+        } else {
+            buildIterateFor(node);
         }
-
-        // General iterator-based for-each: trampoline to AST.
-        // The IR compilation has a known bug with ITER_DONE/STORE_VAR
-        // stack ordering that causes ClassCastException on 2nd iteration.
-        // AST handles for-in correctly.
-        buildTrampoline(node);
     }
 
     private void buildConstantRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
@@ -1806,7 +1765,6 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         enterControlScope();
-        assert !savedVarBindings.isEmpty();
         int idxIdx = defineLocalVar(index != null ? index.id : Parser.tempvar());
         int varIdx = defineLocalVar(var.id);
 
@@ -1869,7 +1827,6 @@ public class IRBuilder extends ELNode.Visitor {
     private void buildDynamicRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
                                        ELNode.RANGE range, ELNode body) {
         enterControlScope();
-        assert !savedVarBindings.isEmpty();
         int idxIdx = defineLocalVar(index != null ? index.id : Parser.tempvar());
         int varIdx = defineLocalVar(var.id);
         int stepIdx = -1;
@@ -1958,6 +1915,77 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Cleanup
         startBlock(exitB);
+        emitPushNull();
+        leaveControlScope();
+        loopStack.pop();
+    }
+
+    private void buildIterateFor(ELNode.FOREACH node) {
+        int header = allocBlockId();
+        int body = allocBlockId();
+        int exit = allocBlockId();
+
+        enterControlScope();;
+        loopStack.push(new LoopTargets(header, exit));
+
+        Method getIter, hasNext, next;
+        try {
+            getIter = Runtime.class.getMethod("getIterator", Object.class);
+            hasNext = Iterator.class.getMethod("hasNext");
+            next = Iterator.class.getMethod("next");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError(ex); // should not happen
+        }
+
+        int getIterIdx = putConstant(getIter);
+        int hasNextIdx = putConstant(hasNext);
+        int nextIdx = putConstant(next);
+
+        int varIdx = defineLocalVar(node.var.id);
+        int iterIdx = defineLocalVar(Parser.tempvar());
+        int idxIdx = -1;
+
+        if (node.index != null) {
+            idxIdx = defineLocalVar(node.index.id);
+            emitPushConst(T_LONG, -1);
+            current.emitStoreVar(idxIdx);
+            current.emitPop();
+        }
+
+        current.emitPushNull();
+        build(node.range);
+        current.emitInvokeMethod(getIterIdx, 1);
+        current.emitStoreVar(iterIdx);
+        current.emitJumpIfNull(exit);
+        current.emitJump(header);
+
+        startBlock(header);
+        current.emitPushVar(iterIdx);
+        current.emitInvokeMethod(hasNextIdx, 0);
+        current.emitJumpIfFalse(exit);
+        current.emitJump(body);
+
+        startBlock(body);
+        current.emitPushVar(iterIdx);
+        current.emitInvokeMethod(nextIdx, 0);
+        current.emitStoreVar(varIdx);
+        current.emitPop();
+
+        if (node.index != null) {
+            current.emitPushVar(idxIdx);
+            emitPushConst(T_LONG, 1);
+            current.emitIAdd();
+            current.emitStoreVar(idxIdx);
+            current.emitPop();
+        }
+
+        if (node.body != null && !(node.body instanceof ELNode.NULL)) {
+            build(node.body);
+            current.emitPop();
+        }
+        current.emitJump(header);
+
+        startBlock(exit);
         emitPushNull();
         leaveControlScope();
         loopStack.pop();

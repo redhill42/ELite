@@ -172,10 +172,7 @@ public final class Opcode {
     public static final int STORE_FIELD    = 0x94;
     public static final int LOAD_PROPERTY  = 0x95;  // pops key, base → base[key]
     public static final int STORE_PROPERTY = 0x96;  // pops val, key, base → base[key]=val
-    public static final int GET_ITER       = 0x97;
-    public static final int ITER_NEXT      = 0x98;
-    public static final int ITER_DONE      = 0x99;
-    public static final int CAPTURE        = 0x9A;
+    public static final int CAPTURE        = 0x97;
 
     // ── Data structure ──
     public static final int NEW_CONS       = 0xA0;
@@ -327,9 +324,6 @@ public final class Opcode {
             case STORE_FIELD -> "STORE_FIELD";
             case LOAD_PROPERTY -> "LOAD_PROPERTY";
             case STORE_PROPERTY -> "STORE_PROPERTY";
-            case GET_ITER -> "GET_ITER";
-            case ITER_NEXT -> "ITER_NEXT";
-            case ITER_DONE -> "ITER_DONE";
             case CAPTURE -> "CAPTURE";
             case NEW_CONS -> "NEW_CONS";
             case NEW_DELAY_CONS -> "NEW_DELAY_CONS";

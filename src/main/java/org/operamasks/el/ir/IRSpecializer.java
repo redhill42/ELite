@@ -147,7 +147,7 @@ public class IRSpecializer implements IRPass {
             for (int i = 0; i < block.size(); i++) {
                 int word = block.get(i);
                 int op = IRFormat.opcode(word);
-                if (Opcode.isJump(op) || op == INVOKE_TAIL || op == ITER_DONE) {
+                if (Opcode.isJump(op) || op == INVOKE_TAIL) {
                     int oc = IRFormat.opCount(word);
                     int oldTarget = oc == 0 ? IRFormat.payload(word) : block.get(i + 1);
                     if (oldTarget < oldCount) {
@@ -465,9 +465,6 @@ public class IRSpecializer implements IRPass {
                 case NEW_RANGE   -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }
                 case LOAD_PROPERTY  -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }
                 case STORE_PROPERTY -> { pop3(); pushType(-1, false, -1); copyInst(out, code, v); }
-                case GET_ITER    -> { pop1(); pushType(-1, false, -1); copyInst(out, code, v); }
-                case ITER_NEXT   -> { pop1(); pushType(-1, false, -1); copyInst(out, code, v); }
-                case ITER_DONE   -> { pop1(); copyInst(out, code, v); }
                 case DYNCAT      -> { pop2(); pushType(T_STRING, false, -1); copyInst(out, code, v); }
                 case DYNPOW      -> { pop2(); pushType(-1, false, -1); copyInst(out, code, v); }
                 case DYNIN       -> { pop2(); pushType(T_BOOL, false, -1); copyInst(out, code, v); }

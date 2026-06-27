@@ -922,32 +922,6 @@ public class IRInterpreter {
                 break;
             }
 
-            // ============ Iteration ============
-            case GET_ITER: {
-                Object coll = pop();
-                push(getIterator(coll));
-                ip += 1;
-                break;
-            }
-            case ITER_NEXT: {
-                java.util.Iterator<?> it = (java.util.Iterator<?>)pop();
-                Object next = it.hasNext() ? it.next() : null;
-                push(it);    // iterator first (bottom)
-                push(next);  // value on top (popped by ITER_DONE or
-                // STORE_VAR)
-                ip += 1;
-                break;
-            }
-            case ITER_DONE: {
-                Object val = pop();
-                if (val == null) {
-                    ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
-                } else {
-                    ip += 1 + oc;
-                }
-                break;
-            }
-
             // ============ DynIn ============
             case DYNIN: {
                 Object elem = pop();
@@ -1384,38 +1358,5 @@ public class IRInterpreter {
         } catch (IllegalAccessException e) {
             throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
         }
-    }
-
-    // ── Iterator helpers ──
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public static java.util.Iterator<?> getIterator(Object coll) {
-        if (coll instanceof Iterable)
-            return ((Iterable)coll).iterator();
-        if (coll instanceof Object[])
-            return java.util.Arrays.asList((Object[])coll).iterator();
-        if (coll.getClass().isArray()) {
-            int len = java.lang.reflect.Array.getLength(coll);
-            Object[] arr = new Object[len];
-            for (int i = 0; i < len; i++)
-                arr[i] = java.lang.reflect.Array.get(coll, i);
-            return java.util.Arrays.asList(arr).iterator();
-        }
-        if (coll instanceof elite.lang.Seq seq) {
-            return new java.util.Iterator<>() {
-                elite.lang.Seq s = seq;
-
-                public boolean hasNext() {
-                    return !s.isEmpty();
-                }
-
-                public Object next() {
-                    Object h = s.head();
-                    s = s.tail();
-                    return h;
-                }
-            };
-        }
-        throw new RuntimeException(_T(IR_CANNOT_ITERATE, coll.getClass().getName()));
     }
 }
