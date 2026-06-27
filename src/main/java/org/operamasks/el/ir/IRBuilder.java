@@ -1293,26 +1293,35 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Compound assignment (+=, -=, etc.) ──
     private void buildAssignOp(ELNode.ASSIGNOP node) {
-        if (node.left instanceof ELNode.IDENT ident) {
-            // Build: left-value op right-value, then store back
-            build(node.left);        // push current value of x
-            build(node.right);       // push delta
-            int leftT = typeIdFromNode(node.left);
-            int rightT = typeIdFromNode(node.right);
-            if (leftT >= 0 && rightT >= 0) {
-                emitTypedOp(node.binary.op, widerType(leftT, rightT));
-            } else {
-                emitDynamicOp(node.binary.op);
-            }
+        Method method;
+        try {
+            method = Runtime.class.getMethod("invokeAssignOp", ELContext.class, int.class,
+                                             Object.class, Object.class);
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError(ex);
+        }
 
-            // Store result back — assign must find existing binding in full
-            // chain.
-            // Only emit STORE_GLOBAL when the variable was stored via STORE_GLOBAL
-            // at define time (top-level, captured). Slot-only variables
-            // (function locals, control-flow shadows) don't have global
-            // bindings and STORE_GLOBAL would throw PropertyNotFoundException.
+        // Invoke dynamic assignment operator
+        int methodIdx = putConstant(method);
+        emitPushNull();
+        emitPushConst(T_INT, node.binary.op);
+        build(node.left);
+        build(node.right);
+        current.emitInvokeMethod(methodIdx, 3);
+
+        // Now perform assignment.
+        ELNode left = node.left;
+        while (left instanceof ELNode.EXPR) {
+            left = ((ELNode.EXPR)left).right;
+        }
+
+        if (left instanceof ELNode.IDENT ident) {
             buildStoreVariable(ident.id);
+        } else if (left instanceof ELNode.ACCESS access) {
+            buildStoreProperty(access);
         } else {
+            assert false; // should not happen, parser disable other assignop syntax
+            current.emitPop();
             buildTrampoline(node);
         }
     }

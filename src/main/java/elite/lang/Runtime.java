@@ -20,13 +20,15 @@ import javax.el.ELContext;
 import javax.el.ValueExpression;
 
 import org.operamasks.el.eval.*;
+import org.operamasks.el.eval.closure.ClosureObject;
+import org.operamasks.el.eval.closure.LiteralClosure;
 import org.operamasks.el.eval.closure.MethodClosure;
 import org.operamasks.el.eval.seq.Cons;
 import org.operamasks.el.ir.IRClosure;
 import org.operamasks.el.ir.IRFormat;
 import org.operamasks.el.ir.IRFunction;
-import org.operamasks.el.ir.IRInterpreter;
 import org.operamasks.el.parser.ELNode;
+import org.operamasks.el.parser.Token;
 import org.operamasks.el.resolver.MethodResolver;
 
 import java.lang.reflect.Array;
@@ -35,6 +37,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+import static org.operamasks.el.eval.ELUtils.NO_RESULT;
 import static org.operamasks.el.resources.Resources.*;
 
 /**
@@ -526,6 +529,47 @@ public final class Runtime {
 
     public static Object invokeDynMethod(ELContext elctx, Object base, Object key, Object[] args) {
         return ELNode.ACCESS.invoke(elctx, base, key, ELEngine.getCallArgs(args));
+    }
+
+    public static Object invokeAssignOp(ELContext elctx, int op, Object lhs, Object rhs) {
+        String opname = ELNode.opIdentifiers[op];
+        Closure[] args = new Closure[1];
+        Object result;
+
+        // invoke assignment operator procedure
+        if (lhs != null && opname != null) {
+            if (lhs instanceof ClosureObject co) {
+                args[0] = new LiteralClosure(rhs);
+                result = co.invokeSpecial(elctx, opname.concat("="), args);
+                if (result != NO_RESULT)
+                    return result;
+            } else if (!(lhs instanceof Number)) {
+                MethodClosure method = MethodResolver.getInstance(elctx)
+                    .resolveMethod(lhs.getClass(), opname.concat("="));
+                if (method != null) {
+                    args[0] = new LiteralClosure(rhs);
+                    return method.invoke(elctx, lhs, args);
+                }
+            }
+        }
+
+        // do standard evaluation.
+        return switch (op) {
+        case Token.ADD -> dynAdd(elctx, lhs, rhs);
+        case Token.SUB -> dynSub(elctx, lhs, rhs);
+        case Token.MUL -> dynMul(elctx, lhs, rhs);
+        case Token.DIV -> dynDiv(elctx, lhs, rhs);
+        case Token.REM -> dynRem(elctx, lhs, rhs);
+        case Token.POW -> dynPow(elctx, lhs, rhs);
+        case Token.BITAND -> dynBitAnd(elctx, lhs, rhs);
+        case Token.BITOR -> dynBitOr(elctx, lhs, rhs);
+        case Token.XOR -> dynXor(elctx, lhs, rhs);
+        case Token.CAT -> dynCat(elctx, lhs, rhs);
+        case Token.SHL -> dynShl(elctx, lhs, rhs);
+        case Token.SHR -> dynShr(elctx, lhs, rhs);
+        case Token.USHR -> dynUShr(elctx, lhs, rhs);
+        default -> null;
+        };
     }
 
     // ── Type guard ──

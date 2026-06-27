@@ -674,6 +674,11 @@ public class TypeInferrer {
 
     private Type inferAssign(ELNode.ASSIGN node) {
         Type rhsType = infer(node.right);
+
+        // Don't check for assignment operator, it may be overloaded.
+        if (node instanceof ELNode.ASSIGNOP)
+            return rhsType;
+
         // Simple variable assignment: x = value
         if (node.left instanceof ELNode.IDENT) {
             String name = ((ELNode.IDENT) node.left).id;
