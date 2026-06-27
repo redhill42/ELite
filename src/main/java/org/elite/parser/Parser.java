@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Modifier;
@@ -3461,12 +3462,30 @@ public class Parser extends Scanner
 
     private ELNode.Pattern parsePattern() {
         ELNode pat = (ELNode)parseSubPattern();
+        Set<String> bindings = getPatternBindings(pat);
         while (token == BAR) {
-            pat = new ELNode.OR(scan(), pat, (ELNode)parseSubPattern());
+            int p = scan();
+            ELNode next = (ELNode)parseSubPattern();
+            Set<String> second = getPatternBindings(next);
+            if (!bindings.equals(second))
+                throw parseError("the patterns must have identical variable bindings");
+            pat = new ELNode.OR(p, pat, next);
         }
         return (ELNode.Pattern)pat;
     }
-    
+
+    private Set<String> getPatternBindings(ELNode pat) {
+        Set<String> bindings = new HashSet<>();
+        ELNode.Visitor v = new DefaultVisitor() {
+            public void visit(ELNode.DEFINE def) {
+                if (!"_".equals(def.id))
+                    bindings.add(def.id);
+            }
+        };
+        pat.accept(v);
+        return bindings;
+    }
+
     private ELNode.Pattern parseSubPattern() {
         switch (token) {
         case IDENT: {

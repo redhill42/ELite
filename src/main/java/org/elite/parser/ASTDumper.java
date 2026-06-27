@@ -211,6 +211,11 @@ public final class ASTDumper {
                         c.node = childNode;
                     } else if (val instanceof ELNode[] childNodes) {
                         c.nodes = childNodes;
+                    } else if (val instanceof ELNode.Pattern[] pats) {
+                        ELNode[] nodes = new ELNode[pats.length];
+                        for (int i = 0; i < pats.length; i++)
+                            nodes[i] = (ELNode)pats[i];
+                        c.nodes = nodes;
                     } else if (val instanceof String || val instanceof Number
                                || val instanceof Boolean) {
                         c.value = String.valueOf(val);
