@@ -171,7 +171,7 @@ public final class IRPrinter {
             case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
             case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET,
-                 Opcode.INVOKE_METHOD, Opcode.INVOKE_EXPANDO
+                 Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO
                 -> formatConstPool(sb, fn, v.payload());
             case Opcode.INSTOF -> formatConstPool(sb, fn, v.payload());
             case Opcode.CLOSURE, Opcode.DELAY -> {

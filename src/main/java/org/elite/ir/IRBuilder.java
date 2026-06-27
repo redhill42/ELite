@@ -19,10 +19,12 @@ package org.elite.ir;
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.lang.MathLib;
+import elite.lang.Seq;
 import elite.lang.annotation.Expando;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.Runtime;
+import org.elite.eval.TypeCoercion;
 import org.elite.parser.*;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
@@ -34,6 +36,7 @@ import org.elite.util.BeanUtils;
 import javax.el.ELContext;
 import javax.el.ValueExpression;
 import java.beans.IntrospectionException;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -872,6 +875,11 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitNot();
     }
 
+    private void emitInstOf(Class<?> cls) {
+        int clsid = putConstant(cls);
+        current.emit1(INSTOF, K_BOOL, clsid);
+    }
+
     private void emitInstOf(String name) {
         int clsid;
         try {
@@ -1300,21 +1308,12 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Compound assignment (+=, -=, etc.) ──
     private void buildAssignOp(ELNode.ASSIGNOP node) {
-        Method method;
-        try {
-            method = Runtime.class.getMethod("invokeAssignOp", ELContext.class, int.class,
-                                             Object.class, Object.class);
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError(ex);
-        }
-
         // Invoke dynamic assignment operator
-        int methodIdx = putConstant(method);
-        emitPushNull();
         emitPushConst(T_INT, node.binary.op);
         build(node.left);
         build(node.right);
-        current.emitInvokeMethod(methodIdx, 3);
+        emitInvokeStatic(Runtime.class, "invokeAssignOp", ELContext.class, int.class,
+                         Object.class, Object.class);
 
         // Now perform assignment.
         ELNode left = node.left;
@@ -1944,19 +1943,6 @@ public class IRBuilder extends ELNode.Visitor {
         enterControlScope();;
         loopStack.push(new LoopTargets(header, exit));
 
-        Method getIter, hasNext, next;
-        try {
-            getIter = Runtime.class.getMethod("getIterator", Object.class);
-            hasNext = Iterator.class.getMethod("hasNext");
-            next = Iterator.class.getMethod("next");
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError(ex); // should not happen
-        }
-
-        int getIterIdx = putConstant(getIter);
-        int hasNextIdx = putConstant(hasNext);
-        int nextIdx = putConstant(next);
-
         int varIdx = defineLocalVar(node.var.id);
         int iterIdx = defineLocalVar(Parser.tempvar());
         int idxIdx = -1;
@@ -1968,22 +1954,21 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPop();
         }
 
-        current.emitPushNull();
         build(node.range);
-        current.emitInvokeMethod(getIterIdx, 1);
+        emitInvokeStatic(Runtime.class, "getIterator", Object.class);
         current.emitStoreVar(iterIdx);
         current.emitJumpIfNull(exit);
         current.emitJump(header);
 
         startBlock(header);
         current.emitPushVar(iterIdx);
-        current.emitInvokeMethod(hasNextIdx, 0);
+        emitInvokeMethod(Iterator.class, "hasNext");
         current.emitJumpIfFalse(exit);
         current.emitJump(body);
 
         startBlock(body);
         current.emitPushVar(iterIdx);
-        current.emitInvokeMethod(nextIdx, 0);
+        emitInvokeMethod(Iterator.class, "next");
         current.emitStoreVar(varIdx);
         current.emitPop();
 
@@ -2346,13 +2331,6 @@ public class IRBuilder extends ELNode.Visitor {
         final boolean[] unsupported = {false};
         ELNode.Visitor v = new DefaultVisitor() {
             public void visit(ELNode.NEW e)   { unsupported[0] = true; }
-            public void visit(ELNode.EXPR e)  { unsupported[0] = true; }
-            public void visit(ELNode.MAP e)   { unsupported[0] = true; }
-            public void visit(ELNode.RANGE e) { unsupported[0] = true; }
-            public void visit(ELNode.REGEXP e) { unsupported[0] = true; }
-            public void visit(ELNode.CONS e)  { unsupported[0] = true; }
-            public void visit(ELNode.NIL e)   { unsupported[0] = true; }
-            public void visit(ELNode.TUPLE e) { unsupported[0] = true; }
         };
         for (ELNode.CASE c : node.alts) {
             if (c.patterns != null) {
@@ -2400,7 +2378,6 @@ public class IRBuilder extends ELNode.Visitor {
                 for (int pi = 0; pi < c.patterns.length; pi++) {
                     current.emitPushVar(argSlots[pi]);  // push arg value
                     compileMatchPattern((ELNode) c.patterns[pi], failBlock);
-                    // compileMatchPattern must leave TRUE on stack if matched
                     current.emitJumpIfFalse(failBlock);
                 }
             }
@@ -2444,8 +2421,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     /**
      * Compile a single pattern check, leaving TRUE on stack if matched.
-     * On complex patterns that can't be fully checked inline, emit a
-     * trampoline for just the pattern (not the whole MATCH).
      */
     private void compileMatchPattern(ELNode pat, int failBlock) {
         if (pat instanceof ELNode.DEFINE d) {
@@ -2500,23 +2475,108 @@ public class IRBuilder extends ELNode.Visitor {
             emitInstOf(cls.name);
             return;
         }
+
         if (pat instanceof ELNode.REGEXP re) {
-            // REGEXP: use trampoline for the pattern itself
-            buildTrampoline(pat);
+            int tmpid = ensureVar(Parser.tempvar());
+            current.emitStoreVar(tmpid);
+            emitInstOf(String.class);
+            current.emitJumpIfFalse(failBlock);
+            emitPushConst(K_NONE, re.value); // the pattern
+            current.emitPushVar(tmpid);      // the string to match
+            emitInvokeMethod(java.util.regex.Pattern.class, "matcher", CharSequence.class);
+            emitInvokeMethod(java.util.regex.Matcher.class, "matches");
             return;
         }
+
+        if (pat instanceof ELNode.EXPR e) {
+            build(e.right);
+            current.emitDynEq();
+            return;
+        }
+
+        if (pat instanceof ELNode.TUPLE t) {
+            int tmpid = ensureVar(Parser.tempvar());
+            current.emitStoreVar(tmpid);
+            current.emitPop();
+            current.emitPushVar(tmpid);
+            emitInvokeMethod(Object.class, "getClass");
+            emitInvokeMethod(Class.class, "isArray");
+            current.emitJumpIfFalse(failBlock);
+            current.emitPushVar(tmpid);
+            emitInvokeStatic(Array.class, "getLength", Object.class);
+            emitPushConst(T_INT, t.elems.length);
+            current.emitIEq();
+            current.emitJumpIfFalse(failBlock);
+            for (int i = 0; i < t.elems.length; i++) {
+                current.emitPushVar(tmpid);
+                emitPushConst(T_INT, i);
+                emitInvokeStatic(Array.class, "get", Object.class, int.class);
+                compileMatchPattern(t.elems[i], failBlock);
+                if (i != t.elems.length - 1)
+                    current.emitJumpIfFalse(failBlock);
+            }
+            return;
+        }
+
+        if (pat instanceof ELNode.CONS cons) {
+            int tmpid = ensureVar(Parser.tempvar());
+            current.emitStoreVar(tmpid);
+            emitInstOf(List.class);
+            current.emitJumpIfFalse(failBlock);
+            current.emitPushVar(tmpid);
+            emitInvokeStatic(TypeCoercion.class, "coerceToSeq", Object.class);
+            current.emitStoreVar(tmpid);
+            emitInvokeMethod(List.class, "isEmpty");
+            current.emitJumpIfTrue(failBlock);
+            current.emitPushVar(tmpid);
+            emitInvokeMethod(Seq.class, "head");
+            compileMatchPattern(cons.head, failBlock);
+            current.emitJumpIfFalse(failBlock);
+            current.emitPushVar(tmpid);
+            emitInvokeMethod(Seq.class, "tail");
+            compileMatchPattern(cons.tail, failBlock);
+            return;
+        }
+
+        if (pat instanceof ELNode.NIL) {
+            current.emitDynEmpty();
+            return;
+        }
+
+        if (pat instanceof ELNode.RANGE) {
+            // FIXME: we need SWAP instruction instead of use temp variable.
+            int tmpid = ensureVar(Parser.tempvar());
+            current.emitStoreVar(tmpid);
+            current.emitPop();
+            build(pat);
+            current.emitPushVar(tmpid);
+            emitInvokeMethod(List.class, "contains", Object.class);
+            return;
+        }
+
+        if (pat instanceof ELNode.MAP map) {
+            int baseid = ensureVar(Parser.tempvar());
+            current.emitStoreVar(baseid);
+            current.emitPop();
+            for (int i = 0; i < map.keys.length; i++) {
+                assert map.keys[i] instanceof ELNode.STRINGVAL key;
+                current.emitPushVar(baseid);
+                emitPushConst(T_STRING, ((ELNode.STRINGVAL)map.keys[i]).value);
+                emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
+                                 Object.class, Object.class);
+                compileMatchPattern(map.values[i], failBlock);
+                if (i != map.keys.length - 1)
+                    current.emitJumpIfFalse(failBlock);
+            }
+            return;
+        }
+
         // Should not reach here (unsupported patterns pre-filtered)
         buildTrampoline(pat);
     }
 
     /** Compile a DEFINE pattern (variable binding or check). */
     private void compileDefinePattern(ELNode.DEFINE d, int failBlock) {
-        // Wildcard: always matches
-        if ("_".equals(d.id) && d.expr == null) {
-            emitPushTrue();
-            return;
-        }
-
         // Type check if annotated
         if (d.type != null) {
             current.emitDup();                    // dup arg value
@@ -2531,6 +2591,12 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitJumpIfFalse(failBlock);
         }
 
+        // Wildcard: always matches
+        if ("_".equals(d.id)) {
+            emitPushTrue();
+            return;
+        }
+
         // Variable binding
         if (varIndex.containsKey(d.id)) {
             // Variable already bound in this scope → check equality
@@ -2541,34 +2607,46 @@ public class IRBuilder extends ELNode.Visitor {
             // First occurrence → bind to new local variable
             int slot = ensureVar(d.id);
             current.emitStoreVar(slot);
+            current.emitDefineGlobal(putConstant(d.id));
             current.emitPop();  // discard dup from STORE_VAR
             emitPushTrue();     // binding always succeeds
         }
     }
 
-    /** Compile an OR pattern with variable binding rollback. */
+    /** Compile an OR pattern with variable binding rollback.
+     *  The caller has already pushed the arg value on the stack. */
     private void compileOrPattern(ELNode.OR orPat, int failBlock) {
+        // Save arg value to temp slot (each branch consumes it from stack)
+        int tmpSlot = ensureVar(Parser.tempvar());
+        current.emitStoreVar(tmpSlot);
+        current.emitPop();
+
         // Save variable binding state before trying left branch
         Map<String, Integer> savedBindings = new LinkedHashMap<>(varIndex);
 
-        // Try left branch
-        compileMatchPattern(orPat.left, failBlock);
-        // If left succeeds (TRUE on stack), jump over right branch
         int tryRight = allocBlockId();
         int done = allocBlockId();
-        current.emitJumpIfTrue(done);
+
+        // Left branch
+        current.emitPushVar(tmpSlot);
+        compileMatchPattern(orPat.left, failBlock);
+        current.emitJumpIfTrue(done);  // matched → skip right
+        current.emitPop();             // discard FALSE
         current.emitJump(tryRight);
 
-        // Right branch: restore bindings first, then match
+        // Right branch
         sealAndStart(tryRight);
-        // Rollback: remove any bindings added by left branch
+        // Rollback bindings from failed left branch
         varIndex.keySet().removeIf(k -> !savedBindings.containsKey(k));
-        // Restore original slots
         varIndex.putAll(savedBindings);
+        current.emitPushVar(tmpSlot);
         compileMatchPattern(orPat.right, failBlock);
+        current.emitJumpIfTrue(done);  // matched
+        current.emitPop();             // discard FALSE
+        current.emitJump(failBlock);   // both branches failed
 
-        current.emitJump(done);
         sealAndStart(done);
+        emitPushTrue();               // signal success to caller
     }
 
     // ── Trampoline ──
@@ -2887,6 +2965,32 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void emitPushNull() {
         current.emitPushNull();
+    }
+
+    private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {
+        try {
+            Method method = c.getMethod(name, types);
+            int argc = types.length;
+            if (argc > 0 && types[0] == ELContext.class)
+                argc--;
+            int methodIdx = putConstant(method);
+            current.emitInvokeMethod(methodIdx, argc);
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private void emitInvokeStatic(Class<?> c, String name, Class<?>... types) {
+        try {
+            Method method = c.getMethod(name, types);
+            int argc = types.length;
+            if (argc > 0 && types[0] == ELContext.class)
+                argc--;
+            int methodIdx = putConstant(method);
+            current.emitInvokeStatic(methodIdx, argc);
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError(e);
+        }
     }
 
     /**

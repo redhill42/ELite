@@ -197,8 +197,9 @@ public final class Opcode {
     public static final int INVOKE_GETTER     = 0xE1; // call getter method (pool idx → Method)
     public static final int INVOKE_SETTER     = 0xE2; // call setter method (pool idx → Method)
     public static final int INVOKE_METHOD     = 0xE3; // call method reflectively (pool→Method, argc)
-    public static final int INVOKE_EXPANDO    = 0xE4; // call expand method
-    public static final int INVOKE_DYN_METHOD = 0xE5; // dynamic method by name (pool→key, argc)
+    public static final int INVOKE_STATIC     = 0xE4; // invoke a static method
+    public static final int INVOKE_EXPANDO    = 0xE5; // call expand method
+    public static final int INVOKE_DYN_METHOD = 0xE6; // dynamic method by name (pool→key, argc)
 
     // ── NOP (for deleted instructions after folding) ──
     public static final int NOP = 0xFE;
@@ -335,6 +336,7 @@ public final class Opcode {
             case INVOKE_GETTER -> "INVOKE_GETTER";
             case INVOKE_SETTER -> "INVOKE_SETTER";
             case INVOKE_METHOD -> "INVOKE_METHOD";
+            case INVOKE_STATIC -> "INVOKE_STATIC";
             case INVOKE_EXPANDO -> "INVOKE_EXPANDO";
             case INVOKE_DYN_METHOD -> "INVOKE_DYN_METHOD";
             case TRAMPOLINE -> "TRAMPOLINE";

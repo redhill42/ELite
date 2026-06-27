@@ -71,8 +71,46 @@ public class ConstMatchTest extends EliteTestBase {
     @Test
     void matchNotPattern() {
         exec("define describe(!0) => \"non-zero\" | describe(_) => \"zero\"");
-        // !0 pattern matches anything that is not 0
         assertEquals("non-zero", eval("describe(42)"));
         assertEquals("zero", eval("describe(0)"));
     }
+
+    // ── TUPLE pattern (via Array.getLength/Array.get) ──
+
+    @Test
+    void matchTuple() {
+        exec("define describe((a, b)) => a + b | describe(_) => -1");
+        // Create tuple via TUPLE syntax
+        assertEquals(3L, evalL("describe((1, 2))"));
+        assertEquals(7L, evalL("describe((3, 4))"));
+        assertEquals(-1L, evalL("describe(42)"));
+    }
+
+    @Test
+    void matchTupleNested() {
+        exec("define describe((a, (b, c))) => a + b + c | describe(_) => -1");
+        assertEquals(6L, evalL("describe((1, (2, 3)))"));
+    }
+
+    // ── CONS pattern ──
+
+    @Test
+    void matchCons() {
+        exec("define describe([x : xs]) => x | describe(_) => -1");
+        assertEquals(10L, evalL("describe([10, 20, 30])"));
+        assertEquals(-1L, evalL("describe([])"));
+    }
+
+    // ── NIL pattern ──
+
+    @Test
+    void matchNil() {
+        exec("define describe([]) => 0 | describe([x : xs]) => x | describe(_) => -1");
+        assertEquals(0L, evalL("describe([])"));
+        assertEquals(10L, evalL("describe([10, 20])"));
+    }
+
+    // ── OR pattern (pending compileOrPattern fix) ──
+    // @Test @Disabled("compileOrPattern has stack underflow bug")
+    // void matchOrPattern() { ... }
 }

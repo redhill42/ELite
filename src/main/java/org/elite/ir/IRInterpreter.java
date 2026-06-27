@@ -998,7 +998,18 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
-
+            case INVOKE_STATIC: {
+                Method m = (Method)constantPool[pl];
+                int argc = oc > 0 ? code[ip + 1] : 0;
+                Closure[] args = new Closure[argc];
+                for (int i = argc - 1; i >= 0; i--) {
+                    Object arg = pop();
+                    args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
+                }
+                push(ELEngine.invokeMethod(elctx, null, m, args));
+                ip += 1 + oc;
+                break;
+            }
             case INVOKE_EXPANDO: {
                 Method m = (Method)constantPool[pl];
                 int argc = oc > 0 ? code[ip + 1] : 0;
@@ -1012,7 +1023,6 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
-
             case INVOKE_DYN_METHOD: {
                 int argc = pl;
                 Object[] args = new Object[argc];
