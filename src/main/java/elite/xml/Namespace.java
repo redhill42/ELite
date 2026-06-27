@@ -21,10 +21,10 @@ import javax.el.MethodNotFoundException;
 import javax.el.MethodInfo;
 
 import elite.lang.Closure;
-import org.operamasks.el.eval.closure.AnnotatedClosure;
-import org.operamasks.el.eval.Coercible;
-import org.operamasks.el.eval.EvaluationException;
-import static org.operamasks.el.resources.Resources.*;
+import org.elite.eval.closure.AnnotatedClosure;
+import org.elite.eval.Coercible;
+import org.elite.eval.EvaluationException;
+import static org.elite.resources.Resources.*;
 
 public class Namespace extends AnnotatedClosure implements Coercible
 {

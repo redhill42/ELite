@@ -32,7 +32,7 @@ import org.xml.sax.SAXException;
 import org.xml.sax.InputSource;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.operamasks.el.resolver.ClassResolver;
+import org.elite.resolver.ClassResolver;
 import elite.lang.annotation.Expando;
 
 public final class XMLLib

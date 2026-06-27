@@ -34,8 +34,8 @@ import javax.measure.converter.AddConverter;
 import javax.el.ELContext;
 
 import elite.lang.annotation.Expando;
-import org.operamasks.util.SimpleCache;
-import org.operamasks.el.eval.ELEngine;
+import org.elite.util.SimpleCache;
+import org.elite.eval.ELEngine;
 import static elite.lang.Builtin.*;
 
 @SuppressWarnings("unchecked")

@@ -22,12 +22,12 @@ import java.util.Iterator;
 import java.util.ArrayList;
 import javax.el.ELContext;
 
-import org.operamasks.el.parser.ELNode;
-import org.operamasks.el.parser.Parser;
-import org.operamasks.el.eval.EvaluationContext;
-import org.operamasks.el.eval.StackTrace;
-import org.operamasks.el.eval.Frame;
-import org.operamasks.el.eval.VariableMapperImpl;
+import org.elite.parser.ELNode;
+import org.elite.parser.Parser;
+import org.elite.eval.EvaluationContext;
+import org.elite.eval.StackTrace;
+import org.elite.eval.Frame;
+import org.elite.eval.VariableMapperImpl;
 import elite.lang.Symbol;
 import elite.lang.Range;
 import elite.lang.annotation.Expando;

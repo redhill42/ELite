@@ -20,7 +20,7 @@ import java.math.BigInteger;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
-import org.operamasks.el.eval.TypeCoercion;
+import org.elite.eval.TypeCoercion;
 import elite.lang.annotation.Data;
 
 /**

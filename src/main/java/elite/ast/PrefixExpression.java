@@ -17,7 +17,7 @@
 package elite.ast;
 
 import elite.lang.annotation.Data;
-import org.operamasks.el.parser.ELNode;
+import org.elite.parser.ELNode;
 
 /**
  * Represents a prefix expression.

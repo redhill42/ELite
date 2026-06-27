@@ -20,11 +20,10 @@ import java.io.Serializable;
 import javax.el.ELContext;
 
 import elite.lang.annotation.Expando;
-import org.operamasks.el.eval.EvaluationException;
-import org.operamasks.el.eval.closure.AbstractClosure;
-import org.operamasks.el.eval.closure.LiteralClosure;
+import org.elite.eval.EvaluationException;
+import org.elite.eval.closure.AbstractClosure;
 
-import static org.operamasks.el.resources.Resources.*;
+import static org.elite.resources.Resources.*;
 
 public abstract class Continuation implements Serializable
 {

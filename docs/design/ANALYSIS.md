@@ -340,7 +340,7 @@ ELite 的运算符重载是**该语言最具工程深度的特性之一**。求�
 
 ### 3.8 延迟序列（Lazy Seqs）
 
-`org.operamasks.el.eval.seq` 提供了函数式风格的不可变序列。
+`org.elite.eval.seq` 提供了函数式风格的不可变序列。
 
 ```
 AbstractSeq (implements Seq, AbstractList)
@@ -434,13 +434,13 @@ LALR(1) 语法系统 + 动态运算符添加使得 DSL 构造成为一等公民�
 #### 6. 两个包命名空间清晰分离
 
 - `elite.*`：语言运行时类型——这些是 ELite 程序员在代码中直接使用的类型
-- `org.operamasks.el.*`：引擎实现——用户不可见的内部实现
+- `org.elite.*`：引擎实现——用户不可见的内部实现
 
 ### 4.2 严重问题
 
 #### 问题 1：ELNode.java — 上帝类反模式（6433 行）
 
-**位置**：`src/main/java/org/operamasks/el/parser/ELNode.java`
+**位置**：`src/main/java/org/elite/parser/ELNode.java`
 
 **描述**：这是该代码库中最严重的架构问题。所有 AST 节点类型作为 `ELNode` 的内部类存在，每个内部类同时承担：
 

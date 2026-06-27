@@ -18,7 +18,7 @@ package elite.ast;
 
 import java.util.Iterator;
 import java.util.Arrays;
-import org.operamasks.el.parser.ELNode;
+import org.elite.parser.ELNode;
 import elite.lang.annotation.Data;
 
 @Data({"elements"})

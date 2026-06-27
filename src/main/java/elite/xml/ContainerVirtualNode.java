@@ -22,7 +22,7 @@ import java.util.NoSuchElementException;
 import javax.el.ELContext;
 
 import org.w3c.dom.Node;
-import org.operamasks.el.eval.TypeCoercion;
+import org.elite.eval.TypeCoercion;
 import elite.lang.annotation.Expando;
 import elite.lang.Closure;
 

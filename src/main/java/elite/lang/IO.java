@@ -24,8 +24,8 @@ import java.nio.ByteBuffer;
 import javax.el.ELContext;
 
 import elite.lang.annotation.Expando;
-import org.operamasks.el.eval.Control;
-import org.operamasks.el.resolver.ClassResolver;
+import org.elite.eval.Control;
+import org.elite.resolver.ClassResolver;
 
 /**
  * Input/Output functions

@@ -16,8 +16,8 @@
 
 package elite.ast;
 
-import org.operamasks.el.parser.ELNode;
-import org.operamasks.el.eval.TypeCoercion;
+import org.elite.parser.ELNode;
+import org.elite.eval.TypeCoercion;
 import elite.lang.annotation.Data;
 
 /**

@@ -1,0 +1,322 @@
+/*
+ * Copyright 2006-2026 Daniel Yuan.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.elite.eval;
+
+import java.io.Serial;
+import java.util.List;
+import java.util.ArrayList;
+import java.io.Serializable;
+import java.lang.reflect.Method;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.Objects;
+import javax.el.ELContext;
+import javax.el.FunctionMapper;
+import javax.el.VariableMapper;
+import javax.el.ELException;
+
+import elite.lang.Closure;
+import org.elite.parser.ELNode;
+import org.elite.parser.Position;
+import org.elite.resolver.ClassResolver;
+import org.elite.resolver.MethodResolver;
+import org.elite.eval.closure.LiteralClosure;
+import org.elite.eval.closure.FieldClosure;
+import org.elite.ir.IRBuilder;
+import org.elite.ir.IRBytecodeCompiler;
+import org.elite.ir.IRFunction;
+import org.elite.ir.IRInterpreter;
+import org.elite.ir.CompilationError;
+import org.elite.util.Utils;
+import static org.elite.resources.Resources.*;
+
+public class ELProgram implements Serializable
+{
+    private final List<Module> mods;
+    private final List<String> libs;
+    private final List<String> imps;
+    private final List<ELNode> defs;
+    private final List<ELNode> exps;
+
+    /**
+     * Optimization level for expression evaluation.
+     * <ul>
+     *   <li>0 — AST interpreter only (for parser/AST validation)</li>
+     *   <li>1 — IR interpreter, no optimization passes (conservative IR)</li>
+     *   <li>2 — IR interpreter with optimizations (default; fall back to AST)</li>
+     *   <li>3 — JVM bytecode (fall back to IR for unsupported ops)</li>
+     * </ul>
+     * Read from system property {@code elite.opt.level}; defaults to 2 (IR).
+     */
+    public static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
+
+    /**
+     * When true, bytecode/IR failures throw instead of silently falling back.
+     * Set via system property {@code elite.strict} or programmatically.
+     * Recommended for development/testing; off by default for production resilience.
+     */
+    static boolean STRICT_BYTECODE = Boolean.getBoolean("elite.strict");
+
+    /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
+    public static final boolean DEBUG = Boolean.getBoolean("elite.debug");
+
+    /** @return the list of definition statements */
+    public List<ELNode> getDefinitions() { return defs; }
+    /** @return the list of expression/statement nodes */
+    public List<ELNode> getExpressions() { return exps; }
+
+    @Serial
+    private static final long serialVersionUID = 3112245719728771823L;
+
+    public ELProgram() {
+        this.mods = new ArrayList<>();
+        this.libs = new ArrayList<>();
+        this.imps = new ArrayList<>();
+        this.defs = new ArrayList<>();
+        this.exps = new ArrayList<>();
+    }
+
+    public void addModule(String name, String prefix) {
+        Module module = new Module(name, prefix);
+        if (!mods.contains(module)) {
+            mods.add(module);
+        }
+    }
+
+    public void addLibrary(String name) {
+        if (!libs.contains(name)) {
+            libs.add(name);
+        }
+    }
+
+    public void addImport(String imp) {
+        if (!imps.contains(imp)) {
+            imps.add(imp);
+        }
+    }
+
+    public void addExpression(ELNode exp) {
+        (isDef(exp) ? defs : exps).add(exp);
+    }
+
+    private static boolean isDef(ELNode node) {
+        if (node instanceof ELNode.DEFINE) {
+            ELNode exp = ((ELNode.DEFINE)node).expr;
+            return exp instanceof ELNode.LAMBDA || exp instanceof ELNode.CLASSDEF;
+        } else {
+            return false;
+        }
+    }
+
+    public Object execute(ELContext elctx) {
+        return execute(elctx, null, 1);
+    }
+
+    public Object execute(ELContext elctx, String file, int line) {
+        FunctionMapper fm = elctx.getFunctionMapper();
+        VariableMapper vm = elctx.getVariableMapper();
+
+        // The function mapper is not significant in XEL, we built it for all
+        // expressions for performance reasons. The variable mapper will
+        // be built for individual expression.
+        if (fm != null) {
+            FunctionMapperBuilder fmb = new FunctionMapperBuilder(fm);
+            for (ELNode node : exps) {
+                node.applyFunctionMapper(fmb);
+            }
+            fm = fmb.build();
+        }
+
+        // Evaluate expressions in global context.
+        EvaluationContext env = new EvaluationContext(elctx, fm, vm);
+        Frame frame = StackTrace.addFrame(elctx, "__toplevel__", file, Position.make(line, 1));
+
+        try {
+            // Import modules and classes to populate global context. The global
+            // context is used by compilation and execution.
+            importExternal(elctx);
+
+            // Execute statements using selected evaluation strategy
+            switch (OPT_LEVEL) {
+            case 0:
+                return evaluateAST(frame, env);
+
+            case 1: {
+                // Conservative IR — no optimization passes (constant folding, type
+                // specialization skipped). The IR interpreter handles TRAMPOLINE
+                // opcodes inline via AST evaluation, so there is no need for a
+                // full-program fallback.
+                IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
+                return new IRInterpreter(env, irFn).execute(null, null, true);
+            }
+
+            case 2: {
+                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
+                return new IRInterpreter(env, irFn).execute(null, null, true);
+            }
+
+            case 3: default: {
+                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
+                try {
+                    IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
+                    return cf.execute(elctx, null);
+                } catch (CompilationError e) {
+                    if (STRICT_BYTECODE)
+                        throw new ELException(_T(IR_STRICT_BYTECODE_FAILED), e);
+                    if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
+                    return new IRInterpreter(env, irFn).execute(null, null, true);
+                }
+                // VerifyError and other Errors propagate — they're compiler bugs
+            }
+            }
+        } finally {
+            StackTrace.removeFrame(elctx);
+        }
+    }
+
+    /** Execute expressions using the AST tree-walking interpreter. */
+    private Object evaluateAST(Frame frame, EvaluationContext env) {
+        // Define function and class for forward reference
+        for (ELNode node : defs) {
+            frame.setPos(node.pos);
+            node.getValue(env);
+        }
+
+        Object result = null;
+        for (ELNode node : exps) {
+            frame.setPos(node.pos);
+            result = node.getValue(env);
+        }
+        return result;
+    }
+
+    // Implementation
+
+    static class Module {
+        String name;
+        String prefix;
+
+        Module(String name, String prefix) {
+            this.name = name;
+            this.prefix = prefix;
+        }
+
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            } else if (obj instanceof Module other) {
+                return name.equals(other.name) &&
+                       (Objects.equals(prefix, other.prefix));
+            } else {
+                return false;
+            }
+        }
+    }
+
+    public void importExternal(ELContext elctx) {
+        importModules(elctx);
+        importFunctions(elctx);
+        importPackages(elctx);
+    }
+
+    private void importModules(ELContext elctx) {
+        if (!mods.isEmpty()) {
+            MethodResolver resolver = MethodResolver.getInstance(elctx);
+            for (Module mod : mods) {
+                Class<?> cls = findClass(elctx, mod.name);
+                resolver.addModule(elctx, cls, mod.prefix);
+                for (Field field : cls.getFields()) {
+                    importField(elctx, field, mod.prefix);
+                }
+            }
+        }
+    }
+
+    private void importFunctions(ELContext elctx) {
+        if (!libs.isEmpty()) {
+            MethodResolver resolver = MethodResolver.getInstance(elctx);
+
+            for (String name : libs) {
+                int sep = name.lastIndexOf('.');
+                if (sep == -1) {
+                    throw new ELException("Invalid import directive: " + name);
+                }
+
+                String clsname = name.substring(0, sep);
+                name = name.substring(sep+1);
+                Class<?> cls = findClass(elctx, clsname);
+
+                if (name.equals("*")) {
+                    resolver.addGlobalMethods(cls);
+                    for (Field field : cls.getFields()) {
+                        importField(elctx, field, null);
+                    }
+                } else {
+                    for (Method method : cls.getMethods()) {
+                        if (Modifier.isStatic(method.getModifiers()) &&
+                            name.equals(method.getName())) {
+                            resolver.addGlobalMethod(method);
+                        }
+                    }
+                    try {
+                        importField(elctx, cls.getField(name), null);
+                    } catch (NoSuchFieldException ex) {
+                        // ignore
+                    }
+                }
+            }
+        }
+    }
+
+    private static void importField(ELContext elctx, Field field, String prefix) {
+        if (Modifier.isStatic(field.getModifiers())) {
+            try {
+                Utils.setAccessible(field);
+                String name = field.getName();
+                if (prefix != null)
+                    name = prefix + ":" + name;
+                Closure closure;
+                if (Modifier.isFinal(field.getModifiers())) {
+                    closure = new LiteralClosure(field.get(null), true);
+                } else {
+                    closure = new FieldClosure(field);
+                }
+                elctx.getVariableMapper().setVariable(name, closure);
+            } catch (IllegalAccessException ex) {
+                // ignored
+            }
+        }
+    }
+
+    private void importPackages(ELContext elctx) {
+        if (!imps.isEmpty()) {
+            ClassResolver resolver = ClassResolver.getInstance(elctx);
+            for (String imp : imps) {
+                resolver.addImport(imp);
+            }
+        }
+    }
+
+    private static Class<?> findClass(ELContext elctx, String name) {
+        try {
+            ClassLoader loader = Utils.getClassLoader(elctx);
+            return Utils.findClass(name, loader);
+        } catch (ClassNotFoundException ex) {
+            throw new ELException(ex);
+        }
+    }
+}

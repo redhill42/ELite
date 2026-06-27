@@ -16,7 +16,7 @@
 
 package elite.ast;
 
-import org.operamasks.el.parser.ELNode;
+import org.elite.parser.ELNode;
 
 final class ExpressionTransformer extends ELNode.Visitor
 {

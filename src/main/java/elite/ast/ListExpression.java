@@ -16,7 +16,7 @@
 
 package elite.ast;
 
-import org.operamasks.el.parser.ELNode;
+import org.elite.parser.ELNode;
 import elite.lang.annotation.Data;
 
 @Data({"head", "tail"})

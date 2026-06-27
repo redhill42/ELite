@@ -23,8 +23,8 @@ import javax.el.ELContext;
 import javax.el.PropertyNotWritableException;
 
 import elite.lang.Closure;
-import org.operamasks.el.eval.ELEngine;
-import static org.operamasks.el.resources.Resources.*;
+import org.elite.eval.ELEngine;
+import static org.elite.resources.Resources.*;
 
 class FilterVirtualNode extends VirtualNode
     implements Iterable<XmlNode>

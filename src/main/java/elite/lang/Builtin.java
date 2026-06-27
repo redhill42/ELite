@@ -38,15 +38,16 @@ import javax.script.ScriptContext;
 
 import elite.lang.annotation.Expando;
 import static elite.lang.annotation.ExpandoScope.*;
-import org.operamasks.el.resolver.MethodResolver;
-import org.operamasks.el.eval.*;
-import org.operamasks.el.eval.closure.*;
-import org.operamasks.el.eval.seq.*;
-import org.operamasks.el.parser.ELNode;
-import org.operamasks.el.parser.Parser;
+
+import org.elite.eval.*;
+import org.elite.eval.closure.*;
+import org.elite.eval.seq.*;
+import org.elite.resolver.MethodResolver;
+import org.elite.parser.ELNode;
+import org.elite.parser.Parser;
 import static elite.lang.MathLib.*;
-import static org.operamasks.el.eval.TypeCoercion.*;
-import static org.operamasks.el.eval.ELUtils.*;
+import static org.elite.eval.TypeCoercion.*;
+import static org.elite.eval.ELUtils.*;
 
 /**
  * ELite 内建函数库，提供语言核心标准库的全部静态方法。
@@ -75,7 +76,7 @@ import static org.operamasks.el.eval.ELUtils.*;
  *   <li><b>延续 (Continuation)</b> — {@code yield}, {@code call_cc},
  *       {@code run_cont}</li>
  *   <li><b>内建运算符</b> — {@code +}, {@code -}, {@code *}, {@code ==},
- *       {@code ===} 等，委托给 {@link org.operamasks.el.parser.ELNode ELNode}
+ *       {@code ===} 等，委托给 {@link ELNode ELNode}
  *       保证编译期与运行期行为一致</li>
  *   <li><b>I/O</b> — {@code print}, {@code printf}, {@code sprintf},
  *       {@code format}</li>
@@ -97,7 +98,7 @@ import static org.operamasks.el.eval.ELUtils.*;
  * </ul>
  *
  * @see elite.lang.annotation.Expando
- * @see org.operamasks.el.parser.ELNode
+ * @see ELNode
  * @see elite.lang.Continuation
  */
 @SuppressWarnings({"unchecked", "unused"})

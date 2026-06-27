@@ -1,7 +1,5 @@
-import org.operamasks.el.parser.*;
-import org.operamasks.el.ir.*;
 import javax.el.ELContext;
-import org.operamasks.el.eval.ELEngine;
+import org.elite.eval.ELEngine;
 
 /**
  * IR Interpreter vs JVM Bytecode Compiler benchmark.

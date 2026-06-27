@@ -17,7 +17,7 @@ package net.sf.cglib.core;
 
 import org.objectweb.asm.Attribute;
 import org.objectweb.asm.Type;
-import org.operamasks.util.Utils;
+import org.elite.util.Utils;
 
 import java.beans.BeanInfo;
 import java.beans.IntrospectionException;

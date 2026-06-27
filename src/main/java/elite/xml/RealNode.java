@@ -29,12 +29,12 @@ import org.w3c.dom.Node;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.w3c.dom.Attr;
-import org.operamasks.el.eval.TypeCoercion;
-import org.operamasks.el.eval.ELEngine;
-import org.operamasks.el.eval.closure.LiteralClosure;
-import org.operamasks.util.DOMWriter;
+import org.elite.eval.TypeCoercion;
+import org.elite.eval.ELEngine;
+import org.elite.eval.closure.LiteralClosure;
+import org.elite.util.DOMWriter;
 import elite.lang.Closure;
-import static org.operamasks.el.resources.Resources.*;
+import static org.elite.resources.Resources.*;
 
 class RealNode extends XmlNode
 {

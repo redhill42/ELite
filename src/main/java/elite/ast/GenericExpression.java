@@ -16,7 +16,7 @@
 
 package elite.ast;
 
-import org.operamasks.el.parser.ELNode;
+import org.elite.parser.ELNode;
 
 /**
  * Represents an expression node that directly transformed from internal node.

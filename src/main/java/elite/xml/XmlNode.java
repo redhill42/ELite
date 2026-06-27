@@ -33,14 +33,14 @@ import javax.xml.parsers.ParserConfigurationException;
 import org.w3c.dom.Node;
 import org.w3c.dom.Document;
 import org.w3c.dom.DocumentFragment;
-import org.operamasks.el.eval.PropertyResolvable;
-import org.operamasks.el.eval.MethodResolvable;
-import org.operamasks.el.eval.Coercible;
-import org.operamasks.el.eval.ELUtils;
-import org.operamasks.el.eval.TypeCoercion;
-import org.operamasks.el.eval.closure.ClosureObject;
-import org.operamasks.el.eval.closure.Procedure;
-import org.operamasks.util.DOMWriter;
+import org.elite.eval.PropertyResolvable;
+import org.elite.eval.MethodResolvable;
+import org.elite.eval.Coercible;
+import org.elite.eval.ELUtils;
+import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.ClosureObject;
+import org.elite.eval.closure.Procedure;
+import org.elite.util.DOMWriter;
 
 /**
  * XmlNode是对DOM结点的包装, 提供一种自然的方式操作DOM树.

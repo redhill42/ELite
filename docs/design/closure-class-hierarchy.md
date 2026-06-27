@@ -161,7 +161,7 @@ javax.el.ValueExpression
 
 ### 2. `AbstractClosure` (abstract)
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `Closure`
 
 **用途**: 提供 `ValueExpression` 的默认骨架实现。`getValue()` 返回 `this`（闭包自身即其值），`setValue()` 抛异常。
@@ -178,7 +178,7 @@ javax.el.ValueExpression
 
 ### 3. `AnnotatedClosure` (abstract)
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `Closure`（直接继承，非 AbstractClosure）
 
 **用途**: 在 Closure 基础上增加**元数据**支持。持有 `MetaData`（包含注解和修饰符），提供了完整的注解操作方法实现和修饰符存取。
@@ -191,7 +191,7 @@ javax.el.ValueExpression
 
 ### 4. `DelegatingClosure` (abstract)
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `Closure`（直接继承）
 
 **用途**: **Decorator 模式**的抽象基类。持有一个 `delegate: Closure`，将所有方法调用透明转发给被装饰的闭包。子类在转发前后添加行为。
@@ -207,7 +207,7 @@ javax.el.ValueExpression
 
 ### 5. `ThisObject` (abstract)
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AbstractClosure`  
 **实现**: `ClosureObject`, `Serializable`
 
@@ -229,7 +229,7 @@ javax.el.ValueExpression
 
 ### 6. `BasicThisObject`
 
-**包**: `org.operamasks.el.eval.closure` (package-private)  
+**包**: `org.elite.eval.closure` (package-private)  
 **继承**: `ThisObject`
 
 **用途**: `ThisObject` 的基础实现，用于简单的（无继承、无 Java 代理）闭包对象。管理实例变量映射 (`vmap`)、Java 接口代理、成员闭包环境设置。
@@ -251,7 +251,7 @@ javax.el.ValueExpression
 
 ### 7. `DerivedThisObject`
 
-**包**: `org.operamasks.el.eval.closure` (package-private)  
+**包**: `org.elite.eval.closure` (package-private)  
 **继承**: `BasicThisObject`
 
 **用途**: 实现两个 ELite class 之间的**继承**。持有一个基类 `ThisObject` 的引用 (`zuper`)，方法查找沿继承链向上搜索。支持方法 override（用 `override()` 将子类闭包写入基类 vmap，原始闭包保存在 `zuper.smap` 中）。
@@ -266,7 +266,7 @@ javax.el.ValueExpression
 
 ### 8. `ProxiedThisObject`
 
-**包**: `org.operamasks.el.eval.closure` (package-private)  
+**包**: `org.elite.eval.closure` (package-private)  
 **继承**: `BasicThisObject`
 
 **用途**: 实现从 Java 类的**继承**。使用 CGLIB `Enhancer` 创建代理对象（扩展 Java 超类 + 实现 `ClosureObject`），拦截 Java 方法调用并分发到 ELite 成员过程。
@@ -284,7 +284,7 @@ javax.el.ValueExpression
 
 ### 9. `DelegatedThisObject`
 
-**包**: `org.operamasks.el.eval.closure` (package-private)  
+**包**: `org.elite.eval.closure` (package-private)  
 **继承**: `ThisObject`（直接继承，非 BasicThisObject）
 
 **用途**: 实现 `@delegate` 注解语义。包装一个主 `ThisObject` + 多个委托闭包。当成员在主对象中未找到时，依次搜索委托对象（支持 `ClosureObject` 委托和 Java 方法委托）。
@@ -297,7 +297,7 @@ javax.el.ValueExpression
 
 ### 10. `DefaultClosureObject`
 
-**包**: `org.operamasks.el.eval.closure` (package-private)  
+**包**: `org.elite.eval.closure` (package-private)  
 **继承**: `AbstractClosure`  
 **实现**: `ClosureObject`, `Serializable`
 
@@ -314,7 +314,7 @@ javax.el.ValueExpression
 
 ### 11. `ClassDefinition`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AnnotatedClosure`  
 **实现**: `PropertyResolvable`, `MethodResolvable`, `Serializable`
 
@@ -341,7 +341,7 @@ javax.el.ValueExpression
 
 ### 12. `DataClass`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AbstractClosure`
 
 **用途**: 表示 `@data` 注解定义的**数据类**。包装一个 Java `Class` 和命名的数据槽位（slots）。
@@ -354,7 +354,7 @@ javax.el.ValueExpression
 
 ### 13. `FieldClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AbstractClosure`
 
 **用途**: 包装 Java `java.lang.reflect.Field` 为闭包。提供对 Java 静态字段的读写访问。
@@ -365,7 +365,7 @@ javax.el.ValueExpression
 
 ### 14. `MethodClosure` (abstract)
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AbstractClosure`
 
 **用途**: Java 方法包装的抽象基类。支持静态调用 (`invoke(elctx, (Closure[]) args)`) 和实例调用 (`invoke(elctx, Object base, Closure[] args)`)。`isProcedure()` 返回 `true`。
@@ -380,7 +380,7 @@ javax.el.ValueExpression
 
 ### 15. `JavaMethodClosure` (abstract)
 
-**包**: `org.operamasks.el.resolver`  
+**包**: `org.elite.resolver`  
 **继承**: `MethodClosure`
 
 **用途**: 基于 Java 反射的 `MethodClosure`。子类处理单方法（`SingleMethodClosure`）和多方法/重载（`MultiMethodClosure`）两种情况。
@@ -389,7 +389,7 @@ javax.el.ValueExpression
 
 ### 16. `SingleMethodClosure`
 
-**包**: `org.operamasks.el.resolver`  
+**包**: `org.elite.resolver`  
 **继承**: `JavaMethodClosure`
 
 **用途**: 包装单个 Java `java.lang.reflect.Method`。调用时直接反射调用。
@@ -398,7 +398,7 @@ javax.el.ValueExpression
 
 ### 17. `MultiMethodClosure`
 
-**包**: `org.operamasks.el.resolver`  
+**包**: `org.elite.resolver`  
 **继承**: `JavaMethodClosure`
 
 **用途**: 包装多个 Java 重载方法（`Method[]`）。调用时通过 `MethodResolver` 进行**重载决议**，选择最匹配的方法。
@@ -407,7 +407,7 @@ javax.el.ValueExpression
 
 ### 18. `ExpandoMethodClosure`
 
-**包**: `org.operamasks.el.resolver`  
+**包**: `org.elite.resolver`  
 **继承**: `MethodClosure`
 
 **用途**: 动态附加到对象的方法闭包（expando method）。非反射，调用时直接执行闭包逻辑。
@@ -416,7 +416,7 @@ javax.el.ValueExpression
 
 ### 19. `TargetMethodClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `DelegatingClosure`
 
 **用途**: 将 `MethodClosure` 绑定到特定的**目标对象**。`invoke()` 时自动传入 `target` 作为 base 对象。
@@ -427,7 +427,7 @@ javax.el.ValueExpression
 
 ### 20. `DelayClosure` (abstract)
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AnnotatedClosure`
 
 **用途**: **惰性求值**的抽象基类。实现 call-by-need 语义：值在首次 `getValue()` 时计算（`force()`），之后缓存。支持 `forget()` 清除缓存。
@@ -447,7 +447,7 @@ javax.el.ValueExpression
 
 ### 21. `DelayEvalClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `DelayClosure`
 
 **用途**: 通过求值另一个 `Closure`（`eval` 字段）来生成延迟值的 `DelayClosure`。首次求值后释放 `eval` 引用以节省内存。这是 `&param` 惰性参数和 `delay()` 的运行时基石。
@@ -464,7 +464,7 @@ javax.el.ValueExpression
 
 ### 22. `VarClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `DelayEvalClosure`
 
 **用途**: 标识符引用的延迟求值闭包。包装一个 `ELNode.IDENT`（标识符 AST 节点），存储变量名。在 AST 求值路径上用于变量引用的惰性解析。
@@ -473,7 +473,7 @@ javax.el.ValueExpression
 
 ### 23. `IRInterpreter.Thunk` (private)
 
-**包**: `org.operamasks.el.ir`  
+**包**: `org.elite.ir`  
 **继承**: `DelayClosure`
 
 **用途**: IR 路径的惰性 thunk。包装 `IRClosure`，在首次 force 时通过 `IRInterpreter` 执行 IR 函数体。是从 `DELAY` opcode 创建的运行时对象。
@@ -500,7 +500,7 @@ javax.el.ValueExpression
 
 ### 26. `Grammar.ExpressionClosure` (private)
 
-**包**: `org.operamasks.el.parser`  
+**包**: `org.elite.parser`  
 **继承**: `DelayClosure`
 
 **用途**: 语法解析期间创建的惰性表达式闭包。延迟表达式的求值直到实际需要时。
@@ -511,7 +511,7 @@ javax.el.ValueExpression
 
 ### 27. `EvalClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AnnotatedClosure`
 
 **用途**: 包装一个 `ELNode`（AST 节点）的闭包。维护自己的 `EvaluationContext`、`FunctionMapper` 和 `VariableMapper`。通过对 AST 节点的求值来实现所有 ValueExpression/Closure 操作。
@@ -525,7 +525,7 @@ javax.el.ValueExpression
 
 ### 28. `Procedure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `EvalClosure`
 
 **用途**: 代表一个**具名过程**（ELite lambda）。`getValue()` 返回 `this`（过程自身即其值），`isProcedure()` 返回 `true`。支持 `call_with(ELContext, Object scope, Closure... args)` 方法——在指定 scope 对象的作用域内调用过程，使 scope 的成员变量对过程可见。
@@ -536,7 +536,7 @@ javax.el.ValueExpression
 
 ### 29. `LiteralClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `AnnotatedClosure`
 
 **用途**: 将任意 Java `Object` 包装为 Closure。提供了对象到 Closure 系统的桥接——当需要把普通 Java 值（字符串、数字、Boolean 等）作为 Closure 传递时使用。
@@ -554,7 +554,7 @@ javax.el.ValueExpression
 
 ### 30. `TypedClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `DelegatingClosure`
 
 **用途**: 带**类型检查/强制转换**的装饰器。在 get/set 时进行类型强制转换。通过静态工厂方法 `make()` 创建，根据目标类型返回 `JavaTypedClosure`（Java Class 类型）或 `ClosureTypedClosure`（ELite ClassDefinition 类型）。
@@ -563,7 +563,7 @@ javax.el.ValueExpression
 
 ### 31. `NamedClosure`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `DelegatingClosure`
 
 **用途**: 附加**字符串名称**到闭包上。用于过程调用中的 keyword arguments（命名参数）。
@@ -574,7 +574,7 @@ javax.el.ValueExpression
 
 ### 32. `IRClosure`
 
-**包**: `org.operamasks.el.ir`  
+**包**: `org.elite.ir`  
 **继承**: `Closure`（直接继承）
 
 **用途**: IR 编译路径的闭包实现。包装 `IRFunction` + 捕获的自由变量数组（`Object[] captured`）。与 `Procedure`（AST 路径）对等，但通过 `IRInterpreter` 执行字节码指令。支持 `call_with()`（scope 内调用）。
@@ -588,7 +588,7 @@ javax.el.ValueExpression
 
 ### 33. `EvaluationContext`
 
-**包**: `org.operamasks.el.eval`  
+**包**: `org.elite.eval`  
 **继承**: `AbstractClosure`  
 **实现**: `PropertyDelegate`
 
@@ -610,7 +610,7 @@ javax.el.ValueExpression
 
 ### `ClosureObject`
 
-**包**: `org.operamasks.el.eval.closure`  
+**包**: `org.elite.eval.closure`  
 **继承**: `PropertyDelegate`
 
 **用途**: ELite 闭包对象的公共协议接口。

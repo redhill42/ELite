@@ -41,15 +41,15 @@
               <relocations>
                 <relocation>
                   <pattern>net.sf.cglib</pattern>
-                  <shadedPattern>org.operamasks.cglib</shadedPattern>
+                  <shadedPattern>org.elite.cglib</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>org.objectweb.asm</pattern>
-                  <shadedPattern>org.operamasks.asm</shadedPattern>
+                  <shadedPattern>org.elite.asm</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>jline</pattern>
-                  <shadedPattern>org.operamasks.jline</shadedPattern>
+                  <shadedPattern>org.elite.jline</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>

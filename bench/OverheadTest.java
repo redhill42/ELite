@@ -16,12 +16,12 @@ public class OverheadTest {
     public static void main(String[] args) throws Exception {
         // Warmup
         for (int i = 0; i < WARM; i++) fib_typed(N);
-        org.operamasks.el.parser.Parser p = new org.operamasks.el.parser.Parser(
+        org.elite.parser.Parser p = new org.elite.parser.Parser(
             "define fib(n) { if (n <= 1) { n } else { fib(n-1) + fib(n-2) } }; fib(20)");
         var prog = p.parse();
-        var ir = org.operamasks.el.ir.IRBuilder.compileWithDefs(
+        var ir = org.elite.ir.IRBuilder.compileWithDefs(
             prog.getDefinitions(), prog.getExpressions());
-        var bc = org.operamasks.el.ir.IRBytecodeCompiler.compile(ir);
+        var bc = org.elite.ir.IRBytecodeCompiler.compile(ir);
         for (int i = 0; i < WARM; i++) bc.execute(null);
 
         // Benchmark: typed (hand-written)

@@ -26,7 +26,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.w3c.dom.Node;
 import elite.lang.Closure;
-import static org.operamasks.el.resources.Resources.*;
+import static org.elite.resources.Resources.*;
 
 class DescendantVirtualNode extends VirtualNode
     implements Iterable<XmlNode>

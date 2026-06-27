@@ -22,12 +22,12 @@ import javax.el.MethodInfo;
 import javax.el.ELContext;
 import javax.el.VariableMapper;
 
-import org.operamasks.el.eval.EvaluationContext;
-import org.operamasks.el.eval.TypeCoercion;
-import org.operamasks.el.eval.closure.AbstractClosure;
-import org.operamasks.el.eval.closure.ValueChangeListener;
-import org.operamasks.el.eval.closure.MetaData;
-import static org.operamasks.el.eval.ELEngine.getCallArgs;
+import org.elite.eval.EvaluationContext;
+import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.AbstractClosure;
+import org.elite.eval.closure.ValueChangeListener;
+import org.elite.eval.closure.MetaData;
+import static org.elite.eval.ELEngine.getCallArgs;
 import elite.lang.annotation.Expando;
 
 /**

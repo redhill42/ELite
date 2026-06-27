@@ -2,4 +2,4 @@
 
 BINDIR=`dirname $0`
 . "$BINDIR/setenv"
-$JAVA_RUN -ea -cp $CP org.operamasks.el.shell.Main "$@"
+$JAVA_RUN -ea -cp $CP org.elite.shell.Main "$@"

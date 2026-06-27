@@ -16,7 +16,7 @@
 
 package elite.ast;
 
-import static org.operamasks.el.parser.ELNode.*;
+import static org.elite.parser.ELNode.*;
 
 /**
  * Describes the node types of the nodes of an expression tree.

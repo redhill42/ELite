@@ -21,9 +21,9 @@ import java.math.BigDecimal;
 import javax.el.ELException;
 import javax.el.ELContext;
 
-import org.operamasks.el.eval.closure.ClosureObject;
-import static org.operamasks.el.eval.TypeCoercion.*;
-import static org.operamasks.el.eval.ELUtils.*;
+import org.elite.eval.closure.ClosureObject;
+import static org.elite.eval.TypeCoercion.*;
+import static org.elite.eval.ELUtils.*;
 import static elite.lang.Builtin.*;
 
 /**

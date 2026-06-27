@@ -20,7 +20,7 @@ import java.io.Serializable;
 import java.util.Map;
 import java.util.LinkedHashMap;
 
-import org.operamasks.el.eval.TypeCoercion;
+import org.elite.eval.TypeCoercion;
 
 public final class Annotation implements Serializable
 {
