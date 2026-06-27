@@ -866,17 +866,21 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.INSTANCEOF node) {
-        int clsid;
         build(node.right);
-        try {
-            Class<?> cls = ClassResolver.getInstance(elctx).resolveClass(node.type);
-            clsid = putConstant(cls);
-        } catch (ClassNotFoundException e) {
-            clsid = putConstant(node.type);
-        }
-        current.emit1(INSTOF, K_BOOL, clsid);
+        emitInstOf(node.type);
         if (node.negative)
             current.emitNot();
+    }
+
+    private void emitInstOf(String name) {
+        int clsid;
+        try {
+            Class<?> cls = ClassResolver.getInstance(elctx).resolveClass(name);
+            clsid = putConstant(cls);
+        } catch (ClassNotFoundException e) {
+            clsid = putConstant(name);
+        }
+        current.emit1(INSTOF, K_BOOL, clsid);
     }
 
     // ── Binary arithmetic ──
@@ -2322,6 +2326,249 @@ public class IRBuilder extends ELNode.Visitor {
                 // Don't recurse into nested blocks either
             }
         });
+    }
+
+    // ── Pattern matching ──
+
+    /**
+     * Compile a MATCH expression as a series of if-else chains.
+     * Unsupported patterns (NEW, EXPR, MAP, RANGE, REGEXP, CONS, TUPLE, NIL)
+     * cause the entire MATCH to fall back to trampoline.
+     */
+    public void visit(ELNode.MATCH node) {
+        if (hasUnsupportedMatchPattern(node))
+            buildTrampoline(node);
+        else
+            buildMatch(node);
+    }
+
+    private boolean hasUnsupportedMatchPattern(ELNode.MATCH node) {
+        final boolean[] unsupported = {false};
+        ELNode.Visitor v = new DefaultVisitor() {
+            public void visit(ELNode.NEW e)   { unsupported[0] = true; }
+            public void visit(ELNode.EXPR e)  { unsupported[0] = true; }
+            public void visit(ELNode.MAP e)   { unsupported[0] = true; }
+            public void visit(ELNode.RANGE e) { unsupported[0] = true; }
+            public void visit(ELNode.REGEXP e) { unsupported[0] = true; }
+            public void visit(ELNode.CONS e)  { unsupported[0] = true; }
+            public void visit(ELNode.NIL e)   { unsupported[0] = true; }
+            public void visit(ELNode.TUPLE e) { unsupported[0] = true; }
+        };
+        for (ELNode.CASE c : node.alts) {
+            if (c.patterns != null) {
+                for (ELNode.Pattern p : c.patterns)
+                    ((ELNode) p).accept(v);
+            }
+        }
+        return unsupported[0];
+    }
+
+    private void buildMatch(ELNode.MATCH node) {
+        int nargs = node.args.length;
+        // Evaluate all args, store in temp locals
+        int[] argSlots = new int[nargs];
+        for (int i = 0; i < nargs; i++) {
+            argSlots[i] = ensureVar(Parser.tempvar());
+            build(node.args[i]);
+            current.emitStoreVar(argSlots[i]);
+            current.emitPop();
+        }
+
+        int exitBlock = allocBlockId();
+        int[] nextCase = new int[node.alts.length + 1]; // +1 for default
+
+        // Allocate blocks for each case entry point
+        for (int ci = 0; ci < node.alts.length; ci++)
+            nextCase[ci] = allocBlockId();
+        nextCase[node.alts.length] = allocBlockId(); // default/error block
+
+        // Jump to first case
+        current.emitJump(nextCase[0]);
+
+        for (int ci = 0; ci < node.alts.length; ci++) {
+            ELNode.CASE c = node.alts[ci];
+            int failBlock = nextCase[ci + 1];
+
+            sealAndStart(nextCase[ci]);
+
+            // Each case gets its own control scope for variable bindings.
+            // On failure, leaveControlScope discards bindings.
+            enterControlScope();
+
+            // Compile patterns for each column
+            if (c.patterns != null) {
+                for (int pi = 0; pi < c.patterns.length; pi++) {
+                    current.emitPushVar(argSlots[pi]);  // push arg value
+                    compileMatchPattern((ELNode) c.patterns[pi], failBlock);
+                    // compileMatchPattern must leave TRUE on stack if matched
+                    current.emitJumpIfFalse(failBlock);
+                }
+            }
+
+            // Guards
+            if (c.guards != null) {
+                for (ELNode g : c.guards) {
+                    if (g != null) {
+                        build(g);
+                        current.emitJumpIfFalse(failBlock);
+                    }
+                }
+            }
+
+            // Body (first body is the matched expression)
+            ELNode body = (c.bodies != null && c.bodies.length > 0)
+                          ? c.bodies[0] : null;
+            if (body != null)
+                buildTail(body);
+            current.emitJump(exitBlock);
+
+            // On failure: discard case bindings, go to next case
+            sealAndStart(failBlock);
+            leaveControlScope();
+            // Falls through to next case entry (unless this was the last case)
+            if (ci + 1 < node.alts.length)
+                current.emitJump(nextCase[ci + 1]);
+        }
+
+        // Default block
+        sealAndStart(nextCase[node.alts.length]);
+        if (node.deflt != null) {
+            build(node.deflt);
+        } else {
+            emitPushNull();
+        }
+        current.emitJump(exitBlock);
+
+        sealAndStart(exitBlock);
+    }
+
+    /**
+     * Compile a single pattern check, leaving TRUE on stack if matched.
+     * On complex patterns that can't be fully checked inline, emit a
+     * trampoline for just the pattern (not the whole MATCH).
+     */
+    private void compileMatchPattern(ELNode pat, int failBlock) {
+        if (pat instanceof ELNode.DEFINE d) {
+            compileDefinePattern(d, failBlock);
+            return;
+        }
+        if (pat instanceof ELNode.NOT notPat) {
+            compileMatchPattern(notPat.right, failBlock);
+            current.emitNot();
+            return;
+        }
+        if (pat instanceof ELNode.OR orPat) {
+            compileOrPattern(orPat, failBlock);
+            return;
+        }
+        if (pat instanceof ELNode.NUMBER n) {
+            int idx = putConstant(n.value);
+            current.emitPushConst(idx);
+            current.emitDynEq();
+            return;
+        }
+        if (pat instanceof ELNode.STRINGVAL s) {
+            int idx = putConstant(s.value);
+            current.emitPushConst(idx);
+            current.emitDynEq();
+            return;
+        }
+        if (pat instanceof ELNode.BOOLEANVAL b) {
+            int idx = putConstant(b.value);
+            current.emitPushConst(idx);
+            current.emitDynEq();
+            return;
+        }
+        if (pat instanceof ELNode.CHARVAL c) {
+            int idx = putConstant(c.value);
+            current.emitPushConst(idx);
+            current.emitDynEq();
+            return;
+        }
+        if (pat instanceof ELNode.NULL) {
+            current.emitPushNull();
+            current.emitDynEq();
+            return;
+        }
+        if (pat instanceof ELNode.SYMBOL sym) {
+            int idx = putConstant(sym.value);
+            current.emitPushConst(idx);
+            current.emitIdEq();
+            return;
+        }
+        if (pat instanceof ELNode.CLASS cls) {
+            emitInstOf(cls.name);
+            return;
+        }
+        if (pat instanceof ELNode.REGEXP re) {
+            // REGEXP: use trampoline for the pattern itself
+            buildTrampoline(pat);
+            return;
+        }
+        // Should not reach here (unsupported patterns pre-filtered)
+        buildTrampoline(pat);
+    }
+
+    /** Compile a DEFINE pattern (variable binding or check). */
+    private void compileDefinePattern(ELNode.DEFINE d, int failBlock) {
+        // Wildcard: always matches
+        if ("_".equals(d.id) && d.expr == null) {
+            emitPushTrue();
+            return;
+        }
+
+        // Type check if annotated
+        if (d.type != null) {
+            current.emitDup();                    // dup arg value
+            emitInstOf(d.type);
+            current.emitJumpIfFalse(failBlock);
+        }
+
+        // As-pattern check
+        if (d.expr != null) {
+            current.emitDup();                    // dup arg value
+            compileMatchPattern(d.expr, failBlock);
+            current.emitJumpIfFalse(failBlock);
+        }
+
+        // Variable binding
+        if (varIndex.containsKey(d.id)) {
+            // Variable already bound in this scope → check equality
+            int slot = varIndex.get(d.id);
+            current.emitPushVar(slot);
+            current.emitDynEq();
+        } else {
+            // First occurrence → bind to new local variable
+            int slot = ensureVar(d.id);
+            current.emitStoreVar(slot);
+            current.emitPop();  // discard dup from STORE_VAR
+            emitPushTrue();     // binding always succeeds
+        }
+    }
+
+    /** Compile an OR pattern with variable binding rollback. */
+    private void compileOrPattern(ELNode.OR orPat, int failBlock) {
+        // Save variable binding state before trying left branch
+        Map<String, Integer> savedBindings = new LinkedHashMap<>(varIndex);
+
+        // Try left branch
+        compileMatchPattern(orPat.left, failBlock);
+        // If left succeeds (TRUE on stack), jump over right branch
+        int tryRight = allocBlockId();
+        int done = allocBlockId();
+        current.emitJumpIfTrue(done);
+        current.emitJump(tryRight);
+
+        // Right branch: restore bindings first, then match
+        sealAndStart(tryRight);
+        // Rollback: remove any bindings added by left branch
+        varIndex.keySet().removeIf(k -> !savedBindings.containsKey(k));
+        // Restore original slots
+        varIndex.putAll(savedBindings);
+        compileMatchPattern(orPat.right, failBlock);
+
+        current.emitJump(done);
+        sealAndStart(done);
     }
 
     // ── Trampoline ──
