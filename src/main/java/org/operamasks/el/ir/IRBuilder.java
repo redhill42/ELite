@@ -22,10 +22,7 @@ import elite.lang.MathLib;
 import elite.lang.annotation.Expando;
 import org.operamasks.el.eval.ELEngine;
 import org.operamasks.el.eval.ELProgram;
-import org.operamasks.el.parser.DefaultVisitor;
-import org.operamasks.el.parser.ELNode;
-import org.operamasks.el.parser.Position;
-import org.operamasks.el.parser.Token;
+import org.operamasks.el.parser.*;
 import org.operamasks.el.resolver.ClassResolver;
 import org.operamasks.el.resolver.MethodResolver;
 import org.operamasks.util.BeanUtils;
@@ -699,19 +696,11 @@ public class IRBuilder extends ELNode.Visitor {
             return false; // FIXME: support closure invocation
         }
 
-        String indId = b.vars.length == 1 ? b.vars[0].id : "*t0*";
-        String endId = "*t1*";
-
         // Initialize temporary variables.
         enterControlScope();
-        assert !savedVarBindings.isEmpty();
-        Map<String, Integer> saved = savedVarBindings.peek();
-        if (!saved.containsKey(indId))
-            saved.put(indId, varIndex.remove(indId));
-        if (!saved.containsKey(endId))
-            saved.put(endId, varIndex.remove(endId));
-        int indvar = ensureVar(indId);
-        int endvar = ensureVar(endId);
+        String indId = b.vars.length == 1 ? b.vars[0].id : "*t0*";
+        int indvar = defineLocalVar(indId);
+        int endvar = defineLocalVar(Parser.tempvar());
 
         // FIXME: induction variable may be captured, should put in evaluation context.
         build(begin);
@@ -1634,6 +1623,14 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
+    private int defineLocalVar(String name) {
+        assert !savedVarBindings.isEmpty();
+        Map<String, Integer> saved = savedVarBindings.peek();
+        if (!saved.containsKey(name))
+            saved.put(name, varIndex.remove(name));
+        return ensureVar(name);
+    }
+
     public void visit(ELNode.EXPR node) {
         build(node.right);
     }
@@ -1726,50 +1723,57 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── For ──
     public void visit(ELNode.FOR node) {
-        if (node.init != null)
+        int body = allocBlockId();
+        int header = node.cond != null ? allocBlockId() : body;
+        int cont = allocBlockId();
+        int exit = allocBlockId();
+
+        enterControlScope();
+        loopStack.push(new LoopTargets(cont, exit));
+
+        if (node.init != null) {
             for (ELNode e : node.init) {
                 build(e);
                 current.emitPop();
             }
-
-        int header = allocBlockId();
-        int body = allocBlockId();
-        int exit = allocBlockId();
-
-        loopStack.push(new LoopTargets(header, exit));
+        }
         current.emitJump(header);
 
-        startBlock(header);
         if (node.cond != null) {
+            startBlock(header);
             build(node.cond);
             current.emitJumpIfTrue(body);
-        } else
-            current.emitJump(body);
-        current.emitJump(exit);
+            current.emitJump(exit);
+        }
 
         startBlock(body);
-        if (node.body != null) {
-            enterControlScope();
+        if (node.body != null && !(node.body instanceof ELNode.NULL)) {
             build(node.body);
-            leaveControlScope();
             current.emitPop();
         }
-        if (node.step != null)
+        current.emitJump(cont);
+
+        startBlock(cont);
+        if (node.step != null) {
             for (ELNode e : node.step) {
                 build(e);
                 current.emitPop();
             }
+        }
         current.emitJump(header);
 
         startBlock(exit);
         emitPushNull();
+        leaveControlScope();
         loopStack.pop();
     }
 
     public void visit(ELNode.FOREACH node) {
-        // Optimize: simple integer ranges use indexed loop instead of iterator
-        if (canOptimizeRange(node)) {
-            buildOptimizedRangeFor(node);
+        if (node.range instanceof ELNode.RANGE r) {
+            if (r.isConstant())
+                buildConstantRangedFor(node.var, node.index, r, node.body);
+            else
+                buildDynamicRangedFor(node.var, node.index, r, node.body);
             return;
         }
 
@@ -1780,85 +1784,182 @@ public class IRBuilder extends ELNode.Visitor {
         buildTrampoline(node);
     }
 
-    /**
-     * Check if the for-each iterates over a simple integer range [start.
-     * .end] or [start..&lt;end].
-     */
-    private static boolean canOptimizeRange(ELNode.FOREACH node) {
-        if (node.var == null || node.index != null)
-            return false;
-        if (!(node.range instanceof ELNode.RANGE r))
-            return false;
-        if (r.next != null)
-            return false; // custom step not supported
-        return isSimple(r.begin) && isSimple(r.end);
-    }
+    private void buildConstantRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
+                                        ELNode.RANGE range, ELNode body) {
+        // Optimize for constant range.
+        long begin = ((ELNode.NUMBER)range.begin).value.longValue();
+        long step = 1;
+        if (range.next != null) {
+            step = ((ELNode.NUMBER)range.next).value.longValue() - begin;
+        }
 
-    private static boolean isSimple(ELNode n) {
-        return n instanceof ELNode.IDENT || n instanceof ELNode.NUMBER ||
-               n instanceof ELNode.POS || n instanceof ELNode.NEG;
-    }
+        long count = -1;
+        if (range.end != null) {
+            long end = ((ELNode.NUMBER)range.end).value.longValue();
+            if (range.exclude)
+                end--;
+            count = (end - begin) / step + 1;
+            if (count <= 0) {
+                emitPushNull();
+                return;
+            }
+        }
 
-    /**
-     * Emit indexed loop: i = start; while (i <= end) { body; i = i + 1 }
-     */
-    private void buildOptimizedRangeFor(ELNode.FOREACH node) {
-        ELNode.RANGE r = (ELNode.RANGE)node.range;
-        String loopVar = node.var.id;
-        int varIdx = ensureVar(loopVar);
-        boolean exclusive = r.exclude;
-
-        // Emit constant 1 for increment
-        int oneIdx = putConstant(1L);
-
-        // Initialize loop var: i = start (discard the expression result)
-        build(r.begin);
-        current.emitStoreVar(varIdx);
-        current.emitPop();  // STORE_VAR pushes back, pop it
-
-        int header = allocBlockId();
-        int body = allocBlockId();
-        int step = allocBlockId();
-        int exit = allocBlockId();
-        // continue → step (increment, then re-check condition)
-        // break → exit
-        loopStack.push(new LoopTargets(step, exit));
-
-        // Jump to header
-        current.emitJump(header);
-
-        // Header: push i, push end, compare, branch
-        startBlock(header);
-        current.emitPushVar(varIdx);
-        build(r.end);
-        if (exclusive)
-            current.emitILt();
-        else
-            current.emitILe();  // int comparison, not dynamic
-        current.emitJumpIfFalse(exit);
-        current.emitJump(body);
-
-        // Body: execute
-        startBlock(body);
         enterControlScope();
-        build(node.body);
-        leaveControlScope();
-        current.emitPop();                // discard body result
-        current.emitJump(step);           // → increment step
+        assert !savedVarBindings.isEmpty();
+        int idxIdx = defineLocalVar(index != null ? index.id : Parser.tempvar());
+        int varIdx = defineLocalVar(var.id);
 
-        // Step: increment loop var, then re-check condition
-        startBlock(step);
+        emitPushConst(T_LONG, 0);
+        current.emitStoreVar(idxIdx);
+        current.emitPop();
+        emitPushConst(T_LONG, begin);
+        current.emitStoreVar(varIdx);
+        current.emitPop();
+
+        // Begin loop.
+        int bodyB = allocBlockId();
+        int headerB = range.end != null ? allocBlockId() : bodyB;
+        int contB = allocBlockId();
+        int exitB = allocBlockId();
+
+        loopStack.push(new LoopTargets(contB, exitB));
+        current.emitJump(headerB);
+
+        // Generate loop condition.
+        if (range.end != null) {
+            startBlock(headerB);
+            current.emitPushVar(idxIdx);
+            emitPushConst(T_LONG, count);
+            current.emitLLt();
+            current.emitJumpIfTrue(bodyB);
+            current.emitJump(exitB);
+        }
+
+        // Generate loop body.
+        startBlock(bodyB);
+        if (body != null && !(body instanceof ELNode.NULL)) {
+            build(body);
+            current.emitPop();
+        }
+        current.emitJump(contB);
+
+        // Generate loop step.
+        startBlock(contB);
+        current.emitPushVar(idxIdx);
+        emitPushConst(T_LONG, 1);
+        current.emitLAdd();
+        current.emitStoreVar(idxIdx);
+        current.emitPop();
+
         current.emitPushVar(varIdx);
-        current.emitPushConst(oneIdx);    // push constant 1
-        current.emitIAdd();
-        current.emitStoreVar(varIdx);     // stores to i, pushes result back
-        current.emitPop();                // discard
-        current.emitJump(header);
+        emitPushConst(T_LONG, step);
+        current.emitLAdd();
+        current.emitStoreVar(varIdx);
+        current.emitPop();
+        current.emitJump(headerB);
 
-        // Exit
-        startBlock(exit);
+        // Cleanup
+        startBlock(exitB);
         emitPushNull();
+        leaveControlScope();
+        loopStack.pop();
+    }
 
+    private void buildDynamicRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
+                                       ELNode.RANGE range, ELNode body) {
+        enterControlScope();
+        assert !savedVarBindings.isEmpty();
+        int idxIdx = defineLocalVar(index != null ? index.id : Parser.tempvar());
+        int varIdx = defineLocalVar(var.id);
+        int stepIdx = -1;
+        int countIdx = -1;
+
+        // Initialize local variables.
+        if (range.next != null) {
+            stepIdx = defineLocalVar(Parser.tempvar());
+            build(range.next);
+            build(range.begin);
+            current.emitStoreVar(varIdx);
+            current.emitLSub();
+            current.emitStoreVar(stepIdx); // step = next - begin
+            current.emitPop();
+        } else {
+            build(range.begin);
+            current.emitStoreVar(varIdx);
+            current.emitPop();
+        }
+
+        if (range.end != null) {
+            countIdx = defineLocalVar(Parser.tempvar());
+            build(range.end);
+            if (range.exclude) {
+                emitPushConst(T_LONG, 1);
+                current.emitLSub();
+            }
+            current.emitPushVar(varIdx);
+            current.emitLSub();
+            if (range.next != null) {
+                current.emitPushVar(stepIdx);
+                current.emitLDiv();
+            }
+            emitPushConst(T_LONG, 1);
+            current.emitLAdd();
+            current.emitStoreVar(countIdx); // count = (end - begin) / step + 1
+            current.emitPop();
+        }
+
+        emitPushConst(T_LONG, 0);
+        current.emitStoreVar(idxIdx);
+
+        int bodyB = allocBlockId();
+        int headerB = range.end != null ? allocBlockId() : bodyB;
+        int contB = allocBlockId();
+        int exitB = allocBlockId();
+
+        loopStack.push(new LoopTargets(contB, exitB));
+        current.emitJump(headerB);
+
+        // Generate loop condition.
+        if (range.end != null) {
+            startBlock(headerB);
+            current.emitPushVar(idxIdx);
+            current.emitPushVar(countIdx);
+            current.emitLLt();
+            current.emitJumpIfTrue(bodyB);
+            current.emitJump(exitB);
+        }
+
+        // Generate loop body.
+        startBlock(bodyB);
+        if (body != null && !(body instanceof ELNode.NULL)) {
+            build(body);
+            current.emitPop();
+        }
+        current.emitJump(contB);
+
+        // Generate loop step.
+        startBlock(contB);
+        current.emitPushVar(idxIdx);
+        emitPushConst(T_LONG, 1);
+        current.emitLAdd();
+        current.emitStoreVar(idxIdx);
+        current.emitPop();
+
+        current.emitPushVar(varIdx);
+        if (range.next != null)
+            current.emitPushVar(stepIdx);
+        else
+            emitPushConst(T_LONG, 1);
+        current.emitDynAdd();
+        current.emitStoreVar(varIdx);
+        current.emitPop();
+        current.emitJump(headerB);
+
+        // Cleanup
+        startBlock(exitB);
+        emitPushNull();
+        leaveControlScope();
         loopStack.pop();
     }
 

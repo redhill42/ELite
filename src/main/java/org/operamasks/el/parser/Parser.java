@@ -78,7 +78,7 @@ public class Parser extends Scanner
 
     // Generate a unique temporary variable name.
     private static final AtomicInteger tempid = new AtomicInteger();
-    private static String tempvar() {
+    public static String tempvar() {
         return "*" + tempid.incrementAndGet() + "*";
     }
 
