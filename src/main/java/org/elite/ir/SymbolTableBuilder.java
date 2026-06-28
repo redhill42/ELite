@@ -46,6 +46,8 @@ public final class SymbolTableBuilder {
 
             if (def.expr instanceof ELNode.LAMBDA lam) {
                 // Function definition: fresh scope (new IRFunction)
+                SymbolTable.SymbolInfo fnInfo = table.lookup(def.id);
+                if (fnInfo != null) fnInfo.funcPoolIdx = -2; // pending allocation
                 table.enterScope("fn:" + def.id, true);
                 for (ELNode.DEFINE param : lam.vars)
                     table.define(param.id);

@@ -30,7 +30,7 @@ public final class SymbolTable {
             this.mangledName = name;
         }
 
-        public boolean isFunction()      { return func != null || funcPoolIdx >= 0; }
+        public boolean isFunction()      { return func != null || funcPoolIdx >= 0 || funcPoolIdx == -2; }
 
         @Override
         public String toString() {
