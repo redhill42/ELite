@@ -51,6 +51,7 @@ public final class SymbolTable {
         final String label;  // for debugging
         final int depth;     // nesting depth (0 = root)
         final Map<String, SymbolInfo> symbols = new LinkedHashMap<>();
+        int nextSlot;        // next slot index to allocate
 
         Scope(String label, int depth) { this.label = label; this.depth = depth; }
 
@@ -93,14 +94,22 @@ public final class SymbolTable {
         return stack.peek();
     }
 
+    /** All scopes (including left ones) for iteration. */
+    List<Scope> allScopes() {
+        return allScopes;
+    }
+
     /**
-     * Define a symbol in the current scope.
+     * Define a symbol in the current scope, allocating a slot index.
      * If the name already exists in an outer scope, rename it to avoid
      * shadowing conflicts in the evalContext.
      */
     public SymbolInfo define(String name) {
         Scope current = stack.peek();
         SymbolInfo info = new SymbolInfo(name);
+
+        // Allocate slot index
+        info.slot = current.nextSlot++;
 
         // Check if this name exists in any outer scope
         boolean shadowed = false;

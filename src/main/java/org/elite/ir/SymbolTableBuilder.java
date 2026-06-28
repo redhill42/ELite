@@ -75,6 +75,9 @@ public final class SymbolTableBuilder {
             for (ELNode.DEFINE param : lam.vars)
                 table.define(param.id);
             walkExpression(lam.body, table);
+            // After walking the lambda body, determine which variables
+            // from outer scopes are captured by this lambda.
+            markCaptured(lam.body, table);
             table.leaveScope();
 
         } else if (node instanceof ELNode.WHILE wh) {
@@ -139,6 +142,35 @@ public final class SymbolTableBuilder {
         for (ELNode.Pattern p : c.patterns) {
             collectPatternBindings((ELNode) p, table);
         }
+    }
+
+    /**
+     * Walk the lambda body and mark outer-scope variables that are
+     * referenced (captured) by this closure.
+     */
+    private static void markCaptured(ELNode body, SymbolTable table) {
+        Set<String> seen = new HashSet<>();
+        body.accept(new DefaultVisitor() {
+            public void visit(ELNode.IDENT e) {
+                if (seen.add(e.id)) {
+                    // Check if this is a free variable from an outer scope
+                    SymbolTable.SymbolInfo info = table.lookup(e.id);
+                    if (info != null && table.isOuter(e.id)) {
+                        // Found in outer scope → mark as captured
+                        // Find the actual defining scope's entry
+                        for (SymbolTable.Scope s : table.allScopes()) {
+                            SymbolTable.SymbolInfo si = s.get(e.id);
+                            if (si != null && si == info) {
+                                si.captured = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            // Don't recurse into nested lambdas — they handle their own captures
+            public void visit(ELNode.LAMBDA e) {}
+        });
     }
 
     private static void collectPatternBindings(ELNode pat, SymbolTable table) {
