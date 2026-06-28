@@ -51,7 +51,6 @@ public final class SymbolTable {
         final String label;  // for debugging
         final int depth;     // nesting depth (0 = root)
         final Map<String, SymbolInfo> symbols = new LinkedHashMap<>();
-        int nextSlot;        // next slot index to allocate
 
         Scope(String label, int depth) { this.label = label; this.depth = depth; }
 
@@ -72,6 +71,7 @@ public final class SymbolTable {
     private final Deque<Scope> stack = new ArrayDeque<>();
     private final List<Scope> allScopes = new ArrayList<>(); // retained for debugging
     private int renameCounter;
+    private int nextGlobalSlot;  // global slot counter across ALL scopes
 
     /** Current scope depth (0 = top-level/outermost). */
     public int depth() { return stack.size(); }
@@ -108,8 +108,8 @@ public final class SymbolTable {
         Scope current = stack.peek();
         SymbolInfo info = new SymbolInfo(name);
 
-        // Allocate slot index
-        info.slot = current.nextSlot++;
+        // Allocate slot index (global, across all scopes)
+        info.slot = nextGlobalSlot++;
 
         // Check if this name exists in any outer scope
         boolean shadowed = false;
