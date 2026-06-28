@@ -39,6 +39,15 @@ public final class IRPrinter {
         return format(fn, source);
     }
 
+    /** Dump symbol table for a program (first-pass analysis only, no IR emission). */
+    public static String dumpSymbolTable(ELContext elctx, String source) {
+        Parser parser = new Parser(source);
+        var program = parser.parse();
+        program.importExternal(elctx);
+        SymbolTable table = SymbolTableBuilder.build(program);
+        return table.dump();
+    }
+
     /** Dump full program IR (definitions + expressions + combined). */
     public static String dumpProgramIR(ELContext elctx, String source) {
         Parser parser = new Parser(source);
