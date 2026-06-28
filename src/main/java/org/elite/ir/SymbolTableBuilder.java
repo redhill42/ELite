@@ -132,8 +132,23 @@ public final class SymbolTableBuilder {
 
         } else if (node instanceof ELNode.BLOCK) {
             // Don't enter nested blocks (they share the parent scope in ELite)
+        } else {
+            // Recurse into child expressions to find nested lambdas/scopes.
+            // DefaultVisitor scans all children; we hook into LAMBDA visits
+            // to create proper scopes and mark captures.
+            node.accept(new DefaultVisitor() {
+                public void visit(ELNode.LAMBDA e) {
+                    walkExpression(e, table);
+                }
+                // Re-dispatch scope-creating types found at any nesting depth
+                public void visit(ELNode.WHILE e)    { walkExpression(e, table); }
+                public void visit(ELNode.REPEAT e)   { walkExpression(e, table); }
+                public void visit(ELNode.FOR e)      { walkExpression(e, table); }
+                public void visit(ELNode.FOREACH e)  { walkExpression(e, table); }
+                public void visit(ELNode.MATCH e)    { walkExpression(e, table); }
+                public void visit(ELNode.DEFINE e)   { walkDefinition(e, table); }
+            });
         }
-        // Other expression types don't create scopes
     }
 
     /** Register pattern variable names from a CASE. */
