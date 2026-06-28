@@ -1069,7 +1069,7 @@ public abstract class ELNode implements Serializable
      * Identifier expression.
      */
     public static class IDENT extends ELNode {
-        public final String id;
+        public String id;  // mutable for variable renaming pass
 
         public IDENT(int pos, String id) {
             super(Token.IDENT, pos);

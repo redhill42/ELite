@@ -74,6 +74,10 @@ public class ELProgram implements Serializable
     /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
     public static final boolean DEBUG = Boolean.getBoolean("elite.debug");
 
+    /** Enable AST-level variable renaming based on symbol table analysis. */
+    public static final boolean RENAME_VARIABLES =
+        Boolean.parseBoolean(System.getProperty("elite.rename.vars", "false"));
+
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
     /** @return the list of expression/statement nodes */
@@ -160,16 +164,28 @@ public class ELProgram implements Serializable
                 // specialization skipped). The IR interpreter handles TRAMPOLINE
                 // opcodes inline via AST evaluation, so there is no need for a
                 // full-program fallback.
+                if (RENAME_VARIABLES) {
+                    var table = org.elite.ir.SymbolTableBuilder.build(this);
+                    org.elite.ir.SymbolTableBuilder.renameVariables(this, table);
+                }
                 IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 2: {
+                if (RENAME_VARIABLES) {
+                    var table = org.elite.ir.SymbolTableBuilder.build(this);
+                    org.elite.ir.SymbolTableBuilder.renameVariables(this, table);
+                }
                 IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 3: default: {
+                if (RENAME_VARIABLES) {
+                    var table = org.elite.ir.SymbolTableBuilder.build(this);
+                    org.elite.ir.SymbolTableBuilder.renameVariables(this, table);
+                }
                 IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 try {
                     IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);

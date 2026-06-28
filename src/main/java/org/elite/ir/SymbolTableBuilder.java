@@ -20,6 +20,52 @@ public final class SymbolTableBuilder {
     /**
      * Build a symbol table for the given program.
      */
+    /**
+     * Rename variables in the AST based on the symbol table.
+     * For each DEFINE and IDENT whose mangledName differs from originalName,
+     * the id field is updated in-place.
+     */
+    public static void renameVariables(ELProgram program, SymbolTable table) {
+        List<ELNode> defs = program.getDefinitions();
+        List<ELNode> exps = program.getExpressions();
+        if (defs != null) defs.forEach(n -> renameInNode(n, table));
+        if (exps != null) exps.forEach(n -> renameInNode(n, table));
+    }
+
+    private static void renameInNode(ELNode node, SymbolTable table) {
+        if (node instanceof ELNode.DEFINE def) {
+            SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) def.symbol;
+            if (info != null && !info.mangledName.equals(info.originalName)) {
+                def.id = info.mangledName;
+            }
+        }
+        // Walk children via DefaultVisitor
+        node.accept(new DefaultVisitor() {
+            public void visit(ELNode.IDENT e) {
+                SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) e.symbol;
+                if (info != null && !info.mangledName.equals(info.originalName)) {
+                    e.id = info.mangledName;
+                }
+            }
+            // Rename DEFINE nodes found nested (e.g. lambda params,
+            // pattern variables in match cases)
+            public void visit(ELNode.DEFINE e) {
+                SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) e.symbol;
+                if (info != null && !info.mangledName.equals(info.originalName)) {
+                    e.id = info.mangledName;
+                }
+            }
+            // Recurse into nested lambda bodies
+            public void visit(ELNode.LAMBDA e) {
+                // Rename lambda params first
+                if (e.vars != null) {
+                    for (ELNode.DEFINE v : e.vars) renameInNode(v, table);
+                }
+                renameInNode(e.body, table);
+            }
+        });
+    }
+
     public static SymbolTable build(ELProgram program) {
         SymbolTable table = new SymbolTable();
         List<ELNode> defs = program.getDefinitions();
