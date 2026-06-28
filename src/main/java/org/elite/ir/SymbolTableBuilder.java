@@ -32,6 +32,15 @@ public final class SymbolTableBuilder {
         return table;
     }
 
+    /** Build a symbol table for a single expression or subtree. */
+    public static SymbolTable build(ELNode node) {
+        SymbolTable table = new SymbolTable();
+        BuilderVisitor visitor = new BuilderVisitor(table);
+        table.enterScope("expr");
+        node.accept(visitor);
+        return table;
+    }
+
     static class BuilderVisitor extends DefaultVisitor {
         private final SymbolTable table;
 

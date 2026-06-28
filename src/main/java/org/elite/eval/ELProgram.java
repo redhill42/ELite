@@ -76,10 +76,6 @@ public class ELProgram implements Serializable
     /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
     public static final boolean DEBUG = Boolean.getBoolean("elite.debug");
 
-    /** Enable AST-level variable renaming based on symbol table analysis. */
-    public static final boolean RENAME_VARIABLES =
-        Boolean.parseBoolean(System.getProperty("elite.rename.vars", "false"));
-
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
     /** @return the list of expression/statement nodes */
@@ -156,13 +152,8 @@ public class ELProgram implements Serializable
             // context is used by compilation and execution.
             importExternal(elctx);
 
-            // Build symbol table (Phase 1) when variable renaming is enabled.
-            // The table is shared with IRBuilder (Phase 2) so it can read
-            // slot/captured info from node.symbol annotations.
-            SymbolTable symTable = null;
-            if (RENAME_VARIABLES) {
-                symTable = SymbolTableBuilder.build(this);
-            }
+            // Phase 1: build symbol table (variable renaming + capture analysis).
+            SymbolTable symTable = SymbolTableBuilder.build(this);
 
             // Execute statements using selected evaluation strategy
             switch (OPT_LEVEL) {
@@ -170,10 +161,7 @@ public class ELProgram implements Serializable
                 return evaluateAST(frame, env);
 
             case 1: {
-                // Conservative IR — no optimization passes (constant folding, type
-                // specialization skipped). The IR interpreter handles TRAMPOLINE
-                // opcodes inline via AST evaluation, so there is no need for a
-                // full-program fallback.
+                // Conservative IR — no optimization passes.
                 IRFunction irFn = IRBuilder.compile(elctx, this, false,
                     frame.getFileName(), symTable);
                 return new IRInterpreter(env, irFn).execute(null, null, true);
