@@ -82,13 +82,24 @@ public final class SymbolTable {
     /** Current scope depth (0 = top-level/outermost). */
     public int depth() { return stack.size(); }
 
-    /** Push a new scope, inheriting slot counter from the current scope. */
-    public Scope enterScope(String label) {
-        int base = stack.isEmpty() ? 0 : stack.peek().nextSlot;
+    /**
+     * Push a new scope.
+     * @param label debug label
+     * @param fresh if true, start slot counter from 0 (for new IRFunctions
+     *              like lambdas); if false, inherit from parent (for control
+     *              flow scopes within the same function)
+     */
+    public Scope enterScope(String label, boolean fresh) {
+        int base = fresh ? 0 : (stack.isEmpty() ? 0 : stack.peek().nextSlot);
         Scope s = new Scope(label, stack.size(), base);
         stack.push(s);
         allScopes.add(s);
         return s;
+    }
+
+    /** Push a new scope inheriting the parent's slot counter. */
+    public Scope enterScope(String label) {
+        return enterScope(label, false);
     }
 
     /** Pop and discard the top scope. */

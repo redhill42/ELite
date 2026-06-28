@@ -45,15 +45,15 @@ public final class SymbolTableBuilder {
             SymbolTable.SymbolInfo info = table.define(def.id);
 
             if (def.expr instanceof ELNode.LAMBDA lam) {
-                // Function definition: enter scope for params + body
-                table.enterScope("fn:" + def.id);
+                // Function definition: fresh scope (new IRFunction)
+                table.enterScope("fn:" + def.id, true);
                 for (ELNode.DEFINE param : lam.vars)
                     table.define(param.id);
                 walkExpression(lam.body, table);
                 table.leaveScope();
             } else if (def.expr instanceof ELNode.CLASSDEF) {
-                // Class definition: placeholder for future compilation
-                table.enterScope("class:" + def.id);
+                // Class definition: fresh scope (separate compilation unit)
+                table.enterScope("class:" + def.id, true);
                 // TODO: walk class members when CLASSDEF compilation is ready
                 table.leaveScope();
             } else if (def.expr != null) {
@@ -71,7 +71,7 @@ public final class SymbolTableBuilder {
         if (node == null) return;
 
         if (node instanceof ELNode.LAMBDA lam) {
-            table.enterScope("lambda");
+            table.enterScope("lambda", true);  // fresh scope (new IRFunction)
             for (ELNode.DEFINE param : lam.vars)
                 table.define(param.id);
             walkExpression(lam.body, table);
