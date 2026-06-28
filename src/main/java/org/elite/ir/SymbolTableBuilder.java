@@ -14,268 +14,217 @@ import org.elite.parser.*;
  * modify the existing compilation pipeline.
  */
 public final class SymbolTableBuilder {
-
     private SymbolTableBuilder() {}
 
     /**
      * Build a symbol table for the given program.
      */
-    /**
-     * Rename variables in the AST based on the symbol table.
-     * For each DEFINE and IDENT whose mangledName differs from originalName,
-     * the id field is updated in-place.
-     */
-    public static void renameVariables(ELProgram program, SymbolTable table) {
-        List<ELNode> defs = program.getDefinitions();
-        List<ELNode> exps = program.getExpressions();
-        if (defs != null) defs.forEach(n -> renameInNode(n, table));
-        if (exps != null) exps.forEach(n -> renameInNode(n, table));
-    }
-
-    private static void renameInNode(ELNode node, SymbolTable table) {
-        if (node instanceof ELNode.DEFINE def) {
-            SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) def.symbol;
-            if (info != null && !info.mangledName.equals(info.originalName)) {
-                def.id = info.mangledName;
-            }
-        }
-        // Walk ALL children via DefaultVisitor's full dispatch.
-        // Only override IDENT (rename) and DEFINE (rename + delegate to super).
-        // All other node types (COND, APPLY, TUPLE, CONS, MATCH, CASE, etc.)
-        // use DefaultVisitor's built-in scanning — nothing is missed.
-        node.accept(new DefaultVisitor() {
-            public void visit(ELNode.IDENT e) {
-                SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) e.symbol;
-                if (info != null && !info.mangledName.equals(info.originalName)) {
-                    e.id = info.mangledName;
-                }
-            }
-            public void visit(ELNode.DEFINE e) {
-                SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) e.symbol;
-                if (info != null && !info.mangledName.equals(info.originalName)) {
-                    e.id = info.mangledName;
-                }
-                super.visit(e);  // delegate to DefaultVisitor for full child scan
-            }
-        });
-    }
-
     public static SymbolTable build(ELProgram program) {
         SymbolTable table = new SymbolTable();
-        List<ELNode> defs = program.getDefinitions();
-        List<ELNode> exps = program.getExpressions();
+        BuilderVisitor visitor = new BuilderVisitor(table);
 
         table.enterScope("program");
-        if (defs != null) {
-            for (ELNode def : defs)
-                walkDefinition(def, table);
-        }
-        if (exps != null) {
-            for (ELNode exp : exps)
-                walkExpression(exp, table);
-        }
-        // Don't leave program scope — it's the root
+        for (ELNode def : program.getDefinitions())
+            def.accept(visitor);
+        for (ELNode exp : program.getExpressions())
+            exp.accept(visitor);
+        // Don't leave program scope - it's the root
         return table;
     }
 
-    // ── Definition walking ──
+    static class BuilderVisitor extends DefaultVisitor {
+        private final SymbolTable table;
 
-    private static void walkDefinition(ELNode node, SymbolTable table) {
-        if (node instanceof ELNode.DEFINE def) {
-            SymbolTable.SymbolInfo info = table.define(def.id);
-            def.symbol = info;  // direct SymbolInfo reference
-
-            if (def.expr instanceof ELNode.LAMBDA lam) {
-                // Function definition: fresh scope (new IRFunction)
-                SymbolTable.SymbolInfo fnInfo = table.lookup(def.id);
-                if (fnInfo != null) fnInfo.funcPoolIdx = -2; // pending allocation
-                table.enterScope("fn:" + def.id, true);
-                for (ELNode.DEFINE param : lam.vars) {
-                    SymbolTable.SymbolInfo pi = table.define(param.id);
-                    param.symbol = pi;  // annotate param DEFINE nodes
-                }
-                walkExpression(lam.body, table);
-                markCaptured(lam.body, table);
-                table.leaveScope();
-            } else if (def.expr instanceof ELNode.CLASSDEF) {
-                // Class definition: fresh scope (separate compilation unit)
-                table.enterScope("class:" + def.id, true);
-                // TODO: walk class members when CLASSDEF compilation is ready
-                table.leaveScope();
-            } else if (def.expr != null) {
-                // Value definition: walk the expression for nested scopes
-                walkExpression(def.expr, table);
-            }
-        } else if (node != null) {
-            walkExpression(node, table);
+        BuilderVisitor(SymbolTable table) {
+            this.table = table;
         }
-    }
 
-    // ── Expression walking (scope-creating constructs) ──
+        public void visit(ELNode.DEFINE e) {
+            var info = table.define(e.id);
+            e.symbol = info;
+            e.id = info.mangledName;
 
-    private static void walkExpression(ELNode node, SymbolTable table) {
-        if (node == null) return;
+            if (e.expr instanceof ELNode.LAMBDA) {
+                var fnInfo = table.lookup(e.id);
+                if (fnInfo != null)
+                    fnInfo.funcPoolIdx = -2; // pending allocation
+            }
 
-        if (node instanceof ELNode.LAMBDA lam) {
-            table.enterScope("lambda", true);  // fresh scope (new IRFunction)
-            for (ELNode.DEFINE param : lam.vars)
-                table.define(param.id);
-            walkExpression(lam.body, table);
+            scan(e.expr);
+        }
+
+        public void visit(ELNode.LAMBDA e) {
+            if (e instanceof ELNode.BLOCK) {
+                // Don't enter nested blocks (they share the parent scope in ELite)
+                return;
+            }
+
+            table.enterScope(e.name != null ? "fn:"+e.name : "lambda", true);
+            for (ELNode.DEFINE param : e.vars) {
+                if (!"_".equals(param.id)) {
+                    var pi = table.define(param.id);
+                    param.symbol = pi;
+                    param.id = pi.mangledName;
+                }
+            }
+            scan(e.body);
             // After walking the lambda body, determine which variables
             // from outer scopes are captured by this lambda.
-            markCaptured(lam.body, table);
+            markCaptured(e.body);
             table.leaveScope();
+        }
 
-        } else if (node instanceof ELNode.WHILE wh) {
+        public void visit(ELNode.CLASSDEF e) {
+            // Class definition: fresh scope (separate compilation unit)
+            table.enterScope("class:" + e.id, true);
+            // TODO: walk class members when CLASSDEF compilation is ready
+            table.leaveScope();
+        }
+
+        public void visit(ELNode.IDENT e) {
+            var info = table.lookup(e.id);
+            if (info != null) {
+                e.symbol = info;
+                e.id = info.mangledName;
+            }
+        }
+
+        public void visit(ELNode.WHILE e) {
+//            scan(e.cond);
             table.enterScope("while");
-            walkExpression(wh.body, table);
+            scan(e.body);
             table.leaveScope();
-            walkExpression(wh.cond, table);
+        }
 
-        } else if (node instanceof ELNode.REPEAT rp) {
+        public void visit(ELNode.REPEAT e) {
             table.enterScope("repeat");
-            walkExpression(rp.body, table);
+            scan(e.body);
             table.leaveScope();
-            walkExpression(rp.cond, table);
+            scan(e.cond);
+        }
 
-        } else if (node instanceof ELNode.FOR fr) {
+        public void visit(ELNode.FOR e) {
             table.enterScope("for");
-            if (fr.init != null) for (ELNode i : fr.init) walkExpression(i, table);
-            walkExpression(fr.body, table);
+            super.visit(e);
             table.leaveScope();
-            if (fr.cond != null) walkExpression(fr.cond, table);
-            if (fr.step != null) for (ELNode s : fr.step) walkExpression(s, table);
+        }
 
-        } else if (node instanceof ELNode.FOREACH fe) {
+        public void visit(ELNode.FOREACH e) {
             table.enterScope("foreach");
-            if (fe.var != null) table.define(fe.var.id);
-            walkExpression(fe.body, table);
+            super.visit(e);
             table.leaveScope();
+        }
 
-        } else if (node instanceof ELNode.COND cond) {
-            walkExpression(cond.cond, table);
+        public void visit(ELNode.COND e) {
+            scan(e.cond);
             table.enterScope("if-body");
-            walkExpression(cond.left, table);
+            scan(e.left);
             table.leaveScope();
-            if (cond.right != null) {
+            if (e.right != null) {
                 table.enterScope("if-else");
-                walkExpression(cond.right, table);
+                scan(e.right);
                 table.leaveScope();
             }
+        }
 
-        } else if (node instanceof ELNode.COMPOUND cmp) {
-            for (ELNode e : cmp.exps) walkExpression(e, table);
+        public void visit(ELNode.COMPOUND e) {
+            table.enterScope("compound");
+            super.visit(e);
+            table.leaveScope();
+        }
 
-        } else if (node instanceof ELNode.MATCH match) {
-            // Each case body gets its own scope for pattern variables
-            for (ELNode.CASE c : match.alts) {
+        public void visit(ELNode.MATCH e) {
+            // Each case body gets its own scope for pattern variables.
+            scan(e.args);
+            for (ELNode.CASE c : e.alts) {
                 table.enterScope("case");
-                collectCaseBindings(c, table);
-                if (c.bodies != null) {
-                    for (ELNode body : c.bodies)
-                        walkExpression(body, table);
-                }
+                collectCaseBindings(c);
+                scan(c.guards);
+                scan(c.bodies);
                 table.leaveScope();
             }
-            if (match.deflt != null) walkExpression(match.deflt, table);
+            scan(e.deflt);
+        }
 
-        } else if (node instanceof ELNode.DEFINE def) {
-            // Nested define inside a block
-            walkDefinition(node, table);
+        /**
+         * Walk the lambda body and mark outer-scope variables that are
+         * referenced (captured) by this closure.  Recurses into nested
+         * lambdas, excluding their params, so that transitive captures
+         * (e.g. list comprehensions referencing enclosing function params)
+         * are properly recorded.
+         */
+        private void markCaptured(ELNode node) {
+            markCapturedIn(node, new HashSet<>());
+        }
 
-        } else if (node instanceof ELNode.BLOCK) {
-            // Don't enter nested blocks (they share the parent scope in ELite)
-        } else {
-            // Recurse into child expressions to find nested lambdas/scopes.
-            // DefaultVisitor scans all children; we hook into LAMBDA visits
-            // to create proper scopes and mark captures.
+        private void markCapturedIn(ELNode node, Set<String> excludeNames) {
             node.accept(new DefaultVisitor() {
-                public void visit(ELNode.LAMBDA e) {
-                    walkExpression(e, table);
-                }
-                // Annotate IDENT with its SymbolInfo directly
                 public void visit(ELNode.IDENT e) {
-                    SymbolTable.SymbolInfo si = table.lookup(e.id);
-                    if (si != null) e.symbol = si;
-                }
-                // Re-dispatch scope-creating types found at any nesting depth
-                public void visit(ELNode.WHILE e)    { walkExpression(e, table); }
-                public void visit(ELNode.REPEAT e)   { walkExpression(e, table); }
-                public void visit(ELNode.FOR e)      { walkExpression(e, table); }
-                public void visit(ELNode.FOREACH e)  { walkExpression(e, table); }
-                public void visit(ELNode.COND e)     { walkExpression(e, table); }
-                public void visit(ELNode.MATCH e)    { walkExpression(e, table); }
-                public void visit(ELNode.DEFINE e)   { walkDefinition(e, table); }
-            });
-        }
-    }
-
-    /** Register pattern variable names from a CASE. */
-    private static void collectCaseBindings(ELNode.CASE c, SymbolTable table) {
-        if (c.patterns == null) return;
-        for (ELNode.Pattern p : c.patterns) {
-            collectPatternBindings((ELNode) p, table);
-        }
-    }
-
-    /**
-     * Walk the lambda body and mark outer-scope variables that are
-     * referenced (captured) by this closure.  Recurses into nested
-     * lambdas, excluding their params, so that transitive captures
-     * (e.g. list comprehensions referencing enclosing function params)
-     * are properly recorded.
-     */
-    private static void markCaptured(ELNode body, SymbolTable table) {
-        markCapturedIn(body, table, new HashSet<>());
-    }
-
-    private static void markCapturedIn(ELNode body, SymbolTable table,
-                                       Set<String> excludeNames) {
-        body.accept(new DefaultVisitor() {
-            public void visit(ELNode.IDENT e) {
-                if (excludeNames.contains(e.id)) return;
-                SymbolTable.SymbolInfo info = table.lookup(e.id);
-                if (info != null && table.isOuter(e.id)) {
-                    // Find the actual defining scope's entry and mark it
-                    for (SymbolTable.Scope s : table.allScopes()) {
-                        SymbolTable.SymbolInfo si = s.get(e.id);
-                        if (si != null && si == info) {
-                            si.captured = true;
-                            break;
+                    if (excludeNames.contains(e.id))
+                        return;
+                    var info = table.lookup(e.id);
+                    if (info != null && table.isOuter(e.id)) {
+                        // Find the actual defining scope's entry and mark it
+                        for (SymbolTable.Scope s : table.allScopes()) {
+                            SymbolTable.SymbolInfo si = s.get(e.id);
+                            if (si != null && si == info) {
+                                si.captured = true;
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            // Recurse into nested lambdas, excluding their own params
-            public void visit(ELNode.LAMBDA e) {
-                Set<String> nestedExcludes = new HashSet<>(excludeNames);
-                for (ELNode.DEFINE v : e.vars)
-                    nestedExcludes.add(v.id);
-                markCapturedIn(e.body, table, nestedExcludes);
-            }
-        });
-    }
-
-    private static void collectPatternBindings(ELNode pat, SymbolTable table) {
-        if (pat instanceof ELNode.DEFINE def) {
-            if (!"_".equals(def.id) && table.currentScope().get(def.id) == null) {
-                SymbolTable.SymbolInfo si = table.define(def.id);
-                def.symbol = si;  // annotate pattern variable DEFINE
-            } else if (!"_".equals(def.id)) {
-                // Already defined in this scope (OR duplicate) — link to existing
-                def.symbol = table.currentScope().get(def.id);
-            }
-        } else if (pat instanceof ELNode.TUPLE t) {
-            for (ELNode e : t.elems)
-                collectPatternBindings(e, table);
-        } else if (pat instanceof ELNode.CONS cons) {
-            collectPatternBindings(cons.head, table);
-            collectPatternBindings(cons.tail, table);
-        } else if (pat instanceof ELNode.OR or) {
-            collectPatternBindings(or.left, table);
-            collectPatternBindings(or.right, table);
+                // Recurse into nested lambdas, excluding their own params
+                public void visit(ELNode.LAMBDA e) {
+                    Set<String> nestedExcludes = new HashSet<>(excludeNames);
+                    for (ELNode.DEFINE v : e.vars)
+                        nestedExcludes.add(v.id);
+                    markCapturedIn(e.body, nestedExcludes);
+                }
+            });
         }
-        // NOT, NIL, NEW, NUMBER, etc. — no bindings
+
+        /** Register pattern variable names from CASE. */
+        private void collectCaseBindings(ELNode.CASE c) {
+            if (c.patterns == null)
+                return;
+            for (ELNode.Pattern p : c.patterns)
+                collectPatternBindings((ELNode)p);
+        }
+
+        private void collectPatternBindings(ELNode pat) {
+            if (pat == null)
+                return;
+
+            if (pat instanceof ELNode.DEFINE def) {
+                if (!"_".equals(def.id)) {
+                    if (table.currentScope().get(def.id) == null) {
+                        var si = table.define(def.id);
+                        def.symbol = si;
+                        def.id = si.mangledName;
+                    } else {
+                        // Already defined in this scope (OR duplicate) - link to existing
+                        var si = table.currentScope().get(def.id);
+                        def.symbol = si;
+                        def.id = si.mangledName;
+                    }
+                }
+            } else if (pat instanceof ELNode.TUPLE t) {
+                for (ELNode e : t.elems)
+                    collectPatternBindings(e);
+            } else if (pat instanceof ELNode.CONS cons) {
+                collectPatternBindings(cons.head);
+                collectPatternBindings(cons.tail);
+            } else if (pat instanceof ELNode.MAP m) {
+                for (ELNode v : m.values)
+                    collectPatternBindings(v);
+            } else if (pat instanceof ELNode.OR or) {
+                collectPatternBindings(or.left);
+                collectPatternBindings(or.right);
+            } else if (pat instanceof ELNode.NEW) {
+                // FIXME: handle data constructor
+            }
+        }
     }
 }

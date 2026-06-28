@@ -41,6 +41,7 @@ import org.elite.ir.IRBytecodeCompiler;
 import org.elite.ir.IRFunction;
 import org.elite.ir.IRInterpreter;
 import org.elite.ir.CompilationError;
+import org.elite.ir.SymbolTableBuilder;
 import org.elite.util.Utils;
 import static org.elite.resources.Resources.*;
 
@@ -165,8 +166,7 @@ public class ELProgram implements Serializable
                 // opcodes inline via AST evaluation, so there is no need for a
                 // full-program fallback.
                 if (RENAME_VARIABLES) {
-                    var table = org.elite.ir.SymbolTableBuilder.build(this);
-                    org.elite.ir.SymbolTableBuilder.renameVariables(this, table);
+                    SymbolTableBuilder.build(this);
                 }
                 IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
@@ -174,8 +174,7 @@ public class ELProgram implements Serializable
 
             case 2: {
                 if (RENAME_VARIABLES) {
-                    var table = org.elite.ir.SymbolTableBuilder.build(this);
-                    org.elite.ir.SymbolTableBuilder.renameVariables(this, table);
+                    SymbolTableBuilder.build(this);
                 }
                 IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
@@ -183,8 +182,7 @@ public class ELProgram implements Serializable
 
             case 3: default: {
                 if (RENAME_VARIABLES) {
-                    var table = org.elite.ir.SymbolTableBuilder.build(this);
-                    org.elite.ir.SymbolTableBuilder.renameVariables(this, table);
+                   SymbolTableBuilder.build(this);
                 }
                 IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 try {

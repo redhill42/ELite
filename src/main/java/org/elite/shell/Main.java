@@ -27,6 +27,8 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
+import org.elite.ir.SymbolTable;
+import org.elite.ir.SymbolTableBuilder;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -322,7 +324,8 @@ public class Main
     private static String dumpAST(String script) {
         Parser parser = new Parser(script);
         ELProgram program = parser.parse();
-        return ASTDumper.dump(program);
+        SymbolTable symbol = SymbolTableBuilder.build(program);
+        return ASTDumper.dump(program) + symbol.dump();
     }
 
     private ScriptEngine createScriptEngine(String[] args) {
