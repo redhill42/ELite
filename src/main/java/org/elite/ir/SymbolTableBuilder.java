@@ -50,6 +50,7 @@ public final class SymbolTableBuilder {
                 for (ELNode.DEFINE param : lam.vars)
                     table.define(param.id);
                 walkExpression(lam.body, table);
+                markCaptured(lam.body, table);
                 table.leaveScope();
             } else if (def.expr instanceof ELNode.CLASSDEF) {
                 // Class definition: fresh scope (separate compilation unit)
