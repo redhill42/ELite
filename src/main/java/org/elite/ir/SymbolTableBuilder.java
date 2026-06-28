@@ -43,6 +43,7 @@ public final class SymbolTableBuilder {
     private static void walkDefinition(ELNode node, SymbolTable table) {
         if (node instanceof ELNode.DEFINE def) {
             SymbolTable.SymbolInfo info = table.define(def.id);
+            def.declaringScope = table.currentScope();  // annotate for compiler
 
             if (def.expr instanceof ELNode.LAMBDA lam) {
                 // Function definition: fresh scope (new IRFunction)
@@ -148,6 +149,19 @@ public final class SymbolTableBuilder {
             node.accept(new DefaultVisitor() {
                 public void visit(ELNode.LAMBDA e) {
                     walkExpression(e, table);
+                }
+                // Annotate IDENT with the scope where its symbol lives
+                public void visit(ELNode.IDENT e) {
+                    SymbolTable.SymbolInfo si = table.lookup(e.id);
+                    if (si != null) {
+                        // Find the scope that contains this symbol
+                        for (SymbolTable.Scope s : table.allScopes()) {
+                            if (s.get(e.id) == si) {
+                                e.declaringScope = s;
+                                break;
+                            }
+                        }
+                    }
                 }
                 // Re-dispatch scope-creating types found at any nesting depth
                 public void visit(ELNode.WHILE e)    { walkExpression(e, table); }

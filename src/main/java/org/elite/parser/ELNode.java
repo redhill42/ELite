@@ -81,6 +81,14 @@ public abstract class ELNode implements Serializable
     /** Inferred type populated by the type checker (null if not yet inferred). */
     public transient org.elite.types.Type inferredType;
 
+    /**
+     * Scope in the {@link org.elite.ir.SymbolTable} where this node was defined
+     * or resolved. Set by {@code SymbolTableBuilder} during the analysis pass.
+     * After analysis, every DEFINE, IDENT, and CLASSDEF node knows its scope
+     * directly — the compiler no longer needs runtime scope tracking.
+     */
+    public transient Object declaringScope;
+
     // Operator precedence
     public static final int
         LOW_PREC        = 0,
