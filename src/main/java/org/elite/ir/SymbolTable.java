@@ -51,8 +51,15 @@ public final class SymbolTable {
         final String label;  // for debugging
         final int depth;     // nesting depth (0 = root)
         final Map<String, SymbolInfo> symbols = new LinkedHashMap<>();
+        int nextSlot;        // next slot to allocate within this scope
+        int slotBase;        // offset: actual slot = slotBase + localSlot
 
-        Scope(String label, int depth) { this.label = label; this.depth = depth; }
+        Scope(String label, int depth, int slotBase) {
+            this.label = label;
+            this.depth = depth;
+            this.slotBase = slotBase;
+            this.nextSlot = slotBase;
+        }
 
         SymbolInfo get(String name) { return symbols.get(name); }
 
@@ -71,14 +78,14 @@ public final class SymbolTable {
     private final Deque<Scope> stack = new ArrayDeque<>();
     private final List<Scope> allScopes = new ArrayList<>(); // retained for debugging
     private int renameCounter;
-    private int nextGlobalSlot;  // global slot counter across ALL scopes
 
     /** Current scope depth (0 = top-level/outermost). */
     public int depth() { return stack.size(); }
 
-    /** Push a new scope. */
+    /** Push a new scope, inheriting slot counter from the current scope. */
     public Scope enterScope(String label) {
-        Scope s = new Scope(label, stack.size());
+        int base = stack.isEmpty() ? 0 : stack.peek().nextSlot;
+        Scope s = new Scope(label, stack.size(), base);
         stack.push(s);
         allScopes.add(s);
         return s;
@@ -108,8 +115,10 @@ public final class SymbolTable {
         Scope current = stack.peek();
         SymbolInfo info = new SymbolInfo(name);
 
-        // Allocate slot index (global, across all scopes)
-        info.slot = nextGlobalSlot++;
+        // Allocate slot: increments this scope's counter.
+        // On leaveScope, the parent's counter is UNCHANGED, so sibling
+        // scopes reuse the same slot range.
+        info.slot = current.nextSlot++;
 
         // Check if this name exists in any outer scope
         boolean shadowed = false;
