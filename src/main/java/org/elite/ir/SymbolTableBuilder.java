@@ -107,8 +107,14 @@ public final class SymbolTableBuilder {
             table.leaveScope();
 
         } else if (node instanceof ELNode.COND cond) {
+            table.enterScope("if-body");
             walkExpression(cond.left, table);
-            walkExpression(cond.right, table);
+            table.leaveScope();
+            if (cond.right != null) {
+                table.enterScope("if-else");
+                walkExpression(cond.right, table);
+                table.leaveScope();
+            }
 
         } else if (node instanceof ELNode.COMPOUND cmp) {
             for (ELNode e : cmp.exps) walkExpression(e, table);
@@ -145,6 +151,7 @@ public final class SymbolTableBuilder {
                 public void visit(ELNode.REPEAT e)   { walkExpression(e, table); }
                 public void visit(ELNode.FOR e)      { walkExpression(e, table); }
                 public void visit(ELNode.FOREACH e)  { walkExpression(e, table); }
+                public void visit(ELNode.COND e)     { walkExpression(e, table); }
                 public void visit(ELNode.MATCH e)    { walkExpression(e, table); }
                 public void visit(ELNode.DEFINE e)   { walkDefinition(e, table); }
             });
