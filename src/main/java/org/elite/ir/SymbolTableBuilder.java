@@ -208,7 +208,7 @@ public final class SymbolTableBuilder {
 
     private static void collectPatternBindings(ELNode pat, SymbolTable table) {
         if (pat instanceof ELNode.DEFINE def) {
-            if (!"_".equals(def.id))
+            if (!"_".equals(def.id) && table.currentScope().get(def.id) == null)
                 table.define(def.id);
         } else if (pat instanceof ELNode.TUPLE t) {
             for (ELNode e : t.elems)
