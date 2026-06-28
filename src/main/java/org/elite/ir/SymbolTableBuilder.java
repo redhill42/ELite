@@ -39,7 +39,10 @@ public final class SymbolTableBuilder {
                 def.id = info.mangledName;
             }
         }
-        // Walk children via DefaultVisitor
+        // Walk ALL children via DefaultVisitor's full dispatch.
+        // Only override IDENT (rename) and DEFINE (rename + delegate to super).
+        // All other node types (COND, APPLY, TUPLE, CONS, MATCH, CASE, etc.)
+        // use DefaultVisitor's built-in scanning — nothing is missed.
         node.accept(new DefaultVisitor() {
             public void visit(ELNode.IDENT e) {
                 SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) e.symbol;
@@ -47,21 +50,12 @@ public final class SymbolTableBuilder {
                     e.id = info.mangledName;
                 }
             }
-            // Rename DEFINE nodes found nested (e.g. lambda params,
-            // pattern variables in match cases)
             public void visit(ELNode.DEFINE e) {
                 SymbolTable.SymbolInfo info = (SymbolTable.SymbolInfo) e.symbol;
                 if (info != null && !info.mangledName.equals(info.originalName)) {
                     e.id = info.mangledName;
                 }
-            }
-            // Recurse into nested lambda bodies
-            public void visit(ELNode.LAMBDA e) {
-                // Rename lambda params first
-                if (e.vars != null) {
-                    for (ELNode.DEFINE v : e.vars) renameInNode(v, table);
-                }
-                renameInNode(e.body, table);
+                super.visit(e);  // delegate to DefaultVisitor for full child scan
             }
         });
     }
@@ -96,8 +90,10 @@ public final class SymbolTableBuilder {
                 SymbolTable.SymbolInfo fnInfo = table.lookup(def.id);
                 if (fnInfo != null) fnInfo.funcPoolIdx = -2; // pending allocation
                 table.enterScope("fn:" + def.id, true);
-                for (ELNode.DEFINE param : lam.vars)
-                    table.define(param.id);
+                for (ELNode.DEFINE param : lam.vars) {
+                    SymbolTable.SymbolInfo pi = table.define(param.id);
+                    param.symbol = pi;  // annotate param DEFINE nodes
+                }
                 walkExpression(lam.body, table);
                 markCaptured(lam.body, table);
                 table.leaveScope();
@@ -157,6 +153,7 @@ public final class SymbolTableBuilder {
             table.leaveScope();
 
         } else if (node instanceof ELNode.COND cond) {
+            walkExpression(cond.cond, table);
             table.enterScope("if-body");
             walkExpression(cond.left, table);
             table.leaveScope();
@@ -262,8 +259,13 @@ public final class SymbolTableBuilder {
 
     private static void collectPatternBindings(ELNode pat, SymbolTable table) {
         if (pat instanceof ELNode.DEFINE def) {
-            if (!"_".equals(def.id) && table.currentScope().get(def.id) == null)
-                table.define(def.id);
+            if (!"_".equals(def.id) && table.currentScope().get(def.id) == null) {
+                SymbolTable.SymbolInfo si = table.define(def.id);
+                def.symbol = si;  // annotate pattern variable DEFINE
+            } else if (!"_".equals(def.id)) {
+                // Already defined in this scope (OR duplicate) — link to existing
+                def.symbol = table.currentScope().get(def.id);
+            }
         } else if (pat instanceof ELNode.TUPLE t) {
             for (ELNode e : t.elems)
                 collectPatternBindings(e, table);
