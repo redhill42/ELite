@@ -26,6 +26,9 @@ public final class SymbolTable {
         public int funcPoolIdx = -1;       // constant pool index of the IRFunction
         /** For function symbols: per-parameter flags (PARAM_LAZY, etc.). */
         public int[] paramFlags;
+        /** Max pre-allocated slot index in this symbol's scope. Temp vars
+         *  in IRBuilder start from maxSlot + 1 to avoid collisions. */
+        public int maxSlot = -1;
 
         SymbolInfo(String name) {
             this.originalName = name;
@@ -55,6 +58,8 @@ public final class SymbolTable {
         final Map<String, SymbolInfo> symbols = new LinkedHashMap<>();
         int nextSlot;        // next slot to allocate within this scope
         int slotBase;        // offset: actual slot = slotBase + localSlot
+        /** Max slot index used across this scope and all nested sub-scopes. */
+        int maxSlotUsed = -1;
 
         Scope(String label, int depth, int slotBase) {
             this.label = label;
@@ -80,6 +85,8 @@ public final class SymbolTable {
     private final Deque<Scope> stack = new ArrayDeque<>();
     private final List<Scope> allScopes = new ArrayList<>(); // retained for debugging
     private int renameCounter;
+    /** Highest slot index ever allocated by {@link #define}. */
+    int maxSlotAllocated = -1;
 
     /** Current scope depth (0 = top-level/outermost). */
     public int depth() { return stack.size(); }
@@ -104,9 +111,14 @@ public final class SymbolTable {
         return enterScope(label, false);
     }
 
-    /** Pop and discard the top scope. */
+    /** Pop and discard the top scope. Propagates maxSlotUsed to parent. */
     public Scope leaveScope() {
-        return stack.pop();
+        Scope child = stack.pop();
+        if (!stack.isEmpty()) {
+            Scope parent = stack.peek();
+            parent.maxSlotUsed = Math.max(parent.maxSlotUsed, child.maxSlotUsed);
+        }
+        return child;
     }
 
     /** Current (innermost) scope. */
@@ -132,6 +144,8 @@ public final class SymbolTable {
         // On leaveScope, the parent's counter is UNCHANGED, so sibling
         // scopes reuse the same slot range.
         info.slot = current.nextSlot++;
+        current.maxSlotUsed = Math.max(current.maxSlotUsed, info.slot);
+        maxSlotAllocated = Math.max(maxSlotAllocated, info.slot);
 
         // Check if this name exists in any outer scope
         boolean shadowed = false;

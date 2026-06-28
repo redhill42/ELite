@@ -1677,13 +1677,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.FOREACH node) {
-        // Pre-reserve slots for DEFINEs in the loop body to prevent temp
-        // vars (allocated before compiling the body) from colliding with
-        // pre-allocated symbol slots.
-        if (true) {
-            int maxSlot = maxPreallocSlot(node.body);
-            reserveSlots(maxSlot);
-        }
         if (node.range instanceof ELNode.RANGE r) {
             if (r.isConstant())
                 buildConstantRangedFor(node.var, node.index, r, node.body);
@@ -1692,25 +1685,6 @@ public class IRBuilder extends ELNode.Visitor {
         } else {
             buildIterateFor(node);
         }
-    }
-
-    /** Find the maximum pre-allocated slot in a subtree. */
-    private int maxPreallocSlot(ELNode node) {
-        if (node == null) return -1;
-        int[] maxSlot = {-1};
-        node.accept(new DefaultVisitor() {
-            public void visit(ELNode.DEFINE e) {
-                if (e.symbol instanceof SymbolTable.SymbolInfo si)
-                    maxSlot[0] = Math.max(maxSlot[0], si.slot);
-                scan(e.expr);
-            }
-            // Don't descend into nested lambdas (separate slot space)
-            public void visit(ELNode.LAMBDA e) {}
-            public void visit(ELNode.FOREACH e) {}
-            public void visit(ELNode.FOR e) {}
-            public void visit(ELNode.MATCH e) {}
-        });
-        return maxSlot[0];
     }
 
     private void buildConstantRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
@@ -2096,6 +2070,18 @@ public class IRBuilder extends ELNode.Visitor {
                 }
             }
         }
+
+        // Reserve slots for all pre-allocated variables in this lambda
+        // scope.  Temp vars allocated via ensureVar will then start
+        // above the max pre-allocated slot, avoiding collisions.
+        int maxSlot = -1;
+        for (ELNode.DEFINE var : node.vars) {
+            if (var.symbol instanceof SymbolTable.SymbolInfo si && si.maxSlot >= 0) {
+                maxSlot = si.maxSlot;
+                break;
+            }
+        }
+        nested.reserveSlots(maxSlot);
 
         // Build the lambda body in its own function scope so that
         // functions defined inside are registered locally and don't
@@ -3134,6 +3120,16 @@ public class IRBuilder extends ELNode.Visitor {
         IRBuilder b = new IRBuilder(elctx, symTable);
         if (file != null)
             b.setFile(file);
+
+        // Reserve slots for all pre-allocated program-level variables.
+        // After this, ensureVar will allocate temp vars above the max slot.
+        int progMaxSlot = -1;
+        for (ELNode def : defs) {
+            if (def.symbol instanceof SymbolTable.SymbolInfo si && si.maxSlot >= 0) {
+                progMaxSlot = Math.max(progMaxSlot, si.maxSlot);
+            }
+        }
+        b.reserveSlots(progMaxSlot);
 
         // Compile definitions for forward declaration.
         for (ELNode def : defs) {

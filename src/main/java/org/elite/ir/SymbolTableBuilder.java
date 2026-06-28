@@ -32,6 +32,12 @@ public final class SymbolTableBuilder {
         for (ELNode exp : program.getExpressions())
             exp.accept(pass1);
 
+        // Record max slot for program scope (never formally left — read
+        // from the scope's maxSlotUsed which includes all nested scopes).
+        int programMaxSlot = table.currentScope().maxSlotUsed;
+        for (SymbolTable.SymbolInfo si : table.currentScope().entries())
+            si.maxSlot = programMaxSlot;
+
         // ── Pass 2: thunk-aware capture analysis ──
         Pass2Visitor pass2 = new Pass2Visitor(table);
         for (ELNode def : program.getDefinitions())
@@ -116,7 +122,17 @@ public final class SymbolTableBuilder {
             // After walking the lambda body, determine which variables
             // from outer scopes are captured by this lambda.
             markCapturedIn(table, e.body, new HashSet<>());
-            table.leaveScope();
+
+            // Record max slot for this lambda scope (including nested
+            // control-flow scopes) so IRBuilder can reserve space and
+            // allocate temp vars above pre-allocated slots.
+            SymbolTable.Scope lambdaScope = table.leaveScope();
+            int maxSlot = lambdaScope.maxSlotUsed;
+            if (maxSlot >= 0) {
+                for (SymbolTable.SymbolInfo si : lambdaScope.entries()) {
+                    si.maxSlot = maxSlot;
+                }
+            }
         }
 
         public void visit(ELNode.CLASSDEF e) {
