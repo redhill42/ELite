@@ -41,6 +41,7 @@ import org.elite.ir.IRBytecodeCompiler;
 import org.elite.ir.IRFunction;
 import org.elite.ir.IRInterpreter;
 import org.elite.ir.CompilationError;
+import org.elite.ir.SymbolTable;
 import org.elite.ir.SymbolTableBuilder;
 import org.elite.util.Utils;
 import static org.elite.resources.Resources.*;
@@ -155,6 +156,14 @@ public class ELProgram implements Serializable
             // context is used by compilation and execution.
             importExternal(elctx);
 
+            // Build symbol table (Phase 1) when variable renaming is enabled.
+            // The table is shared with IRBuilder (Phase 2) so it can read
+            // slot/captured info from node.symbol annotations.
+            SymbolTable symTable = null;
+            if (RENAME_VARIABLES) {
+                symTable = SymbolTableBuilder.build(this);
+            }
+
             // Execute statements using selected evaluation strategy
             switch (OPT_LEVEL) {
             case 0:
@@ -165,26 +174,20 @@ public class ELProgram implements Serializable
                 // specialization skipped). The IR interpreter handles TRAMPOLINE
                 // opcodes inline via AST evaluation, so there is no need for a
                 // full-program fallback.
-                if (RENAME_VARIABLES) {
-                    SymbolTableBuilder.build(this);
-                }
-                IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
+                IRFunction irFn = IRBuilder.compile(elctx, this, false,
+                    frame.getFileName(), symTable);
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 2: {
-                if (RENAME_VARIABLES) {
-                    SymbolTableBuilder.build(this);
-                }
-                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
+                IRFunction irFn = IRBuilder.compile(elctx, this, true,
+                    frame.getFileName(), symTable);
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 3: default: {
-                if (RENAME_VARIABLES) {
-                   SymbolTableBuilder.build(this);
-                }
-                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
+                IRFunction irFn = IRBuilder.compile(elctx, this, true,
+                    frame.getFileName(), symTable);
                 try {
                     IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
                     return cf.execute(elctx, null);

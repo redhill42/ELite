@@ -67,9 +67,14 @@ public class IRBuilder extends ELNode.Visitor {
     int nextBlockId = 1;  // 0 is the initial block
 
     // ── Symbol table ──
+    /** Pre-built symbol table (Phase 1); null when RENAME_VARIABLES is off. */
+    SymbolTable symTable;
     private final Map<String, Integer> varIndex = new LinkedHashMap<>();
     private final List<String> varNames = new ArrayList<>();
     private final List<Integer> paramFlags = new ArrayList<>(); // per-var flags
+
+    /** When true, read slot/captured info from node.symbol instead of varIndex/isCaptured. */
+    boolean useSymbolTable() { return symTable != null; }
 
     // ── Closure capture ──
     private final IRBuilder parent; // enclosing scope (null for top-level)
@@ -123,11 +128,25 @@ public class IRBuilder extends ELNode.Visitor {
     private final Deque<Map<String, Integer>> savedVarBindings = new ArrayDeque<>();
 
     private void enterControlScope() {
+        if (useSymbolTable()) {
+            // Save a snapshot of current varIndex keys so leaveControlScope
+            // can remove entries added inside this scope (loop vars, temp vars).
+            Map<String, Integer> snap = new LinkedHashMap<>();
+            for (Map.Entry<String, Integer> e : varIndex.entrySet())
+                snap.put(e.getKey(), e.getValue());
+            savedVarBindings.push(snap);
+            return;
+        }
         savedVarBindings.push(new LinkedHashMap<>());
     }
 
     private void leaveControlScope() {
         Map<String, Integer> saved = savedVarBindings.pop();
+        if (useSymbolTable()) {
+            // Remove entries that weren't in the snapshot.
+            varIndex.keySet().removeIf(k -> !saved.containsKey(k));
+            return;
+        }
         for (Map.Entry<String, Integer> e : saved.entrySet()) {
             if (e.getValue() == null) {
                 varIndex.remove(e.getKey());
@@ -168,6 +187,7 @@ public class IRBuilder extends ELNode.Visitor {
         this.current = new IREmitter();
         this.currentFile = parent.currentFile;
         this.lambdaName = parent.lambdaName;
+        this.symTable = parent.symTable;          // share symbol table
 
         // Share constants with parent so pool indices are consistent
         this.constants = parent.constants;
@@ -335,6 +355,20 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Identifiers ──
     public void visit(ELNode.IDENT node) {
+        // When symbol table is available, use pre-computed slot/captured info.
+        // The node.id has already been renamed (e.g. n → n$1) by Phase 1.
+        if (node.symbol instanceof SymbolTable.SymbolInfo si) {
+            if (si.captured) {
+                int nameIdx = putConstant(node.id);
+                current.emitPushGlobal(nameIdx);
+            } else {
+                current.emitPushVar(si.slot);
+            }
+            return;
+        }
+
+        // ── Legacy path (no symbol table) ──
+
         // 1) Captured variable: must go through evaluation context
         //    (both in the enclosing scope and inside closures).
         if (isCaptured.contains(node.id)) {
@@ -1497,6 +1531,61 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
+            // ── Symbol-table-aware path ──
+            if (useSymbolTable() && node.symbol instanceof SymbolTable.SymbolInfo si) {
+                SymbolTable.SymbolInfo si2 = (SymbolTable.SymbolInfo) node.symbol;
+
+                // CLASS nodes (from import): push the raw Class constant
+                if (node.expr instanceof ELNode.CLASS clsNode) {
+                    Class<?> cls = resolveClassAtCompileTime(clsNode.name);
+                    if (cls != null) {
+                        emitPushConst(K_NONE, cls);
+                    } else {
+                        buildTrampoline(node);
+                        return;
+                    }
+                } else {
+                    // Detect self-referential definitions (e.g. define xs = [1 : &f(xs)])
+                    // The symbol table may not catch these because the reference is
+                    // inside a thunk — the pre-pass walks the thunk but the variable
+                    // being defined isn't in scope yet during the pre-pass.
+                    if (!si2.captured && hasSelfReference(node.expr, node.id)) {
+                        si2.captured = true;
+                    }
+
+                    build(node.expr);
+                }
+
+                // Storage: use pre-allocated slot and captured flag.
+                boolean isNamedLambda = node.expr instanceof ELNode.LAMBDA lam &&
+                                        lam.name != null;
+
+                if (si2.captured) {
+                    // Captured by inner closure: store in evalContext so
+                    // closures see a consistent binding.
+                    isCaptured.add(node.id);  // keep legacy set in sync
+                    if (!isNamedLambda) {
+                        int nameIdx = putConstant(node.id);
+                        current.emitDefineGlobal(nameIdx);
+                    }
+                }
+
+                // Always store locally for fast access within this function.
+                registerSlot(node.id, si2.slot, si2.flags);
+                current.emitStoreVar(si2.slot);
+
+                // Top-level variables need global persistence across eval calls.
+                if (parent == null && !isNamedLambda && !si2.captured) {
+                    int nameIdx = putConstant(node.id);
+                    current.emitDefineGlobal(nameIdx);
+                    globalSlots.add(si2.slot);
+                }
+
+                return;
+            }
+
+            // ── Legacy path (no symbol table) ──
+
             // CLASS nodes (from import) produce DataClass wrapping a
             // Java Class. Resolve at compile time using the import context
             // and push the raw java.lang.Class directly. A raw Class is
@@ -1603,10 +1692,43 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private int defineLocalVar(String name) {
+        if (useSymbolTable()) {
+            // Slots are pre-allocated — no dynamic shadowing needed.
+            // If the name is already registered (via visit(DEFINE)), return
+            // its slot; otherwise allocate a fresh temp slot.
+            Integer existing = varIndex.get(name);
+            if (existing != null)
+                return existing;
+            return ensureVar(name);
+        }
         assert !savedVarBindings.isEmpty();
         Map<String, Integer> saved = savedVarBindings.peek();
         if (!saved.containsKey(name))
             saved.put(name, varIndex.remove(name));
+        return ensureVar(name);
+    }
+
+    /** Like defineLocalVar but uses pre-allocated slot from the DEFINE node's symbol. */
+    private int defineVarFromSymbol(ELNode.DEFINE def) {
+        if (useSymbolTable() && def.symbol instanceof SymbolTable.SymbolInfo si) {
+            return registerSlot(def.id, si.slot, si.flags);
+        }
+        return defineLocalVar(def.id);
+    }
+
+    /**
+     * Reserve space in varNames up to (and including) the given slot index.
+     * Temp vars allocated after this call will start above the reserved range.
+     */
+    private void reserveSlots(int maxSlot) {
+        while (varNames.size() <= maxSlot) {
+            varNames.add(null);
+            paramFlags.add(0);
+        }
+    }
+
+    /** Allocate a temp var slot guaranteed not to collide with pre-allocated symbols. */
+    private int ensureTempVar(String name) {
         return ensureVar(name);
     }
 
@@ -1748,6 +1870,13 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.FOREACH node) {
+        // Pre-reserve slots for DEFINEs in the loop body to prevent temp
+        // vars (allocated before compiling the body) from colliding with
+        // pre-allocated symbol slots.
+        if (useSymbolTable()) {
+            int maxSlot = maxPreallocSlot(node.body);
+            reserveSlots(maxSlot);
+        }
         if (node.range instanceof ELNode.RANGE r) {
             if (r.isConstant())
                 buildConstantRangedFor(node.var, node.index, r, node.body);
@@ -1756,6 +1885,25 @@ public class IRBuilder extends ELNode.Visitor {
         } else {
             buildIterateFor(node);
         }
+    }
+
+    /** Find the maximum pre-allocated slot in a subtree. */
+    private int maxPreallocSlot(ELNode node) {
+        if (node == null) return -1;
+        int[] maxSlot = {-1};
+        node.accept(new DefaultVisitor() {
+            public void visit(ELNode.DEFINE e) {
+                if (e.symbol instanceof SymbolTable.SymbolInfo si)
+                    maxSlot[0] = Math.max(maxSlot[0], si.slot);
+                scan(e.expr);
+            }
+            // Don't descend into nested lambdas (separate slot space)
+            public void visit(ELNode.LAMBDA e) {}
+            public void visit(ELNode.FOREACH e) {}
+            public void visit(ELNode.FOR e) {}
+            public void visit(ELNode.MATCH e) {}
+        });
+        return maxSlot[0];
     }
 
     private void buildConstantRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
@@ -1780,8 +1928,10 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         enterControlScope();
-        int idxIdx = defineLocalVar(index != null ? index.id : Parser.tempvar());
-        int varIdx = defineLocalVar(var.id);
+        // Register loop variable first to claim its pre-allocated slot,
+        // then allocate temp vars after it to avoid slot collisions.
+        int varIdx = defineVarFromSymbol(var);
+        int idxIdx = index != null ? defineVarFromSymbol(index) : defineLocalVar(Parser.tempvar());
 
         emitPushConst(T_LONG, 0);
         current.emitStoreVar(idxIdx);
@@ -1842,8 +1992,9 @@ public class IRBuilder extends ELNode.Visitor {
     private void buildDynamicRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
                                        ELNode.RANGE range, ELNode body) {
         enterControlScope();
-        int idxIdx = defineLocalVar(index != null ? index.id : Parser.tempvar());
-        int varIdx = defineLocalVar(var.id);
+        // Register loop variable first to claim its pre-allocated slot.
+        int varIdx = defineVarFromSymbol(var);
+        int idxIdx = index != null ? defineVarFromSymbol(index) : defineLocalVar(Parser.tempvar());
         int stepIdx = -1;
         int countIdx = -1;
 
@@ -1943,16 +2094,16 @@ public class IRBuilder extends ELNode.Visitor {
         enterControlScope();;
         loopStack.push(new LoopTargets(header, exit));
 
-        int varIdx = defineLocalVar(node.var.id);
-        int iterIdx = defineLocalVar(Parser.tempvar());
+        // Register loop variable first to claim its pre-allocated slot.
+        int varIdx = defineVarFromSymbol(node.var);
         int idxIdx = -1;
-
         if (node.index != null) {
-            idxIdx = defineLocalVar(node.index.id);
+            idxIdx = defineVarFromSymbol(node.index);
             emitPushConst(T_LONG, -1);
             current.emitStoreVar(idxIdx);
             current.emitPop();
         }
+        int iterIdx = defineLocalVar(Parser.tempvar());
 
         build(node.range);
         emitInvokeStatic(Runtime.class, "getIterator", Object.class);
@@ -2109,7 +2260,12 @@ public class IRBuilder extends ELNode.Visitor {
         for (ELNode.DEFINE var : node.vars) {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
             if (!var.immediate) flags |= IRFunction.PARAM_LAZY;
-            nested.ensureVar(var.id, flags);
+            if (useSymbolTable() && var.symbol instanceof SymbolTable.SymbolInfo si) {
+                if (si.captured) flags |= IRFunction.PARAM_CAPTURED;
+                nested.registerSlot(var.id, si.slot, flags);
+            } else {
+                nested.ensureVar(var.id, flags);
+            }
         }
 
         // Pre-scan the body for free variable references that the normal
@@ -2199,6 +2355,11 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
+    /**
+     * Compile a lambda using the pre-built symbol table.  Params use
+     * pre-allocated slots from node.symbol; capture info is read from
+     * node.symbol.captured instead of running scope analysis.
+     */
     /**
      * Compute which variables this lambda captures from the enclosing scope
      * and whether they are mutated. Uses ScopeAnalysis when available,
@@ -2604,8 +2765,14 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPushVar(slot);
             current.emitDynEq();
         } else {
-            // First occurrence → bind to new local variable
-            int slot = ensureVar(d.id);
+            // First occurrence → bind to new local variable.
+            // Use pre-allocated slot from symbol table when available.
+            int slot;
+            if (useSymbolTable() && d.symbol instanceof SymbolTable.SymbolInfo si) {
+                slot = registerSlot(d.id, si.slot, si.flags);
+            } else {
+                slot = ensureVar(d.id);
+            }
             current.emitStoreVar(slot);
             current.emitDefineGlobal(putConstant(d.id));
             current.emitPop();  // discard dup from STORE_VAR
@@ -2694,6 +2861,22 @@ public class IRBuilder extends ELNode.Visitor {
         paramFlags.add(flags);
         varIndex.put(name, idx);
         return idx;
+    }
+
+    /**
+     * Register a pre-allocated slot (from SymbolTable) in the local
+     * varNames/paramFlags/varIndex structures.  The slot index is used
+     * as-is; arrays are padded if necessary.
+     */
+    private int registerSlot(String name, int slot, int flags) {
+        while (varNames.size() <= slot) {
+            varNames.add(null);
+            paramFlags.add(0);
+        }
+        varNames.set(slot, name);
+        paramFlags.set(slot, flags);
+        varIndex.put(name, slot);
+        return slot;
     }
 
     private int putConstant(Object value) {
@@ -3148,26 +3331,40 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public static IRFunction compile(ELProgram program) {
-        return compile(ELEngine.createELContext(), program, false, null);
+        return compile(ELEngine.createELContext(), program, false, null, null);
     }
 
     public static IRFunction compile(ELContext elctx, ELProgram program,
                                      boolean optimize, String file) {
+        return compile(elctx, program, optimize, file, null);
+    }
+
+    /**
+     * Compile a full program with optional symbol table (Phase 1 analysis).
+     * When symTable is non-null, the builder reads slot/captured info
+     * from node.symbol annotations instead of allocating dynamically.
+     */
+    public static IRFunction compile(ELContext elctx, ELProgram program,
+                                     boolean optimize, String file,
+                                     SymbolTable symTable) {
         List<ELNode> defs = program.getDefinitions();
         List<ELNode> exps = program.getExpressions();
 
         clearKnownFunctions();
         IRBytecodeCompiler.resetState();  // fresh ELContext + funcRegistry
 
-        // Run scope analysis before building IR to determine which variables
-        // are captured by closures and need to go through the evaluation
-        // context.
-        ScopeAnalyzer.ScopeAnalysis analysis =
-            ScopeAnalyzer.analyze(defs, exps, null);
         IRBuilder b = new IRBuilder(elctx);
-        b.analyze(analysis);
+        b.symTable = symTable;
         if (file != null)
             b.setFile(file);
+
+        // When symbol table is available, skip the old scope analysis —
+        // capture/mutable info is already on node.symbol annotations.
+        if (symTable == null) {
+            ScopeAnalyzer.ScopeAnalysis analysis =
+                ScopeAnalyzer.analyze(defs, exps, null);
+            b.analyze(analysis);
+        }
 
         // Compile definitions for forward declaration.
         for (ELNode def : defs) {
