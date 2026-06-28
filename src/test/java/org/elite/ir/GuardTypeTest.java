@@ -2,17 +2,22 @@ package org.elite.ir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import org.elite.eval.ELEngine;
+import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 
 class GuardTypeTest {
 
     static IRFunction buildTypedLambda(String name, String[] params,
                                        int[] flags, String body) {
-        IRBuilder b = new IRBuilder();
+        ELNode bodyNode = Parser.parseExpression(body);
+        SymbolTable st = SymbolTableBuilder.build(bodyNode);
+        IRBuilder b = new IRBuilder(
+            org.elite.eval.ELEngine.createELContext(), st);
         b.lambdaName = name;
         b.inTailPosition = true;
         for (int i = 0; i < params.length; i++) b.ensureVar(params[i], flags[i]);
-        b.build(Parser.parseExpression(body));
+        b.build(bodyNode);
         if (!IRBuilder.endsWithReturn(b)) b.current.emitReturnVoid();
         return b.finish(name != null ? name : "lambda", params.length);
     }

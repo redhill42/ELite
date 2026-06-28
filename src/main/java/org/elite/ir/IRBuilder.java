@@ -123,11 +123,6 @@ public class IRBuilder extends ELNode.Visitor {
     String lambdaName = null;
     boolean inTailPosition = false;
 
-    /** Create a builder with auto-built symbol table (for tests / ad-hoc use). */
-    IRBuilder() {
-        this(ELEngine.createELContext(), new SymbolTable());
-    }
-
     /**
      * Create a top-level builder.  The symbol table must already be built
      * (Phase 1) so that AST nodes carry slot/captured annotations.
@@ -172,14 +167,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // ============ MAIN DISPATCH ============
-
-    /** @deprecated Capture analysis is now handled by the pre-pass (SymbolTableBuilder). */
-    @Deprecated
-    public void analyze(ScopeAnalyzer.ScopeAnalysis analysis) {
-        if (analysis != null) {
-            capturedNames.addAll(analysis.capturedByInner);
-        }
-    }
 
     void build(ELNode node) {
         if (node == null) {
@@ -1468,52 +1455,13 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
-            // ── Symbol-table-aware path ──
-            if (node.symbol == null) {
-                // Ad-hoc compilation without pre-pass: fall back to
-                // dynamic slot allocation via ensureVar.
-                if (node.expr instanceof ELNode.CLASS clsNode) {
-                    Class<?> cls = resolveClassAtCompileTime(clsNode.name);
-                    if (cls != null) {
-                        emitPushConst(K_NONE, cls);
-                        int idx = ensureVar(node.id);
-                        current.emitStoreVar(idx);
-                        if (parent == null) {
-                            int nameIdx = putConstant(node.id);
-                            current.emitDefineGlobal(nameIdx);
-                        }
-                    } else {
-                        buildTrampoline(node);
-                    }
-                    return;
-                }
-                if (!capturedNames.contains(node.id)
-                    && hasSelfReference(node.expr, node.id)) {
-                    capturedNames.add(node.id);
-                }
-                build(node.expr);
-                boolean isNamedLambda = node.expr instanceof ELNode.LAMBDA lam
-                                        && lam.name != null;
-                if (capturedNames.contains(node.id)) {
-                    if (!isNamedLambda) {
-                        int nameIdx = putConstant(node.id);
-                        current.emitDefineGlobal(nameIdx);
-                    }
-                } else if (parent != null) {
-                    int idx = ensureVar(node.id);
-                    current.emitStoreVar(idx);
-                } else {
-                    int idx = ensureVar(node.id);
-                    current.emitStoreVar(idx);
-                    if (!isNamedLambda) {
-                        int nameIdx = putConstant(node.id);
-                        current.emitDefineGlobal(nameIdx);
-                    }
-                }
+            // All DEFINE nodes should carry a symbol annotation from the Phase 1
+            // pre-pass.  If one is missing (e.g. dynamically generated node),
+            // fall through to buildTrampoline.
+            if (!(node.symbol instanceof SymbolTable.SymbolInfo si2)) {
+                buildTrampoline(node);
                 return;
             }
-
-            SymbolTable.SymbolInfo si2 = (SymbolTable.SymbolInfo) node.symbol;
 
             // CLASS nodes (from import): push the raw Class constant
             if (node.expr instanceof ELNode.CLASS clsNode) {
@@ -2137,36 +2085,14 @@ public class IRBuilder extends ELNode.Visitor {
         captureFreeVariables(nested, node);
 
         // Determine which local variables are captured by inner closures.
-        // With a pre-pass (Phase 1), this info is already on node.symbol.captured.
-        // Without it (ad-hoc compilation), fall back to the old ScopeAnalyzer.
-        boolean hasSymbolInfo = node.vars.length > 0
-            && node.vars[0].symbol instanceof SymbolTable.SymbolInfo;
-
-        if (hasSymbolInfo) {
-            // Read capture info from the pre-pass symbol table.
-            for (ELNode.DEFINE var : node.vars) {
-                if (var.symbol instanceof SymbolTable.SymbolInfo si && si.captured) {
-                    nested.capturedNames.add(var.id);
-                    Integer idx = nested.varIndex.get(var.id);
-                    if (idx != null && idx < nested.paramFlags.size()) {
-                        int flags = nested.paramFlags.get(idx);
-                        nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
-                    }
-                }
-            }
-        } else {
-            // Ad-hoc fallback: run scope analysis on the fly.
-            ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
-                node, Set.of(), new HashSet<>());
-            nested.capturedNames.addAll(lamAnaly.capturedByInner);
-
-            for (ELNode.DEFINE var : node.vars) {
-                if (lamAnaly.capturedByInner.contains(var.id)) {
-                    Integer idx = nested.varIndex.get(var.id);
-                    if (idx != null && idx < nested.paramFlags.size()) {
-                        int flags = nested.paramFlags.get(idx);
-                        nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
-                    }
+        // This info is already on node.symbol.captured from the Phase 1 pre-pass.
+        for (ELNode.DEFINE var : node.vars) {
+            if (var.symbol instanceof SymbolTable.SymbolInfo si && si.captured) {
+                nested.capturedNames.add(var.id);
+                Integer idx = nested.varIndex.get(var.id);
+                if (idx != null && idx < nested.paramFlags.size()) {
+                    int flags = nested.paramFlags.get(idx);
+                    nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
                 }
             }
         }
