@@ -103,8 +103,7 @@ public class TreeTransformer extends ELNode.Visitor
                                    transform(e.id),
                                    transform(e.type),
                                    (ELNode.METASET)transform(e.meta),
-                                   transform(e.expr),
-                                   e.immediate);
+                                   transform(e.expr));
     }
 
     public void visit(ELNode.CLASSDEF e) {

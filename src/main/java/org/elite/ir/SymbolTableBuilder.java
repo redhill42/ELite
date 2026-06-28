@@ -6,44 +6,30 @@ import org.elite.eval.ELProgram;
 import org.elite.parser.*;
 
 /**
- * Two-pass analysis: walks an ELite program's AST to build a
- * {@link SymbolTable} with scope nesting, capture relationships,
- * and function prototypes.
- *
- * <p>Pass 1 — scope analysis, variable renaming, function prototypes.
- * <p>Pass 2 — thunk-aware capture analysis: when a known function is
- * called with lazy-param arguments, those argument expressions are
- * treated as thunk bodies and their free-variable captures are marked.
+ * Walks an ELite program's AST and builds a {@link SymbolTable}
+ * recording all variable/function/class definitions with their
+ * scope nesting and capture relationships.
  */
 public final class SymbolTableBuilder {
     private SymbolTableBuilder() {}
 
     /**
-     * Build a symbol table for the given program (two passes).
+     * Build a symbol table for the given program.
      */
     public static SymbolTable build(ELProgram program) {
         SymbolTable table = new SymbolTable();
+        BuilderVisitor visitor = new BuilderVisitor(table);
 
-        // ── Pass 1: scope analysis + rename + function prototypes ──
-        Pass1Visitor pass1 = new Pass1Visitor(table);
         table.enterScope("program");
         for (ELNode def : program.getDefinitions())
-            def.accept(pass1);
+            def.accept(visitor);
         for (ELNode exp : program.getExpressions())
-            exp.accept(pass1);
+            exp.accept(visitor);
 
-        // Record max slot for program scope (never formally left — read
-        // from the scope's maxSlotUsed which includes all nested scopes).
+        // Record max slot for program scope.
         int programMaxSlot = table.currentScope().maxSlotUsed;
         for (SymbolTable.SymbolInfo si : table.currentScope().entries())
             si.maxSlot = programMaxSlot;
-
-        // ── Pass 2: thunk-aware capture analysis ──
-        Pass2Visitor pass2 = new Pass2Visitor(table);
-        for (ELNode def : program.getDefinitions())
-            def.accept(pass2);
-        for (ELNode exp : program.getExpressions())
-            exp.accept(pass2);
 
         return table;
     }
@@ -51,12 +37,9 @@ public final class SymbolTableBuilder {
     /** Build a symbol table for a single expression or subtree. */
     public static SymbolTable build(ELNode node) {
         SymbolTable table = new SymbolTable();
-        Pass1Visitor pass1 = new Pass1Visitor(table);
+        BuilderVisitor visitor = new BuilderVisitor(table);
         table.enterScope("expr");
-        node.accept(pass1);
-        // Pass 2 for single nodes
-        Pass2Visitor pass2 = new Pass2Visitor(table);
-        node.accept(pass2);
+        node.accept(visitor);
         return table;
     }
 
@@ -65,33 +48,23 @@ public final class SymbolTableBuilder {
      * After this pass, all DEFINE/IDENT nodes carry symbol annotations,
      * and function symbols have {@code paramFlags} set.
      */
-    static class Pass1Visitor extends DefaultVisitor {
+    static class BuilderVisitor extends DefaultVisitor {
         final SymbolTable table;
 
-        Pass1Visitor(SymbolTable table) {
+        BuilderVisitor(SymbolTable table) {
             this.table = table;
         }
 
         public void visit(ELNode.DEFINE e) {
             var info = table.define(e.id);
+            if (e.expr instanceof ELNode.LAMBDA)
+                info.funcPoolIdx = -2; // pending allocation
             e.symbol = info;
             e.id = info.mangledName;
-
-            if (e.expr instanceof ELNode.LAMBDA) {
-                var fnInfo = table.lookup(e.id);
-                if (fnInfo != null)
-                    fnInfo.funcPoolIdx = -2; // pending allocation
-            }
-
             scan(e.expr);
         }
 
         public void visit(ELNode.LAMBDA e) {
-            if (e instanceof ELNode.BLOCK) {
-                // Don't enter nested blocks (they share the parent scope in ELite)
-                return;
-            }
-
             table.enterScope(e.name != null ? "fn:"+e.name : "lambda", true);
             for (ELNode.DEFINE param : e.vars) {
                 if (!"_".equals(param.id)) {
@@ -102,26 +75,9 @@ public final class SymbolTableBuilder {
             }
             scan(e.body);
 
-            // Compute param flags for this function's prototype.
-            // Stored on the function's SymbolInfo (looked up from the
-            // enclosing scope) so Pass 2 can identify lazy params.
-            if (e.name != null) {
-                var fnInfo = table.lookup(e.name);
-                if (fnInfo != null) {
-                    int[] pFlags = new int[e.vars.length];
-                    for (int i = 0; i < e.vars.length; i++) {
-                        if (e.vars[i].type != null)
-                            pFlags[i] |= IRFunction.PARAM_EXPLICIT_TYPE;
-                        if (!e.vars[i].immediate)
-                            pFlags[i] |= IRFunction.PARAM_LAZY;
-                    }
-                    fnInfo.paramFlags = pFlags;
-                }
-            }
-
             // After walking the lambda body, determine which variables
             // from outer scopes are captured by this lambda.
-            markCapturedIn(table, e.body, new HashSet<>());
+            markCaptured(e.body, new HashSet<>());
 
             // Record max slot for this lambda scope (including nested
             // control-flow scopes) so IRBuilder can reserve space and
@@ -151,7 +107,7 @@ public final class SymbolTableBuilder {
         }
 
         public void visit(ELNode.WHILE e) {
-//            scan(e.cond);
+            scan(e.cond);
             table.enterScope("while");
             scan(e.body);
             table.leaveScope();
@@ -188,6 +144,40 @@ public final class SymbolTableBuilder {
             }
         }
 
+        public void visit(ELNode.TRY e) {
+            table.enterScope("try");
+            scan(e.body);
+            table.leaveScope();
+            if (e.handlers != null) {
+                for (ELNode h : e.handlers) {
+                    table.enterScope("catch");
+                    scan(h);
+                    table.leaveScope();
+                }
+            }
+            if (e.finalizer != null) {
+                table.enterScope("finally");
+                scan(e.finalizer);
+                table.leaveScope();
+            }
+        }
+
+        public void visit(ELNode.CATCH e) {
+            table.enterScope("catch");
+            SymbolTable.SymbolInfo si = table.define(e.var);
+            e.symbol = si;
+            e.var = si.mangledName;
+            scan(e.body);
+            table.leaveScope();
+        }
+
+        public void visit(ELNode.SYNCHRONIZED e) {
+            scan(e.exp);
+            table.enterScope("synchronized");
+            scan(e.body);
+            table.leaveScope();
+        }
+
         public void visit(ELNode.COMPOUND e) {
             table.enterScope("compound");
             super.visit(e);
@@ -205,6 +195,37 @@ public final class SymbolTableBuilder {
                 table.leaveScope();
             }
             scan(e.deflt);
+        }
+
+        /**
+         * Walk a subtree (lambda body) and mark outer-scope variables that
+         * are captured as {@code captured=true} on their defining scope's
+         * SymbolInfo.
+         */
+        private void markCaptured(ELNode node, Set<String> excludeNames) {
+            node.accept(new DefaultVisitor() {
+                public void visit(ELNode.IDENT e) {
+                    if (excludeNames.contains(e.id))
+                        return;
+                    var info = table.lookup(e.id);
+                    if (info != null && table.isOuter(e.id)) {
+                        for (SymbolTable.Scope s : table.allScopes()) {
+                            SymbolTable.SymbolInfo si = s.get(e.id);
+                            if (si != null && si == info) {
+                                si.captured = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                public void visit(ELNode.LAMBDA e) {
+                    Set<String> nestedExcludes = new HashSet<>(excludeNames);
+                    for (ELNode.DEFINE v : e.vars)
+                        nestedExcludes.add(v.id);
+                    markCaptured(e.body, nestedExcludes);
+                }
+            });
         }
 
         /** Register pattern variable names from CASE. */
@@ -247,78 +268,6 @@ public final class SymbolTableBuilder {
             } else if (pat instanceof ELNode.NEW) {
                 // FIXME: handle data constructor
             }
-        }
-    }
-
-    // ── Shared capture-marking utility (used by Pass 1 and Pass 2) ──
-
-    /**
-     * Walk a subtree (lambda body or thunk expression) and mark
-     * outer-scope variables that are captured as {@code captured=true}
-     * on their defining scope's SymbolInfo.
-     */
-    private static void markCapturedIn(SymbolTable table, ELNode node,
-                                       Set<String> excludeNames) {
-        node.accept(new DefaultVisitor() {
-            public void visit(ELNode.IDENT e) {
-                if (excludeNames.contains(e.id))
-                    return;
-                var info = table.lookup(e.id);
-                if (info != null && table.isOuter(e.id)) {
-                    for (SymbolTable.Scope s : table.allScopes()) {
-                        SymbolTable.SymbolInfo si = s.get(e.id);
-                        if (si != null && si == info) {
-                            si.captured = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            public void visit(ELNode.LAMBDA e) {
-                Set<String> nestedExcludes = new HashSet<>(excludeNames);
-                for (ELNode.DEFINE v : e.vars)
-                    nestedExcludes.add(v.id);
-                markCapturedIn(table, e.body, nestedExcludes);
-            }
-        });
-    }
-
-    // ── Pass 2: thunk-aware capture analysis ──
-
-    /**
-     * Pass 2: walks the AST a second time, now with full knowledge of
-     * function prototypes (paramFlags).  When a call to a known function
-     * passes an argument to a lazy parameter, that argument expression
-     * is treated as a thunk body — any outer-scope variables it
-     * references are marked as captured.
-     */
-    static class Pass2Visitor extends DefaultVisitor {
-        private final SymbolTable table;
-
-        Pass2Visitor(SymbolTable table) {
-            this.table = table;
-        }
-
-        public void visit(ELNode.APPLY e) {
-            // If the target is a known function with lazy params,
-            // mark variables captured by the lazy-arg expressions.
-            if (e.right instanceof ELNode.IDENT id) {
-                var fnInfo = table.lookup(id.id);
-                if (fnInfo != null && fnInfo.paramFlags != null) {
-                    int[] pFlags = fnInfo.paramFlags;
-                    for (int i = 0; i < e.args.length && i < pFlags.length; i++) {
-                        if ((pFlags[i] & IRFunction.PARAM_LAZY) != 0) {
-                            // This arg becomes a thunk — its free vars
-                            // must be marked as captured in the enclosing scope.
-                            markCapturedIn(table, e.args[i], new HashSet<>());
-                        }
-                    }
-                }
-            }
-            // Continue scanning children (the thunk expressions themselves
-            // may contain further APPLY nodes with lazy args).
-            super.visit(e);
         }
     }
 }

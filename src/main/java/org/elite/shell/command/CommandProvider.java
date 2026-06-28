@@ -31,6 +31,8 @@ import javax.script.ScriptException;
 import org.elite.eval.ELProgram;
 import org.elite.eval.VariableMapperImpl;
 import org.elite.ir.IRPrinter;
+import org.elite.ir.SymbolTable;
+import org.elite.ir.SymbolTableBuilder;
 import org.elite.parser.ASTDumper;
 import org.elite.parser.Parser;
 import org.elite.resolver.MethodResolver;
@@ -97,7 +99,9 @@ public final class CommandProvider {
 
         Parser parser = new Parser(script);
         ELProgram program = parser.parse();
+        SymbolTable symbol = SymbolTableBuilder.build(program);
         System.out.println(ASTDumper.dump(program));
+        System.out.println(symbol.dump());
     }
 
     public static void ls(ShellContext shellContext, String args) {

@@ -595,12 +595,10 @@ public abstract class ELNode implements Serializable
                 if (var.type != null) {
                     args[i] = TypedClosure.make(env, var.type, args[i]);
                 }
-                if (var.immediate) {
-                    // force to evaluate the argument value
-                    Object value = args[i].getValue(elctx);
-                    if (value instanceof VarArgList) {
-                        ((VarArgList)value).force(elctx);
-                    }
+                // evaluate the argument value
+                Object value = args[i].getValue(elctx);
+                if (value instanceof VarArgList) {
+                    ((VarArgList)value).force(elctx);
                 }
                 env.setVariable(var.id, args[i]);
             }
@@ -867,25 +865,23 @@ public abstract class ELNode implements Serializable
         public String   type;
         public METASET  meta;
         public ELNode   expr;
-        public boolean  immediate;
 
         public transient Operator operator;
 
         public DEFINE(int pos, String id) {
-            this(pos, id, null, null, null, true);
+            this(pos, id, null, null, null);
         }
 
         public DEFINE(int pos, String id, String type, METASET meta) {
-            this(pos, id, type, meta, null, true);
+            this(pos, id, type, meta, null);
         }
 
-        public DEFINE(int pos, String id, String type, METASET meta, ELNode expr, boolean immediate) {
+        public DEFINE(int pos, String id, String type, METASET meta, ELNode expr) {
             super(Token.DEFINE, pos);
             this.id = id;
             this.type = type;
             this.meta = meta;
             this.expr = expr;
-            this.immediate = immediate;
         }
 
         public Object getValue(EvaluationContext context) {
@@ -898,10 +894,8 @@ public abstract class ELNode implements Serializable
 
             if (expr == null) {
                 closure = TypedClosure.make(context, type, null, false);
-            } else if (immediate) {
-                closure = TypedClosure.make(context, type, expr.getValue(context), false);
             } else {
-                closure = TypedClosure.make(context, type, new EvalClosure(context, expr));
+                closure = TypedClosure.make(context, type, expr.getValue(context), false);
             }
 
             if (meta != null) {
@@ -911,7 +905,7 @@ public abstract class ELNode implements Serializable
             return closure;
         }
 
-        public Class getType(EvaluationContext context) {
+        public Class<?> getType(EvaluationContext context) {
             return null;
         }
 
@@ -4865,7 +4859,7 @@ public abstract class ELNode implements Serializable
      * The catch expression.
      */
     public static class CATCH extends ELNode {
-        public final String var;
+        public String var;
         public final ELNode body;
 
         public CATCH(int pos, String var, ELNode body) {

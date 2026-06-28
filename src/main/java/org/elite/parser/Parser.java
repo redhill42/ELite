@@ -256,6 +256,10 @@ public class Parser extends Scanner
         case LAMBDA:
             return parseLambdaAbstraction(scan());
 
+        case LAZY:
+            // &(exp) is syntax sugar for (\=>exp)
+            return new ELNode.LAMBDA(scan(), filename, EMPTY_DEFS, parseTerm());
+
         case LBRACE: {
             int p = scan();
             ELNode e = parseLambdaExpressionOpt(p);
@@ -879,8 +883,7 @@ public class Parser extends Scanner
                         p, clstag, null, null,
                         new ELNode.LAMBDA(p, filename, EMPTY_DEFS,
                             new ELNode.APPLY(p, new ELNode.IDENT(p, "super"), args, keys)
-                        ),
-                        true);
+                        ));
 
                     ELNode.DEFINE[] tmp = new ELNode.DEFINE[body.length+1];
                     tmp[0] = initproc;
@@ -1552,7 +1555,7 @@ public class Parser extends Scanner
             String id = vars[i].id;
             if ("_".equals(id)) {
                 ELNode.DEFINE v = vars[i];
-                vars[i] = new ELNode.DEFINE(v.pos, tempvar(), v.type, v.meta, v.expr, v.immediate);
+                vars[i] = new ELNode.DEFINE(v.pos, tempvar(), v.type, v.meta, v.expr);
             } else {
                 for (int j = 0; j < i; j++) {
                     if (id.equals(vars[j].id)) {
@@ -1902,11 +1905,10 @@ public class Parser extends Scanner
     private ELNode.DEFINE parseClassicParameter() {
         int p = pos;
         ELNode.METASET meta = parseMetaData();
-        boolean lazy = scan(LAZY);
         String var = scanQName(); expect(IDENT);
         String type = parseTypeNameOpt();
         ELNode exp = scan(ASSIGN) ? parseExpression() : null;
-        return new ELNode.DEFINE(p, var, type, meta, exp, !lazy);
+        return new ELNode.DEFINE(p, var, type, meta, exp);
     }
 
     /**
@@ -2144,7 +2146,6 @@ public class Parser extends Scanner
             // define id=exp;
             scan();
             var.type = type;
-            var.immediate = !scan(LAZY);
             var.expr = parseExpressionStatement();
             return var;
         }
@@ -2371,7 +2372,7 @@ public class Parser extends Scanner
             ELNode stmt = new ELNode.COMPOUND(p, to_a(clinit));
             ELNode proc = new ELNode.LAMBDA(p, filename, EMPTY_DEFS, stmt);
             ELNode.METASET meta = new ELNode.METASET(p, Modifier.STATIC);
-            body.add(new ELNode.DEFINE(p, ClassDefinition.CLINIT_PROC, null, meta, proc, true));
+            body.add(new ELNode.DEFINE(p, ClassDefinition.CLINIT_PROC, null, meta, proc));
         }
 
         return to_def_a(body);
@@ -2786,7 +2787,7 @@ public class Parser extends Scanner
             return def;
         if (def.meta != null)
             meta = def.meta.adjoin(meta);
-        return new ELNode.DEFINE(def.pos, def.id, def.type, meta, def.expr, def.immediate);
+        return new ELNode.DEFINE(def.pos, def.id, def.type, meta, def.expr);
     }
 
     /**
@@ -3497,17 +3498,10 @@ public class Parser extends Scanner
             } else {
                 String type = parseTypeNameOpt();
                 ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern() : null;
-                return new ELNode.DEFINE(p, id, type, null, apat, true); // variable
+                return new ELNode.DEFINE(p, id, type, null, apat); // variable
             }
         }
 
-        case LAZY: {
-            int p = scan();
-            String id = idValue;
-            expect(IDENT);
-            String type = parseTypeNameOpt();
-            return new ELNode.DEFINE(p, id, type, null, null, false);
-        }
 
         case COLONCOLON:
             return new ELNode.CLASS(scan(), parseClassLiteral(false), null);
@@ -3909,7 +3903,7 @@ public class Parser extends Scanner
                         slots = to_sa(lst);
                     }
                     ELNode.CLASS c = new ELNode.CLASS(p, name, slots);
-                    prog.addExpression(new ELNode.DEFINE(p, id, null, null, c, true));
+                    prog.addExpression(new ELNode.DEFINE(p, id, null, null, c));
                 }
             }
             expect(SEMI);

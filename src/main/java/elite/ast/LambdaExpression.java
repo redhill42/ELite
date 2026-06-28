@@ -48,7 +48,7 @@ public class LambdaExpression extends Expression
     protected ELNode toInternal(int pos) {
         ELNode.DEFINE[] vars = new ELNode.DEFINE[parameters.length];
         for (int i = 0; i < vars.length; i++)
-            vars[i] = new ELNode.DEFINE(pos, parameters[i], null, null, null, true);
+            vars[i] = new ELNode.DEFINE(pos, parameters[i], null, null, null);
         return new ELNode.LAMBDA(pos, null, name, null, vars, false, body.getNode(pos));
     }
 

@@ -533,8 +533,7 @@ public class ClassDefinition extends AnnotatedClosure
                         c = TypedClosure.make(ctx, var.type, c);
                     if (immutable)
                         c.setModifiers(c.getModifiers() | Modifier.FINAL);
-                    if (var.immediate)
-                        c.getValue(elctx);
+                    c.getValue(elctx);
                     vmap.put(var.id, c);
                 }
 
@@ -755,11 +754,7 @@ public class ClassDefinition extends AnnotatedClosure
             for (int i = 0; matched && i < argc; i++) {
                 ELNode arg = args[i];
                 Closure c = target.get_closure(elctx, vars[i].id);
-                if (arg instanceof ELNode.DEFINE && !vars[i].immediate) {
-                    matched = ((ELNode.DEFINE)arg).bind(context, c);
-                } else {
-                    matched = ((ELNode.Pattern)arg).matches(context, c.getValue(elctx));
-                }
+                matched = ((ELNode.Pattern)arg).matches(context, c.getValue(elctx));
             }
         }
 

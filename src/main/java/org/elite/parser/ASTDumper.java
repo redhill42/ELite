@@ -154,8 +154,6 @@ public final class ASTDumper {
             sb.append(" '").append(s.value).append("'");
         } else if (node instanceof ELNode.LITERAL l) {
             sb.append(" ").append(l.value);
-        } else if (node instanceof ELNode.DEFINE def && !def.immediate) {
-            sb.append(" ").append("lazy");
         } else if (node instanceof ELNode.CONS cons && cons.delay) {
             sb.append(" ").append("delay");
         }

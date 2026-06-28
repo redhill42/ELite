@@ -40,7 +40,7 @@ public class DeclarationExpression extends Expression
     }
 
     protected ELNode toInternal(int pos) {
-        return new ELNode.DEFINE(pos, name, null, null, expression.getNode(pos), true);
+        return new ELNode.DEFINE(pos, name, null, null, expression.getNode(pos));
     }
 
     public String toString() {

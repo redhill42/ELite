@@ -20,12 +20,10 @@ public final class SymbolTable {
         public final String originalName;  // as written in source
         public String mangledName;         // renamed if shadowed
         public int slot = -1;              // IR locals[] index
-        public int flags;                  // param flags (PARAM_LAZY, etc.)
+        public int flags;                  // param flags (PARAM_EXPLICIT_TYPE, etc.)
         public boolean captured;           // captured by an inner closure?
         public IRFunction func;            // known function: the compiled IRFunction
         public int funcPoolIdx = -1;       // constant pool index of the IRFunction
-        /** For function symbols: per-parameter flags (PARAM_LAZY, etc.). */
-        public int[] paramFlags;
         /** Max pre-allocated slot index in this symbol's scope. Temp vars
          *  in IRBuilder start from maxSlot + 1 to avoid collisions. */
         public int maxSlot = -1;

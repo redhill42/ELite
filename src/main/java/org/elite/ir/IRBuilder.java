@@ -362,20 +362,10 @@ public class IRBuilder extends ELNode.Visitor {
 
             Integer funcIdx = resolveKnownFunction(id);
             if (funcIdx != null) {
-                // Direct call: check paramFlags for lazy (&) params.
-                // Lazy params get compiled as thunks (DELAY), eager as normal.
-                IRFunction targetFn = (IRFunction) constants.get(funcIdx);
-                int[] pFlags = targetFn.paramFlags();
                 boolean prev = inTailPosition;
                 inTailPosition = false;
-                for (int i = 0; i < node.args.length; i++) {
-                    if (pFlags != null && i < pFlags.length
-                        && (pFlags[i] & IRFunction.PARAM_LAZY) != 0) {
-                        buildThunk(node.args[i]);  // lazy → thunk
-                    } else {
-                        build(node.args[i]);       // eager → normal
-                    }
-                }
+                for (int i = 0; i < node.args.length; i++)
+                    build(node.args[i]);
                 inTailPosition = prev;
                 current.emitInvokeDirect(funcIdx, node.args.length);
                 return;
@@ -492,24 +482,16 @@ public class IRBuilder extends ELNode.Visitor {
 
         build(base);
 
-        // Build fixed arguments in the extra values.
+        // Build fixed arguments.
         int i = 0;
         for (; iarg < nargs; iarg++, i++) {
-            if (delayed(types[iarg], args[i]))
-                buildThunk(args[i]);
-            else
-                build(args[i]);
+            build(args[i]);
         }
 
-        // Copy variable arguments in the extra values
+        // Build variable arguments.
         if (vargs) {
-            assert types[nargs].isArray();
-            Class<?> argtype = types[nargs].getComponentType();
             for (; i < args.length; i++) {
-                if (delayed(argtype, args[i]))
-                    buildThunk(args[i]);
-                else
-                    build(args[i]);
+                build(args[i]);
             }
         }
 
@@ -519,11 +501,6 @@ public class IRBuilder extends ELNode.Visitor {
         else
             current.emitInvokeMethod(methodIdx, args.length);
         return true;
-    }
-
-    private static boolean delayed(Class<?> type, ELNode arg) {
-        return (type == ValueExpression.class || type == Closure.class) &&
-               !(arg instanceof ELNode.LAMBDA);
     }
 
     /**
@@ -2042,7 +2019,6 @@ public class IRBuilder extends ELNode.Visitor {
             nested.currentFile = node.file;
         for (ELNode.DEFINE var : node.vars) {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
-            if (!var.immediate) flags |= IRFunction.PARAM_LAZY;
             if (true && var.symbol instanceof SymbolTable.SymbolInfo si) {
                 if (si.captured) flags |= IRFunction.PARAM_CAPTURED;
                 nested.registerSlot(var.id, si.slot, flags);
