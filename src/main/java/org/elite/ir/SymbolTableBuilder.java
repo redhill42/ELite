@@ -146,30 +146,40 @@ public final class SymbolTableBuilder {
 
     /**
      * Walk the lambda body and mark outer-scope variables that are
-     * referenced (captured) by this closure.
+     * referenced (captured) by this closure.  Recurses into nested
+     * lambdas, excluding their params, so that transitive captures
+     * (e.g. list comprehensions referencing enclosing function params)
+     * are properly recorded.
      */
     private static void markCaptured(ELNode body, SymbolTable table) {
-        Set<String> seen = new HashSet<>();
+        markCapturedIn(body, table, new HashSet<>());
+    }
+
+    private static void markCapturedIn(ELNode body, SymbolTable table,
+                                       Set<String> excludeNames) {
         body.accept(new DefaultVisitor() {
             public void visit(ELNode.IDENT e) {
-                if (seen.add(e.id)) {
-                    // Check if this is a free variable from an outer scope
-                    SymbolTable.SymbolInfo info = table.lookup(e.id);
-                    if (info != null && table.isOuter(e.id)) {
-                        // Found in outer scope → mark as captured
-                        // Find the actual defining scope's entry
-                        for (SymbolTable.Scope s : table.allScopes()) {
-                            SymbolTable.SymbolInfo si = s.get(e.id);
-                            if (si != null && si == info) {
-                                si.captured = true;
-                                break;
-                            }
+                if (excludeNames.contains(e.id)) return;
+                SymbolTable.SymbolInfo info = table.lookup(e.id);
+                if (info != null && table.isOuter(e.id)) {
+                    // Find the actual defining scope's entry and mark it
+                    for (SymbolTable.Scope s : table.allScopes()) {
+                        SymbolTable.SymbolInfo si = s.get(e.id);
+                        if (si != null && si == info) {
+                            si.captured = true;
+                            break;
                         }
                     }
                 }
             }
-            // Don't recurse into nested lambdas — they handle their own captures
-            public void visit(ELNode.LAMBDA e) {}
+
+            // Recurse into nested lambdas, excluding their own params
+            public void visit(ELNode.LAMBDA e) {
+                Set<String> nestedExcludes = new HashSet<>(excludeNames);
+                for (ELNode.DEFINE v : e.vars)
+                    nestedExcludes.add(v.id);
+                markCapturedIn(e.body, table, nestedExcludes);
+            }
         });
     }
 
