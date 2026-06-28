@@ -2136,21 +2136,37 @@ public class IRBuilder extends ELNode.Visitor {
         // capturedVars and are invisible to the trampoline at runtime.
         captureFreeVariables(nested, node);
 
-        // Run scope analysis to identify which local variables are captured
-        // by inner closures. These must use STORE_GLOBAL (eval context chain)
-        // so inner closures can read and modify them via PUSH_GLOBAL/STORE_GLOBAL.
-        ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
-            node, Set.of(), new HashSet<>());
-        nested.capturedNames.addAll(lamAnaly.capturedByInner);
+        // Determine which local variables are captured by inner closures.
+        // With a pre-pass (Phase 1), this info is already on node.symbol.captured.
+        // Without it (ad-hoc compilation), fall back to the old ScopeAnalyzer.
+        boolean hasSymbolInfo = node.vars.length > 0
+            && node.vars[0].symbol instanceof SymbolTable.SymbolInfo;
 
-        // Mark captured parameters so the interpreter can sync them to
-        // evalContext at function entry (params are slot-only by default).
-        for (ELNode.DEFINE var : node.vars) {
-            if (lamAnaly.capturedByInner.contains(var.id)) {
-                Integer idx = nested.varIndex.get(var.id);
-                if (idx != null) {
-                    int flags = nested.paramFlags.get(idx);
-                    nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
+        if (hasSymbolInfo) {
+            // Read capture info from the pre-pass symbol table.
+            for (ELNode.DEFINE var : node.vars) {
+                if (var.symbol instanceof SymbolTable.SymbolInfo si && si.captured) {
+                    nested.capturedNames.add(var.id);
+                    Integer idx = nested.varIndex.get(var.id);
+                    if (idx != null && idx < nested.paramFlags.size()) {
+                        int flags = nested.paramFlags.get(idx);
+                        nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
+                    }
+                }
+            }
+        } else {
+            // Ad-hoc fallback: run scope analysis on the fly.
+            ScopeAnalyzer.ScopeAnalysis lamAnaly = ScopeAnalyzer.analyzeLambda(
+                node, Set.of(), new HashSet<>());
+            nested.capturedNames.addAll(lamAnaly.capturedByInner);
+
+            for (ELNode.DEFINE var : node.vars) {
+                if (lamAnaly.capturedByInner.contains(var.id)) {
+                    Integer idx = nested.varIndex.get(var.id);
+                    if (idx != null && idx < nested.paramFlags.size()) {
+                        int flags = nested.paramFlags.get(idx);
+                        nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
+                    }
                 }
             }
         }
