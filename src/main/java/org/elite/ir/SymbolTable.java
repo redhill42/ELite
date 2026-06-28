@@ -24,6 +24,8 @@ public final class SymbolTable {
         public boolean captured;           // captured by an inner closure?
         public IRFunction func;            // known function: the compiled IRFunction
         public int funcPoolIdx = -1;       // constant pool index of the IRFunction
+        /** For function symbols: per-parameter flags (PARAM_LAZY, etc.). */
+        public int[] paramFlags;
 
         SymbolInfo(String name) {
             this.originalName = name;

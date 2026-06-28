@@ -164,7 +164,7 @@ class ThunkTest {
         return interp.execute(null, null, true);
     }
 
-    @Test @Disabled("pre-existing: top-level closure capture in program-level compilation")
+    @Test @Disabled("single-script compilation: lazy param capture not yet supported")
     void lazyParamOnlyForcesTakenBranch() {
         // conditional(true, &inc(), &inc()) — only the first inc() should execute.
         // n starts at 0, only one inc() runs → n = 1.
@@ -179,7 +179,7 @@ class ThunkTest {
             "only the taken branch should be forced");
     }
 
-    @Test @Disabled("pre-existing: top-level closure capture in program-level compilation")
+    @Test @Disabled("single-script compilation: lazy param capture not yet supported")
     void lazyParamElseBranchNotForced() {
         // conditional(false, &inc(), &inc()) — only the else branch runs.
         Object result = interpretProgram(
@@ -193,7 +193,7 @@ class ThunkTest {
             "false branch: only alternate runs, n=1");
     }
 
-    @Test @Disabled("pre-existing: top-level closure capture in program-level compilation")
+    @Test @Disabled("single-script compilation: lazy param capture not yet supported")
     void eagerParamEvaluatedBeforeCall() {
         // Without &, both inc() calls execute before conditional runs → n=2.
         Object result = interpretProgram(
@@ -311,7 +311,7 @@ class ThunkTest {
             "delay(inc()) should not evaluate inc()");
     }
 
-    @Test @Disabled("pre-existing: top-level closure capture in program-level compilation")
+    @Test @Disabled("single-script compilation: lazy param capture not yet supported")
     void builtinDelayForcesOnGetValue() {
         // force(promise) should evaluate the thunk.
         Object result = interpretProgram(
