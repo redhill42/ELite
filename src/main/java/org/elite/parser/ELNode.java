@@ -82,12 +82,13 @@ public abstract class ELNode implements Serializable
     public transient org.elite.types.Type inferredType;
 
     /**
-     * Scope in the {@link org.elite.ir.SymbolTable} where this node was defined
-     * or resolved. Set by {@code SymbolTableBuilder} during the analysis pass.
-     * After analysis, every DEFINE, IDENT, and CLASSDEF node knows its scope
-     * directly — the compiler no longer needs runtime scope tracking.
+     * The {@link org.elite.ir.SymbolTable.SymbolInfo} for this node,
+     * set by {@code SymbolTableBuilder} during the analysis pass.
+     * After analysis, every DEFINE and IDENT node directly carries its
+     * slot, mangledName, captured flag, and known-function reference —
+     * the compiler needs zero lookups.
      */
-    public transient Object declaringScope;
+    public transient Object symbol;
 
     // Operator precedence
     public static final int
