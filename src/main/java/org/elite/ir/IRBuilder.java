@@ -1466,11 +1466,11 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     /**
-     * Reserve space in varNames up to (and including) the given slot index.
+     * Reserve space in `varNames` up to (and including) the given slot index.
      * Temp vars allocated after this call will start above the reserved range.
      */
     private void reserveSlots(int maxSlot) {
-        while (varNames.size() <= maxSlot) {
+        while (varNames.size() < maxSlot) {
             varNames.add(null);
             paramFlags.add(0);
         }
@@ -1941,30 +1941,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Lambda ──
     public void visit(ELNode.LAMBDA node) {
-        // Compute scope analysis for this lambda: determine which variables
-        // it captures from the enclosing scope and whether they are mutated.
-        Set<String> lambdaFreeVars = new HashSet<>();
-        Set<String> lambdaMutableFree = new HashSet<>();
-        computeLambdaCaptures(node, lambdaFreeVars, lambdaMutableFree);
-
-        // Mark enclosing-scope variables that this lambda captures so they
-        // use STORE_GLOBAL/PUSH_GLOBAL (evalContext chain). Without this,
-        // captured parameters are stored only in locals[] and the closure
-        // captures them by VALUE (copy) — mutations inside the closure
-        // don't propagate back to the outer scope.
-        for (String varName : lambdaFreeVars) {
-            if (!capturedNames.contains(varName) && varIndex.containsKey(varName)) {
-                capturedNames.add(varName);
-                // If this is a parameter, mark PARAM_CAPTURED so the
-                // interpreter syncs its initial value to evalContext at entry.
-                Integer idx = varIndex.get(varName);
-                if (idx != null && idx < paramFlags.size()) {
-                    int flags = paramFlags.get(idx);
-                    paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
-                }
-            }
-        }
-
         IRFunction func;
         if (node.symbol != null)
             func = node.symbol.func;
@@ -1974,41 +1950,31 @@ public class IRBuilder extends ELNode.Visitor {
         IRBuilder nested = new IRBuilder(this, func);
         nested.lambdaName = node.name;
 
-        // Propagate free-variable captures into the nested builder so that
-        // both reads (PUSH_GLOBAL) and writes (STORE_GLOBAL) go through the
-        // evalContext chain. The enclosing scope was already marked by the
-        // block above; this ensures the nested scope is consistent.
-        for (String varName : lambdaFreeVars) {
-            nested.capturedNames.add(varName);
-        }
-
         // Propagate source file from the AST node
         if (node.file != null)
             nested.currentFile = node.file;
         for (ELNode.DEFINE var : node.vars) {
             int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
-            if (var.symbol.captured) flags |= IRFunction.PARAM_CAPTURED;
+            if (var.symbol.captured)
+                flags |= IRFunction.PARAM_CAPTURED;
             nested.registerSlot(var.id, var.symbol.slot, flags);
         }
-
-        // Pre-scan the body for free variable references that the normal
-        // buildIdent path may miss (e.g. identifiers inside trampolined
-        // sub-expressions like CONST_MATCH or list comprehensions).
-        // Without this scan, those identifiers are never added to
-        // capturedVars and are invisible to the trampoline at runtime.
-        captureFreeVariables(nested, node);
 
         // Determine which local variables are captured by inner closures.
         // This info is already on node.symbol.captured from the Phase 1 pre-pass.
         for (ELNode.DEFINE var : node.vars) {
             if (var.symbol.captured) {
-                nested.capturedNames.add(var.id);
                 Integer idx = nested.varIndex.get(var.id);
                 if (idx != null && idx < nested.paramFlags.size()) {
                     int flags = nested.paramFlags.get(idx);
                     nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
                 }
             }
+        }
+
+        // Reserve slots for captured variables
+        for (SymbolTable.Symbol sym : node.captures) {
+            nested.ensureVar(sym.name, 0);
         }
 
         // Reserve slots for all pre-allocated variables in this lambda
@@ -2025,7 +1991,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         IRFunction rawFn = nested.finish(
             node.name != null ? node.name : "lambda",
-            node.vars.length, nested.capturedVars);
+            node.vars.length, node.captures.length);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
 
@@ -2033,24 +1999,18 @@ public class IRBuilder extends ELNode.Visitor {
         // - If the captured var is in the enclosing scope's capturedNames set
         //   (i.e., it's stored in eval context), push via PUSH_GLOBAL.
         // - Otherwise, push from the enclosing scope's local slot via PUSH_VAR.
-        if (!nested.capturedVars.isEmpty()) {
-            for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
-                String varName = e.getKey();
-                if (capturedNames.contains(varName)) {
-                    // Captured var lives in eval context — read from there
-                    int nameIdx = putConstant(varName);
-                    current.emitPushGlobal(nameIdx);
-                } else {
-                    // Free var from enclosing scope's local slot
-                    Integer outerIdx = varIndex.get(varName);
-                    if (outerIdx != null) {
-                        current.emitPushVar(outerIdx);
-                    }
-                    // else: variable not found — will be undefined at runtime
-                }
+        SymbolTable.Scope enclosingScope = node.scope.parent.enclosingScope();
+        for (SymbolTable.Symbol sym : node.captures) {
+            if (sym.scope.enclosingScope() == enclosingScope) {
+                // Free variable from enclosing scope's local slot
+                current.emitPushVar(sym.slot);
+            } else {
+                // Captured var live in eval context - read from there
+                int nameIdx = putConstant(sym.mangledName);
+                current.emitPushGlobal(nameIdx);
             }
         }
-        current.emitClosure(poolIdx, nested.capturedVars.size());
+        current.emitClosure(poolIdx, node.captures.length);
 
         // If the lambda has a name, store it so recursive calls from
         // trampolined bodies can find the function by name.
@@ -2063,11 +2023,6 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    /**
-     * Compile a lambda using the pre-built symbol table.  Params use
-     * pre-allocated slots from node.symbol; capture info is read from
-     * node.symbol.captured instead of running scope analysis.
-     */
     /**
      * Compute which variables this lambda captures from the enclosing scope
      * and whether they are mutated. Uses ScopeAnalysis when available,
@@ -2639,40 +2594,6 @@ public class IRBuilder extends ELNode.Visitor {
         return found[0];
     }
 
-    /**
-     * Pre-scan the lambda body for free variable references that may
-     * be missed during normal compilation because they are inside
-     * trampolined sub-expressions (CONST_MATCH, list comprehensions).
-     */
-    private void captureFreeVariables(IRBuilder nested, ELNode.LAMBDA node) {
-        // Use nested.parent — the immediate enclosing scope that contains
-        // variables visible to the nested lambda. Using this.parent would
-        // skip one level when called from buildLambda (which runs in the
-        // parent builder's context, not the nested builder's).
-        IRBuilder enclosing = nested.parent;
-        if (enclosing == null)
-            return; // top-level lambda, no outer scope
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        // Collect lambda parameter names to exclude them
-        for (ELNode.DEFINE v : node.vars) {
-            if (!"_".equals(v.id))
-                seen.add(v.id);
-        }
-        node.body.accept(new DefaultVisitor() {
-            public void visit(ELNode.IDENT e) {
-                if (seen.contains(e.id) || nested.varIndex.get(e.id) != null ||
-                    !enclosing.varIndex.containsKey(e.id))
-                    return;
-                // Skip self-referencing name — handled by STORE_GLOBAL
-                if (e.id.equals(node.name))
-                    return;
-                nested.capturedVars.put(e.id, nested.capturedVars.size());
-                nested.ensureVar(e.id, 0);
-                seen.add(e.id);
-            }
-        });
-    }
-
     // ── Finalization ──
     static boolean endsWithReturn(IRBuilder b) {
         if (b.current != null && !b.current.isEmpty()) {
@@ -2744,11 +2665,10 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     IRFunction finish(String name, int paramCount) {
-        return finish(name, paramCount, null);
+        return finish(name, paramCount, 0);
     }
 
-    IRFunction finish(String name, int paramCount,
-                      Map<String, Integer> captures) {
+    IRFunction finish(String name, int paramCount, int captureCount) {
         // Seal current block and record its debug line
         if (current != null) {
             if (!current.isEmpty()) {
@@ -2793,9 +2713,10 @@ public class IRBuilder extends ELNode.Visitor {
                 pf[i] = paramFlags.get(i);
         }
 
-        func.populate(captures != null ? captures.size() : 0,
-                      merged.toArray(), offsets, constants.toArray(new Object[0]),
-                      varNames.toArray(new String[0]), buildDebugInfo(name, count, offsets),
+        func.populate(captureCount, merged.toArray(), offsets,
+                      constants.toArray(new Object[0]),
+                      varNames.toArray(new String[0]),
+                      buildDebugInfo(name, count, offsets),
                       pf, null);
         return func;
     }

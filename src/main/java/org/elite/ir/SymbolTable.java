@@ -15,7 +15,6 @@ public class SymbolTable {
         public int flags;               // param flags (PARAM_EXPLICIT_TYPE, etc.)
         public boolean captured;        // captured by an inner closure?
         public IRFunction func;         // known function: the compiled IRFunction
-        public int funcPoolIdx = -1;    // constant pool index of the IRFunction
         public ELNode node = null;      // the node that provide symbol definition info
 
         Symbol(Scope scope, String name) {
@@ -25,7 +24,7 @@ public class SymbolTable {
         }
 
         public boolean isFunction() {
-            return func != null || funcPoolIdx >= 0 || funcPoolIdx == -2;
+            return func != null;
         }
 
         @Override
@@ -45,7 +44,7 @@ public class SymbolTable {
 
     /** A single scope layer holding name -> symbol mappings. */
     public static class Scope {
-        final Scope next;   // chained to direct enclosing scope
+        final Scope parent;   // chained to direct enclosing scope
         final String label; // for debugging
         final int depth;    // nesting depth (0 = root)
         final Map<String, Symbol> symbols = new LinkedHashMap<>();
@@ -54,8 +53,8 @@ public class SymbolTable {
         int maxSlots;       // max slot index used across this scope and all nested sub-scopes
         int renameCounter;  // the counter used to generate mangled name
 
-        Scope(Scope next, String label, int depth, boolean fresh, int startSlot) {
-            this.next = next;
+        Scope(Scope parent, String label, int depth, boolean fresh, int startSlot) {
+            this.parent = parent;
             this.label = label;
             this.depth = depth;
             this.fresh = fresh;
@@ -72,7 +71,7 @@ public class SymbolTable {
         }
 
         Symbol lookup(String name) {
-            for (Scope s = this; s != null; s = s.next) {
+            for (Scope s = this; s != null; s = s.parent) {
                 Symbol sym = s.get(name);
                 if (sym != null)
                     return sym;
@@ -81,10 +80,18 @@ public class SymbolTable {
         }
 
         Symbol lookupOuter(String name) {
-            for (Scope s = next; s != null; s = s.next) {
+            for (Scope s = parent; s != null; s = s.parent) {
                 Symbol sym = s.get(name);
                 if (sym != null)
                     return sym;
+            }
+            return null;
+        }
+
+        Scope enclosingScope() {
+            for (Scope s = this; s != null; s = s.parent) {
+                if (s.fresh)
+                    return s;
             }
             return null;
         }
@@ -120,11 +127,11 @@ public class SymbolTable {
 
     public Scope leaveScope() {
         assert current != null;
-        Scope next = current.next;
-        if (next != null && !current.fresh)
-            next.maxSlots = Math.max(next.maxSlots, current.maxSlots);
-        current = next;
-        return next;
+        Scope parent = current.parent;
+        if (parent != null && !current.fresh)
+            parent.maxSlots = Math.max(parent.maxSlots, current.maxSlots);
+        current = parent;
+        return parent;
     }
 
     public Scope currentScope() {

@@ -50,8 +50,6 @@ public final class SymbolTableBuilder {
 
         public void visit(ELNode.DEFINE e) {
             var info = table.define(e.id);
-            if (e.expr instanceof ELNode.LAMBDA)
-                info.funcPoolIdx = -2; // pending allocation
             e.symbol = info;
             e.id = info.mangledName;
             scan(e.expr);
@@ -81,12 +79,13 @@ public final class SymbolTableBuilder {
 
             // After walking the lambda body, determine which variables
             // from outer scopes are captured by this lambda.
-            Set<String> captures = new HashSet<>();
+            Set<SymbolTable.Symbol> captures = new HashSet<>();
             e.body.accept(new DefaultVisitor() {
                 public void visit(ELNode.IDENT var) {
                     var sym = e.scope.lookupOuter(var.id);
-                    if (sym != null && !sym.name.equals(e.name)) {
-                        captures.add(var.id);
+                    if (sym != null && !sym.name.equals(e.name) &&
+                        !(sym.node instanceof ELNode.CLASSDEF)) {
+                        captures.add(sym);
                         sym.captured = true;
                     }
                 }
@@ -96,14 +95,11 @@ public final class SymbolTableBuilder {
                 }
             });
 
-            e.captures = captures.toArray(new String[0]);
+            e.captures = captures.toArray(new SymbolTable.Symbol[0]);
         }
 
         public void visit(ELNode.CLASSDEF e) {
-            // Class definition: fresh scope (separate compilation unit)
-            table.enterScope("class:" + e.id, true);
-            super.visit(e);
-            table.leaveScope();
+            // Class definition is not supported yet.
         }
 
         public void visit(ELNode.IDENT e) {
