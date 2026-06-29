@@ -62,6 +62,7 @@ import org.elite.eval.*;
 import org.elite.eval.closure.*;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
+import org.elite.ir.SymbolTable;
 import org.elite.resolver.MethodResolver;
 import static org.elite.eval.TypeCoercion.*;
 import static org.elite.eval.ELUtils.*;
@@ -82,13 +83,13 @@ public abstract class ELNode implements Serializable
     public transient org.elite.types.Type inferredType;
 
     /**
-     * The {@link org.elite.ir.SymbolTable.SymbolInfo} for this node,
+     * The {@link org.elite.ir.SymbolTable.Symbol} for this node,
      * set by {@code SymbolTableBuilder} during the analysis pass.
      * After analysis, every DEFINE and IDENT node directly carries its
      * slot, mangledName, captured flag, and known-function reference —
      * the compiler needs zero lookups.
      */
-    public transient Object symbol;
+    public transient SymbolTable.Symbol symbol;
 
     // Operator precedence
     public static final int
@@ -496,6 +497,8 @@ public abstract class ELNode implements Serializable
         public final DEFINE[]  vars;
         public final boolean   varargs;
         public final ELNode    body;
+
+        public transient SymbolTable.Scope scope;
 
         private boolean dvals;
 
@@ -924,16 +927,9 @@ public abstract class ELNode implements Serializable
                 return true;
             }
 
-            ValueExpression ve = context.resolveLocalVariable(id);
-            if (ve != null) {
-                // If the variable already bound a value then check to see if values match.
-                ELContext elctx = context.getELContext();
-                return EQ.equals(elctx, value, ve.getValue(elctx));
-            } else {
-                // Otherwise add the variable into environment.
-                context.setVariable(id, TypedClosure.make(context, type, value, false));
-                return true;
-            }
+            // Add the variable into environment.
+            context.setVariable(id, TypedClosure.make(context, type, value, false));
+            return true;
         }
 
         public boolean bind(EvaluationContext context, Closure closure) {
@@ -1062,7 +1058,7 @@ public abstract class ELNode implements Serializable
     /**
      * Identifier expression.
      */
-    public static class IDENT extends ELNode {
+    public static class IDENT extends ELNode implements Pattern{
         public String id;  // mutable for variable renaming pass
 
         public IDENT(int pos, String id) {
@@ -1132,6 +1128,17 @@ public abstract class ELNode implements Serializable
             }
 
             return true;
+        }
+
+        public boolean matches(EvaluationContext context, Object value) {
+            ValueExpression ve = context.resolveLocalVariable(id);
+            if (ve != null) {
+                // If the variable already bound a value then check to see if values match.
+                ELContext elctx = context.getELContext();
+                return EQ.equals(elctx, value, ve.getValue(elctx));
+            } else {
+                return false;
+            }
         }
 
         public void setValue(EvaluationContext context, Object value) {

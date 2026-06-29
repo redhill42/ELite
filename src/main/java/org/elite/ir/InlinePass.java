@@ -99,9 +99,9 @@ public class InlinePass implements IRPass {
         String[] varNames = new String[input.varNames().length + tempSlots];
         System.arraycopy(input.varNames(), 0, varNames, 0, input.varNames().length);
 
-        return new IRFunction(input.name(), input.paramCount(), input.captureCount(),
-                merged.toArray(), newOffsets, mergedPool,
+        input.populate(input.captureCount(), merged.toArray(), newOffsets, mergedPool,
                 varNames, input.debugInfo(), input.paramFlags(), input.defaultValues());
+        return input;
     }
 
     /** Get the full function pool index from an INVOKE_DIRECT instruction. */

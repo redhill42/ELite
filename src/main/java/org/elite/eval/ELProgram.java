@@ -152,9 +152,6 @@ public class ELProgram implements Serializable
             // context is used by compilation and execution.
             importExternal(elctx);
 
-            // Phase 1: build symbol table (variable renaming + capture analysis).
-            SymbolTable symTable = SymbolTableBuilder.build(this);
-
             // Execute statements using selected evaluation strategy
             switch (OPT_LEVEL) {
             case 0:
@@ -162,20 +159,17 @@ public class ELProgram implements Serializable
 
             case 1: {
                 // Conservative IR — no optimization passes.
-                IRFunction irFn = IRBuilder.compile(elctx, this, false,
-                    frame.getFileName(), symTable);
+                IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 2: {
-                IRFunction irFn = IRBuilder.compile(elctx, this, true,
-                    frame.getFileName(), symTable);
+                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 return new IRInterpreter(env, irFn).execute(null, null, true);
             }
 
             case 3: default: {
-                IRFunction irFn = IRBuilder.compile(elctx, this, true,
-                    frame.getFileName(), symTable);
+                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
                 try {
                     IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
                     return cf.execute(elctx, null);

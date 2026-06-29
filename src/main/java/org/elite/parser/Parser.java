@@ -3462,36 +3462,28 @@ public class Parser extends Scanner
     }
 
     private ELNode.Pattern parsePattern() {
-        ELNode pat = (ELNode)parseSubPattern();
-        Set<String> bindings = getPatternBindings(pat);
+        Map<String, ELNode.DEFINE> bindings = new HashMap<>();
+        ELNode pat = (ELNode)parseSubPattern(bindings);
         while (token == BAR) {
             int p = scan();
-            ELNode next = (ELNode)parseSubPattern();
-            Set<String> second = getPatternBindings(next);
-            if (!bindings.equals(second))
+            Map<String, ELNode.DEFINE> second = new HashMap<>();
+            ELNode next = (ELNode)parseSubPattern(second);
+            if (!bindings.keySet().equals(second.keySet()))
                 throw parseError("the patterns must have identical variable bindings");
             pat = new ELNode.OR(p, pat, next);
         }
         return (ELNode.Pattern)pat;
     }
 
-    private Set<String> getPatternBindings(ELNode pat) {
-        Set<String> bindings = new HashSet<>();
-        ELNode.Visitor v = new DefaultVisitor() {
-            public void visit(ELNode.DEFINE def) {
-                if (!"_".equals(def.id))
-                    bindings.add(def.id);
-            }
-        };
-        pat.accept(v);
-        return bindings;
-    }
-
-    private ELNode.Pattern parseSubPattern() {
+    private ELNode.Pattern parseSubPattern(Map<String, ELNode.DEFINE> bindings) {
         switch (token) {
         case IDENT: {
             String id = idValue;
             int p = scan();
+            if (!"_".equals(id) && bindings.containsKey(id)) {
+                // repeated variable, treat it to an identifier.
+                return new ELNode.IDENT(p, id);
+            }
             if (token == LPAREN) {
                 scan();
                 return parseConstructorPattern(p, id);

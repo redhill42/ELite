@@ -19,18 +19,11 @@ public final class SymbolTableBuilder {
     public static SymbolTable build(ELProgram program) {
         SymbolTable table = new SymbolTable();
         BuilderVisitor visitor = new BuilderVisitor(table);
-
         table.enterScope("program");
         for (ELNode def : program.getDefinitions())
             def.accept(visitor);
         for (ELNode exp : program.getExpressions())
             exp.accept(visitor);
-
-        // Record max slot for program scope.
-        int programMaxSlot = table.currentScope().maxSlotUsed;
-        for (SymbolTable.SymbolInfo si : table.currentScope().entries())
-            si.maxSlot = programMaxSlot;
-
         return table;
     }
 
@@ -62,10 +55,16 @@ public final class SymbolTableBuilder {
             e.symbol = info;
             e.id = info.mangledName;
             scan(e.expr);
+
+            // Create a IRFunction skeleton.
+            if (e.expr instanceof ELNode.LAMBDA lam) {
+                e.symbol.func = new IRFunction(e.id, lam.vars.length);
+                lam.symbol = e.symbol;
+            }
         }
 
         public void visit(ELNode.LAMBDA e) {
-            table.enterScope(e.name != null ? "fn:"+e.name : "lambda", true);
+            e.scope = table.enterScope(e.name != null ? "fn:"+e.name : "lambda", true);
             for (ELNode.DEFINE param : e.vars) {
                 if (!"_".equals(param.id)) {
                     var pi = table.define(param.id);
@@ -74,21 +73,11 @@ public final class SymbolTableBuilder {
                 }
             }
             scan(e.body);
+            table.leaveScope();
 
             // After walking the lambda body, determine which variables
             // from outer scopes are captured by this lambda.
-            markCaptured(e.body, new HashSet<>());
-
-            // Record max slot for this lambda scope (including nested
-            // control-flow scopes) so IRBuilder can reserve space and
-            // allocate temp vars above pre-allocated slots.
-            SymbolTable.Scope lambdaScope = table.leaveScope();
-            int maxSlot = lambdaScope.maxSlotUsed;
-            if (maxSlot >= 0) {
-                for (SymbolTable.SymbolInfo si : lambdaScope.entries()) {
-                    si.maxSlot = maxSlot;
-                }
-            }
+            markCaptured(e.scope, e.body);
         }
 
         public void visit(ELNode.CLASSDEF e) {
@@ -121,9 +110,18 @@ public final class SymbolTableBuilder {
         }
 
         public void visit(ELNode.FOR e) {
-            table.enterScope("for");
-            super.visit(e);
-            table.leaveScope();
+            if (e.local) {
+                scan(e.init);
+                scan(e.cond);
+                table.enterScope("for");
+                scan(e.body);
+                table.leaveScope();
+                scan(e.step);
+            } else {
+                table.enterScope("for");
+                super.visit(e);
+                table.leaveScope();
+            }
         }
 
         public void visit(ELNode.FOREACH e) {
@@ -164,9 +162,9 @@ public final class SymbolTableBuilder {
 
         public void visit(ELNode.CATCH e) {
             table.enterScope("catch");
-            SymbolTable.SymbolInfo si = table.define(e.var);
-            e.symbol = si;
-            e.var = si.mangledName;
+            var sym = table.define(e.var);
+            e.symbol = sym;
+            e.var = sym.mangledName;
             scan(e.body);
             table.leaveScope();
         }
@@ -202,28 +200,12 @@ public final class SymbolTableBuilder {
          * are captured as {@code captured=true} on their defining scope's
          * SymbolInfo.
          */
-        private void markCaptured(ELNode node, Set<String> excludeNames) {
+        private void markCaptured(SymbolTable.Scope scope, ELNode node) {
             node.accept(new DefaultVisitor() {
                 public void visit(ELNode.IDENT e) {
-                    if (excludeNames.contains(e.id))
-                        return;
-                    var info = table.lookup(e.id);
-                    if (info != null && table.isOuter(e.id)) {
-                        for (SymbolTable.Scope s : table.allScopes()) {
-                            SymbolTable.SymbolInfo si = s.get(e.id);
-                            if (si != null && si == info) {
-                                si.captured = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                public void visit(ELNode.LAMBDA e) {
-                    Set<String> nestedExcludes = new HashSet<>(excludeNames);
-                    for (ELNode.DEFINE v : e.vars)
-                        nestedExcludes.add(v.id);
-                    markCaptured(e.body, nestedExcludes);
+                    var sym = scope.lookupOuter(e.id);
+                    if (sym != null)
+                        sym.captured = true;
                 }
             });
         }
@@ -242,16 +224,9 @@ public final class SymbolTableBuilder {
 
             if (pat instanceof ELNode.DEFINE def) {
                 if (!"_".equals(def.id)) {
-                    if (table.currentScope().get(def.id) == null) {
-                        var si = table.define(def.id);
-                        def.symbol = si;
-                        def.id = si.mangledName;
-                    } else {
-                        // Already defined in this scope (OR duplicate) - link to existing
-                        var si = table.currentScope().get(def.id);
-                        def.symbol = si;
-                        def.id = si.mangledName;
-                    }
+                    var sym = table.define(def.id);
+                    def.symbol = sym;
+                    def.id = sym.mangledName;
                 }
             } else if (pat instanceof ELNode.TUPLE t) {
                 for (ELNode e : t.elems)

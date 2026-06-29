@@ -136,8 +136,8 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.FOR e) {
         scan(e.init);
         scan(e.cond);
-        scan(e.step);
         scan(e.body);
+        scan(e.step);
     }
     
     public void visit(ELNode.FOREACH e) {

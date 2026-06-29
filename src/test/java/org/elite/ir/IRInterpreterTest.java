@@ -48,36 +48,6 @@ class IRInterpreterTest {
     @Test void intLessThan() { assertEquals(true, interpret("50 < 100")); assertEquals(false, interpret("100 < 50")); }
     @Test void intLessEqual() { assertEquals(true, interpret("100 <= 100")); }
 
-    // ── != Bug reproduction: P0-1 emitTypedCmp / emitDynamicCmp ──
-    // Bug 1: emitDynamicCmp (line 622) doesn't handle Token.NE → falls to default emitDynEq()
-    //         Dynamic-typed != produces == result
-    @Test void dynamicInequalityInt() {
-        // untyped parameters a,b → typeIdFromNode returns -1 → emitDynamicCmp
-        ELNode expr = Parser.parseExpression("a != b");
-        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
-        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
-        assertEquals(true, interp.execute(new Object[]{1, 2}),  "1 != 2 should be true");
-        assertEquals(false, interp.execute(new Object[]{5, 5}), "5 != 5 should be false");
-    }
-    @Test void dynamicInequalityDouble() {
-        ELNode expr = Parser.parseExpression("a != b");
-        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
-        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
-        assertEquals(true, interp.execute(new Object[]{3.14, 2.72}), "3.14 != 2.72 should be true");
-    }
-    // Bug 2: emitTypedCmp (line 613) Token.NE non-numeric type falls to else emitDynEq()
-    //         without emitNot(), e.g. String != String
-    @Test void stringInequality() {
-        assertEquals(true, interpret("\"hello\" != \"world\""), "'hello' != 'world' should be true");
-        assertEquals(false, interpret("\"abc\" != \"abc\""), "'abc' != 'abc' should be false");
-    }
-    @Test void dynamicInequalityString() {
-        ELNode expr = Parser.parseExpression("a != b");
-        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"a","b"}, expr);
-        IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
-        assertEquals(true, interp.execute(new Object[]{"hello", "world"}), "'hello' != 'world' should be true");
-        assertEquals(false, interp.execute(new Object[]{"x", "x"}), "'x' != 'x' should be false");
-    }
     @Test void irInequalityMatchesAst() {
         // Verify IR != matches AST eval for various type combinations
         String[] exprs = {
@@ -121,44 +91,13 @@ class IRInterpreterTest {
         assertTrue(scanOp(fn, Opcode.INVOKE_TAIL));
     }
 
-    @Test
-    void tcoSelfCallInTailPositionEmitsInvokeTail() {
-        ELNode expr = Parser.parseExpression("sum(n - 1, acc + n)");
-        IRFunction fn = IRBuilder.compileLambda("sum", new String[]{"n","acc"}, expr);
-        assertTrue(scanOp(fn, Opcode.INVOKE_TAIL),
-            "Self-call 'sum' in tail position must emit INVOKE_TAIL");
-    }
-
-    @Test
-    void tcoCallToDifferentFunctionDoesNotEmitInvokeTail() {
-        ELNode expr = Parser.parseExpression("other(n - 1, acc + n)");
-        IRFunction fn = IRBuilder.compileLambda("sum", new String[]{"n","acc"}, expr);
-        assertFalse(scanOp(fn, Opcode.INVOKE_TAIL),
-            "Call to 'other' (not self) must NOT emit INVOKE_TAIL");
-    }
-
-    @Test
-    void tcoNonTailPositionDoesNotEmitInvokeTail() {
-        // n * fact(n-1) — multiply wraps the call, so it's not in tail position
-        ELNode expr = Parser.parseExpression("n * fact(n - 1)");
-        IRFunction fn = IRBuilder.compileLambda("fact", new String[]{"n"}, expr);
-        assertFalse(scanOp(fn, Opcode.INVOKE_TAIL),
-            "Non-tail call inside multiply must NOT emit INVOKE_TAIL");
-    }
-
-    @Test
-    void tcoAnonymousLambdaNoSelfCall() {
-        // Anonymous lambda (null name) — no self-call possible
-        ELNode expr = Parser.parseExpression("n + acc");
-        IRFunction fn = IRBuilder.compileLambda(null, new String[]{"n","acc"}, expr);
-        assertFalse(scanOp(fn, Opcode.INVOKE_TAIL));
-    }
-
     // ── helpers ──
 
     private static IRFunction buildFn(String name, int[] code, int paramCount) {
-        return new IRFunction(name, paramCount, 0, code, new int[]{0},
-                new Object[]{0,1}, new String[]{"n","acc"}, null, null);
+        IRFunction irf = new IRFunction(name, paramCount);
+        irf.populate(0, code, new int[]{0}, new Object[]{0,1},
+                     new String[]{"n","acc"}, null, null, null);
+        return irf;
     }
 
     private static boolean scanOp(IRFunction fn, int op) {

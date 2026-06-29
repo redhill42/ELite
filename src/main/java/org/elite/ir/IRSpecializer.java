@@ -135,10 +135,9 @@ public class IRSpecializer implements IRPass {
             newOffsets[i] = merged.size();
             merged.addAll(allBlocks.get(i).toArray());
         }
-        return new IRFunction(fn.name(), fn.paramCount(), fn.captureCount(),
-                merged.toArray(), newOffsets, fn.constantPool(),
-                fn.varNames(), fn.debugInfo(), fn.paramFlags(),
-                fn.defaultValues());
+        fn.populate(fn.captureCount(), merged.toArray(), newOffsets, fn.constantPool(),
+                fn.varNames(), fn.debugInfo(), fn.paramFlags(), fn.defaultValues());
+        return fn;
     }
 
     /** Remap all JUMP-type instruction targets from old to new block IDs. */

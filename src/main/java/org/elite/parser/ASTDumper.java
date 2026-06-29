@@ -141,6 +141,12 @@ public final class ASTDumper {
             if (type != null) sb.append(" :").append(type);
         } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
 
+        if (node.symbol != null) {
+            sb.append(" slot=").append(node.symbol.slot);
+            if (node.symbol.captured)
+                sb.append(" captured");
+        }
+
         // Literal values
         if (node instanceof ELNode.NUMBER n) {
             sb.append(" ").append(n.value);

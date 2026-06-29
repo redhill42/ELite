@@ -92,10 +92,10 @@ public class ConstantFolder implements IRPass {
             merged.addAll(newBlocks[i]);
         }
 
-        return new IRFunction(input.name(), input.paramCount(), input.captureCount(),
-                merged.toArray(), newOffsets, newPool, input.varNames(),
-                input.debugInfo(), input.paramFlags(),
-                input.defaultValues());
+        input.populate(input.captureCount(), merged.toArray(), newOffsets,
+                       newPool, input.varNames(), input.debugInfo(),
+                       input.paramFlags(), input.defaultValues());
+        return input;
     }
 
     private int[] foldBlock(int[] code) {

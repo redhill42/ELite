@@ -242,22 +242,6 @@ public final class IRPrinter {
         return c.getClass().getSimpleName();
     }
 
-    /** If the node is a DEFINE wrapping a LAMBDA, dump the lambda body IR. */
-    private static void dumpLambdaBody(StringBuilder sb, ELNode node) {
-        if (node instanceof ELNode.DEFINE def
-            && def.expr instanceof ELNode.LAMBDA lambda) {
-
-            String name = lambda.name != null ? lambda.name : def.id;
-            String[] params = new String[lambda.vars.length];
-            for (int i = 0; i < lambda.vars.length; i++) {
-                params[i] = lambda.vars[i].id;
-            }
-            IRFunction bodyIR = IRBuilder.compileLambda(name, params, lambda.body);
-            sb.append("  [lambda body]\n");
-            sb.append(indent(formatIR(bodyIR), "  "));
-        }
-    }
-
     private static String indent(String s, String prefix) {
         return prefix + s.replace("\n", "\n" + prefix);
     }

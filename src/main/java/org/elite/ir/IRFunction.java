@@ -33,48 +33,44 @@ public class IRFunction {
     private final String name;
     private final int paramCount;
     /** Number of captured (closure) variables. 0 = no captures. */
-    private final int captureCount;
+    private int captureCount;
     /** Single contiguous code array for all blocks. */
-    private final int[] code;
+    private int[] code;
     /** Start offset of each basic block in the code array. */
-    private final int[] blockOffsets;
+    private int[] blockOffsets;
     /** Constant pool: literals indexed by PUSH_CONST payload. */
-    private final Object[] constantPool;
+    private Object[] constantPool;
     /** Variable names indexed by PUSH_VAR/PUSH_GLOBAL payload. */
-    private final String[] varNames;
+    private String[] varNames;
 
     /** Source-level debug info (PC→line mapping, file/function metadata). */
-    private final DebugInfo debugInfo;
+    private DebugInfo debugInfo;
 
     /**
      * Per-parameter flags. Bit 0 = type was explicitly annotated (vs. inferred).
      * Parallel to varNames; only the first paramCount entries are meaningful.
      * May be null for functions compiled without type annotation info.
      */
-    private final int[] paramFlags;
+    private int[] paramFlags;
 
     /**
      * Default parameter values (parallel to params; null entries = no default).
      * Simple literals are evaluated at compile time; null for complex expressions.
      * Applied in execute() when caller provides fewer args than paramCount.
      */
-    private final Object[] defaultValues;
+    private Object[] defaultValues;
 
-    IRFunction(String name, int paramCount, int captureCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames,
-               DebugInfo debugInfo, int[] paramFlags) {
-        this(name, paramCount, captureCount, code, blockOffsets, constantPool, varNames,
-             debugInfo, paramFlags, null);
-    }
-
-    IRFunction(String name, int paramCount, int captureCount,
-               int[] code, int[] blockOffsets,
-               Object[] constantPool, String[] varNames,
-               DebugInfo debugInfo, int[] paramFlags,
-               Object[] defaultValues) {
+    // Create a IRFunction skeleton.
+    IRFunction(String name, int paramCount) {
         this.name = name;
         this.paramCount = paramCount;
+    }
+
+    // Populate IRFunction with code after compilation.
+    void populate(int captureCount, int[] code, int[] blockOffsets,
+                  Object[] constantPool, String[] varNames,
+                  DebugInfo debugInfo, int[] paramFlags,
+                  Object[] defaultValues) {
         this.captureCount = captureCount;
         this.code = code;
         this.blockOffsets = blockOffsets;
@@ -84,6 +80,8 @@ public class IRFunction {
         this.paramFlags = paramFlags;
         this.defaultValues = defaultValues;
     }
+
+    public boolean isDeclaration() { return code == null; }
 
     public String name()       { return name; }
     public int paramCount()    { return paramCount; }
@@ -115,11 +113,7 @@ public class IRFunction {
 
     /** Return a copy of this function with the given default parameter values. */
     public IRFunction withDefaults(Object[] defs) {
-        if (defs == null) return this;
-        for (Object d : defs) if (d != null) {
-            return new IRFunction(name, paramCount, captureCount, code, blockOffsets,
-                    constantPool, varNames, debugInfo, paramFlags, defs);
-        }
+        defaultValues = defs;
         return this; // all null — no defaults to apply
     }
 
@@ -157,8 +151,11 @@ public class IRFunction {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("IRFunction[").append(name).append("] params=").append(paramCount)
-          .append(" locals=").append(varNames.length)
+        sb.append("IRFunction[").append(name).append("] params=").append(paramCount);
+        if (isDeclaration())
+            return sb.toString();
+
+        sb.append(" locals=").append(varNames.length)
           .append(" blocks=").append(blockOffsets.length)
           .append(" codeWords=").append(code.length)
           .append("\n");
