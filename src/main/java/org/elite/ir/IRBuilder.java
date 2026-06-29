@@ -311,6 +311,89 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
+    /**
+     * Build arguments for a direct call, handling default and named parameters.
+     * Returns the total number of arguments built (including defaults).
+     */
+    private int buildArgsWithDefaults(SymbolTable.Symbol funcSym,
+                                       ELNode[] callArgs, String[] callKeys) {
+        // Non-lambda callable (e.g. class constructor) — simple positional build
+        if (!(funcSym.node instanceof ELNode.LAMBDA lambda)) {
+            for (ELNode arg : callArgs)
+                build(arg);
+            return callArgs.length;
+        }
+
+        int paramCount = lambda.vars.length;
+        int argCount = callArgs.length;
+
+        // No defaults or named args — fast path.
+        if (callKeys == null && argCount >= paramCount) {
+            for (ELNode arg : callArgs)
+                build(arg);
+            return argCount;
+        }
+
+        // Map named args to parameter positions. -1 means not yet assigned.
+        int[] argForParam = new int[paramCount];
+        Arrays.fill(argForParam, -1);
+
+        if (callKeys != null) {
+            // Named args: map by name, remaining call args are positional.
+            int posIndex = 0;
+            for (int i = 0; i < argCount; i++) {
+                if (callKeys[i] != null) {
+                    // Named argument — find parameter by name
+                    int paramIdx = -1;
+                    for (int p = 0; p < paramCount; p++) {
+                        if (callKeys[i].equals(lambda.vars[p].id)) {
+                            paramIdx = p;
+                            break;
+                        }
+                    }
+                    if (paramIdx < 0)
+                        throw new IllegalArgumentException(
+                            "Unknown parameter name: " + callKeys[i]);
+                    if (argForParam[paramIdx] >= 0)
+                        throw new IllegalArgumentException(
+                            "Duplicate argument for parameter: " + callKeys[i]);
+                    argForParam[paramIdx] = i;
+                } else {
+                    // Positional argument — assign to next available position
+                    while (posIndex < paramCount && argForParam[posIndex] >= 0)
+                        posIndex++;
+                    if (posIndex >= paramCount)
+                        throw new IllegalArgumentException(
+                            "Too many positional arguments");
+                    argForParam[posIndex] = i;
+                    posIndex++;
+                }
+            }
+        } else {
+            // All positional: arg i → param i
+            for (int i = 0; i < argCount; i++)
+                argForParam[i] = i;
+        }
+
+        // Build args in parameter order, using defaults where needed.
+        for (int p = 0; p < paramCount; p++) {
+            if (argForParam[p] >= 0) {
+                build(callArgs[argForParam[p]]);
+            } else {
+                // Build the default value expression.
+                ELNode defExpr = lambda.vars[p].expr;
+                if (defExpr != null) {
+                    build(defExpr);
+                } else {
+                    throw new IllegalArgumentException(
+                        "Missing required argument: " + lambda.vars[p].id);
+                }
+            }
+        }
+
+        return paramCount;
+    }
+
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
         if (node.right instanceof ELNode.IDENT ident) {
@@ -318,10 +401,9 @@ public class IRBuilder extends ELNode.Visitor {
                 if (inTailPosition && ident.symbol.func == this.func) {
                     // TCO: build args (never in tail position), emit INVOKE_TAIL
                     inTailPosition = false;
-                    for (ELNode arg : node.args)
-                        build(arg);
+                    int argc = buildArgsWithDefaults(ident.symbol, node.args, node.keys);
                     inTailPosition = true;
-                    current.emitInvokeTail(node.args.length);
+                    current.emitInvokeTail(argc);
                     return;
                 }
 
@@ -329,10 +411,9 @@ public class IRBuilder extends ELNode.Visitor {
                     int funcIdx = putConstant(ident.symbol.func);
                     boolean prev = inTailPosition;
                     inTailPosition = false;
-                    for (int i = 0; i < node.args.length; i++)
-                        build(node.args[i]);
+                    int argc = buildArgsWithDefaults(ident.symbol, node.args, node.keys);
                     inTailPosition = prev;
-                    current.emitInvokeDirect(funcIdx, node.args.length);
+                    current.emitInvokeDirect(funcIdx, argc);
                     return;
                 }
 
