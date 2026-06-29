@@ -183,7 +183,7 @@ public final class IRPrinter {
                  Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO
                 -> formatConstPool(sb, fn, v.payload());
             case Opcode.INSTOF -> formatConstPool(sb, fn, v.payload());
-            case Opcode.CLOSURE, Opcode.DELAY -> {
+            case Opcode.CLOSURE -> {
                 formatConstPool(sb, fn, v.payload());
                 int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
                 sb.append(" capture=").append(captureCount);

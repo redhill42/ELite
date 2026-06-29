@@ -1076,13 +1076,18 @@ public class Parser extends Scanner
         if (scan(COLON)) {
             lazy = scan(LAZY);
             tail = parseSyntaxExpression();
+            if (lazy)
+                tail = new ELNode.LAMBDA(p, filename, EMPTY_DEFS, tail);
         } else {
             tail = new ELNode.NIL(p);
         }
         expect(RBRACKET);
 
         for (int i = elems.size(); --i >= 0; ) {
-            tail = new ELNode.CONS(p, elems.get(i), tail, lazy);
+            ELNode head = elems.get(i);
+            if (lazy)
+                head = new ELNode.LAMBDA(p, filename, EMPTY_DEFS, head);
+            tail = new ELNode.CONS(p, head, tail, lazy);
             lazy = false;
         }
         return tail;

@@ -31,11 +31,10 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class SampleScriptTest {
 
-    // TODO: re-enable "rbtree", "C", "list", "uri", "scheme",
-    // "seq", "xml" once symbol table handles nested loops, data
+    // TODO: re-enable "dsl", "seq", "xml" once symbol table handles nested loops, data
     // constructors, lazy sequences, and tail-call elimination.
     private static final List<String> SAMPLES = List.of(
-        "hello", "xmlbuilder", "dsl"
+        "C", "hello", "list", "rbtree", "scheme", "uri", "xmlbuilder"
     );
 
     private static final String SAMPLE_DIR = "src/sample/";

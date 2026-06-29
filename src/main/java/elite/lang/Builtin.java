@@ -59,8 +59,8 @@ import static org.elite.eval.ELUtils.*;
  *
  * <h3>主要函数分类</h3>
  * <ul>
- *   <li><b>系统函数</b> — {@code defined}, {@code begin}, {@code delay},
- *       {@code force}, {@code identity}, {@code coalesce}</li>
+ *   <li><b>系统函数</b> — {@code defined}, {@code begin},
+ *       {@code identity}, {@code coalesce}</li>
  *   <li><b>区间与迭代</b> — {@code upto}, {@code downto}, {@code step},
  *       {@code times}, {@code range}</li>
  *   <li><b>集合操作</b> — {@code list}, {@code cons}, {@code map},
@@ -149,31 +149,6 @@ public final class Builtin
             exps[i].getValue(elctx);
         }
         return run_block(elctx, exps[n]);
-    }
-
-    /**
-     * 创建延时求值表达式.
-     * <p>
-     * 用法: delay(exp)
-     */
-    public static Closure delay(Closure exp) {
-        return exp;
-    }
-
-    /**
-     * 强制对延时求值表达式求值.
-     * <p>
-     * 用法: force(promise)
-     */
-    public static Object force(ELContext elctx, Object promise) {
-        if (promise instanceof ValueExpression) {
-            return ((ValueExpression)promise).getValue(elctx);
-        } else if (promise instanceof Seq s) {
-            for (Seq t = s; !t.isEmpty(); t = t.tail());
-            return s;
-        } else {
-            return promise;
-        }
     }
 
     /**
@@ -502,13 +477,6 @@ public final class Builtin
             xs = new Cons(args[i], xs);
         }
         return xs;
-    }
-
-    /**
-     * 以给定的头部和尾部创建一个新序列.
-     */
-    public static Seq cons(Closure head, Closure tail) {
-        return new DelayCons(head, tail);
     }
 
     /**

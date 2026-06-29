@@ -495,7 +495,7 @@ public abstract class ELNode implements Serializable
         private boolean dvals;
 
         public transient SymbolTable.Scope scope;
-        public transient SymbolTable.Symbol[] captures;
+        public transient Set<SymbolTable.Symbol> captures;
 
         public LAMBDA(int pos, String file, DEFINE[] vars, ELNode body) {
             this(pos, file, null, null, vars, false, body);
@@ -5424,7 +5424,8 @@ public abstract class ELNode implements Serializable
 
         public Object getValue(EvaluationContext context) {
             if (delay) {
-                return new DelayCons(head.closure(context), tail.closure(context));
+                return new DelayCons(new Procedure(context, head),
+                                     new Procedure(context, tail));
             } else if (tail instanceof NIL) {
                 return Cons.make(head.getValue(context));
             } else if (tail instanceof CONS) {

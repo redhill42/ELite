@@ -20,6 +20,8 @@ import javax.el.ELContext;
 import elite.lang.Closure;
 import org.elite.eval.TypeCoercion;
 
+import static org.elite.eval.ELUtils.NO_PARAMS;
+
 public class DelayCons extends DelaySeq
 {
     private Closure head_promise;
@@ -32,12 +34,12 @@ public class DelayCons extends DelaySeq
 
     protected void force(ELContext elctx) {
         if (head_promise != null) {
-            head = head_promise.getValue(elctx);
+            head = head_promise.invoke(elctx, NO_PARAMS);
             head_promise = null;
         }
 
         if (tail_promise != null) {
-            tail = TypeCoercion.coerceToSeq(tail_promise.getValue(elctx));
+            tail = TypeCoercion.coerceToSeq(tail_promise.invoke(elctx, NO_PARAMS));
             tail_promise = null;
         }
     }

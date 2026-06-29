@@ -43,29 +43,33 @@ public final class SymbolTableBuilder {
      */
     static class BuilderVisitor extends DefaultVisitor {
         final SymbolTable table;
+        ELNode.LAMBDA currentFn;
 
         BuilderVisitor(SymbolTable table) {
             this.table = table;
+            this.currentFn = null;
         }
 
         public void visit(ELNode.DEFINE e) {
-            var info = table.define(e.id);
-            e.symbol = info;
-            e.id = info.mangledName;
+            var sym = table.define(e.id);
+            e.symbol = sym;
+            e.id = sym.mangledName;
             scan(e.expr);
 
-            // Create a IRFunction skeleton.
             if (e.expr instanceof ELNode.LAMBDA lam) {
-                e.symbol.func = new IRFunction(e.id, lam.vars.length);
-                e.symbol.node = lam; // provide function prototype
+                // Create a IRFunction skeleton.
+                sym.func = new IRFunction(e.id, lam.vars.length);
+                sym.node = e.expr;
                 lam.symbol = e.symbol;
             } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
-                e.symbol.node = cdef; // provide class definition
-                cdef.symbol = e.symbol;
+                sym.node = e.expr;
+                cdef.symbol = sym;
             }
         }
 
         public void visit(ELNode.LAMBDA e) {
+            ELNode.LAMBDA previousFn = currentFn;
+            currentFn = e;
             e.scope = table.enterScope(e.name != null ? "fn:"+e.name : "lambda", true);
             for (ELNode.DEFINE param : e.vars) {
                 if (!"_".equals(param.id)) {
@@ -76,26 +80,7 @@ public final class SymbolTableBuilder {
             }
             scan(e.body);
             table.leaveScope();
-
-            // After walking the lambda body, determine which variables
-            // from outer scopes are captured by this lambda.
-            Set<SymbolTable.Symbol> captures = new HashSet<>();
-            e.body.accept(new DefaultVisitor() {
-                public void visit(ELNode.IDENT var) {
-                    var sym = e.scope.lookupOuter(var.id);
-                    if (sym != null && !sym.name.equals(e.name) &&
-                        !(sym.node instanceof ELNode.CLASSDEF)) {
-                        captures.add(sym);
-                        sym.captured = true;
-                    }
-                }
-
-                public void visit(ELNode.LAMBDA e) {
-                    // don't track into nested lambda
-                }
-            });
-
-            e.captures = captures.toArray(new SymbolTable.Symbol[0]);
+            currentFn = previousFn;
         }
 
         public void visit(ELNode.CLASSDEF e) {
@@ -103,10 +88,19 @@ public final class SymbolTableBuilder {
         }
 
         public void visit(ELNode.IDENT e) {
-            var info = table.lookup(e.id);
-            if (info != null) {
-                e.symbol = info;
-                e.id = info.mangledName;
+            var sym = table.lookup(e.id);
+            if (sym != null) {
+                e.symbol = sym;
+                e.id = sym.mangledName;
+
+                // Mark this variable is captured by enclosing lambda.
+                if (currentFn != null && sym.scope.enclosingScope() != currentFn.scope &&
+                    sym.node != currentFn && !(sym.node instanceof ELNode.CLASSDEF)) {
+                    if (currentFn.captures == null)
+                        currentFn.captures = new HashSet<>();
+                    currentFn.captures.add(sym);
+                    sym.captured = true;
+                }
             }
         }
 

@@ -20,7 +20,6 @@ import elite.lang.Closure;
 import elite.lang.Seq;
 import org.elite.eval.*;
 import org.elite.eval.Runtime;
-import org.elite.eval.closure.DelayClosure;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.TypedClosure;
 import org.elite.eval.seq.Cons;
@@ -30,7 +29,6 @@ import org.elite.parser.Position;
 
 import javax.el.ELContext;
 import javax.el.ValueExpression;
-import javax.el.VariableMapper;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -207,23 +205,6 @@ public class IRInterpreter {
             case PUSH_VAR: {
                 int idx = pl & 0xFFFF;
                 push(locals[idx]);
-                ip += 1;
-                break;
-            }
-            case DELAY: {
-                int funcIdx = pl;
-                int captureCount = oc > 0 && ip + 1 < code.length ? code[ip + 1] : 0;
-                IRFunction fn = (IRFunction) constantPool[funcIdx];
-                Object[] captured = new Object[captureCount];
-                for (int i = captureCount - 1; i >= 0; i--)
-                    captured[i] = pop();
-                IRClosure thunkBody = new IRClosure(evalContext, fn, captured);
-                push(new Thunk(thunkBody)); // Encapsulate thunk into a delay evaluated closure.
-                ip += 1 + oc;
-                break;
-            }
-            case LITERAL: {
-                push(new LiteralClosure(pop()));
                 ip += 1;
                 break;
             }
@@ -1194,54 +1175,6 @@ public class IRInterpreter {
         javax.el.ELContext elctx = evalContext.getELContext();
         elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
         return ELEngine.invokeTarget(elctx, target, closures);
-    }
-
-    // ── Thunk adapter ──
-
-    /**
-     * Wraps an IRClosure so that {@code getValue()} invokes the thunk
-     * and returns its result. Used by {@code DELAY} to create memoizing
-     * thunks that execute IR-compiled code when forced.
-     */
-    static class Thunk extends DelayClosure {
-        private IRClosure thunk;
-
-        Thunk(IRClosure thunk) {
-            this.thunk = thunk;
-        }
-
-        @Override
-        public EvaluationContext getContext() {
-            return thunk != null ? thunk.getContext() : null;
-        }
-
-        @Override
-        public EvaluationContext getContext(ELContext elctx) {
-            return thunk != null ? thunk.getContext(elctx) : null;
-        }
-
-        @Override
-        public void _setenv(ELContext elctx, VariableMapper env) {
-            if (thunk != null) {
-                thunk._setenv(elctx, env);
-            }
-        }
-
-        @Override
-        protected Object force(ELContext elctx) {
-            if (thunk != null) {
-                Object result = thunk.invoke(elctx, null);
-                thunk = null;
-                return result;
-            } else {
-                return null;
-            }
-        }
-
-        @Override
-        protected void forget() {
-            thunk = null;
-        }
     }
 
     // ── Helpers ──

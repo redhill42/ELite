@@ -59,7 +59,7 @@ public class IRBuilder extends ELNode.Visitor {
     private final ELContext elctx;
 
     // The IRFunction to build.
-    private IRFunction func;
+    private final IRFunction func;
 
     // ── Block management (stored by ID, output in ID order) ──
     final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
@@ -67,19 +67,13 @@ public class IRBuilder extends ELNode.Visitor {
     int currentBlockId = 0;
     int nextBlockId = 1;  // 0 is the initial block
 
-    // ── Symbol table (Phase 1 pre-pass, always present) ──
-    final SymbolTable symTable;
     /** name → slot mapping (populated by registerSlot / ensureVar for temp vars). */
     private final Map<String, Integer> varIndex = new LinkedHashMap<>();
     private final List<String> varNames = new ArrayList<>();
     private final List<Integer> paramFlags = new ArrayList<>(); // per-var flags
-    /** Names of variables captured by inner closures (filled from si.captured). */
-    final Set<String> capturedNames = new HashSet<>();
 
     // ── Closure capture ──
     private final IRBuilder parent; // enclosing scope (null for top-level)
-    private final Map<String, Integer> capturedVars = new LinkedHashMap<>();
-    // free vars → capture index
 
     // ── Constant pool (maybe shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
@@ -121,17 +115,15 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // ── Tail-call optimization ──
-    String lambdaName = null;
     boolean inTailPosition = false;
 
     /**
      * Create a top-level builder.  The symbol table must already be built
      * (Phase 1) so that AST nodes carry slot/captured annotations.
      */
-    IRBuilder(ELContext elctx, IRFunction func, SymbolTable symTable) {
+    IRBuilder(ELContext elctx, IRFunction func) {
         this.elctx = elctx;
         this.func = func;
-        this.symTable = symTable;
         this.parent = null;
         this.currentBlockId = 0;
         this.current = new IREmitter();
@@ -146,11 +138,9 @@ public class IRBuilder extends ELNode.Visitor {
         this.parent = parent;
         this.func = func;
         this.elctx = parent.elctx;
-        this.symTable = parent.symTable;
         this.currentBlockId = 0;
         this.current = new IREmitter();
         this.currentFile = parent.currentFile;
-        this.lambdaName = parent.lambdaName;
 
         // Share constants with parent so pool indices are consistent
         this.constants = parent.constants;
@@ -324,19 +314,17 @@ public class IRBuilder extends ELNode.Visitor {
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
         if (node.right instanceof ELNode.IDENT ident) {
-            String id = ident.id;
-
-            if (inTailPosition && id.equals(lambdaName)) {
-                // TCO: build args (never in tail position), emit INVOKE_TAIL
-                inTailPosition = false;
-                for (ELNode arg : node.args)
-                    build(arg);
-                inTailPosition = true;
-                current.emitInvokeTail(node.args.length);
-                return;
-            }
-
             if (ident.symbol != null) {
+                if (inTailPosition && ident.symbol.func == this.func) {
+                    // TCO: build args (never in tail position), emit INVOKE_TAIL
+                    inTailPosition = false;
+                    for (ELNode arg : node.args)
+                        build(arg);
+                    inTailPosition = true;
+                    current.emitInvokeTail(node.args.length);
+                    return;
+                }
+
                 if (ident.symbol.func != null) {
                     int funcIdx = putConstant(ident.symbol.func);
                     boolean prev = inTailPosition;
@@ -359,11 +347,11 @@ public class IRBuilder extends ELNode.Visitor {
 
             if (ident.symbol == null || ident.symbol.captured) {
                 // Resolve builtin function.
-                if (tryBuildGlobalMethodCall(id, node.args))
+                if (tryBuildGlobalMethodCall(ident.id, node.args))
                     return;
 
                 // resolve target at runtime if the given id is not a local var
-                int nameIdx = putConstant(id);
+                int nameIdx = putConstant(ident.id);
                 boolean prev = inTailPosition;
                 inTailPosition = false;
                 for (ELNode arg : node.args)
@@ -498,11 +486,6 @@ public class IRBuilder extends ELNode.Visitor {
                 build(args[args.length - 1]);
                 return true;
 
-            case "delay":
-                assert args.length == 1;
-                buildThunk(args[0]);
-                return true;
-
             case "coalesce": {
                 if (args.length == 0) {
                     current.emitPushNull();
@@ -528,13 +511,6 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emitNil();
                 for (int i = 0; i < args.length; i++)
                     current.emitNewCons();
-                return true;
-
-            case "cons":
-                assert args.length == 2;
-                buildThunk(args[0]);
-                buildThunk(args[1]);
-                current.emitNewDelayCons();
                 return true;
 
             case "range":
@@ -669,79 +645,15 @@ public class IRBuilder extends ELNode.Visitor {
         return true;
     }
 
-    /**
-     * Compile an expression as a lazy thunk. The expression is compiled into
-     * a zero-parameter IRFunction, and a DELAY opcode is emitted to create
-     * a Thunk wrapping it at runtime.
-     */
-    void buildThunk(ELNode expr) {
-        while (expr instanceof ELNode.EXPR) {
-            expr = ((ELNode.EXPR)expr).right;
-        }
-        if (expr instanceof ELNode.Constant) {
-            // Create a LiteralWrapper for constants.
-            build(expr);
-            current.emitLiteral();
-            return;
-        }
-
-        IRFunction func = new IRFunction("<thunk>", 0);
-        IRBuilder nested = new IRBuilder(this, func);  // share parent pool
-        nested.inTailPosition = true;
-        nested.lambdaName = null;   // thunk is anonymous — no recursive TCO target
-
-        // Scan the expression for free variables from the enclosing scope.
-        // A thunk is a zero-param lambda — capture semantics are identical.
-        expr.accept(new DefaultVisitor() {
-            final java.util.Set<String> seen = new java.util.HashSet<>();
-            public void visit(ELNode.IDENT e) {
-                if (seen.contains(e.id)
-                    || nested.varIndex.containsKey(e.id)
-                    || !varIndex.containsKey(e.id))
-                    return;
-                nested.capturedVars.put(e.id, nested.capturedVars.size());
-                nested.ensureVar(e.id, 0);
-                seen.add(e.id);
-            }
-        });
-
-        nested.build(expr);
-        if (!endsWithReturn(nested)) {
-            int t = typeIdFromNode(expr);
-            nested.current.emitReturn(t >= 0 ? t : IRFormat.T_INT);
-        }
-        IRFunction rawFn = nested.finish("<thunk>", 0);
-        int poolIdx = putConstant(rawFn);
-
-        // Push captured values (same pattern as buildLambda)
-        if (!nested.capturedVars.isEmpty()) {
-            for (Map.Entry<String, Integer> e : nested.capturedVars.entrySet()) {
-                String varName = e.getKey();
-                if (capturedNames.contains(varName)) {
-                    int nameIdx = putConstant(varName);
-                    current.emitPushGlobal(nameIdx);
-                } else {
-                    Integer outerIdx = varIndex.get(varName);
-                    if (outerIdx != null)
-                        current.emitPushVar(outerIdx);
-                }
-            }
-        }
-        current.emitDelay(poolIdx, nested.capturedVars.size());
-    }
-
     // ── Literals: list, map, tuple, range ──
 
     public void visit(ELNode.CONS node) {
-        if (node.delay) {
-            buildThunk(node.head);
-            buildThunk(node.tail);
+        build(node.head);
+        build(node.tail);
+        if (node.delay)
             current.emitNewDelayCons();
-        } else {
-            build(node.head);
-            build(node.tail);
+        else
             current.emitNewCons();
-        }
     }
 
     public void visit(ELNode.NIL node) {
@@ -1432,7 +1344,6 @@ public class IRBuilder extends ELNode.Visitor {
                                     lam.name != null;
 
             if (node.symbol.captured) {
-                capturedNames.add(node.id);
                 if (!isNamedLambda) {
                     int nameIdx = putConstant(node.id);
                     current.emitDefineGlobal(nameIdx);
@@ -1810,7 +1721,7 @@ public class IRBuilder extends ELNode.Visitor {
         int body = allocBlockId();
         int exit = allocBlockId();
 
-        enterControlScope();;
+        enterControlScope();
         loopStack.push(new LoopTargets(header, exit));
 
         // Register loop variable first to claim its pre-allocated slot.
@@ -1922,9 +1833,9 @@ public class IRBuilder extends ELNode.Visitor {
         // No parent → no variable capture from enclosing scope.
         // External variables fall through to PUSH_GLOBAL/STORE_GLOBAL.
         // Build a fresh symbol table for this standalone subtree.
-        SymbolTable st = SymbolTableBuilder.build(node);
+        SymbolTableBuilder.build(node);
         IRFunction func = new IRFunction("<try_block", 0);
-        IRBuilder nested = new IRBuilder(elctx, func, st);
+        IRBuilder nested = new IRBuilder(elctx, func);
         // Still share the constant pool so pool indices are consistent.
         nested.constants = this.constants;
         nested.constIndex = this.constIndex;
@@ -1948,7 +1859,6 @@ public class IRBuilder extends ELNode.Visitor {
             func = new IRFunction("<lambda>", node.vars.length);
 
         IRBuilder nested = new IRBuilder(this, func);
-        nested.lambdaName = node.name;
 
         // Propagate source file from the AST node
         if (node.file != null)
@@ -1973,8 +1883,11 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Reserve slots for captured variables
-        for (SymbolTable.Symbol sym : node.captures) {
-            nested.ensureVar(sym.name, 0);
+        int captureCount = node.captures != null ? node.captures.size() : 0;
+        if (captureCount != 0) {
+            for (SymbolTable.Symbol sym : node.captures) {
+                nested.ensureVar(sym.mangledName, 0);
+            }
         }
 
         // Reserve slots for all pre-allocated variables in this lambda
@@ -1991,26 +1904,28 @@ public class IRBuilder extends ELNode.Visitor {
 
         IRFunction rawFn = nested.finish(
             node.name != null ? node.name : "lambda",
-            node.vars.length, node.captures.length);
+            node.vars.length, captureCount);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
 
         // Emit CLOSURE opcode. For captured variables:
-        // - If the captured var is in the enclosing scope's capturedNames set
+        // - If the captured var is captured in the enclosing scope's
         //   (i.e., it's stored in eval context), push via PUSH_GLOBAL.
         // - Otherwise, push from the enclosing scope's local slot via PUSH_VAR.
-        SymbolTable.Scope enclosingScope = node.scope.parent.enclosingScope();
-        for (SymbolTable.Symbol sym : node.captures) {
-            if (sym.scope.enclosingScope() == enclosingScope) {
-                // Free variable from enclosing scope's local slot
-                current.emitPushVar(sym.slot);
-            } else {
-                // Captured var live in eval context - read from there
-                int nameIdx = putConstant(sym.mangledName);
-                current.emitPushGlobal(nameIdx);
+        if (captureCount != 0) {
+            SymbolTable.Scope enclosingScope = node.scope.parent.enclosingScope();
+            for (SymbolTable.Symbol sym : node.captures) {
+                if (sym.scope.enclosingScope() == enclosingScope) {
+                    // Free variable from enclosing scope's local slot
+                    current.emitPushVar(sym.slot);
+                } else {
+                    // Captured var live in eval context - read from there
+                    int nameIdx = putConstant(sym.mangledName);
+                    current.emitPushGlobal(nameIdx);
+                }
             }
         }
-        current.emitClosure(poolIdx, node.captures.length);
+        current.emitClosure(poolIdx, captureCount);
 
         // If the lambda has a name, store it so recursive calls from
         // trampolined bodies can find the function by name.
@@ -2021,98 +1936,6 @@ public class IRBuilder extends ELNode.Visitor {
             int nameIdx = putConstant(node.name);
             current.emitDefineGlobal(nameIdx);
         }
-    }
-
-    /**
-     * Compute which variables this lambda captures from the enclosing scope
-     * and whether they are mutated. Uses ScopeAnalysis when available,
-     * falling back to the pre-scan approach.
-     */
-    private void computeLambdaCaptures(ELNode.LAMBDA node,
-                                       Set<String> freeVarsOut,
-                                       Set<String> mutableFreeOut) {
-        // Collect parameter names to exclude them
-        Set<String> paramNames = new HashSet<>();
-        for (ELNode.DEFINE v : node.vars) {
-            if (!"_".equals(v.id))
-                paramNames.add(v.id);
-        }
-
-        // The pre-pass (Phase 1) already annotated all IDENT nodes with
-        // their defining symbol.  Walk the lambda body to find references
-        // to enclosing-scope variables.
-        if (parent == null)
-            return; // top-level lambda, no outer scope
-
-        Set<String> bodyRefs = new HashSet<>();
-        Set<String> bodyMutations = new HashSet<>();
-        collectVarRefs(node.body, paramNames, bodyRefs, bodyMutations);
-
-        for (String ref : bodyRefs) {
-            if (!paramNames.contains(ref) &&
-                (varIndex.containsKey(ref) || capturedNames.contains(ref) ||
-                 parent.varIndex.containsKey(ref) || parent.capturedNames.contains(ref))) {
-                freeVarsOut.add(ref);
-                if (bodyMutations.contains(ref)) {
-                    mutableFreeOut.add(ref);
-                }
-            }
-        }
-    }
-
-    /**
-     * Collect all variable references and mutations in a subtree.
-     */
-    private void collectVarRefs(ELNode body, Set<String> excludeNames,
-                                Set<String> refsOut, Set<String> mutationsOut) {
-        body.accept(new DefaultVisitor() {
-            public void visit(ELNode.IDENT e) {
-                if (!excludeNames.contains(e.id)) {
-                    refsOut.add(e.id);
-                }
-            }
-
-            public void visit(ELNode.ASSIGN e) {
-                if (e.left instanceof ELNode.IDENT ident && !excludeNames.contains(ident.id)) {
-                    mutationsOut.add(ident.id);
-                    refsOut.add(ident.id);
-                }
-                scan(e.left);
-                scan(e.right);
-            }
-
-            public void visit(ELNode.INC e) {
-                if (e.right instanceof ELNode.IDENT ident && !excludeNames.contains(ident.id)) {
-                    mutationsOut.add(ident.id);
-                    refsOut.add(ident.id);
-                }
-                scan(e.right);
-            }
-
-            public void visit(ELNode.DEC e) {
-                if (e.right instanceof ELNode.IDENT ident && !excludeNames.contains(ident.id)) {
-                    mutationsOut.add(ident.id);
-                    refsOut.add(ident.id);
-                }
-                scan(e.right);
-            }
-
-            // Recursively collect refs from nested lambda bodies, excluding
-            // the nested lambda's own parameters. This ensures that outer
-            // functions know about variables captured by deeply nested
-            // closures (e.g., outer(a) => \b => \c => a + b + c).
-            public void visit(ELNode.LAMBDA e) {
-                Set<String> nestedExcludes = new HashSet<>(excludeNames);
-                for (ELNode.DEFINE v : e.vars) {
-                    nestedExcludes.add(v.id);
-                }
-                collectVarRefs(e.body, nestedExcludes, refsOut, mutationsOut);
-            }
-
-            public void visit(ELNode.BLOCK e) {
-                // Don't recurse into nested blocks either
-            }
-        });
     }
 
     // ── Pattern matching ──
@@ -2368,7 +2191,7 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitStoreVar(baseid);
             current.emitPop();
             for (int i = 0; i < map.keys.length; i++) {
-                assert map.keys[i] instanceof ELNode.STRINGVAL key;
+                assert map.keys[i] instanceof ELNode.STRINGVAL;
                 current.emitPushVar(baseid);
                 emitPushConst(T_STRING, ((ELNode.STRINGVAL)map.keys[i]).value);
                 emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
@@ -2839,9 +2662,9 @@ public class IRBuilder extends ELNode.Visitor {
 
     public static IRFunction compile(ELContext elctx, ELNode node, boolean optimize) {
         IRBytecodeCompiler.resetState();
-        SymbolTable st = SymbolTableBuilder.build(node);
+        SymbolTableBuilder.build(node);
         IRFunction func = new IRFunction("<expr>", 0);
-        IRBuilder b = new IRBuilder(elctx, func, st);
+        IRBuilder b = new IRBuilder(elctx, func);
         b.build(node);
         if (!endsWithReturn(b)) {
             int typeId = b.typeIdFromNode(node);
@@ -2863,7 +2686,7 @@ public class IRBuilder extends ELNode.Visitor {
         IRBytecodeCompiler.resetState();
 
         IRFunction func = new IRFunction("<program>", 0);
-        IRBuilder b = new IRBuilder(elctx, func, symTable);
+        IRBuilder b = new IRBuilder(elctx, func);
         if (file != null)
             b.setFile(file);
 
