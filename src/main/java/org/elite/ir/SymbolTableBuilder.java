@@ -59,7 +59,11 @@ public final class SymbolTableBuilder {
             // Create a IRFunction skeleton.
             if (e.expr instanceof ELNode.LAMBDA lam) {
                 e.symbol.func = new IRFunction(e.id, lam.vars.length);
+                e.symbol.node = lam; // provide function prototype
                 lam.symbol = e.symbol;
+            } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
+                e.symbol.node = cdef; // provide class definition
+                cdef.symbol = e.symbol;
             }
         }
 
@@ -77,13 +81,28 @@ public final class SymbolTableBuilder {
 
             // After walking the lambda body, determine which variables
             // from outer scopes are captured by this lambda.
-            markCaptured(e.scope, e.body);
+            Set<String> captures = new HashSet<>();
+            e.body.accept(new DefaultVisitor() {
+                public void visit(ELNode.IDENT var) {
+                    var sym = e.scope.lookupOuter(var.id);
+                    if (sym != null && !sym.name.equals(e.name)) {
+                        captures.add(var.id);
+                        sym.captured = true;
+                    }
+                }
+
+                public void visit(ELNode.LAMBDA e) {
+                    // don't track into nested lambda
+                }
+            });
+
+            e.captures = captures.toArray(new String[0]);
         }
 
         public void visit(ELNode.CLASSDEF e) {
             // Class definition: fresh scope (separate compilation unit)
             table.enterScope("class:" + e.id, true);
-            // TODO: walk class members when CLASSDEF compilation is ready
+            super.visit(e);
             table.leaveScope();
         }
 
@@ -193,21 +212,6 @@ public final class SymbolTableBuilder {
                 table.leaveScope();
             }
             scan(e.deflt);
-        }
-
-        /**
-         * Walk a subtree (lambda body) and mark outer-scope variables that
-         * are captured as {@code captured=true} on their defining scope's
-         * SymbolInfo.
-         */
-        private void markCaptured(SymbolTable.Scope scope, ELNode node) {
-            node.accept(new DefaultVisitor() {
-                public void visit(ELNode.IDENT e) {
-                    var sym = scope.lookupOuter(e.id);
-                    if (sym != null)
-                        sym.captured = true;
-                }
-            });
         }
 
         /** Register pattern variable names from CASE. */

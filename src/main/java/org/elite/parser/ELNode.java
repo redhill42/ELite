@@ -34,13 +34,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
 import java.math.RoundingMode;
-import java.util.Collection;
-import java.util.List;
-import java.util.AbstractList;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.LinkedHashMap;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.io.Serializable;
 
@@ -498,9 +492,10 @@ public abstract class ELNode implements Serializable
         public final boolean   varargs;
         public final ELNode    body;
 
-        public transient SymbolTable.Scope scope;
-
         private boolean dvals;
+
+        public transient SymbolTable.Scope scope;
+        public transient String[] captures;
 
         public LAMBDA(int pos, String file, DEFINE[] vars, ELNode body) {
             this(pos, file, null, null, vars, false, body);

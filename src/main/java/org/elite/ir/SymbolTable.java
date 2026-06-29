@@ -1,5 +1,7 @@
 package org.elite.ir;
 
+import org.elite.parser.ELNode;
+
 import java.util.*;
 
 public class SymbolTable {
@@ -14,6 +16,7 @@ public class SymbolTable {
         public boolean captured;        // captured by an inner closure?
         public IRFunction func;         // known function: the compiled IRFunction
         public int funcPoolIdx = -1;    // constant pool index of the IRFunction
+        public ELNode node = null;      // the node that provide symbol definition info
 
         Symbol(Scope scope, String name) {
             this.scope = scope;

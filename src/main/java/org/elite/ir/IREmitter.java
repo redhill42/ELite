@@ -105,10 +105,6 @@ public class IREmitter {
         return emit1(PUSH_VAR, K_PRIM, varIndex & 0xFFFF);
     }
 
-    public IREmitter emitPushVarRaw(int varIndex) {
-        return emit1(PUSH_VAR_RAW, K_PRIM, varIndex & 0xFFFF);
-    }
-
     public IREmitter emitDelay(int funcPoolIdx, int captureCount) {
         if (fits16(funcPoolIdx))
             return emit2(DELAY, K_NONE, funcPoolIdx, captureCount);

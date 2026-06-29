@@ -141,7 +141,17 @@ public final class ASTDumper {
             if (type != null) sb.append(" :").append(type);
         } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
 
-        if (node.symbol != null) {
+        if (node instanceof ELNode.LAMBDA lam) {
+            if (lam.captures != null) {
+                sb.append(" captures: (");
+                for (int i = 0; i < lam.captures.length; i++) {
+                    sb.append(lam.captures[i]);
+                    if (i < lam.captures.length - 1)
+                        sb.append(", ");
+                }
+                sb.append(")");
+            }
+        } else if (node.symbol != null) {
             sb.append(" slot=").append(node.symbol.slot);
             if (node.symbol.captured)
                 sb.append(" captured");

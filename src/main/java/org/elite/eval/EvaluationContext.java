@@ -21,6 +21,8 @@ import javax.el.FunctionMapper;
 import javax.el.VariableMapper;
 import javax.el.ValueExpression;
 import javax.el.MethodNotFoundException;
+import javax.management.ValueExp;
+
 import elite.xml.Namespace;
 import elite.lang.Closure;
 import org.elite.eval.closure.ClassDefinition;
@@ -234,13 +236,15 @@ public class EvaluationContext extends AbstractClosure
     }
 
     public Object resolveClass(String name) {
-        Object cls;
-
         // find class in all context
         for (Resolver r = tail; r != null; r = r.next) {
-            cls = r.resolve(name);
+            Object cls = r.resolve(name);
             if (cls instanceof ClassDefinition || cls instanceof DataClass) {
                 return cls;
+            } else if (cls instanceof ValueExpression ve) {
+                cls = ve.getValue(elctx);
+                if (cls instanceof ClassDefinition || cls instanceof DataClass)
+                    return cls;
             }
         }
 

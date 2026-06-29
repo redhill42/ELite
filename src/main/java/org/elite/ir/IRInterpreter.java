@@ -206,16 +206,7 @@ public class IRInterpreter {
             }
             case PUSH_VAR: {
                 int idx = pl & 0xFFFF;
-                Object val = locals[idx];
-                if (val instanceof Thunk t)
-                    val = t.getValue(elctx);
-                push(val);
-                ip += 1;
-                break;
-            }
-            case PUSH_VAR_RAW: {
-                int idx = pl & 0xFFFF;
-                push(locals[idx]);  // no auto-force
+                push(locals[idx]);
                 ip += 1;
                 break;
             }

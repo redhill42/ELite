@@ -321,20 +321,6 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    private boolean isLocalVar(String id) {
-        if (capturedNames.contains(id))
-            return false;
-
-        if (varIndex.containsKey(id))
-            return true;
-
-        if (parent != null && parent.varIndex.containsKey(id) &&
-            !parent.capturedNames.contains(id))
-            return true;
-
-        return false;
-    }
-
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
         if (node.right instanceof ELNode.IDENT ident) {
@@ -350,32 +336,33 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
-            if (ident.symbol != null && ident.symbol.func != null) {
-                int funcIdx = putConstant(ident.symbol.func);
-                boolean prev = inTailPosition;
-                inTailPosition = false;
-                for (int i = 0; i < node.args.length; i++)
-                    build(node.args[i]);
-                inTailPosition = prev;
-                current.emitInvokeDirect(funcIdx, node.args.length);
-                return;
+            if (ident.symbol != null) {
+                if (ident.symbol.func != null) {
+                    int funcIdx = putConstant(ident.symbol.func);
+                    boolean prev = inTailPosition;
+                    inTailPosition = false;
+                    for (int i = 0; i < node.args.length; i++)
+                        build(node.args[i]);
+                    inTailPosition = prev;
+                    current.emitInvokeDirect(funcIdx, node.args.length);
+                    return;
+                }
+
+                if (ident.symbol.node instanceof ELNode.CLASSDEF) {
+                    // FIXME: @data constructors have lazy fields (&tail) — AST must evaluate
+                    // the call to wrap deferred arguments in EvalClosure. IR eagerly
+                    // builds all arguments before INVOKE_DYN, causing infinite recursion.
+                    buildTrampoline(node);
+                    return;
+                }
             }
 
-            // Resolve builtin function.
-            if (tryBuildGlobalMethodCall(id, node.args))
-                return;
+            if (ident.symbol == null || ident.symbol.captured) {
+                // Resolve builtin function.
+                if (tryBuildGlobalMethodCall(id, node.args))
+                    return;
 
-            // FIXME: @data constructors have lazy fields (&tail) — AST must evaluate
-            // the call to wrap deferred arguments in EvalClosure. IR eagerly
-            // builds all arguments before INVOKE_DYN, causing infinite recursion.
-            if (node.right instanceof ELNode.IDENT &&
-                dataConstructorNames.contains(((ELNode.IDENT)node.right).id)) {
-                buildTrampoline(node);
-                return;
-            }
-
-            // resolve target at runtime if the given id is not a local var
-            if (!isLocalVar(id)) {
+                // resolve target at runtime if the given id is not a local var
                 int nameIdx = putConstant(id);
                 boolean prev = inTailPosition;
                 inTailPosition = false;
@@ -903,7 +890,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Assign to right value itself.
         if (target instanceof ELNode.IDENT ident)
-            buildStoreVariable(ident.id);
+            buildStoreVariable(ident);
         else if (target instanceof ELNode.ACCESS access)
             buildStoreProperty(access);
         else // could not happen, parser doesn't allow increment/decrement on other expression
@@ -1252,7 +1239,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (left instanceof ELNode.IDENT ident) {
-            buildStoreVariable(ident.id);
+            buildStoreVariable(ident);
         } else if (left instanceof ELNode.ACCESS access) {
             buildStoreProperty(access);
         } else {
@@ -1270,7 +1257,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (left instanceof ELNode.IDENT ident) {
             build(right);
-            buildStoreVariable(ident.id);
+            buildStoreVariable(ident);
             return true;
         }
 
@@ -1290,20 +1277,13 @@ public class IRBuilder extends ELNode.Visitor {
         return false;
     }
 
-    private void buildStoreVariable(String name) {
-        // Captured variables always go through evalContext (STORE_GLOBAL).
-        if (capturedNames.contains(name)) {
-            int nameIdx = putConstant(name);
+    private void buildStoreVariable(ELNode.IDENT ident) {
+        if (ident.symbol == null || ident.symbol.captured) {
+            int nameIdx = putConstant(ident.id);
             current.emitStoreGlobal(nameIdx);
         } else {
-            int idx = varIndex.getOrDefault(name, -1);
-            if (idx >= 0) {
-                current.emitStoreVar(idx);
-            } else {
-                // Variable from previous eval — only global binding exists
-                int nameIdx = putConstant(name);
-                current.emitStoreGlobal(nameIdx);
-            }
+            int idx = ident.symbol.slot;
+            current.emitStoreVar(idx);
         }
     }
 
@@ -1400,7 +1380,7 @@ public class IRBuilder extends ELNode.Visitor {
                 buildAssignFlattenTuple(tt.elems, tmpVars);
             } else if (elem instanceof ELNode.IDENT ident) {
                 current.emitPushVar(tmpVars.remove(0));
-                buildStoreVariable(ident.id);
+                buildStoreVariable(ident);
             } else if (elem instanceof ELNode.ACCESS access) {
                 current.emitPushVar(tmpVars.remove(0));
                 buildStoreProperty(access);
@@ -1418,7 +1398,6 @@ public class IRBuilder extends ELNode.Visitor {
             // @data constructors (CLASSDEF) have lazy fields (&tail)
             // that must be wrapped in EvalClosure by AST.
             if (node.expr instanceof ELNode.CLASSDEF) {
-                dataConstructorNames.add(node.id);
                 buildTrampoline(node);
                 return;
             }
@@ -1495,11 +1474,6 @@ public class IRBuilder extends ELNode.Visitor {
             varNames.add(null);
             paramFlags.add(0);
         }
-    }
-
-    /** Allocate a temp var slot guaranteed not to collide with pre-allocated symbols. */
-    private int ensureTempVar(String name) {
-        return ensureVar(name);
     }
 
     public void visit(ELNode.EXPR node) {
@@ -2042,16 +2016,8 @@ public class IRBuilder extends ELNode.Visitor {
         // above the max pre-allocated slot, avoiding collisions.
         nested.reserveSlots(node.scope.maxSlots);
 
-        // Build the lambda body in its own function scope so that
-        // functions defined inside are registered locally and don't
-        // leak into the enclosing scope's knownFunctions.
         nested.inTailPosition = true;
-        nested.pushFunctionScope();
-        try {
-            nested.build(node.body);
-        } finally {
-            nested.popFunctionScope();
-        }
+        nested.build(node.body);
         if (!endsWithReturn(nested)) {
             int t = nested.typeIdFromNode(node.body);
             nested.current.emitReturn(t >= 0 ? t : T_INT);
@@ -2062,12 +2028,6 @@ public class IRBuilder extends ELNode.Visitor {
             node.vars.length, nested.capturedVars);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
-        // Register this function in the enclosing scope for direct calls.
-        // Capturing functions (closures) must go through INVOKE_DYN so
-        // captured values are passed via IRClosure.
-        if (fn.captureCount() == 0) {
-            registerFunction(node.name, poolIdx);
-        }
 
         // Emit CLOSURE opcode. For captured variables:
         // - If the captured var is in the enclosing scope's capturedNames set
@@ -2948,75 +2908,15 @@ public class IRBuilder extends ELNode.Visitor {
         return null; // complex expression
     }
 
-    // ── Function registry for direct calls ──
-    // Scope-aware: each function scope has its own map. Push on scope entry,
-    // pop on scope exit. Lookups search from innermost outward.
-    private static final ThreadLocal<Deque<Map<String, Integer>>> knownFunctions = ThreadLocal.withInitial(ArrayDeque::new);
-    /**
-     * &#064;data constructor names whose calls need AST trampoline (lazy args).
-     */
-    private static final Set<String> dataConstructorNames = new HashSet<>();
-
-    /**
-     * Push a new function scope (called at the start of a lambda body).
-     */
-    private void pushFunctionScope() {
-        knownFunctions.get().push(new LinkedHashMap<>());
-    }
-
-    /**
-     * Pop the current function scope (called at the end of a lambda body).
-     */
-    private void popFunctionScope() {
-        Deque<Map<String, Integer>> stack = knownFunctions.get();
-        if (!stack.isEmpty())
-            stack.pop();
-    }
-
-    /**
-     * Register a function name in the current scope.
-     */
-    private void registerFunction(String name, int irFunctionPoolIdx) {
-        if (name == null)
-            return;
-        Deque<Map<String, Integer>> stack = knownFunctions.get();
-        if (stack.isEmpty())
-            stack.push(new LinkedHashMap<>());
-        stack.peek().put(name, irFunctionPoolIdx);
-    }
-
-    /**
-     * Resolve a function name from innermost scope outward.
-     */
-    private Integer resolveKnownFunction(String name) {
-        for (Map<String, Integer> scope : knownFunctions.get()) {
-            Integer idx = scope.get(name);
-            if (idx != null)
-                return idx;
-        }
-        return null;
-    }
-
     // ── Static API ──
 
     private static final ConstantFolder FOLDER = new ConstantFolder();
-
-    /**
-     * Clear the function registry before compiling a new program.
-     */
-    private static void clearKnownFunctions() {
-        knownFunctions.get().clear();
-        knownFunctions.remove();  // also remove ThreadLocal to prevent
-                                  // cross-test pollution
-        dataConstructorNames.clear();
-    }
 
     public static IRFunction compile(ELNode node) {
         return compile(ELEngine.createELContext(), node, true);
     }
 
     public static IRFunction compile(ELContext elctx, ELNode node, boolean optimize) {
-        clearKnownFunctions();
         IRBytecodeCompiler.resetState();
         SymbolTable st = SymbolTableBuilder.build(node);
         IRFunction func = new IRFunction("<expr>", 0);
@@ -3039,7 +2939,6 @@ public class IRBuilder extends ELNode.Visitor {
         List<ELNode> defs = program.getDefinitions();
         List<ELNode> exps = program.getExpressions();
 
-        clearKnownFunctions();
         IRBytecodeCompiler.resetState();
 
         IRFunction func = new IRFunction("<program>", 0);
