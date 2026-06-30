@@ -209,31 +209,47 @@ public final class SymbolTableBuilder {
             if (c.patterns == null)
                 return;
             for (ELNode.Pattern p : c.patterns)
-                collectPatternBindings((ELNode)p);
+                collectPatternBindings((ELNode)p, true);
         }
 
-        private void collectPatternBindings(ELNode pat) {
+        private void collectPatternBindings(ELNode pat, boolean bind) {
             if (pat == null)
                 return;
 
             if (pat instanceof ELNode.DEFINE def) {
                 if (!"_".equals(def.id)) {
-                    var sym = table.define(def.id);
-                    def.symbol = sym;
-                    def.id = sym.mangledName;
+                    if (bind) {
+                        var sym = table.define(def.id);
+                        def.symbol = sym;
+                        def.id = sym.mangledName;
+                    } else {
+                        var sym = table.lookupLocal(def.id);
+                        assert sym != null;
+                        def.symbol = sym;
+                        def.id = sym.mangledName;
+                    }
+                }
+            } else if (pat instanceof ELNode.IDENT ident) {
+                var sym = table.lookupLocal(ident.id);
+                if (sym != null) {
+                    ident.symbol = sym;
+                    ident.id = sym.mangledName;
                 }
             } else if (pat instanceof ELNode.TUPLE t) {
                 for (ELNode e : t.elems)
-                    collectPatternBindings(e);
+                    collectPatternBindings(e, bind);
             } else if (pat instanceof ELNode.CONS cons) {
-                collectPatternBindings(cons.head);
-                collectPatternBindings(cons.tail);
+                collectPatternBindings(cons.head, bind);
+                collectPatternBindings(cons.tail, bind);
             } else if (pat instanceof ELNode.MAP m) {
                 for (ELNode v : m.values)
-                    collectPatternBindings(v);
+                    collectPatternBindings(v, bind);
             } else if (pat instanceof ELNode.OR or) {
-                collectPatternBindings(or.left);
-                collectPatternBindings(or.right);
+                // Only left pattern needs binding, right pattern
+                // should have same bindings as left, this is guaranteed
+                // by Parser.
+                collectPatternBindings(or.left, bind);
+                collectPatternBindings(or.right, false);
             } else if (pat instanceof ELNode.NEW) {
                 // FIXME: handle data constructor
             }

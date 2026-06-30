@@ -197,15 +197,15 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.NUMBER node) {
         Number n = node.value;
         if (n instanceof Integer || n instanceof Short || n instanceof Byte) {
-            emitPushConst(T_INT, n.intValue());
+            emitPushConst(n.intValue());
         } else if (n instanceof Long) {
             long v = n.longValue();
             if (v >= Integer.MIN_VALUE && v <= Integer.MAX_VALUE)
-                emitPushConst(T_INT, (int)v);
+                emitPushConst((int)v);
             else
-                emitPushConst(T_LONG, v);
+                emitPushConst(v);
         } else if (n instanceof Double || n instanceof Float) {
-            emitPushConst(T_DOUBLE, n.doubleValue());
+            emitPushConst(n.doubleValue());
         } else {
             emitPushConst(K_NONE, n);
         }
@@ -216,11 +216,11 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.STRINGVAL node) {
-        emitPushConst(T_STRING, node.value);
+        emitPushConst(node.value);
     }
 
     public void visit(ELNode.LITERAL node) {
-        emitPushConst(T_STRING, node.value);
+        emitPushConst(node.value);
     }
 
     public void visit(ELNode.CHARVAL node) {
@@ -661,9 +661,8 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Initialize temporary variables.
         enterControlScope();
-        String indId = b.vars.length == 1 ? b.vars[0].id : "*t0*";
-        int indvar = defineLocalVar(indId);
-        int endvar = defineLocalVar(Parser.tempvar());
+        int indvar = b.vars.length == 1 ? defineVar(b.vars[0]) : defineLocalVar();
+        int endvar = defineLocalVar();
 
         // FIXME: induction variable may be captured, should put in evaluation context.
         build(begin);
@@ -696,7 +695,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Increment induction variable.
         current.emitPushVar(indvar);
-        emitPushConst(T_INT, Math.abs(step));
+        emitPushConst(Math.abs(step));
         if (step > 0)
             current.emitDynAdd();
         else
@@ -715,7 +714,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private boolean buildMathReduce(ELNode[] args, int op) {
         if (args.length == 0) {
-            emitPushConst(T_INT, 0);
+            emitPushConst(0);
         } else {
             build(args[0]);
             for (int i = 1; i < args.length; i++) {
@@ -762,7 +761,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.exclude && node.end != null) {
             // Exclusive range [begin..<end): push end-1 for inclusive range end
             build(node.end);
-            emitPushConst(T_INT, 1L);
+            emitPushConst(1);
             current.emitDynSub();
         } else {
             build(node.end);
@@ -875,7 +874,7 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitDup();
 
         // Increment or decrement the value.
-        emitPushConst(T_INT, 1);
+        emitPushConst(1);
         if (isInc)
             current.emitDynAdd();
         else
@@ -1219,7 +1218,7 @@ public class IRBuilder extends ELNode.Visitor {
     // ── Compound assignment (+=, -=, etc.) ──
     private void buildAssignOp(ELNode.ASSIGNOP node) {
         // Invoke dynamic assignment operator
-        emitPushConst(T_INT, node.binary.op);
+        emitPushConst(node.binary.op);
         build(node.left);
         build(node.right);
         emitInvokeStatic(Runtime.class, "invokeAssignOp", ELContext.class, int.class,
@@ -1443,18 +1442,19 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    private int defineLocalVar(String name) {
+    /** Like defineLocalVar but uses pre-allocated slot from the DEFINE node's symbol. */
+    private int defineVar(ELNode.DEFINE def) {
+        return registerSlot(def.id, def.symbol.slot, def.symbol.flags);
+    }
+
+    private int defineLocalVar() {
         // Slots are pre-allocated — if the name is already registered
         // (via visit(DEFINE)), return its slot; otherwise allocate a fresh one.
+        String name = Parser.tempvar();
         Integer existing = varIndex.get(name);
         if (existing != null)
             return existing;
         return ensureVar(name);
-    }
-
-    /** Like defineLocalVar but uses pre-allocated slot from the DEFINE node's symbol. */
-    private int defineVarFromSymbol(ELNode.DEFINE def) {
-        return registerSlot(def.id, def.symbol.slot, def.symbol.flags);
     }
 
     /**
@@ -1466,6 +1466,39 @@ public class IRBuilder extends ELNode.Visitor {
             varNames.add(null);
             paramFlags.add(0);
         }
+    }
+
+    /**
+     * Register a pre-allocated slot (from SymbolTable) in the local
+     * varNames/paramFlags/varIndex structures.  The slot index is used
+     * as-is; arrays are padded if necessary.
+     */
+    private int registerSlot(String name, int slot, int flags) {
+        while (varNames.size() <= slot) {
+            varNames.add(null);
+            paramFlags.add(0);
+        }
+        varNames.set(slot, name);
+        paramFlags.set(slot, flags);
+        varIndex.put(name, slot);
+        return slot;
+    }
+
+
+    // ── Symbol/type helpers ──
+    int ensureVar(String name) {
+        return ensureVar(name, 0);
+    }
+
+    int ensureVar(String name, int flags) {
+        Integer idx = varIndex.get(name);
+        if (idx != null)
+            return idx;
+        idx = varNames.size();
+        varNames.add(name);
+        paramFlags.add(flags);
+        varIndex.put(name, idx);
+        return idx;
     }
 
     public void visit(ELNode.EXPR node) {
@@ -1480,7 +1513,7 @@ public class IRBuilder extends ELNode.Visitor {
      */
     public void visit(ELNode.Composite node) {
         if (node.elems.length == 0) {
-            emitPushConst(T_STRING, "");
+            emitPushConst("");
             return;
         }
         for (ELNode elem : node.elems)
@@ -1640,13 +1673,13 @@ public class IRBuilder extends ELNode.Visitor {
         enterControlScope();
         // Register loop variable first to claim its pre-allocated slot,
         // then allocate temp vars after it to avoid slot collisions.
-        int varIdx = defineVarFromSymbol(var);
-        int idxIdx = index != null ? defineVarFromSymbol(index) : defineLocalVar(Parser.tempvar());
+        int varIdx = defineVar(var);
+        int idxIdx = index != null ? defineVar(index) : defineLocalVar();
 
-        emitPushConst(T_LONG, 0);
+        emitPushConst(0L);
         current.emitStoreVar(idxIdx);
         current.emitPop();
-        emitPushConst(T_LONG, begin);
+        emitPushConst(begin);
         current.emitStoreVar(varIdx);
         current.emitPop();
 
@@ -1663,7 +1696,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (range.end != null) {
             startBlock(headerB);
             current.emitPushVar(idxIdx);
-            emitPushConst(T_LONG, count);
+            emitPushConst(count);
             current.emitLLt();
             current.emitJumpIfTrue(bodyB);
             current.emitJump(exitB);
@@ -1680,13 +1713,13 @@ public class IRBuilder extends ELNode.Visitor {
         // Generate loop step.
         startBlock(contB);
         current.emitPushVar(idxIdx);
-        emitPushConst(T_LONG, 1);
+        emitPushConst(1L);
         current.emitLAdd();
         current.emitStoreVar(idxIdx);
         current.emitPop();
 
         current.emitPushVar(varIdx);
-        emitPushConst(T_LONG, step);
+        emitPushConst(step);
         current.emitLAdd();
         current.emitStoreVar(varIdx);
         current.emitPop();
@@ -1703,15 +1736,14 @@ public class IRBuilder extends ELNode.Visitor {
                                        ELNode.RANGE range, ELNode body) {
         enterControlScope();
         // Register loop variable first to claim its pre-allocated slot.
-        int varIdx = defineVarFromSymbol(var);
-        int idxIdx = index != null ? defineVarFromSymbol(index)
-                                   : defineLocalVar(Parser.tempvar());
+        int varIdx = defineVar(var);
+        int idxIdx = index != null ? defineVar(index) : defineLocalVar();
         int stepIdx = -1;
         int countIdx = -1;
 
         // Initialize local variables.
         if (range.next != null) {
-            stepIdx = defineLocalVar(Parser.tempvar());
+            stepIdx = defineLocalVar();
             build(range.next);
             build(range.begin);
             current.emitStoreVar(varIdx);
@@ -1725,10 +1757,10 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (range.end != null) {
-            countIdx = defineLocalVar(Parser.tempvar());
+            countIdx = defineLocalVar();
             build(range.end);
             if (range.exclude) {
-                emitPushConst(T_LONG, 1);
+                emitPushConst(1L);
                 current.emitLSub();
             }
             current.emitPushVar(varIdx);
@@ -1737,13 +1769,13 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emitPushVar(stepIdx);
                 current.emitLDiv();
             }
-            emitPushConst(T_LONG, 1);
+            emitPushConst(1L);
             current.emitLAdd();
             current.emitStoreVar(countIdx); // count = (end - begin) / step + 1
             current.emitPop();
         }
 
-        emitPushConst(T_LONG, 0);
+        emitPushConst(0L);
         current.emitStoreVar(idxIdx);
 
         int bodyB = allocBlockId();
@@ -1775,7 +1807,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Generate loop step.
         startBlock(contB);
         current.emitPushVar(idxIdx);
-        emitPushConst(T_LONG, 1);
+        emitPushConst(1L);
         current.emitLAdd();
         current.emitStoreVar(idxIdx);
         current.emitPop();
@@ -1784,7 +1816,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (range.next != null)
             current.emitPushVar(stepIdx);
         else
-            emitPushConst(T_LONG, 1);
+            emitPushConst(1L);
         current.emitDynAdd();
         current.emitStoreVar(varIdx);
         current.emitPop();
@@ -1806,15 +1838,15 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.push(new LoopTargets(header, exit));
 
         // Register loop variable first to claim its pre-allocated slot.
-        int varIdx = defineVarFromSymbol(node.var);
+        int varIdx = defineVar(node.var);
         int idxIdx = -1;
         if (node.index != null) {
-            idxIdx = defineVarFromSymbol(node.index);
-            emitPushConst(T_LONG, -1);
+            idxIdx = defineVar(node.index);
+            emitPushConst(-1L);
             current.emitStoreVar(idxIdx);
             current.emitPop();
         }
-        int iterIdx = defineLocalVar(Parser.tempvar());
+        int iterIdx = defineLocalVar();
 
         build(node.range);
         emitInvokeStatic(Runtime.class, "getIterator", Object.class);
@@ -1836,7 +1868,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (node.index != null) {
             current.emitPushVar(idxIdx);
-            emitPushConst(T_LONG, 1);
+            emitPushConst(1L);
             current.emitIAdd();
             current.emitStoreVar(idxIdx);
             current.emitPop();
@@ -2023,8 +2055,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     /**
      * Compile a MATCH expression as a series of if-else chains.
-     * Unsupported patterns (NEW, EXPR, MAP, RANGE, REGEXP, CONS, TUPLE, NIL)
-     * cause the entire MATCH to fall back to trampoline.
+     * Unsupported patterns (NEW for now) cause the entire MATCH
+     * to fall back to trampoline.
      */
     public void visit(ELNode.MATCH node) {
         if (hasUnsupportedMatchPattern(node))
@@ -2039,23 +2071,29 @@ public class IRBuilder extends ELNode.Visitor {
             public void visit(ELNode.NEW e)   { unsupported[0] = true; }
         };
         for (ELNode.CASE c : node.alts) {
-            if (c.patterns != null) {
-                for (ELNode.Pattern p : c.patterns)
-                    ((ELNode) p).accept(v);
+            for (ELNode.Pattern p : c.patterns) {
+                ((ELNode)p).accept(v);
+                if (unsupported[0])
+                    return true;
             }
         }
-        return unsupported[0];
+        return false;
     }
 
     private void buildMatch(ELNode.MATCH node) {
+        // Evaluate all args, store in temp locals except it's already a local var.
         int nargs = node.args.length;
-        // Evaluate all args, store in temp locals
         int[] argSlots = new int[nargs];
         for (int i = 0; i < nargs; i++) {
-            argSlots[i] = ensureVar(Parser.tempvar());
-            build(node.args[i]);
-            current.emitStoreVar(argSlots[i]);
-            current.emitPop();
+            if (node.args[i] instanceof ELNode.IDENT ident &&
+                ident.symbol != null && !ident.symbol.captured) {
+                argSlots[i] = ident.symbol.slot;
+            } else {
+                argSlots[i] = defineLocalVar();
+                build(node.args[i]);
+                current.emitStoreVar(argSlots[i]);
+                current.emitPop();
+            }
         }
 
         int exitBlock = allocBlockId();
@@ -2083,31 +2121,42 @@ public class IRBuilder extends ELNode.Visitor {
             if (c.patterns != null) {
                 for (int pi = 0; pi < c.patterns.length; pi++) {
                     current.emitPushVar(argSlots[pi]);  // push arg value
-                    compileMatchPattern((ELNode) c.patterns[pi], failBlock);
-                    current.emitJumpIfFalse(failBlock);
-                }
-            }
-
-            // Guards
-            if (c.guards != null) {
-                for (ELNode g : c.guards) {
-                    if (g != null) {
-                        build(g);
+                    if (compileMatchPattern(argSlots[pi], (ELNode)c.patterns[pi], failBlock))
                         current.emitJumpIfFalse(failBlock);
-                    }
                 }
             }
 
-            // Body (first body is the matched expression)
-            ELNode body = (c.bodies != null && c.bodies.length > 0)
-                          ? c.bodies[0] : null;
-            if (body != null)
-                buildTail(body);
-            current.emitJump(exitBlock);
+            if (c.guards == null) {
+                // no guards, evaluate the single body
+                assert c.bodies != null && c.bodies.length == 1;
+                buildTail(c.bodies[0]);
+                current.emitJump(exitBlock);
+            } else {
+                // Evaluate each guard and body
+                assert c.bodies.length == c.guards.length;
+                for (int i = 0; i < c.guards.length; i++) {
+                    int nextGuard = -1;
+                    if (c.guards[i] != null) {
+                        if (i != c.guards.length - 1) {
+                            nextGuard = allocBlockId();
+                            build(c.guards[i]);
+                            current.emitJumpIfFalse(nextGuard);
+                        } else {
+                            build(c.guards[i]);
+                            current.emitJumpIfFalse(failBlock);
+                        }
+                    }
+                    buildTail(c.bodies[i]);
+                    current.emitJump(exitBlock);
+                    if (nextGuard != -1)
+                        startBlock(nextGuard);
+                }
+            }
 
             // On failure: discard case bindings, go to next case
             sealAndStart(failBlock);
             leaveControlScope();
+
             // Falls through to next case entry (unless this was the last case)
             if (ci + 1 < node.alts.length)
                 current.emitJump(nextCase[ci + 1]);
@@ -2118,7 +2167,8 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.deflt != null) {
             build(node.deflt);
         } else {
-            emitPushNull();
+            emitPushConst("no pattern matched");
+            current.emitThrow();
         }
         current.emitJump(exitBlock);
 
@@ -2128,231 +2178,249 @@ public class IRBuilder extends ELNode.Visitor {
     /**
      * Compile a single pattern check, leaving TRUE on stack if matched.
      */
-    private void compileMatchPattern(ELNode pat, int failBlock) {
+    private boolean compileMatchPattern(int argSlot, ELNode pat, int failBlock) {
         if (pat instanceof ELNode.DEFINE def) {
-            compileDefinePattern(def, failBlock);
-            return;
+            // Type check if annotated
+            if (def.type != null) {
+                emitInstOf(def.type);
+                current.emitJumpIfFalse(failBlock);
+            }
+
+            // As-pattern check
+            if (def.expr != null) {
+                if (def.type != null)
+                    current.emitPushVar(argSlot);
+                if (compileMatchPattern(argSlot, def.expr, failBlock))
+                    current.emitJumpIfFalse(failBlock);
+            }
+
+            // Wildcard: always matches
+            if ("_".equals(def.id)) {
+                return false;
+            }
+
+            // Variable binding -> bind to new pattern variable.
+            int slot = registerSlot(def.id, def.symbol.slot, def.symbol.flags);
+            if (def.type != null || def.expr != null)
+                current.emitPushVar(argSlot);
+            current.emitStoreVar(slot);
+            if (def.symbol.captured)
+                current.emitDefineGlobal(putConstant(def.id));
+            return false;
         }
 
         if (pat instanceof ELNode.IDENT var) {
             int slot = registerSlot(var.id, var.symbol.slot, var.symbol.flags);
             current.emitPushVar(slot);
             current.emitDynEq();
+            return true;
         }
 
-        if (pat instanceof ELNode.NOT notPat) {
-            compileMatchPattern(notPat.right, failBlock);
-            current.emitNot();
-            return;
+        if (pat instanceof ELNode.NOT not) {
+            if (compileMatchPattern(argSlot, not.right, failBlock))
+                current.emitNot();
+            else
+                current.emitPushFalse();
+            return true;
         }
-        if (pat instanceof ELNode.OR orPat) {
-            compileOrPattern(orPat, failBlock);
-            return;
+
+        if (pat instanceof ELNode.OR or) {
+            // Save variable binding state before trying left branch
+            Map<String, Integer> savedBindings = new LinkedHashMap<>(varIndex);
+            int tryRight = allocBlockId();
+            int done = allocBlockId();
+
+            // Left branch, argSlot already on stack top.
+            if (compileMatchPattern(argSlot, or.left, tryRight))
+                current.emitJumpIfFalse(tryRight); // matched -> skip right
+            current.emitJump(done);
+
+            // Right branch, rollback bindings from failed left branch.
+            sealAndStart(tryRight);
+            varIndex.keySet().removeIf(k -> !savedBindings.containsKey(k));
+            varIndex.putAll(savedBindings);
+
+            current.emitPushVar(argSlot);
+            if (compileMatchPattern(argSlot, or.right, failBlock))
+                current.emitJumpIfFalse(failBlock);
+            current.emitJump(done);
+            sealAndStart(done);
+            return false;
         }
+
         if (pat instanceof ELNode.NUMBER n) {
             int idx = putConstant(n.value);
             current.emitPushConst(idx);
             current.emitDynEq();
-            return;
+            return true;
         }
+
         if (pat instanceof ELNode.STRINGVAL s) {
             int idx = putConstant(s.value);
             current.emitPushConst(idx);
             current.emitDynEq();
-            return;
+            return true;
         }
+
         if (pat instanceof ELNode.BOOLEANVAL b) {
             int idx = putConstant(b.value);
             current.emitPushConst(idx);
             current.emitDynEq();
-            return;
+            return true;
         }
+
         if (pat instanceof ELNode.CHARVAL c) {
             int idx = putConstant(c.value);
             current.emitPushConst(idx);
             current.emitDynEq();
-            return;
+            return true;
         }
+
         if (pat instanceof ELNode.NULL) {
-            current.emitPushNull();
-            current.emitDynEq();
-            return;
+            current.emitJumpIfNonNull(failBlock);
+            return false;
         }
+
         if (pat instanceof ELNode.SYMBOL sym) {
             int idx = putConstant(sym.value);
             current.emitPushConst(idx);
             current.emitIdEq();
-            return;
+            return true;
         }
+
         if (pat instanceof ELNode.CLASS cls) {
             emitInstOf(cls.name);
-            return;
+            return true;
         }
 
         if (pat instanceof ELNode.REGEXP re) {
-            int tmpid = ensureVar(Parser.tempvar());
-            current.emitStoreVar(tmpid);
             emitInstOf(String.class);
             current.emitJumpIfFalse(failBlock);
             emitPushConst(K_NONE, re.value); // the pattern
-            current.emitPushVar(tmpid);      // the string to match
+            current.emitPushVar(argSlot);    // the string to match
             emitInvokeMethod(java.util.regex.Pattern.class, "matcher", CharSequence.class);
             emitInvokeMethod(java.util.regex.Matcher.class, "matches");
-            return;
+            return true;
         }
 
         if (pat instanceof ELNode.EXPR e) {
             build(e.right);
             current.emitDynEq();
-            return;
+            return true;
         }
 
         if (pat instanceof ELNode.TUPLE t) {
-            int tmpid = ensureVar(Parser.tempvar());
-            current.emitStoreVar(tmpid);
-            current.emitPop();
-            current.emitPushVar(tmpid);
+            int tmpSlot = -1;
+
             emitInvokeMethod(Object.class, "getClass");
             emitInvokeMethod(Class.class, "isArray");
             current.emitJumpIfFalse(failBlock);
-            current.emitPushVar(tmpid);
+
+            current.emitPushVar(argSlot);
             emitInvokeStatic(Array.class, "getLength", Object.class);
-            emitPushConst(T_INT, t.elems.length);
+            emitPushConst(t.elems.length);
             current.emitIEq();
             current.emitJumpIfFalse(failBlock);
+
             for (int i = 0; i < t.elems.length; i++) {
-                current.emitPushVar(tmpid);
-                emitPushConst(T_INT, i);
+                current.emitPushVar(argSlot);
+                emitPushConst(i);
                 emitInvokeStatic(Array.class, "get", Object.class, int.class);
-                compileMatchPattern(t.elems[i], failBlock);
-                if (i != t.elems.length - 1)
+                if (!isSimplePattern(t.elems[i])) {
+                    if (tmpSlot == -1)
+                        tmpSlot = defineLocalVar();
+                    current.emitStoreVar(tmpSlot);
+                }
+                if (compileMatchPattern(tmpSlot, t.elems[i], failBlock)) {
+                    if (i == t.elems.length - 1)
+                        return true;
                     current.emitJumpIfFalse(failBlock);
+                }
             }
-            return;
+            return false;
         }
 
         if (pat instanceof ELNode.CONS cons) {
-            int tmpid = ensureVar(Parser.tempvar());
-            current.emitStoreVar(tmpid);
+            int seqSlot = defineLocalVar();
+            int tmpSlot = -1;
+            if (!isSimplePattern(cons.head) || !isSimplePattern(cons.tail))
+                tmpSlot = defineLocalVar();
+
             emitInstOf(List.class);
             current.emitJumpIfFalse(failBlock);
-            current.emitPushVar(tmpid);
+            current.emitPushVar(argSlot);
             emitInvokeStatic(TypeCoercion.class, "coerceToSeq", Object.class);
-            current.emitStoreVar(tmpid);
+            current.emitStoreVar(seqSlot);
             emitInvokeMethod(List.class, "isEmpty");
             current.emitJumpIfTrue(failBlock);
-            current.emitPushVar(tmpid);
+
+            current.emitPushVar(seqSlot);
             emitInvokeMethod(Seq.class, "head");
-            compileMatchPattern(cons.head, failBlock);
-            current.emitJumpIfFalse(failBlock);
-            current.emitPushVar(tmpid);
+            if (!isSimplePattern(cons.head))
+                current.emitStoreVar(tmpSlot);
+            if (compileMatchPattern(tmpSlot, cons.head, failBlock))
+                current.emitJumpIfFalse(failBlock);
+
+            current.emitPushVar(seqSlot);
             emitInvokeMethod(Seq.class, "tail");
-            compileMatchPattern(cons.tail, failBlock);
-            return;
+            if (!isSimplePattern(cons.tail))
+                current.emitStoreVar(tmpSlot);
+            return compileMatchPattern(tmpSlot, cons.tail, failBlock);
         }
 
         if (pat instanceof ELNode.NIL) {
             current.emitDynEmpty();
-            return;
+            return true;
         }
 
         if (pat instanceof ELNode.RANGE) {
-            // FIXME: we need SWAP instruction instead of use temp variable.
-            int tmpid = ensureVar(Parser.tempvar());
-            current.emitStoreVar(tmpid);
-            current.emitPop();
+            current.emitPop(); // we will re-push arg after build tuple
             build(pat);
-            current.emitPushVar(tmpid);
+            current.emitPushVar(argSlot);
             emitInvokeMethod(List.class, "contains", Object.class);
-            return;
+            return true;
         }
 
         if (pat instanceof ELNode.MAP map) {
-            int baseid = ensureVar(Parser.tempvar());
-            current.emitStoreVar(baseid);
-            current.emitPop();
+            int tmpSlot = -1;
             for (int i = 0; i < map.keys.length; i++) {
                 assert map.keys[i] instanceof ELNode.STRINGVAL;
-                current.emitPushVar(baseid);
-                emitPushConst(T_STRING, ((ELNode.STRINGVAL)map.keys[i]).value);
+                current.emitPushVar(argSlot);
+                emitPushConst(((ELNode.STRINGVAL)map.keys[i]).value);
                 emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
                                  Object.class, Object.class);
-                compileMatchPattern(map.values[i], failBlock);
-                if (i != map.keys.length - 1)
+
+                if (!isSimplePattern(map.values[i])) {
+                    if (tmpSlot == -1)
+                        tmpSlot = defineLocalVar();
+                    current.emitStoreVar(tmpSlot);
+                }
+
+                if (compileMatchPattern(tmpSlot, map.values[i], failBlock)) {
+                    if (i == map.keys.length - 1)
+                        return true;
                     current.emitJumpIfFalse(failBlock);
+                }
             }
-            return;
+            return false;
         }
 
         // Should not reach here (unsupported patterns pre-filtered)
         buildTrampoline(pat);
+        return true;
     }
 
-    /** Compile a DEFINE pattern (variable binding or check). */
-    private void compileDefinePattern(ELNode.DEFINE d, int failBlock) {
-        // Type check if annotated
-        if (d.type != null) {
-            current.emitDup();                    // dup arg value
-            emitInstOf(d.type);
-            current.emitJumpIfFalse(failBlock);
-        }
+    private boolean isSimplePattern(ELNode pat) {
+        if (pat instanceof ELNode.DEFINE def)
+            return def.type == null && def.expr == null;
 
-        // As-pattern check
-        if (d.expr != null) {
-            current.emitDup();                    // dup arg value
-            compileMatchPattern(d.expr, failBlock);
-            current.emitJumpIfFalse(failBlock);
-        }
+        if (pat instanceof ELNode.REGEXP)
+            return false;
 
-        // Wildcard: always matches
-        if ("_".equals(d.id)) {
-            emitPushTrue();
-            return;
-        }
-
-        // Variable binding → bind to new local variable.
-        // Use pre-allocated slot from symbol table when available.
-        int slot = registerSlot(d.id, d.symbol.slot, d.symbol.flags);
-        current.emitStoreVar(slot);
-        current.emitDefineGlobal(putConstant(d.id));
-        current.emitPop();  // discard dup from STORE_VAR
-        emitPushTrue();     // binding always succeeds
-    }
-
-    /** Compile an OR pattern with variable binding rollback.
-     *  The caller has already pushed the arg value on the stack. */
-    private void compileOrPattern(ELNode.OR orPat, int failBlock) {
-        // Save arg value to temp slot (each branch consumes it from stack)
-        int tmpSlot = ensureVar(Parser.tempvar());
-        current.emitStoreVar(tmpSlot);
-        current.emitPop();
-
-        // Save variable binding state before trying left branch
-        Map<String, Integer> savedBindings = new LinkedHashMap<>(varIndex);
-
-        int tryRight = allocBlockId();
-        int done = allocBlockId();
-
-        // Left branch
-        current.emitPushVar(tmpSlot);
-        compileMatchPattern(orPat.left, failBlock);
-        current.emitJumpIfTrue(done);  // matched → skip right
-        current.emitPop();             // discard FALSE
-        current.emitJump(tryRight);
-
-        // Right branch
-        sealAndStart(tryRight);
-        // Rollback bindings from failed left branch
-        varIndex.keySet().removeIf(k -> !savedBindings.containsKey(k));
-        varIndex.putAll(savedBindings);
-        current.emitPushVar(tmpSlot);
-        compileMatchPattern(orPat.right, failBlock);
-        current.emitJumpIfTrue(done);  // matched
-        current.emitPop();             // discard FALSE
-        current.emitJump(failBlock);   // both branches failed
-
-        sealAndStart(done);
-        emitPushTrue();               // signal success to caller
+        return pat instanceof ELNode.Constant ||
+               pat instanceof ELNode.IDENT ||
+               pat instanceof ELNode.NOT ||
+               pat instanceof ELNode.EXPR;
     }
 
     // ── Trampoline ──
@@ -2384,38 +2452,6 @@ public class IRBuilder extends ELNode.Visitor {
         }
         currentBlockId = blockId;
         current = new IREmitter();
-    }
-
-    // ── Symbol/type helpers ──
-    int ensureVar(String name) {
-        return ensureVar(name, 0);
-    }
-
-    int ensureVar(String name, int flags) {
-        Integer idx = varIndex.get(name);
-        if (idx != null)
-            return idx;
-        idx = varNames.size();
-        varNames.add(name);
-        paramFlags.add(flags);
-        varIndex.put(name, idx);
-        return idx;
-    }
-
-    /**
-     * Register a pre-allocated slot (from SymbolTable) in the local
-     * varNames/paramFlags/varIndex structures.  The slot index is used
-     * as-is; arrays are padded if necessary.
-     */
-    private int registerSlot(String name, int slot, int flags) {
-        while (varNames.size() <= slot) {
-            varNames.add(null);
-            paramFlags.add(0);
-        }
-        varNames.set(slot, name);
-        paramFlags.set(slot, flags);
-        varIndex.put(name, slot);
-        return slot;
     }
 
     private int putConstant(Object value) {
@@ -2636,12 +2672,20 @@ public class IRBuilder extends ELNode.Visitor {
             current.emit2(PUSH_CONST, kind, idx >>> 16, idx & 0xFFFF);
     }
 
-    private void emitPushConst(int typeId, long value) {
-        emitPushConst(typeId, Long.valueOf(value));
+    private void emitPushConst(int value) {
+        emitPushConst(T_INT, Integer.valueOf(value));
     }
 
-    private void emitPushConst(int typeId, double value) {
-        emitPushConst(typeId, Double.valueOf(value));
+    private void emitPushConst(long value) {
+        emitPushConst(T_LONG, Long.valueOf(value));
+    }
+
+    private void emitPushConst(double value) {
+        emitPushConst(T_DOUBLE, Double.valueOf(value));
+    }
+
+    private void emitPushConst(String value) {
+        emitPushConst(T_STRING, value);
     }
 
     private void emitPushTrue() {

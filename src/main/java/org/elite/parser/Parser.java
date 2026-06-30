@@ -1385,8 +1385,9 @@ public class Parser extends Scanner
         ELNode body;
 
         if (token != ARROW) {
+            Map<String, ELNode.DEFINE> bindings = new HashMap<>();
             do {
-                pats.add(parsePattern());
+                pats.add(parsePattern(bindings));
                 if (token == ELLIPSIS) {
                     scan();
                     varargs = true;
@@ -1806,6 +1807,7 @@ public class Parser extends Scanner
 
     private ParamList parseParameterList(int pos) {
         List<Param> params = new ArrayList<Param>();
+        Map<String, ELNode.DEFINE> bindings = new HashMap<>();
         boolean classic = true;
         boolean varargs = false;
         boolean has_deflt = false;
@@ -1814,7 +1816,7 @@ public class Parser extends Scanner
             Param param = new Param();
             param.pos = pos;
             param.meta = parseMetaData();
-            param.pattern = parsePattern();
+            param.pattern = parsePattern(bindings);
 
             if (isVariablePattern(param.pattern)) {
                 param.deflt = scan(ASSIGN) ? parseExpression() : null;
@@ -2816,8 +2818,9 @@ public class Parser extends Scanner
         // parse declarations
         expect(LPAREN);
         if (token != RPAREN) {
+            Map<String, ELNode.DEFINE> bindings = new HashMap<>();
             do {
-                pats.add(parsePattern());
+                pats.add(parsePattern(bindings));
                 expect(ASSIGN);
                 exps.add(parseExpression());
             } while (scan(COMMA));
@@ -3287,6 +3290,7 @@ public class Parser extends Scanner
         List<ELNode> guards = new ArrayList<ELNode>();
         List<ELNode> bodies = new ArrayList<ELNode>();
         List<ELNode> stmts = new ArrayList<ELNode>();
+        Map<String, ELNode.DEFINE> bindings = new HashMap<>();
         ELNode deflt = null;
 
         while (token == BAR) {
@@ -3298,8 +3302,9 @@ public class Parser extends Scanner
                 isdeflt = true;
             } else if (token != IF) {
                 pats.clear();
+                bindings.clear();
                 do {
-                    pats.add(parsePattern());
+                    pats.add(parsePattern(bindings));
                 } while (scan(COMMA));
                 if (nargs == -1) {
                     nargs = pats.size();
@@ -3468,12 +3473,16 @@ public class Parser extends Scanner
 
     private ELNode.Pattern parsePattern() {
         Map<String, ELNode.DEFINE> bindings = new HashMap<>();
+        return parsePattern(bindings);
+    }
+
+    private ELNode.Pattern parsePattern(Map<String, ELNode.DEFINE> bindings) {
+        Map<String, ELNode.DEFINE> snapshot = new HashMap<>(bindings);
         ELNode pat = (ELNode)parseSubPattern(bindings);
         while (token == BAR) {
             int p = scan();
-            Map<String, ELNode.DEFINE> second = new HashMap<>();
-            ELNode next = (ELNode)parseSubPattern(second);
-            if (!bindings.keySet().equals(second.keySet()))
+            ELNode next = (ELNode)parseSubPattern(snapshot);
+            if (!bindings.keySet().equals(snapshot.keySet()))
                 throw parseError("the patterns must have identical variable bindings");
             pat = new ELNode.OR(p, pat, next);
         }
@@ -3491,14 +3500,15 @@ public class Parser extends Scanner
             }
             if (token == LPAREN) {
                 scan();
-                return parseConstructorPattern(p, id);
+                return parseConstructorPattern(p, id, bindings);
             } else {
                 String type = parseTypeNameOpt();
-                ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern() : null;
-                return new ELNode.DEFINE(p, id, type, null, apat); // variable
+                ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern(bindings) : null;
+                ELNode.DEFINE def = new ELNode.DEFINE(p, id, type, null, apat); // variable
+                bindings.put(id, def);
+                return def;
             }
         }
-
 
         case COLONCOLON:
             return new ELNode.CLASS(scan(), parseClassLiteral(false), null);
@@ -3589,29 +3599,29 @@ public class Parser extends Scanner
         }
 
         case NOT:
-            return new ELNode.NOT(scan(), (ELNode)parsePattern());
+            return new ELNode.NOT(scan(), (ELNode)parsePattern(bindings));
 
         case LBRACKET:
-            return parseListPattern(scan());
+            return parseListPattern(scan(), bindings);
         case LPAREN:
-            return parseTuplePattern(scan());
+            return parseTuplePattern(scan(), bindings);
         case LBRACE:
-            return parseMapPattern(scan());
+            return parseMapPattern(scan(), bindings);
         }
 
         throw parseError("Invalid pattern.");
     }
 
-    private ELNode.Pattern parseListPattern(int p) {
+    private ELNode.Pattern parseListPattern(int p, Map<String, ELNode.DEFINE> bindings) {
         if (token == RBRACKET) {
             scan();
             return new ELNode.NIL(p);
         }
 
-        ELNode e1 = (ELNode)parsePattern(), e2 = null;
+        ELNode e1 = (ELNode)parsePattern(bindings), e2 = null;
         if (token == COMMA) {
             scan();
-            e2 = (ELNode)parsePattern();
+            e2 = (ELNode)parsePattern(bindings);
         }
 
         if (token == RANGE) {
@@ -3627,9 +3637,9 @@ public class Parser extends Scanner
         if (e2 != null)
             head.add(e2);
         while (scan(COMMA))
-            head.add((ELNode)parsePattern());
+            head.add((ELNode)parsePattern(bindings));
         if (scan(COLON))
-            tail = (ELNode)parsePattern();
+            tail = (ELNode)parsePattern(bindings);
         else
             tail = new ELNode.NIL(p);
         expect(RBRACKET);
@@ -3639,18 +3649,18 @@ public class Parser extends Scanner
         return (ELNode.Pattern)tail;
     }
 
-    private ELNode.Pattern parseTuplePattern(int p) {
+    private ELNode.Pattern parseTuplePattern(int p, Map<String, ELNode.DEFINE> bindings) {
         List<ELNode> elems = new ArrayList<ELNode>();
         if (token != RPAREN) {
             do {
-                elems.add((ELNode)parsePattern());
+                elems.add((ELNode)parsePattern(bindings));
             } while (scan(COMMA));
         }
         expect(RPAREN);
         return new ELNode.TUPLE(p, to_a(elems));
     }
 
-    private ELNode.Pattern parseMapPattern(int p) {
+    private ELNode.Pattern parseMapPattern(int p, Map<String, ELNode.DEFINE> bindings) {
         List<ELNode> keys = new ArrayList<ELNode>();
         List<ELNode> values = new ArrayList<ELNode>();
 
@@ -3666,14 +3676,15 @@ public class Parser extends Scanner
                 return null;
             }
             expect(COLON);
-            values.add((ELNode)parsePattern());
+            values.add((ELNode)parsePattern(bindings));
         } while (scan(COMMA));
 
         expect(RBRACE);
         return new ELNode.MAP(p, to_a(keys), to_a(values));
     }
 
-    private ELNode.Pattern parseConstructorPattern(int p, String id) {
+    private ELNode.Pattern parseConstructorPattern(int p, String id,
+                                                   Map<String, ELNode.DEFINE> bindings) {
         List<ELNode> args = new ArrayList<ELNode>();
         List<String> keys = new ArrayList<String>();
 
@@ -3685,7 +3696,7 @@ public class Parser extends Scanner
                         throw parseError(_T(EL_DUPLICATE_ARG_NAME, key));
                     keys.add(key);
                 }
-                args.add((ELNode)parsePattern());
+                args.add((ELNode)parsePattern(bindings));
             } while (scan(COMMA));
         }
 
