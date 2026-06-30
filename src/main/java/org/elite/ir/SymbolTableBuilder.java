@@ -19,11 +19,12 @@ public final class SymbolTableBuilder {
     public static SymbolTable build(ELProgram program) {
         SymbolTable table = new SymbolTable();
         BuilderVisitor visitor = new BuilderVisitor(table);
-        table.enterScope("program");
+        table.enterScope("program", null);
         for (ELNode def : program.getDefinitions())
             def.accept(visitor);
         for (ELNode exp : program.getExpressions())
             exp.accept(visitor);
+        visitor.finish();
         return table;
     }
 
@@ -31,8 +32,9 @@ public final class SymbolTableBuilder {
     public static SymbolTable build(ELNode node) {
         SymbolTable table = new SymbolTable();
         BuilderVisitor visitor = new BuilderVisitor(table);
-        table.enterScope("expr");
+        table.enterScope("expr", null);
         node.accept(visitor);
+        visitor.finish();
         return table;
     }
 
@@ -45,6 +47,9 @@ public final class SymbolTableBuilder {
         final SymbolTable table;
         ELNode.LAMBDA currentFn;
 
+        record Undefined(ELNode.IDENT var, SymbolTable.Scope scope) {}
+        List<Undefined> undefined = new ArrayList<>();
+
         BuilderVisitor(SymbolTable table) {
             this.table = table;
             this.currentFn = null;
@@ -54,7 +59,6 @@ public final class SymbolTableBuilder {
             var sym = table.define(e.id);
             e.symbol = sym;
             e.id = sym.mangledName;
-            scan(e.expr);
 
             if (e.expr instanceof ELNode.LAMBDA lam) {
                 // Create a IRFunction skeleton.
@@ -65,12 +69,23 @@ public final class SymbolTableBuilder {
                 sym.node = e.expr;
                 cdef.symbol = sym;
             }
+
+            scan(e.expr);
         }
 
         public void visit(ELNode.LAMBDA e) {
+            // For named lambda, a.k.a named let, add a definition.
+            if (e.name != null && e.symbol == null) {
+                var sym = table.define(e.name);
+                e.symbol = sym;
+                e.name = sym.mangledName;
+                sym.func = new IRFunction(e.name, e.vars.length);
+                sym.node = e;
+            }
+
             ELNode.LAMBDA previousFn = currentFn;
             currentFn = e;
-            e.scope = table.enterScope(e.name != null ? "fn:"+e.name : "lambda", true);
+            table.enterScope(e.name != null ? "fn:" + e.name : "lambda", e);
             for (ELNode.DEFINE param : e.vars) {
                 if (!"_".equals(param.id)) {
                     var pi = table.define(param.id);
@@ -101,18 +116,21 @@ public final class SymbolTableBuilder {
                     currentFn.captures.add(sym);
                     sym.captured = true;
                 }
+            } else {
+                // Add to undefined table for later resolution.
+                undefined.add(new Undefined(e, table.currentScope()));
             }
         }
 
         public void visit(ELNode.WHILE e) {
             scan(e.cond);
-            table.enterScope("while");
+            table.enterScope("while", e);
             scan(e.body);
             table.leaveScope();
         }
 
         public void visit(ELNode.REPEAT e) {
-            table.enterScope("repeat");
+            table.enterScope("repeat", e);
             scan(e.body);
             table.leaveScope();
             scan(e.cond);
@@ -122,55 +140,55 @@ public final class SymbolTableBuilder {
             if (e.local) {
                 scan(e.init);
                 scan(e.cond);
-                table.enterScope("for");
+                table.enterScope("for", e);
                 scan(e.body);
                 table.leaveScope();
                 scan(e.step);
             } else {
-                table.enterScope("for");
+                table.enterScope("for", e);
                 super.visit(e);
                 table.leaveScope();
             }
         }
 
         public void visit(ELNode.FOREACH e) {
-            table.enterScope("foreach");
+            table.enterScope("foreach", e);
             super.visit(e);
             table.leaveScope();
         }
 
         public void visit(ELNode.COND e) {
             scan(e.cond);
-            table.enterScope("if-body");
+            table.enterScope("if-body", e);
             scan(e.left);
             table.leaveScope();
             if (e.right != null) {
-                table.enterScope("if-else");
+                table.enterScope("if-else", e);
                 scan(e.right);
                 table.leaveScope();
             }
         }
 
         public void visit(ELNode.TRY e) {
-            table.enterScope("try");
+            table.enterScope("try", e);
             scan(e.body);
             table.leaveScope();
             if (e.handlers != null) {
                 for (ELNode h : e.handlers) {
-                    table.enterScope("catch");
+                    table.enterScope("catch", e);
                     scan(h);
                     table.leaveScope();
                 }
             }
             if (e.finalizer != null) {
-                table.enterScope("finally");
+                table.enterScope("finally", e);
                 scan(e.finalizer);
                 table.leaveScope();
             }
         }
 
         public void visit(ELNode.CATCH e) {
-            table.enterScope("catch");
+            table.enterScope("catch", e);
             var sym = table.define(e.var);
             e.symbol = sym;
             e.var = sym.mangledName;
@@ -180,13 +198,13 @@ public final class SymbolTableBuilder {
 
         public void visit(ELNode.SYNCHRONIZED e) {
             scan(e.exp);
-            table.enterScope("synchronized");
+            table.enterScope("synchronized", e);
             scan(e.body);
             table.leaveScope();
         }
 
         public void visit(ELNode.COMPOUND e) {
-            table.enterScope("compound");
+            table.enterScope("compound", e);
             super.visit(e);
             table.leaveScope();
         }
@@ -195,7 +213,7 @@ public final class SymbolTableBuilder {
             // Each case body gets its own scope for pattern variables.
             scan(e.args);
             for (ELNode.CASE c : e.alts) {
-                table.enterScope("case");
+                table.enterScope("case", c);
                 collectCaseBindings(c);
                 scan(c.guards);
                 scan(c.bodies);
@@ -252,6 +270,18 @@ public final class SymbolTableBuilder {
                 collectPatternBindings(or.right, false);
             } else if (pat instanceof ELNode.NEW) {
                 // FIXME: handle data constructor
+            }
+        }
+
+        private void finish() {
+            // Resolve forward referenced functions.
+            for (Undefined undef : undefined) {
+                SymbolTable.Symbol sym = undef.scope.lookup(undef.var.id);
+                if (sym != null && (sym.node instanceof ELNode.LAMBDA ||
+                                    sym.node instanceof ELNode.CLASSDEF)) {
+                    undef.var.symbol = sym;
+                    undef.var.id = sym.mangledName;
+                }
             }
         }
     }

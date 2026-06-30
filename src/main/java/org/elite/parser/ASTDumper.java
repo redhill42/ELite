@@ -141,6 +141,10 @@ public final class ASTDumper {
             if (type != null) sb.append(" :").append(type);
         } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
 
+        if (node.scope != null) {
+            sb.append(" scope(depth=").append(node.scope.depth()).append(")");
+        }
+
         if (node instanceof ELNode.LAMBDA lam) {
             if (lam.captures != null)
                 sb.append(" captures:").append(lam.captures);

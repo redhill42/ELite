@@ -85,6 +85,11 @@ public abstract class ELNode implements Serializable
      */
     public transient SymbolTable.Symbol symbol;
 
+    /**
+     * Scope for control flow.
+     */
+    public transient SymbolTable.Scope scope;
+
     // Operator precedence
     public static final int
         LOW_PREC        = 0,
@@ -486,7 +491,7 @@ public abstract class ELNode implements Serializable
      */
     public static class LAMBDA extends ELNode {
         public final String    file;
-        public final String    name;
+        public       String    name;
         public final String    rtype;
         public final DEFINE[]  vars;
         public final boolean   varargs;
@@ -494,7 +499,6 @@ public abstract class ELNode implements Serializable
 
         private boolean dvals;
 
-        public transient SymbolTable.Scope scope;
         public transient Set<SymbolTable.Symbol> captures;
 
         public LAMBDA(int pos, String file, DEFINE[] vars, ELNode body) {

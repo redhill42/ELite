@@ -62,6 +62,14 @@ public class SymbolTable {
             this.maxSlots = startSlot;
         }
 
+        public int depth() {
+            return depth;
+        }
+
+        public boolean isTopLevel() {
+            return parent == null;
+        }
+
         void put(String name, Symbol sym) {
             symbols.put(name, sym);
         }
@@ -113,16 +121,15 @@ public class SymbolTable {
     private Scope current = null;
     private final List<Scope> allScopes = new ArrayList<>(); // for debugging
 
-    public Scope enterScope(String label, boolean fresh) {
+    public Scope enterScope(String label, ELNode node) {
+        boolean fresh = node instanceof ELNode.LAMBDA;
         int depth = current == null ? 0 : current.depth + 1;
         int startSlot = fresh || current == null ? 0 : current.nextSlot;
         current = new Scope(current, label, depth, fresh, startSlot);
         allScopes.add(current);
+        if (node != null)
+            node.scope = current;
         return current;
-    }
-
-    public Scope enterScope(String label) {
-        return enterScope(label, false);
     }
 
     public Scope leaveScope() {
