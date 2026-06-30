@@ -42,6 +42,7 @@ import java.util.*;
 
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
+import static org.elite.resources.Resources.*;
 
 /**
  * Converts an ELNode expression tree into IR form with explicit jump-based
@@ -306,103 +307,30 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    /**
-     * Build arguments for a direct call, handling default and named parameters.
-     * Returns the total number of arguments built (including defaults).
-     */
-    private int buildArgsWithDefaults(SymbolTable.Symbol funcSym,
-                                       ELNode[] callArgs, String[] callKeys) {
-        // Non-lambda callable (e.g. class constructor) — simple positional build
-        if (!(funcSym.node instanceof ELNode.LAMBDA lambda)) {
-            for (ELNode arg : callArgs)
-                build(arg);
-            return callArgs.length;
-        }
-
-        int paramCount = lambda.vars.length;
-        int argCount = callArgs.length;
-
-        // No defaults or named args — fast path.
-        if (callKeys == null && argCount >= paramCount) {
-            for (ELNode arg : callArgs)
-                build(arg);
-            return argCount;
-        }
-
-        // Map named args to parameter positions. -1 means not yet assigned.
-        int[] argForParam = new int[paramCount];
-        Arrays.fill(argForParam, -1);
-
-        if (callKeys != null) {
-            // Named args: map by name, remaining call args are positional.
-            int posIndex = 0;
-            for (int i = 0; i < argCount; i++) {
-                if (callKeys[i] != null) {
-                    // Named argument — find parameter by name
-                    int paramIdx = -1;
-                    for (int p = 0; p < paramCount; p++) {
-                        if (callKeys[i].equals(lambda.vars[p].id)) {
-                            paramIdx = p;
-                            break;
-                        }
-                    }
-                    if (paramIdx < 0)
-                        throw new IllegalArgumentException(
-                            "Unknown parameter name: " + callKeys[i]);
-                    if (argForParam[paramIdx] >= 0)
-                        throw new IllegalArgumentException(
-                            "Duplicate argument for parameter: " + callKeys[i]);
-                    argForParam[paramIdx] = i;
-                } else {
-                    // Positional argument — assign to next available position
-                    while (posIndex < paramCount && argForParam[posIndex] >= 0)
-                        posIndex++;
-                    if (posIndex >= paramCount)
-                        throw new IllegalArgumentException(
-                            "Too many positional arguments");
-                    argForParam[posIndex] = i;
-                    posIndex++;
-                }
-            }
-        } else {
-            // All positional: arg i → param i
-            for (int i = 0; i < argCount; i++)
-                argForParam[i] = i;
-        }
-
-        // Build args in parameter order, using defaults where needed.
-        for (int p = 0; p < paramCount; p++) {
-            if (argForParam[p] >= 0) {
-                build(callArgs[argForParam[p]]);
-            } else {
-                // Build the default value expression.
-                ELNode defExpr = lambda.vars[p].expr;
-                if (defExpr != null) {
-                    build(defExpr);
-                } else {
-                    throw new IllegalArgumentException(
-                        "Missing required argument: " + lambda.vars[p].id);
-                }
-            }
-        }
-
-        return paramCount;
-    }
-
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
         if (node.right instanceof ELNode.IDENT ident) {
             if (ident.symbol != null) {
                 if (inTailPosition && ident.symbol.func == this.func) {
                     // TCO: build args (never in tail position), emit INVOKE_TAIL
-                    int argc = buildArgsWithDefaults(ident.symbol, node.args, node.keys);
+                    int argc = buildCallArgs(ident.symbol, node.args, node.keys);
+                    if (argc == -1) {
+                        for (ELNode e : node.args)
+                            build(e);
+                        argc = node.args.length;
+                    }
                     current.emitInvokeTail(argc);
                     return;
                 }
 
                 if (ident.symbol.func != null) {
                     int funcIdx = putConstant(ident.symbol.func);
-                    int argc = buildArgsWithDefaults(ident.symbol, node.args, node.keys);
+                    int argc = buildCallArgs(ident.symbol, node.args, node.keys);
+                    if (argc == -1) {
+                        for (ELNode e : node.args)
+                            build(e);
+                        argc = node.args.length;
+                    }
                     current.emitInvokeDirect(funcIdx, argc);
                     return;
                 }
@@ -451,6 +379,108 @@ public class IRBuilder extends ELNode.Visitor {
         for (ELNode arg : node.args)
             build(arg);
         current.emitInvokeDyn(node.args.length);
+    }
+
+    private int indexOfVar(String name, ELNode.DEFINE[] vars, boolean varargs) {
+        int nvars = vars.length - (varargs ? 1 : 0);
+        for (int i = 0; i < nvars; i++) {
+            if (name.equals(vars[i].id)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Build arguments for a direct call, handling default and named parameters.
+     * Returns the total number of arguments built (including defaults).
+     */
+    private int buildCallArgs(SymbolTable.Symbol sym, ELNode[] args, String[] keys) {
+        ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.node;
+
+        int argc = args.length;
+        int nvars = lambda.vars.length;
+        ELNode[] xargs = null;
+
+        boolean hasDefaults = false;
+        for (ELNode.DEFINE var : lambda.vars) {
+            if (var.expr != null) {
+                hasDefaults = true;
+                break;
+            }
+        }
+
+        if (argc < nvars && hasDefaults) {
+            // pad with default values
+            xargs = new ELNode[nvars];
+        } else if (lambda.varargs ? (argc < nvars-1) : (argc != nvars)) {
+            System.err.println(_T(EL_FN_BAD_ARG_COUNT, lambda.name, nvars, argc));
+            return -1;
+        }
+
+        // Rearrange named arguments
+        int k = nvars-1; // index to vararg list
+        if (keys != null) {
+            for (int i = 0; i < argc; i++) {
+                if (keys[i] != null) {
+                    int j = indexOfVar(keys[i], lambda.vars, lambda.varargs);
+                    if (j == -1) {
+                        if (!lambda.varargs || k >= argc) {
+                            System.err.println(_T(EL_UNKNOWN_ARG_NAME, keys[i]));
+                            return -1;
+                        }
+                        if (xargs == null)
+                            xargs = new ELNode[argc];
+                        xargs[k++] = args[i];
+                    } else {
+                        if (xargs == null)
+                            xargs = new ELNode[argc];
+                        xargs[j] = args[i];
+                    }
+                }
+            }
+        }
+
+        if (xargs != null) {
+            int j = 0;
+
+            // Rearrange non-named arguments
+            for (int i = 0; i < argc; i++) {
+                if (keys == null || keys[i] == null) {
+                    while (xargs[j] != null)
+                        j++;
+                    xargs[j++] = args[i];
+                }
+            }
+
+            // Assign default values
+            args = xargs;
+            argc = xargs.length;
+            for (; j < argc; j++) {
+                if (args[j] == null) {
+                    if (lambda.vars[j].expr == null) {
+                        System.err.println(_T(EL_MISSING_ARG_VALUE, lambda.vars[j].id));
+                        return -1;
+                    }
+                    args[j] = lambda.vars[j].expr;
+                }
+            }
+        }
+
+        // Build fixed argument list.
+        int fixed = lambda.varargs ? nvars - 1 : nvars;
+        for (int i = 0; i < fixed; i++)
+            build(args[i]);
+
+        // Build tuple for var arg list.
+        if (lambda.varargs) {
+            assert argc >= fixed;
+            for (int i = fixed; i < argc; i++)
+                build(args[i]);
+            current.emitNewTuple(argc - fixed);
+        }
+
+        return nvars;
     }
 
     private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {
@@ -1908,22 +1938,14 @@ public class IRBuilder extends ELNode.Visitor {
         // Propagate source file from the AST node
         if (node.file != null)
             nested.currentFile = node.file;
-        for (ELNode.DEFINE var : node.vars) {
-            int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
-            if (var.symbol.captured)
-                flags |= IRFunction.PARAM_CAPTURED;
-            nested.registerSlot(var.id, var.symbol.slot, flags);
-        }
 
-        // Determine which local variables are captured by inner closures.
-        // This info is already on node.symbol.captured from the Phase 1 pre-pass.
+        // Allocate slots for parameters.
         for (ELNode.DEFINE var : node.vars) {
-            if (var.symbol.captured) {
-                Integer idx = nested.varIndex.get(var.id);
-                if (idx != null && idx < nested.paramFlags.size()) {
-                    int flags = nested.paramFlags.get(idx);
-                    nested.paramFlags.set(idx, flags | IRFunction.PARAM_CAPTURED);
-                }
+            if (!"_".equals(var.id)) {
+                int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
+                if (var.symbol.captured)
+                    flags |= IRFunction.PARAM_CAPTURED;
+                nested.registerSlot(var.id, var.symbol.slot, flags);
             }
         }
 
