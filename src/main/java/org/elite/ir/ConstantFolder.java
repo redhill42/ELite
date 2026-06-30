@@ -92,7 +92,7 @@ public class ConstantFolder implements IRPass {
             merged.addAll(newBlocks[i]);
         }
 
-        input.populate(input.captureCount(), merged.toArray(), newOffsets,
+        input.populate(merged.toArray(), newOffsets,
                        newPool, input.varNames(), input.debugInfo(),
                        input.paramFlags(), input.defaultValues());
         return input;

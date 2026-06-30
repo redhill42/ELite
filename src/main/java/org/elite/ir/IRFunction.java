@@ -32,8 +32,6 @@ public class IRFunction {
 
     private final String name;
     private final int paramCount;
-    /** Number of captured (closure) variables. 0 = no captures. */
-    private int captureCount;
     /** Single contiguous code array for all blocks. */
     private int[] code;
     /** Start offset of each basic block in the code array. */
@@ -67,11 +65,10 @@ public class IRFunction {
     }
 
     // Populate IRFunction with code after compilation.
-    void populate(int captureCount, int[] code, int[] blockOffsets,
+    void populate(int[] code, int[] blockOffsets,
                   Object[] constantPool, String[] varNames,
                   DebugInfo debugInfo, int[] paramFlags,
                   Object[] defaultValues) {
-        this.captureCount = captureCount;
         this.code = code;
         this.blockOffsets = blockOffsets;
         this.constantPool = constantPool;
@@ -85,7 +82,6 @@ public class IRFunction {
 
     public String name()       { return name; }
     public int paramCount()    { return paramCount; }
-    public int captureCount()  { return captureCount; }
     public int[] code()        { return code; }
     public int[] blockOffsets() { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
@@ -97,8 +93,6 @@ public class IRFunction {
      * Returns null if no annotation info is available.
      */
     public static final int PARAM_EXPLICIT_TYPE = 1;
-    /** Parameter is captured by an inner closure — must be stored in evalContext. */
-    public static final int PARAM_CAPTURED = 2;
 
     public int[] paramFlags() { return paramFlags; }
 
@@ -120,22 +114,6 @@ public class IRFunction {
     /** Maximum local variable index (params + define'd vars). */
     public int maxLocalCount() {
         return varNames.length;
-    }
-
-    /** Check if this function contains ops that the IR interpreter cannot handle. */
-    public boolean hasUnsupportedOps() {
-        for (int b = 0; b < blockCount(); b++) {
-            int start = blockStart(b);
-            int end = (b + 1 < blockCount()) ? blockStart(b + 1) : code.length;
-            InstructionView v = new InstructionView(code, start);
-            while (v.inBounds() && v.offset() < end) {
-                int op = v.opcode();
-                // Trampoline ops (TRAMPOLINE) require AST evaluation — IR can't handle
-                if (op == TRAMPOLINE) return true;
-                v.advance();
-            }
-        }
-        return false;
     }
 
     /** Get the code offset for a given block ID. */

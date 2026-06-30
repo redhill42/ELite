@@ -36,7 +36,6 @@ import java.util.Arrays;
  */
 public class IRClosure extends Closure {
     final IRFunction function;
-    final Object[] captured;
 
     /**
      * The evalContext chain active when this closure was created.
@@ -46,10 +45,9 @@ public class IRClosure extends Closure {
      */
     transient EvaluationContext evalContext;
 
-    public IRClosure(EvaluationContext context, IRFunction function, Object[] captured) {
+    public IRClosure(EvaluationContext context, IRFunction function) {
         this.evalContext = context;
         this.function = function;
-        this.captured = captured;
     }
 
     @Override
@@ -114,7 +112,7 @@ public class IRClosure extends Closure {
     @Override
     public Object invoke(ELContext elctx, Closure[] args) {
         Object[] callArgs = ELEngine.getArgValues(elctx, args);
-        return new IRInterpreter(getContext(elctx), function).execute(callArgs, captured);
+        return new IRInterpreter(getContext(elctx), function).execute(callArgs);
     }
 
     /**
@@ -127,6 +125,7 @@ public class IRClosure extends Closure {
      * @param args the procedure arguments
      * @return result of procedure execution
      */
+    @SuppressWarnings("unused")
     public Object call_with(ELContext elctx, Object scope, Closure... args) {
         if (scope instanceof ClosureObject) {
             scope = ((ClosureObject)scope).get_owner();
@@ -135,7 +134,7 @@ public class IRClosure extends Closure {
         EvaluationContext env = getContext(elctx);
         env = env.pushContext(new EnvExtent(env, scope));
         Object[] callArgs = ELEngine.getArgValues(elctx, args);
-        return new IRInterpreter(env, function).execute(callArgs, captured);
+        return new IRInterpreter(env, function).execute(callArgs);
     }
 
     @Override

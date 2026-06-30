@@ -321,7 +321,7 @@ public final class Runtime {
         // original enclosing scope. Try the ELContext first (bytecode
         // mode stores it there), then fall back to ThreadLocal.
         EvaluationContext env = (EvaluationContext)elctx.getContext(EvaluationContext.class);
-        return new IRClosure(env, fn, captured);
+        return new IRClosure(env, fn);
     }
 
     /** Create closure by pool index (for bytecode — LDC can't embed IRFunction). */

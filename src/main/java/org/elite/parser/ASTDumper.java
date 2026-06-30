@@ -145,10 +145,7 @@ public final class ASTDumper {
             sb.append(" scope(depth=").append(node.scope.depth()).append(")");
         }
 
-        if (node instanceof ELNode.LAMBDA lam) {
-            if (lam.captures != null)
-                sb.append(" captures:").append(lam.captures);
-        } else if (node.symbol != null) {
+        if (node.symbol != null) {
             sb.append(" slot=").append(node.symbol.slot);
             if (node.symbol.captured)
                 sb.append(" captured");

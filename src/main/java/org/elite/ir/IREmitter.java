@@ -440,6 +440,10 @@ public class IREmitter {
         return emit1(THROW, K_NONE, 0);
     }
 
+    public IREmitter emitAssert() {
+        return emit1(ASSERT, K_NONE, 0);
+    }
+
     public IREmitter emitInvoke(int funcIndex, int argCount) {
         return emit2(INVOKE, K_FN, funcIndex & 0xFFFF, argCount);
     }
@@ -596,12 +600,12 @@ public class IREmitter {
      * Create closure: pops captureCount values + IRFunction, pushes
      * ClosureObject.
      */
-    public IREmitter emitClosure(int funcPoolIdx, int captureCount) {
+    public IREmitter emitClosure(int funcPoolIdx) {
         if (fits16(funcPoolIdx))
-            return emit2(CLOSURE, K_FN, funcPoolIdx, captureCount);
+            return emit1(CLOSURE, K_FN, funcPoolIdx);
         else
-            return emit3(CLOSURE, K_FN, funcPoolIdx >>> 16,
-                    funcPoolIdx & 0xFFFF, captureCount);
+            return emit2(CLOSURE, K_FN, funcPoolIdx >>> 16,
+                    funcPoolIdx & 0xFFFF);
     }
 
     /**

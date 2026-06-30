@@ -99,7 +99,7 @@ public class InlinePass implements IRPass {
         String[] varNames = new String[input.varNames().length + tempSlots];
         System.arraycopy(input.varNames(), 0, varNames, 0, input.varNames().length);
 
-        input.populate(input.captureCount(), merged.toArray(), newOffsets, mergedPool,
+        input.populate(merged.toArray(), newOffsets, mergedPool,
                 varNames, input.debugInfo(), input.paramFlags(), input.defaultValues());
         return input;
     }

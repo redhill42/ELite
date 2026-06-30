@@ -160,12 +160,12 @@ public class ELProgram implements Serializable
             case 1: {
                 // Conservative IR — no optimization passes.
                 IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
-                return new IRInterpreter(env, irFn).execute(null, null, true);
+                return new IRInterpreter(env, irFn).execute(null, true);
             }
 
             case 2: {
                 IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
-                return new IRInterpreter(env, irFn).execute(null, null, true);
+                return new IRInterpreter(env, irFn).execute(null, true);
             }
 
             case 3: default: {
@@ -177,7 +177,7 @@ public class ELProgram implements Serializable
                     if (STRICT_BYTECODE)
                         throw new ELException(_T(IR_STRICT_BYTECODE_FAILED), e);
                     if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
-                    return new IRInterpreter(env, irFn).execute(null, null, true);
+                    return new IRInterpreter(env, irFn).execute(null, true);
                 }
                 // VerifyError and other Errors propagate — they're compiler bugs
             }

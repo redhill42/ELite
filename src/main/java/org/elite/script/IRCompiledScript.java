@@ -41,7 +41,7 @@ class IRCompiledScript extends CompiledScript {
         try {
             ELContext elctx = engine.getELContext(context);
             EvaluationContext env = new EvaluationContext(elctx);
-            return new IRInterpreter(env, function).execute(null, null, true);
+            return new IRInterpreter(env, function).execute(null, true);
         } catch (EvaluationException ex) {
             ScriptException ex2 = new ScriptException(ex.getMessage());
             ex2.setStackTrace(ex.getStackTrace());

@@ -50,6 +50,21 @@ public final class SymbolTableBuilder {
         record Undefined(ELNode.IDENT var, SymbolTable.Scope scope) {}
         List<Undefined> undefined = new ArrayList<>();
 
+        // FIXME: mark all variables captured in trampolined.
+        ELNode.Visitor trampolineFixup = new DefaultVisitor() {
+            public void visit(ELNode.IDENT var) {
+                if (var.symbol != null && !var.symbol.captured) {
+                    for (SymbolTable.Scope s = table.currentScope().parent;
+                         s != null; s = s.parent) {
+                        if (s == var.symbol.scope) {
+                            var.symbol.captured = true;
+                            return;
+                        }
+                    }
+                }
+            }
+        };
+
         BuilderVisitor(SymbolTable table) {
             this.table = table;
             this.currentFn = null;
@@ -100,6 +115,9 @@ public final class SymbolTableBuilder {
 
         public void visit(ELNode.CLASSDEF e) {
             // Class definition is not supported yet.
+            table.enterScope("class", e);
+            e.accept(trampolineFixup);
+            table.leaveScope();
         }
 
         public void visit(ELNode.IDENT e) {
@@ -111,9 +129,6 @@ public final class SymbolTableBuilder {
                 // Mark this variable is captured by enclosing lambda.
                 if (currentFn != null && sym.scope.enclosingScope() != currentFn.scope &&
                     sym.node != currentFn && !(sym.node instanceof ELNode.CLASSDEF)) {
-                    if (currentFn.captures == null)
-                        currentFn.captures = new HashSet<>();
-                    currentFn.captures.add(sym);
                     sym.captured = true;
                 }
             } else {
@@ -172,17 +187,22 @@ public final class SymbolTableBuilder {
         public void visit(ELNode.TRY e) {
             table.enterScope("try", e);
             scan(e.body);
+            e.accept(trampolineFixup);
             table.leaveScope();
+
             if (e.handlers != null) {
                 for (ELNode h : e.handlers) {
-                    table.enterScope("catch", e);
+                    table.enterScope("catch", h);
                     scan(h);
+                    h.accept(trampolineFixup);
                     table.leaveScope();
                 }
             }
+
             if (e.finalizer != null) {
-                table.enterScope("finally", e);
+                table.enterScope("finally", e.finalizer);
                 scan(e.finalizer);
+                e.finalizer.accept(trampolineFixup);
                 table.leaveScope();
             }
         }

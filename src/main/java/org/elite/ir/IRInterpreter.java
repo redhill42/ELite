@@ -86,15 +86,10 @@ public class IRInterpreter {
     // ── Entry point ──
 
     public Object execute(Object[] args) {
-        return execute(args, null, false);
+        return execute(args, false);
     }
 
-    public Object execute(Object[] args, Object[] captured) {
-        return execute(args, captured, false);
-    }
-
-    public Object execute(Object[] args, Object[] captured,
-                          boolean isTopLevel) {
+    public Object execute(Object[] args, boolean isTopLevel) {
         this.stack = new Object[DEFAULT_STACK_SIZE];
         this.sp = 0;
 
@@ -121,11 +116,6 @@ public class IRInterpreter {
             }
         }
 
-        // Copy captured variables.
-        if (captured != null) {
-            System.arraycopy(captured, 0, locals, nvars, captured.length);
-        }
-
         // Start at first block
         ip = blockOffsets.length > 0 ? blockOffsets[0] : 0;
 
@@ -137,20 +127,6 @@ public class IRInterpreter {
         //   updates (setVariable finds and updates parent's Variable in place).
         if (!isTopLevel) {
             evalContext = evalContext.pushContext();
-        }
-
-        // Sync captured parameters to evalContext so inner closures can
-        // read and modify them via PUSH_GLOBAL/STORE_GLOBAL. Parameters are
-        // slot-only by default — this copies their initial values into the
-        // evalContext chain.
-        int[] pFlags = function.paramFlags();
-        String[] vNames = function.varNames();
-        if (pFlags != null && vNames != null) {
-            for (int i = 0; i < Math.min(pFlags.length, vNames.length); i++) {
-                if ((pFlags[i] & IRFunction.PARAM_CAPTURED) != 0) {
-                    defineGlobal(vNames[i], locals[i]);
-                }
-            }
         }
 
         // Debug: push a stack frame for this function call
@@ -771,6 +747,22 @@ public class IRInterpreter {
                     throw new UserException(elctx, s);
                 throw new UserException(elctx);
             }
+            case ASSERT: {
+                Object msg = pop();
+                Boolean exp = (Boolean)pop();
+                try {
+                    if (msg == null) {
+                        assert exp;
+                    } else {
+                        assert exp : msg;
+                    }
+                } catch (AssertionError ex) {
+                    throw new EvaluationException(elctx, ex);
+                }
+                push(null);
+                ip += 1;
+                break;
+            }
 
             // ============ Memory / variables ============
             case STORE_VAR: {
@@ -1010,15 +1002,8 @@ public class IRInterpreter {
             // ============ Closure creation ============
             case CLOSURE: {
                 int funcIdx = pl;
-                int captureCount = oc > 0 ? code[ip + 1] : 0;
                 IRFunction fn = (IRFunction)constantPool[funcIdx];
-                Object[] captured = new Object[captureCount];
-                for (int i = captureCount - 1; i >= 0; i--)
-                    captured[i] = pop();
-                // Capture the current evalContext so captured variable
-                // reads and writes inside the closure resolve against
-                // the original enclosing scope.
-                push(new IRClosure(evalContext, fn, captured));
+                push(new IRClosure(evalContext, fn));
                 ip += 1 + oc;
                 break;
             }

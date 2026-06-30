@@ -499,8 +499,6 @@ public abstract class ELNode implements Serializable
 
         private boolean dvals;
 
-        public transient Set<SymbolTable.Symbol> captures;
-
         public LAMBDA(int pos, String file, DEFINE[] vars, ELNode body) {
             this(pos, file, null, null, vars, false, body);
         }

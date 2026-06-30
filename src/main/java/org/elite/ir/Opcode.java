@@ -160,6 +160,7 @@ public final class Opcode {
     public static final int RETURN        = 0x86;
     public static final int RETURN_VOID   = 0x87;
     public static final int THROW         = 0x88;
+    public static final int ASSERT        = 0x89;
 
     // ── Memory / allocation (0x90-0x9F) ──
     public static final int DEFINE_GLOBAL  = 0x90;  // define in current scope, create if new
@@ -312,6 +313,7 @@ public final class Opcode {
             case RETURN -> "RETURN";
             case RETURN_VOID -> "RETURN_VOID";
             case THROW -> "THROW";
+            case ASSERT -> "ASSERT";
             case DEFINE_GLOBAL -> "DEFINE_GLOBAL";
             case STORE_GLOBAL -> "STORE_GLOBAL";
             case STORE_VAR -> "STORE_VAR";

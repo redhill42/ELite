@@ -1872,6 +1872,12 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitThrow();
     }
 
+    public void visit(ELNode.ASSERT node) {
+        build(node.exp);
+        build(node.msg);
+        current.emitAssert();
+    }
+
     public void visit(ELNode.TRY node) {
         // Compile try body, catch handlers, and finally block as nested IR
         // functions.
@@ -1939,28 +1945,18 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.file != null)
             nested.currentFile = node.file;
 
-        // Allocate slots for parameters.
-        for (ELNode.DEFINE var : node.vars) {
-            if (!"_".equals(var.id)) {
-                int flags = var.type != null ? IRFunction.PARAM_EXPLICIT_TYPE : 0;
-                if (var.symbol.captured)
-                    flags |= IRFunction.PARAM_CAPTURED;
-                nested.registerSlot(var.id, var.symbol.slot, flags);
-            }
-        }
-
-        // Reserve slots for captured variables
-        int captureCount = node.captures != null ? node.captures.size() : 0;
-        if (captureCount != 0) {
-            for (SymbolTable.Symbol sym : node.captures) {
-                nested.ensureVar(sym.mangledName, 0);
-            }
-        }
-
         // Reserve slots for all pre-allocated variables in this lambda
         // scope.  Temp vars allocated via ensureVar will then start
         // above the max pre-allocated slot, avoiding collisions.
         nested.reserveSlots(node.scope.maxSlots);
+
+        for (ELNode.DEFINE var : node.vars) {
+            // Define global for captured lamba parameters.
+            if (var.symbol != null && var.symbol.captured) {
+                nested.current.emitPushVar(var.symbol.slot);
+                nested.current.emitDefineGlobal(nested.putConstant(var.id));
+            }
+        }
 
         nested.buildTail(node.body);
         if (!endsWithReturn(nested)) {
@@ -1970,28 +1966,10 @@ public class IRBuilder extends ELNode.Visitor {
 
         IRFunction rawFn = nested.finish(
             node.name != null ? node.name : "lambda",
-            node.vars.length, captureCount);
+            node.vars.length);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
-
-        // Emit CLOSURE opcode. For captured variables:
-        // - If the captured var is captured in the enclosing scope's
-        //   (i.e., it's stored in eval context), push via PUSH_GLOBAL.
-        // - Otherwise, push from the enclosing scope's local slot via PUSH_VAR.
-        if (captureCount != 0) {
-            SymbolTable.Scope enclosingScope = node.scope.parent.enclosingScope();
-            for (SymbolTable.Symbol sym : node.captures) {
-                if (sym.scope.enclosingScope() == enclosingScope) {
-                    // Free variable from enclosing scope's local slot
-                    current.emitPushVar(sym.slot);
-                } else {
-                    // Captured var live in eval context - read from there
-                    int nameIdx = putConstant(sym.mangledName);
-                    current.emitPushGlobal(nameIdx);
-                }
-            }
-        }
-        current.emitClosure(poolIdx, captureCount);
+        current.emitClosure(poolIdx);
     }
 
     // ── Pattern matching ──
@@ -2551,10 +2529,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     IRFunction finish(String name, int paramCount) {
-        return finish(name, paramCount, 0);
-    }
-
-    IRFunction finish(String name, int paramCount, int captureCount) {
         // Seal current block and record its debug line
         if (current != null) {
             if (!current.isEmpty()) {
@@ -2599,7 +2573,7 @@ public class IRBuilder extends ELNode.Visitor {
                 pf[i] = paramFlags.get(i);
         }
 
-        func.populate(captureCount, merged.toArray(), offsets,
+        func.populate(merged.toArray(), offsets,
                       constants.toArray(new Object[0]),
                       varNames.toArray(new String[0]),
                       buildDebugInfo(name, count, offsets),

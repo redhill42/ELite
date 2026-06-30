@@ -173,21 +173,15 @@ public final class IRPrinter {
             case Opcode.PUSH_VAR -> sb.append(" v").append(v.varIndex());
             case Opcode.STORE_VAR -> sb.append(" v").append(v.payload() & 0xFFFF);
             case Opcode.PUSH_GLOBAL -> formatConstPool(sb, fn, v.constPoolIndex());
-            case Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL -> formatConstPool(sb, fn, v.payload());
             case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
                  Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
                 sb.append(" B").append(v.jumpTarget());
             case Opcode.INVOKE_DYN, Opcode.INVOKE_TAIL ->
                 sb.append(" ").append(v.payload());
             case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET,
-                 Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO
+                 Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO,
+                 Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL, Opcode.INSTOF, Opcode.CLOSURE
                 -> formatConstPool(sb, fn, v.payload());
-            case Opcode.INSTOF -> formatConstPool(sb, fn, v.payload());
-            case Opcode.CLOSURE -> {
-                formatConstPool(sb, fn, v.payload());
-                int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
-                sb.append(" capture=").append(captureCount);
-            }
             case Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
                 sb.append(" ").append(v.payload());
             case Opcode.TRAMPOLINE -> {
