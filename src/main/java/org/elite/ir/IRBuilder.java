@@ -812,6 +812,99 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitNewRange();
     }
 
+    public void visit(ELNode.ARRAY node) {
+        // Resolve component type at compile time, default to Object.class.
+        Object componentType = resolveClassAtCompileTime(node.type);
+        if (componentType == null)
+            componentType = node.type; // use string that resolved at runtime
+
+        if (componentType instanceof Class &&
+            buildConstantDimensionArray(node, (Class<?>)componentType))
+            return;
+
+        buildConst(componentType);
+
+        // Build dimension expressions into a tuple.
+        if (node.dims == null) {
+            current.emitPushNull();
+        } else {
+            for (int i = 0; i < node.dims.length; i++)
+                build(node.dims[i]);
+            current.emitNewTuple(node.dims.length);
+        }
+
+        // Build init expressions into a tuple.
+        if (node.init == null) {
+            current.emitPushNull();
+        } else {
+            for (int i = 0; i < node.init.length; i++)
+                build(node.init[i]);
+            current.emitNewTuple(node.init.length);
+        }
+
+        emitInvokeStatic(Runtime.class, "newArray",
+            ELContext.class, Object.class, Object[].class, Object[].class);
+    }
+
+    private boolean buildConstantDimensionArray(ELNode.ARRAY node, Class<?> type) {
+        if (node.dims != null) {
+            for (ELNode e : node.dims) {
+                if (e instanceof ELNode.NUMBER n && n.value instanceof Integer)
+                    continue;
+                return false;
+            }
+        }
+
+        if (node.dims == null || node.dims.length == 1) {
+            int length = 0;
+            if (node.dims != null)
+                length = ((ELNode.NUMBER)node.dims[0]).value.intValue();
+            if (node.init != null && length < node.init.length)
+                length = node.init.length;
+
+            buildConst(type);
+            emitPushConst(length);
+            emitInvokeStatic(Array.class, "newInstance", Class.class, int.class);
+
+            if (node.init != null) {
+                Var tmpSlot = new Var();
+                tmpSlot.store();
+                for (int i = 0; i < node.init.length; i++) {
+                    emitPushConst(i);
+                    build(node.init[i]);
+                    if (type != Object.class) {
+                        buildConst(type);
+                        emitInvokeStatic(TypeCoercion.class, "coerce",
+                            Object.class, Class.class);
+                    }
+                    emitInvokeStatic(Array.class, "set", Object.class, int.class, Object.class);
+                    current.emitPop();
+                    tmpSlot.load();
+                }
+                tmpSlot.release();
+            }
+        } else {
+            Var tmpSlot = new Var();
+            buildConst(type);
+            buildConst(int.class);
+            emitPushConst(node.dims.length);
+            emitInvokeStatic(Array.class, "newInstance", Class.class, int.class);
+            tmpSlot.store();
+            for (int i = 0; i < node.dims.length; i++) {
+                emitPushConst(i);
+                emitPushConst(((ELNode.NUMBER)node.dims[i]).value.intValue());
+                emitInvokeStatic(Array.class, "set", Object.class, int.class, Object.class);
+                current.emitPop();
+                tmpSlot.load();
+            }
+            emitInvokeStatic(Array.class, "newInstance", Class.class, int[].class);
+            tmpSlot.release();
+        }
+
+        // FIXME: handle multi dimensional array
+        return true;
+    }
+
     public void visit(ELNode.IN node) {
         build(node.right);  // container
         build(node.left);   // element

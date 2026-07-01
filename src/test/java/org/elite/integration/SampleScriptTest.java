@@ -31,8 +31,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class SampleScriptTest {
 
-    // TODO: re-enable "seq", "monad", once symbol table handles nested loops, data
-    // constructors, lazy sequences, and tail-call elimination.
+    // TODO: re-enable "seq", "monad" once symbol table handles
+    // nested loops and lazy sequences.
     private static final List<String> SAMPLES = List.of(
         "C", "dsl", "hello", "list", "rbtree", "scheme", "uri", "xml", "xmlbuilder"
     );

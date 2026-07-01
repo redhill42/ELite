@@ -166,6 +166,65 @@ public final class Runtime {
         return elems;
     }
 
+    @SuppressWarnings("unused")
+    public static Object newArray(ELContext elctx, Object type, Object[] dims, Object[] init) {
+        if (dims == null || dims.length == 1) {
+            return createOneDimensionArray(elctx, type, dims, init);
+        } else {
+            return createMultiDimensionArray(elctx, type, dims);
+        }
+    }
+
+    private static Object createOneDimensionArray(ELContext elctx, Object type,
+                                                  Object[] dims, Object[] init) {
+        int length = 0;
+        if (dims != null) {
+            length = TypeCoercion.coerceToInt(dims[0]);
+        }
+        if (init != null && length < init.length) {
+            length = init.length;
+        }
+
+        Class<?> cls = getComponentType(elctx, type);
+        Object result = Array.newInstance(cls, length);
+
+        if (init != null) {
+            if (result instanceof Object[] a) {
+                System.arraycopy(init, 0, a, 0, init.length);
+            } else {
+                for (int i = 0; i < init.length; i++) {
+                    Array.set(result, i, TypeCoercion.coerce(init[i], cls));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static Object createMultiDimensionArray(ELContext elctx, Object type, Object[] dims) {
+        assert dims != null && dims.length > 1;
+        int[] d = new int[dims.length];
+        for (int i = 0; i < d.length; i++) {
+            d[i] = TypeCoercion.coerceToInt(dims[i]);
+        }
+
+        // TODO: populate initializer
+        Class<?> t = getComponentType(elctx, type);
+        return Array.newInstance(t, d);
+    }
+
+    private static Class<?> getComponentType(ELContext elctx, Object type) {
+        if (type == null)
+            return Object.class;
+        if (type instanceof Class)
+            return (Class<?>)type;
+        try {
+            return ELEngine.resolveJavaClass(elctx, (String)type);
+        } catch (Exception ex) {
+            return Object.class;
+        }
+    }
+
     private static boolean isChar(Object o) {
         if (o instanceof Character) {
             return true;
