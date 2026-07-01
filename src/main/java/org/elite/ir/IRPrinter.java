@@ -123,11 +123,6 @@ public final class IRPrinter {
             }
         }
 
-        Object[] vars = fn.varNames();
-        for (int i = 0; i < vars.length; i++) {
-            sb.append("  v").append(i).append(" = ").append(vars[i]).append("\n");
-        }
-
         for (int b = 0; b < fn.blockCount(); b++) {
             int start = fn.blockStart(b);
             int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : fn.code().length;

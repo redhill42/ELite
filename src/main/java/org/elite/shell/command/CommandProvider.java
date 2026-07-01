@@ -99,9 +99,8 @@ public final class CommandProvider {
 
         Parser parser = new Parser(script);
         ELProgram program = parser.parse();
-        SymbolTable symbol = SymbolTableBuilder.build(program);
+        SymbolTableBuilder.build(program);
         System.out.println(ASTDumper.dump(program));
-        System.out.println(symbol.dump());
     }
 
     public static void ls(ShellContext shellContext, String args) {

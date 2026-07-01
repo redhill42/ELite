@@ -36,6 +36,7 @@ import static javax.xml.XMLConstants.*;
 public class EvaluationContext extends AbstractClosure
     implements PropertyDelegate
 {
+    private EvaluationContext parent;
     private ELContext      elctx;
     private FunctionMapper fnm;
     private StackTrace     trace;
@@ -160,21 +161,27 @@ public class EvaluationContext extends AbstractClosure
 
     public EvaluationContext pushContext() {
         EvaluationContext newctx = new EvaluationContext();
-        newctx.elctx = this.elctx;
-        newctx.fnm   = this.fnm;
-        newctx.trace = this.trace;
-        newctx.head  = newctx.tail = this.tail;
+        newctx.parent = this;
+        newctx.elctx  = this.elctx;
+        newctx.fnm    = this.fnm;
+        newctx.trace  = this.trace;
+        newctx.head   = newctx.tail = this.tail;
         return newctx;
     }
 
     public EvaluationContext pushContext(VariableMapper env) {
         EvaluationContext newctx = new EvaluationContext();
-        newctx.elctx = this.elctx;
-        newctx.fnm   = this.fnm;
-        newctx.trace = this.trace;
-        newctx.head  = this.tail;
-        newctx.tail  = new VMResolver(env, this.tail);
+        newctx.parent = this;
+        newctx.elctx  = this.elctx;
+        newctx.fnm    = this.fnm;
+        newctx.trace  = this.trace;
+        newctx.head   = this.tail;
+        newctx.tail   = new VMResolver(env, this.tail);
         return newctx;
+    }
+
+    public EvaluationContext popContext() {
+        return parent;
     }
 
     public void setVariable(String name, ValueExpression value) {

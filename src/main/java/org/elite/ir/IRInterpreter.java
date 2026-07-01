@@ -1008,6 +1008,17 @@ public class IRInterpreter {
                 break;
             }
 
+            case ENTER_SCOPE:
+                evalContext = evalContext.pushContext();
+                push(null);
+                ip += 1;
+                break;
+            case LEAVE_SCOPE:
+                evalContext = evalContext.popContext();
+                push(null);
+                ip += 1;
+                break;
+
             // ============ Trampoline to AST evaluator ============
             case TRAMPOLINE: {
                 int poolIdx = pl;
@@ -1018,15 +1029,8 @@ public class IRInterpreter {
                     obj = td.tryNode;
                 }
                 ELNode node = (ELNode)obj;
-                // Sync locals → evalContext so the AST evaluator can
-                // see function parameters and let-bindings.
-                syncLocalsToGlobals();
                 Object result = node.getValue(evalContext);
                 push(result);
-                // Sync back: AST evaluation may have modified variables
-                // through the evalContext chain. Copy changes back to
-                // local slots so subsequent PUSH_VAR sees them.
-                syncLocalsFromGlobals();
                 ip += 1 + oc;
                 break;
             }
@@ -1206,42 +1210,6 @@ public class IRInterpreter {
         if (ve == null)
             throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
         ve.setValue(elctx, value);
-    }
-
-    /**
-     * Before a TRAMPOLINE, copy IR local variable values into the
-     * EvaluationContext so the AST evaluator can see them.
-     * Uses regular setVariable (current-scope only) to avoid overwriting
-     * parent parameters during recursive calls.
-     */
-    private void syncLocalsToGlobals() {
-        String[] names = function.varNames();
-        if (names == null)
-            return;
-        for (int i = 0; i < names.length && i < locals.length; i++) {
-            if (names[i] != null) {
-                evalContext.setVariable(names[i], new LiteralClosure(locals[i]));
-            }
-        }
-    }
-
-    /**
-     * After a TRAMPOLINE, copy any changes the AST evaluator made back
-     * to local slots. Reads from evalContext (not VariableMapper) to
-     * align with the new scope architecture.
-     */
-    private void syncLocalsFromGlobals() {
-        String[] names = function.varNames();
-        if (names == null)
-            return;
-        for (int i = 0; i < names.length && i < locals.length; i++) {
-            if (names[i] != null) {
-                ValueExpression ve = evalContext.resolveVariable(names[i]);
-                if (ve != null) {
-                    locals[i] = ve.getValue(elctx);
-                }
-            }
-        }
     }
 
     // ── Direct field access ──

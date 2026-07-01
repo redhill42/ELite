@@ -12,7 +12,6 @@ public class SymbolTable {
         public final String name;       // symbol name from source
         public String mangledName;      // renamed if shadowed
         public int slot = -1;           // IR locals[] index
-        public int flags;               // param flags (PARAM_EXPLICIT_TYPE, etc.)
         public boolean captured;        // captured by an inner closure?
         public IRFunction func;         // known function: the compiled IRFunction
         public ELNode node = null;      // the node that provide symbol definition info
@@ -68,6 +67,14 @@ public class SymbolTable {
 
         public boolean isTopLevel() {
             return parent == null;
+        }
+
+        public boolean hasCaptures() {
+            for (Symbol sym : symbols.values()) {
+                if (sym.captured)
+                    return true;
+            }
+            return false;
         }
 
         void put(String name, Symbol sym) {

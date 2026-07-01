@@ -171,6 +171,8 @@ public final class Opcode {
     public static final int LOAD_PROPERTY  = 0x95;  // pops key, base → base[key]
     public static final int STORE_PROPERTY = 0x96;  // pops val, key, base → base[key]=val
     public static final int CAPTURE        = 0x97;
+    public static final int ENTER_SCOPE    = 0x98;
+    public static final int LEAVE_SCOPE    = 0x99;
 
     // ── Data structure ──
     public static final int NEW_CONS       = 0xA0;
@@ -322,6 +324,8 @@ public final class Opcode {
             case LOAD_PROPERTY -> "LOAD_PROPERTY";
             case STORE_PROPERTY -> "STORE_PROPERTY";
             case CAPTURE -> "CAPTURE";
+            case ENTER_SCOPE -> "ENTER_SCOPE";
+            case LEAVE_SCOPE -> "LEAVE_SCOPE";
             case NEW_CONS -> "NEW_CONS";
             case NEW_DELAY_CONS -> "NEW_DELAY_CONS";
             case NIL -> "NIL";

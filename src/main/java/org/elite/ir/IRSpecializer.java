@@ -135,8 +135,8 @@ public class IRSpecializer implements IRPass {
             newOffsets[i] = merged.size();
             merged.addAll(allBlocks.get(i).toArray());
         }
-        fn.populate(merged.toArray(), newOffsets, fn.constantPool(),
-                fn.varNames(), fn.debugInfo(), fn.paramFlags(), fn.defaultValues());
+        fn.populate(merged.toArray(), fn.maxLocals, newOffsets, fn.constantPool(),
+                    fn.debugInfo(), fn.defaultValues());
         return fn;
     }
 

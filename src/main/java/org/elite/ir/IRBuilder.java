@@ -66,6 +66,7 @@ public class IRBuilder extends ELNode.Visitor {
     SymbolTable.Scope currentScope;
 
     // Tracking temporary slot allocation.
+    private int maxLocals;
     private int nextTempSlot;
 
     // ── Block management (stored by ID, output in ID order) ──
@@ -73,11 +74,6 @@ public class IRBuilder extends ELNode.Visitor {
     IREmitter current;
     int currentBlockId = 0;
     int nextBlockId = 1;  // 0 is the initial block
-
-    /** name → slot mapping (populated by registerSlot / ensureVar for temp vars). */
-    private final Map<String, Integer> varIndex = new LinkedHashMap<>();
-    private final List<String> varNames = new ArrayList<>();
-    private final List<Integer> paramFlags = new ArrayList<>(); // per-var flags
 
     // ── Constant pool (maybe shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
@@ -166,7 +162,17 @@ public class IRBuilder extends ELNode.Visitor {
             SymbolTable.Scope prevScope = currentScope;
             int prevTempSlot = nextTempSlot;
             currentScope = node.scope;
-            node.accept(this);
+
+            if (!(node instanceof ELNode.LAMBDA) && node.scope.hasCaptures()) {
+                // We need to set up new evaluation context if any variables
+                // captured in this scope.
+                current.emit1(ENTER_SCOPE, K_NONE, 0);
+                node.accept(this);
+                current.emit1(LEAVE_SCOPE, K_NONE, 0);
+            } else {
+                node.accept(this);
+            }
+
             currentScope = prevScope;
             nextTempSlot = prevTempSlot;
         } else {
@@ -309,11 +315,16 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
-        if (node.right instanceof ELNode.IDENT ident) {
+        ELNode base = node.right;
+        while (base instanceof ELNode.EXPR)
+            base = ((ELNode.EXPR)base).right;
+
+        if (base instanceof ELNode.IDENT ident) {
             if (ident.symbol != null) {
                 if (inTailPosition && ident.symbol.func == this.func) {
                     // TCO: build args (never in tail position), emit INVOKE_TAIL
-                    int argc = buildCallArgs(ident.symbol, node.args, node.keys);
+                    int argc = buildCallArgs((ELNode.LAMBDA)ident.symbol.node,
+                                              node.args, node.keys);
                     if (argc == -1) {
                         for (ELNode e : node.args)
                             build(e);
@@ -325,7 +336,8 @@ public class IRBuilder extends ELNode.Visitor {
 
                 if (ident.symbol.func != null) {
                     int funcIdx = putConstant(ident.symbol.func);
-                    int argc = buildCallArgs(ident.symbol, node.args, node.keys);
+                    int argc = buildCallArgs((ELNode.LAMBDA)ident.symbol.node,
+                                             node.args, node.keys);
                     if (argc == -1) {
                         for (ELNode e : node.args)
                             build(e);
@@ -358,7 +370,7 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
-        if (node.right instanceof ELNode.ACCESS acc) {
+        if (base instanceof ELNode.ACCESS acc) {
             // Try to resolve direct method for known Java types.
             if (acc.index instanceof ELNode.STRINGVAL key) {
                 if (tryBuildDirectMethodCall(acc.right, key.value, node.args))
@@ -374,8 +386,22 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
+        build(base);
+
+        if (base instanceof ELNode.LAMBDA lam && lam.symbol != null && lam.symbol.func != null) {
+            // Inline lambda call.
+            int funcIdx = putConstant(lam.symbol.func);
+            int argc = buildCallArgs(lam, node.args, node.keys);
+            if (argc == -1) {
+                for (ELNode e : node.args)
+                    build(e);
+                argc = node.args.length;
+            }
+            current.emitInvokeDirect(funcIdx, argc);
+            return;
+        }
+
         // evaluate base and generate dynamic call
-        build(node.right);
         for (ELNode arg : node.args)
             build(arg);
         current.emitInvokeDyn(node.args.length);
@@ -395,9 +421,7 @@ public class IRBuilder extends ELNode.Visitor {
      * Build arguments for a direct call, handling default and named parameters.
      * Returns the total number of arguments built (including defaults).
      */
-    private int buildCallArgs(SymbolTable.Symbol sym, ELNode[] args, String[] keys) {
-        ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.node;
-
+    private int buildCallArgs(ELNode.LAMBDA lambda, ELNode[] args, String[] keys) {
         int argc = args.length;
         int nvars = lambda.vars.length;
         ELNode[] xargs = null;
@@ -671,15 +695,15 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Initialize temporary variables.
-        int indvar = b.vars.length == 1 ? defineVar(b.vars[0]) : defineLocalVar();
-        int endvar = defineLocalVar();
+        Var indSlot = new Var(b.vars.length == 1 ? b.vars[0] : null);
+        Var endSlot = new Var();
 
         // FIXME: induction variable may be captured, should put in evaluation context.
         build(begin);
-        current.emitStoreVar(indvar);
+        indSlot.define();;
         current.emitPop();
         build(end);
-        current.emitStoreVar(endvar);
+        endSlot.store();
         current.emitPop();
 
         // Begin loop.
@@ -692,8 +716,8 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Generate loop condition.
         startBlock(headerB);
-        current.emitPushVar(indvar);
-        current.emitPushVar(endvar);
+        indSlot.load();
+        endSlot.load();
         current.emit1(cmpop, K_DYN, 0);
         current.emitJumpIfTrue(bodyB);
         current.emitJump(exitB);
@@ -704,13 +728,13 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitPop();
 
         // Increment induction variable.
-        current.emitPushVar(indvar);
+        indSlot.load();
         emitPushConst(Math.abs(step));
         if (step > 0)
             current.emitDynAdd();
         else
             current.emitDynSub();
-        current.emitStoreVar(indvar);
+        indSlot.store();
         current.emitPop();
         current.emitJump(headerB);
 
@@ -1347,7 +1371,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (elem instanceof ELNode.TUPLE tt) {
                 buildFlattenTuple(tt.elems, tmpVars);
             } else {
-                int varIdx = ensureVar("*t" + tmpVars.size() + "*");
+                int varIdx = allocLocalVar();
                 tmpVars.add(varIdx);
                 build(elem);
                 current.emitStoreVar(varIdx);
@@ -1415,65 +1439,8 @@ public class IRBuilder extends ELNode.Visitor {
             }
 
             // Always store locally for fast access within this function.
-            registerSlot(node.id, node.symbol.slot, node.symbol.flags);
             current.emitStoreVar(node.symbol.slot);
         }
-    }
-
-    /** Like defineLocalVar but uses pre-allocated slot from the DEFINE node's symbol. */
-    private int defineVar(ELNode.DEFINE def) {
-        return registerSlot(def.id, def.symbol.slot, def.symbol.flags);
-    }
-
-    private int defineLocalVar() {
-        int slot = nextTempSlot++;
-        String name = Parser.tempvar();
-        return registerSlot(name, slot, 0);
-    }
-
-    /**
-     * Reserve space in `varNames` up to (and including) the given slot index.
-     * Temp vars allocated after this call will start above the reserved range.
-     */
-    private void reserveSlots(int maxSlot) {
-        while (varNames.size() < maxSlot) {
-            varNames.add(null);
-            paramFlags.add(0);
-        }
-        nextTempSlot = maxSlot;
-    }
-
-    /**
-     * Register a pre-allocated slot (from SymbolTable) in the local
-     * varNames/paramFlags/varIndex structures.  The slot index is used
-     * as-is; arrays are padded if necessary.
-     */
-    private int registerSlot(String name, int slot, int flags) {
-        while (varNames.size() <= slot) {
-            varNames.add(null);
-            paramFlags.add(0);
-        }
-        varNames.set(slot, name);
-        paramFlags.set(slot, flags);
-        varIndex.put(name, slot);
-        return slot;
-    }
-
-
-    // ── Symbol/type helpers ──
-    int ensureVar(String name) {
-        return ensureVar(name, 0);
-    }
-
-    int ensureVar(String name, int flags) {
-        Integer idx = varIndex.get(name);
-        if (idx != null)
-            return idx;
-        idx = varNames.size();
-        varNames.add(name);
-        paramFlags.add(flags);
-        varIndex.put(name, idx);
-        return idx;
     }
 
     public void visit(ELNode.EXPR node) {
@@ -1641,15 +1608,17 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Register loop variable first to claim its pre-allocated slot,
         // then allocate temp vars after it to avoid slot collisions.
-        int varIdx = defineVar(var);
-        int idxIdx = index != null ? defineVar(index) : defineLocalVar();
+        Var varSlot = var.symbol != null ? new Var(var) : null;
+        Var idxSlot = new Var(index);
 
         emitPushConst(0L);
-        current.emitStoreVar(idxIdx);
+        idxSlot.define();
         current.emitPop();
-        emitPushConst(begin);
-        current.emitStoreVar(varIdx);
-        current.emitPop();
+        if (varSlot != null) {
+            emitPushConst(begin);
+            varSlot.define();
+            current.emitPop();
+        }
 
         // Begin loop.
         int bodyB = allocBlockId();
@@ -1663,7 +1632,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Generate loop condition.
         if (range.end != null) {
             startBlock(headerB);
-            current.emitPushVar(idxIdx);
+            idxSlot.load();
             emitPushConst(count);
             current.emitLLt();
             current.emitJumpIfTrue(bodyB);
@@ -1680,17 +1649,19 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Generate loop step.
         startBlock(contB);
-        current.emitPushVar(idxIdx);
+        idxSlot.load();
         emitPushConst(1L);
         current.emitLAdd();
-        current.emitStoreVar(idxIdx);
+        idxSlot.store();
         current.emitPop();
 
-        current.emitPushVar(varIdx);
-        emitPushConst(step);
-        current.emitLAdd();
-        current.emitStoreVar(varIdx);
-        current.emitPop();
+        if (varSlot != null) {
+            varSlot.load();
+            emitPushConst(step);
+            current.emitLAdd();
+            varSlot.store();
+            current.emitPop();
+        }
         current.emitJump(headerB);
 
         // Cleanup
@@ -1702,34 +1673,34 @@ public class IRBuilder extends ELNode.Visitor {
     private void buildDynamicRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
                                        ELNode.RANGE range, ELNode body) {
         // Register loop variable first to claim its pre-allocated slot.
-        int varIdx = defineVar(var);
-        int idxIdx = index != null ? defineVar(index) : defineLocalVar();
+        Var varSlot = new Var(var);
+        Var idxSlot = new Var(index);
         int stepIdx = -1;
         int countIdx = -1;
 
         // Initialize local variables.
         if (range.next != null) {
-            stepIdx = defineLocalVar();
+            stepIdx = allocLocalVar();
             build(range.next);
             build(range.begin);
-            current.emitStoreVar(varIdx);
+            varSlot.define();
             current.emitLSub();
             current.emitStoreVar(stepIdx); // step = next - begin
             current.emitPop();
         } else {
             build(range.begin);
-            current.emitStoreVar(varIdx);
+            varSlot.define();
             current.emitPop();
         }
 
         if (range.end != null) {
-            countIdx = defineLocalVar();
+            countIdx = allocLocalVar();
             build(range.end);
             if (range.exclude) {
                 emitPushConst(1L);
                 current.emitLSub();
             }
-            current.emitPushVar(varIdx);
+            varSlot.load();
             current.emitLSub();
             if (range.next != null) {
                 current.emitPushVar(stepIdx);
@@ -1742,7 +1713,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         emitPushConst(0L);
-        current.emitStoreVar(idxIdx);
+        idxSlot.store();
 
         int bodyB = allocBlockId();
         int headerB = range.end != null ? allocBlockId() : bodyB;
@@ -1755,7 +1726,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Generate loop condition.
         if (range.end != null) {
             startBlock(headerB);
-            current.emitPushVar(idxIdx);
+            idxSlot.load();
             current.emitPushVar(countIdx);
             current.emitLLt();
             current.emitJumpIfTrue(bodyB);
@@ -1772,19 +1743,19 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Generate loop step.
         startBlock(contB);
-        current.emitPushVar(idxIdx);
+        idxSlot.load();
         emitPushConst(1L);
         current.emitLAdd();
-        current.emitStoreVar(idxIdx);
+        idxSlot.store();
         current.emitPop();
 
-        current.emitPushVar(varIdx);
+        varSlot.load();
         if (range.next != null)
             current.emitPushVar(stepIdx);
         else
             emitPushConst(1L);
         current.emitDynAdd();
-        current.emitStoreVar(varIdx);
+        varSlot.store();
         current.emitPop();
         current.emitJump(headerB);
 
@@ -1802,39 +1773,40 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.push(new LoopTargets(header, exit));
 
         // Register loop variable first to claim its pre-allocated slot.
-        int varIdx = defineVar(node.var);
-        int idxIdx = -1;
+        Var varSlot = node.var.symbol != null ? new Var(node.var) : null;
+        Var idxSlot = null;
         if (node.index != null) {
-            idxIdx = defineVar(node.index);
+            idxSlot = new Var(node.index);
             emitPushConst(-1L);
-            current.emitStoreVar(idxIdx);
+            idxSlot.define();
             current.emitPop();
         }
-        int iterIdx = defineLocalVar();
+        Var iterSlot = new Var();
 
         build(node.range);
         emitInvokeStatic(Runtime.class, "getIterator", Object.class);
-        current.emitStoreVar(iterIdx);
+        iterSlot.store();
         current.emitJumpIfNull(exit);
         current.emitJump(header);
 
         startBlock(header);
-        current.emitPushVar(iterIdx);
+        iterSlot.load();
         emitInvokeMethod(Iterator.class, "hasNext");
         current.emitJumpIfFalse(exit);
         current.emitJump(body);
 
         startBlock(body);
-        current.emitPushVar(iterIdx);
+        iterSlot.load();
         emitInvokeMethod(Iterator.class, "next");
-        current.emitStoreVar(varIdx);
+        if (varSlot != null)
+            varSlot.store();
         current.emitPop();
 
         if (node.index != null) {
-            current.emitPushVar(idxIdx);
+            idxSlot.load();
             emitPushConst(1L);
             current.emitIAdd();
-            current.emitStoreVar(idxIdx);
+            idxSlot.store();
             current.emitPop();
         }
 
@@ -1879,56 +1851,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.TRY node) {
-        // Compile try body, catch handlers, and finally block as nested IR
-        // functions.
-        // Bytecode compiler uses these to generate JVM exception tables.
-        // IR interpreter falls back to AST trampoline (via TRAMPOLINE).
-
-        IRFunction tryBody = compileSubtree(node.body, null);
-        int handlerCount = node.handlers != null ? node.handlers.length : 0;
-        String[] catchTypes = new String[handlerCount];
-        String[] catchVars = new String[handlerCount];
-        IRFunction[] catchBodies = new IRFunction[handlerCount];
-        for (int i = 0; i < handlerCount; i++) {
-            catchTypes[i] = node.handlers[i].type;  // null = any exception
-            catchVars[i] = node.handlers[i].id;
-            // Register catch variable so handler body can PUSH_VAR it
-            catchBodies[i] = compileSubtree(node.handlers[i].expr,
-                    catchVars[i]);
-        }
-        IRFunction finallyBlock = node.finalizer != null ?
-                                  compileSubtree(node.finalizer, null) : null;
-
-        TryDescriptor td = new TryDescriptor(node, tryBody, catchTypes,
-                catchVars, catchBodies, finallyBlock);
-        int poolIdx = putConstant(td);
-        current.emit2(TRAMPOLINE, K_DYN, poolIdx, 0);
-    }
-
-    /**
-     * Compile a single ELNode subtree into a standalone IRFunction.
-     * Does NOT capture variables from the enclosing scope — all external
-     * variable references use PUSH_GLOBAL/STORE_GLOBAL.  This is correct for
-     * try/catch bodies and finally blocks (they are not closures).
-     */
-    private IRFunction compileSubtree(ELNode node, String varToBind) {
-        // No parent → no variable capture from enclosing scope.
-        // External variables fall through to PUSH_GLOBAL/STORE_GLOBAL.
-        // Build a fresh symbol table for this standalone subtree.
-        SymbolTable symTable = SymbolTableBuilder.build(node);
-        IRFunction func = new IRFunction("<try_block", 0);
-        IRBuilder nested = new IRBuilder(elctx, func, symTable.currentScope());
-        // Still share the constant pool so pool indices are consistent.
-        nested.constants = this.constants;
-        nested.constIndex = this.constIndex;
-        if (varToBind != null) {
-            nested.ensureVar(varToBind);  // locals[0] = caught exception
-        }
-        nested.buildTail(node);
-        if (!endsWithReturn(nested)) {
-            nested.current.emitReturnVoid();
-        }
-        return nested.finish("<try_block>", varToBind != null ? 1 : 0);
+        buildTrampoline(node);
     }
 
     // ── Lambda ──
@@ -1936,8 +1859,12 @@ public class IRBuilder extends ELNode.Visitor {
         IRFunction func;
         if (node.symbol != null)
             func = node.symbol.func;
-        else
+        else {
             func = new IRFunction("<lambda>", node.vars.length);
+            node.symbol = new SymbolTable.Symbol(node.scope, "");
+            node.symbol.func = func;
+            node.symbol.mangledName = "";
+        }
 
         IRBuilder nested = new IRBuilder(this, func, node.scope);
 
@@ -1946,7 +1873,7 @@ public class IRBuilder extends ELNode.Visitor {
             nested.currentFile = node.file;
 
         // Reserve slots for all pre-allocated variables in this lambda
-        // scope.  Temp vars allocated via ensureVar will then start
+        // scope.  Temp vars allocated via defineLocalVar will then start
         // above the max pre-allocated slot, avoiding collisions.
         nested.reserveSlots(node.scope.maxSlots);
 
@@ -1965,8 +1892,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         IRFunction rawFn = nested.finish(
-            node.name != null ? node.name : "lambda",
-            node.vars.length);
+            node.name != null ? node.name : "lambda");
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
         current.emitClosure(poolIdx);
@@ -2010,7 +1936,7 @@ public class IRBuilder extends ELNode.Visitor {
                 ident.symbol != null && !ident.symbol.captured) {
                 argSlots[i] = ident.symbol.slot;
             } else {
-                argSlots[i] = defineLocalVar();
+                argSlots[i] = allocLocalVar();
                 build(node.args[i]);
                 current.emitStoreVar(argSlots[i]);
                 current.emitPop();
@@ -2124,18 +2050,16 @@ public class IRBuilder extends ELNode.Visitor {
             }
 
             // Variable binding -> bind to new pattern variable.
-            int slot = registerSlot(def.id, def.symbol.slot, def.symbol.flags);
             if (def.type != null || def.expr != null)
                 current.emitPushVar(argSlot);
-            current.emitStoreVar(slot);
+            current.emitStoreVar(def.symbol.slot);
             if (def.symbol.captured)
                 current.emitDefineGlobal(putConstant(def.id));
             return false;
         }
 
         if (pat instanceof ELNode.IDENT var) {
-            int slot = registerSlot(var.id, var.symbol.slot, var.symbol.flags);
-            current.emitPushVar(slot);
+            current.emitPushVar(var.symbol.slot);
             current.emitDynEq();
             return true;
         }
@@ -2149,8 +2073,6 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.OR or) {
-            // Save variable binding state before trying left branch
-            Map<String, Integer> savedBindings = new LinkedHashMap<>(varIndex);
             int tryRight = allocBlockId();
             int done = allocBlockId();
 
@@ -2159,11 +2081,7 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emitJumpIfFalse(tryRight); // matched -> skip right
             current.emitJump(done);
 
-            // Right branch, rollback bindings from failed left branch.
             sealAndStart(tryRight);
-            varIndex.keySet().removeIf(k -> !savedBindings.containsKey(k));
-            varIndex.putAll(savedBindings);
-
             current.emitPushVar(argSlot);
             if (compileMatchPattern(argSlot, or.right, failBlock))
                 current.emitJumpIfFalse(failBlock);
@@ -2252,7 +2170,7 @@ public class IRBuilder extends ELNode.Visitor {
                 emitInvokeStatic(Array.class, "get", Object.class, int.class);
                 if (!isSimplePattern(t.elems[i])) {
                     if (tmpSlot == -1)
-                        tmpSlot = defineLocalVar();
+                        tmpSlot = allocLocalVar();
                     current.emitStoreVar(tmpSlot);
                 }
                 if (compileMatchPattern(tmpSlot, t.elems[i], failBlock)) {
@@ -2265,10 +2183,10 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.CONS cons) {
-            int seqSlot = defineLocalVar();
+            int seqSlot = allocLocalVar();
             int tmpSlot = -1;
             if (!isSimplePattern(cons.head) || !isSimplePattern(cons.tail))
-                tmpSlot = defineLocalVar();
+                tmpSlot = allocLocalVar();
 
             emitInstOf(List.class);
             current.emitJumpIfFalse(failBlock);
@@ -2316,7 +2234,7 @@ public class IRBuilder extends ELNode.Visitor {
 
                 if (!isSimplePattern(map.values[i])) {
                     if (tmpSlot == -1)
-                        tmpSlot = defineLocalVar();
+                        tmpSlot = allocLocalVar();
                     current.emitStoreVar(tmpSlot);
                 }
 
@@ -2360,6 +2278,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // ── Block management ──
+
     private int allocBlockId() {
         return nextBlockId++;
     }
@@ -2378,12 +2297,72 @@ public class IRBuilder extends ELNode.Visitor {
         current = new IREmitter();
     }
 
+    // ── Local management ──
+
+    private class Var {
+        private final int slot;
+        private final boolean captured;
+
+        Var() {
+            slot = allocLocalVar();
+            captured = false;
+        }
+
+        Var(ELNode.DEFINE var) {
+            if (var != null && var.symbol != null) {
+                captured = var.symbol.captured;
+                slot = captured ? putConstant(var.id) : var.symbol.slot;
+            } else {
+                slot = allocLocalVar();
+                captured = false;
+            }
+
+        }
+
+        void define() {
+            if (captured)
+                current.emitDefineGlobal(slot);
+            else
+                current.emitStoreVar(slot);
+        }
+
+        void store() {
+            if (captured)
+                current.emitPushGlobal(slot);
+            else
+                current.emitStoreVar(slot);
+        }
+
+        void load() {
+            if (captured)
+                current.emitPushGlobal(slot);
+            else
+                current.emitPushVar(slot);
+        }
+    }
+
+    private int allocLocalVar() {
+        int slot = nextTempSlot++;
+        maxLocals = Math.max(maxLocals, nextTempSlot);
+        return slot;
+    }
+
+    /**
+     * Reserve space in `varNames` up to (and including) the given slot index.
+     * Temp vars allocated after this call will start above the reserved range.
+     */
+    private void reserveSlots(int maxSlots) {
+        maxLocals = nextTempSlot = maxSlots;
+    }
+
     private int putConstant(Object value) {
         return constIndex.computeIfAbsent(value, k -> {
             constants.add(k);
             return constants.size() - 1;
         });
     }
+
+    // ── Constant pool management ──
 
     private int typeIdFromNode(ELNode node) {
         if (node == null)
@@ -2528,7 +2507,7 @@ public class IRBuilder extends ELNode.Visitor {
         return new DebugInfo(currentFile, name, blockPos, pcLines, n / 2);
     }
 
-    IRFunction finish(String name, int paramCount) {
+    IRFunction finish(String name) {
         // Seal current block and record its debug line
         if (current != null) {
             if (!current.isEmpty()) {
@@ -2563,25 +2542,14 @@ public class IRBuilder extends ELNode.Visitor {
             merged.addAll(ordered[i]);
         }
 
-        // Build debug info using the recorded pc→line table
-
-        // Build paramFlags: trim to paramCount
-        int[] pf = null;
-        if (!paramFlags.isEmpty()) {
-            pf = new int[paramCount];
-            for (int i = 0; i < paramCount && i < paramFlags.size(); i++)
-                pf[i] = paramFlags.get(i);
-        }
-
-        func.populate(merged.toArray(), offsets,
+        func.populate(merged.toArray(), maxLocals, offsets,
                       constants.toArray(new Object[0]),
-                      varNames.toArray(new String[0]),
-                      buildDebugInfo(name, count, offsets),
-                      pf, null);
+                      buildDebugInfo(name, count, offsets), null);
         return func;
     }
 
     // ── Convenience emits ──
+
     private void emitPushConst(int typeId, Object value) {
         int idx = putConstant(value);
         int kind = (typeId >= 0) ? K_PRIM : K_NONE;
@@ -2715,7 +2683,7 @@ public class IRBuilder extends ELNode.Visitor {
             int typeId = b.typeIdFromNode(node);
             b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
         }
-        return finishIR(b.finish("<expr>", 0), 0, optimize, false);
+        return finishIR(b.finish("<expr>"), 0, optimize, false);
     }
 
     public static IRFunction compile(ELProgram program) {
@@ -2736,7 +2704,7 @@ public class IRBuilder extends ELNode.Visitor {
             b.setFile(file);
 
         // Reserve slots for all pre-allocated program-level variables.
-        // After this, ensureVar will allocate temp vars above the max slot.
+        // After this, defineLocalVar will allocate temp vars above the max slot.
         b.reserveSlots(symTable.currentScope().maxSlots);
 
         // Compile definitions for forward declaration.
@@ -2765,7 +2733,7 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
-        return finishIR(b.finish("<program>", 0), 0, optimize, false);
+        return finishIR(b.finish("<program>"), 0, optimize, false);
     }
 
     /**

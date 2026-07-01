@@ -34,22 +34,15 @@ public class IRFunction {
     private final int paramCount;
     /** Single contiguous code array for all blocks. */
     private int[] code;
+    /** Number of local variable slots */
+    int maxLocals;
     /** Start offset of each basic block in the code array. */
     private int[] blockOffsets;
     /** Constant pool: literals indexed by PUSH_CONST payload. */
     private Object[] constantPool;
-    /** Variable names indexed by PUSH_VAR/PUSH_GLOBAL payload. */
-    private String[] varNames;
 
     /** Source-level debug info (PC→line mapping, file/function metadata). */
     private DebugInfo debugInfo;
-
-    /**
-     * Per-parameter flags. Bit 0 = type was explicitly annotated (vs. inferred).
-     * Parallel to varNames; only the first paramCount entries are meaningful.
-     * May be null for functions compiled without type annotation info.
-     */
-    private int[] paramFlags;
 
     /**
      * Default parameter values (parallel to params; null entries = no default).
@@ -65,16 +58,13 @@ public class IRFunction {
     }
 
     // Populate IRFunction with code after compilation.
-    void populate(int[] code, int[] blockOffsets,
-                  Object[] constantPool, String[] varNames,
-                  DebugInfo debugInfo, int[] paramFlags,
-                  Object[] defaultValues) {
+    void populate(int[] code, int maxLocals, int[] blockOffsets, Object[] constantPool,
+                  DebugInfo debugInfo, Object[] defaultValues) {
         this.code = code;
+        this.maxLocals = maxLocals;
         this.blockOffsets = blockOffsets;
         this.constantPool = constantPool;
-        this.varNames = varNames;
         this.debugInfo = debugInfo != null ? debugInfo : DebugInfo.EMPTY;
-        this.paramFlags = paramFlags;
         this.defaultValues = defaultValues;
     }
 
@@ -85,21 +75,11 @@ public class IRFunction {
     public int[] code()        { return code; }
     public int[] blockOffsets() { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
-    public String[] varNames() { return varNames; }
     public DebugInfo debugInfo() { return debugInfo; }
-
-    /**
-     * Per-parameter flags. Bit 0 (EXPLICIT_TYPE) = type was explicitly annotated.
-     * Returns null if no annotation info is available.
-     */
-    public static final int PARAM_EXPLICIT_TYPE = 1;
-
-    public int[] paramFlags() { return paramFlags; }
 
     /** Check if parameter at index {@code paramIdx} has an explicit type annotation. */
     public boolean isExplicitParamType(int paramIdx) {
-        return paramFlags != null && paramIdx < paramFlags.length
-            && (paramFlags[paramIdx] & PARAM_EXPLICIT_TYPE) != 0;
+        return false; // FIXME
     }
 
     /** Default parameter values (null = no default). */
@@ -113,7 +93,7 @@ public class IRFunction {
 
     /** Maximum local variable index (params + define'd vars). */
     public int maxLocalCount() {
-        return varNames.length;
+        return maxLocals;
     }
 
     /** Get the code offset for a given block ID. */
@@ -133,7 +113,7 @@ public class IRFunction {
         if (isDeclaration())
             return sb.toString();
 
-        sb.append(" locals=").append(varNames.length)
+        sb.append(" locals=").append(maxLocals)
           .append(" blocks=").append(blockOffsets.length)
           .append(" codeWords=").append(code.length)
           .append("\n");

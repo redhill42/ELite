@@ -324,8 +324,8 @@ public class Main
     private static String dumpAST(String script) {
         Parser parser = new Parser(script);
         ELProgram program = parser.parse();
-        SymbolTable symbol = SymbolTableBuilder.build(program);
-        return ASTDumper.dump(program) + symbol.dump();
+        SymbolTableBuilder.build(program);
+        return ASTDumper.dump(program);
     }
 
     private ScriptEngine createScriptEngine(String[] args) {

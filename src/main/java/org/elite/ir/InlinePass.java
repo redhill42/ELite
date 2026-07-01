@@ -95,12 +95,8 @@ public class InlinePass implements IRPass {
             merged.addAll(newBlocks[b]);
         }
 
-        // Add temp locals.
-        String[] varNames = new String[input.varNames().length + tempSlots];
-        System.arraycopy(input.varNames(), 0, varNames, 0, input.varNames().length);
-
-        input.populate(merged.toArray(), newOffsets, mergedPool,
-                varNames, input.debugInfo(), input.paramFlags(), input.defaultValues());
+        input.populate(merged.toArray(), input.maxLocals + tempSlots, newOffsets, mergedPool,
+               input.debugInfo(), input.defaultValues());
         return input;
     }
 

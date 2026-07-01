@@ -95,8 +95,7 @@ class IRInterpreterTest {
 
     private static IRFunction buildFn(String name, int[] code, int paramCount) {
         IRFunction irf = new IRFunction(name, paramCount);
-        irf.populate(code, new int[]{0}, new Object[]{0,1},
-                     new String[]{"n","acc"}, null, null, null);
+        irf.populate(code, 2, new int[]{0}, new Object[]{0,1}, null, null);
         return irf;
     }
 
