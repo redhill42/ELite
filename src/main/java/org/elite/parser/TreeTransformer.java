@@ -339,7 +339,7 @@ public class TreeTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.LET e) {
-        result = new ELNode.LET(e.pos, transform(e.left), transform(e.right), e.force);
+        result = new ELNode.LET(e.pos, transform(e.left), transform(e.right));
     }
 
     public void visit(ELNode.BREAK e) {

@@ -2024,13 +2024,7 @@ public class Parser extends Scanner
 
         case LET:
             p = scan();
-            if (scan(NOT)) { // let!
-                ELNode.Pattern pattern = parsePattern();
-                expect(ASSIGN);
-                ELNode exp = parseExpressionStatement();
-                add_pattern_vars(pattern);
-                return new ELNode.LET(p, (ELNode)pattern, exp, true);
-            } else if (scan(MUL)) { // let*
+            if (scan(MUL)) { // let*
                 return parseLetExpression(p, true);
             } else {
                 // conflict with let expression, do lookahead
@@ -2039,7 +2033,7 @@ public class Parser extends Scanner
                 if (pattern != null && scan(ASSIGN)) {
                     ELNode exp = parseExpressionStatement();
                     add_pattern_vars(pattern);
-                    return new ELNode.LET(p, (ELNode)pattern, exp, false);
+                    return new ELNode.LET(p, (ELNode)pattern, exp);
                 } else {
                     restore(mark);
                     return parseLetExpression(p, false);

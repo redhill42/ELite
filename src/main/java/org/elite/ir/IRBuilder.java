@@ -351,7 +351,7 @@ public class IRBuilder extends ELNode.Visitor {
                 }
             }
 
-            if (ident.symbol == null || ident.symbol.captured) {
+            if (ident.symbol == null) {
                 // Resolve builtin function.
                 if (tryBuildGlobalMethodCall(ident.id, node.args))
                     return;
@@ -2012,6 +2012,8 @@ public class IRBuilder extends ELNode.Visitor {
             // On failure, leaveControlScope discards bindings.
             SymbolTable.Scope prevScope = currentScope;
             currentScope = c.scope;
+            if (c.scope.hasCaptures())
+                current.emit1(ENTER_SCOPE, K_NONE, 0);
 
             // Compile patterns for each column
             if (c.patterns != null) {
@@ -2051,6 +2053,10 @@ public class IRBuilder extends ELNode.Visitor {
 
             // On failure: discard case bindings, go to next case
             sealAndStart(failBlock);
+
+            // Leave the case scope
+            if (c.scope.hasCaptures())
+                current.emit1(LEAVE_SCOPE, K_NONE, 0);
             currentScope = prevScope;
 
             // Falls through to next case entry (unless this was the last case)
@@ -2101,7 +2107,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (def.type != null || def.expr != null)
                 argSlot.load();
             current.emitStoreVar(def.symbol.slot);
-            if (def.symbol.captured)
+            if (currentScope.isTopLevel() || def.symbol.captured)
                 current.emitDefineGlobal(putConstant(def.id));
             return false;
         }
@@ -2317,6 +2323,37 @@ public class IRBuilder extends ELNode.Visitor {
                pat instanceof ELNode.IDENT ||
                pat instanceof ELNode.NOT ||
                pat instanceof ELNode.EXPR;
+    }
+
+    public void visit(ELNode.LET node) {
+        Var argSlot;
+        if (node.right instanceof ELNode.IDENT ident &&
+            ident.symbol != null && !ident.symbol.captured) {
+            argSlot = new Var(ident);
+        } else {
+            argSlot = new Var();
+            build(node.right);
+            argSlot.store();
+            current.emitPop();
+        }
+
+        int exitBlock = allocBlockId();
+        int failBlock = allocBlockId();
+
+        argSlot.load();
+        if (compileMatchPattern(argSlot, node.left, failBlock))
+            current.emitJumpIfFalse(failBlock);
+        current.emitJump(exitBlock);
+
+        startBlock(failBlock);
+        emitPushConst("pattern not match");
+        current.emitThrow();
+        current.emitJump(exitBlock);
+
+        startBlock(exitBlock);
+        current.emitPop();
+        argSlot.load();
+        argSlot.release();
     }
 
     // ── Trampoline ──

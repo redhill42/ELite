@@ -4601,13 +4601,11 @@ public abstract class ELNode implements Serializable
     public static class LET extends ELNode {
         public final ELNode left;
         public final ELNode right;
-        public final boolean force;
 
-        public LET(int pos, ELNode left, ELNode right, boolean force) {
+        public LET(int pos, ELNode left, ELNode right) {
             super(Token.LET, pos);
             this.left = left;
             this.right = right;
-            this.force = force;
         }
 
         public Object getValue(final EvaluationContext context) {
@@ -4617,14 +4615,7 @@ public abstract class ELNode implements Serializable
             // Create a temporary variable mapper for variable pattern matching.
             // The variable is first resolved in local variable mapper. If the
             // variable not found then resolve it from enclosing environment.
-            VariableMapperImpl vm = new VariableMapperImpl() {
-                public ValueExpression resolveVariable(String name) {
-                    ValueExpression ve = super.resolveVariable(name);
-                    if (ve == null && !force)
-                        ve = context.resolveLocalVariable(name);
-                    return ve;
-                }
-            };
+            VariableMapperImpl vm = new VariableMapperImpl();
 
             // Matches value against the pattern.
             EvaluationContext env = context.pushContext(vm);
