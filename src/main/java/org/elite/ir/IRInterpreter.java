@@ -714,6 +714,22 @@ public class IRInterpreter {
                 break;
             }
 
+            case INVOKE_OPERATOR: {
+                int nameIdx = pl;
+                int argc = oc == 0 ? 0 : code[ip + 1];
+                String name = (String)constantPool[nameIdx];
+                if (argc == 1) {
+                    Object rhs = pop();
+                    push(Runtime.invokeOperator(evalContext, name, rhs));
+                } else {
+                    Object rhs = pop();
+                    Object lhs = pop();
+                    push(Runtime.invokeOperator(evalContext, name, lhs, rhs));
+                }
+                ip += 1 + oc;
+                break;
+            }
+
             case INVOKE_DYN: {
                 int argc = pl;  // argCount is always in payload
                 Object result = dynamicInvoke(argc);

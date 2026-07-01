@@ -156,11 +156,12 @@ public final class Opcode {
     public static final int INVOKE_TAIL   = 0x82;
     public static final int INVOKE_DIRECT = 0x83;  // direct IRFunction call
     public static final int INVOKE_TARGET = 0x84;
-    public static final int CLOSURE       = 0x85;
-    public static final int RETURN        = 0x86;
-    public static final int RETURN_VOID   = 0x87;
-    public static final int THROW         = 0x88;
-    public static final int ASSERT        = 0x89;
+    public static final int INVOKE_OPERATOR = 0x85;
+    public static final int CLOSURE       = 0x86;
+    public static final int RETURN        = 0x87;
+    public static final int RETURN_VOID   = 0x88;
+    public static final int THROW         = 0x89;
+    public static final int ASSERT        = 0x8A;
 
     // ── Memory / allocation (0x90-0x9F) ──
     public static final int DEFINE_GLOBAL  = 0x90;  // define in current scope, create if new
@@ -311,6 +312,7 @@ public final class Opcode {
             case INVOKE_TAIL -> "INVOKE_TAIL";
             case INVOKE_DIRECT -> "INVOKE_DIRECT";
             case INVOKE_TARGET -> "INVOKE_TARGET";
+            case INVOKE_OPERATOR -> "INVOKE_OPERATOR";
             case CLOSURE -> "CLOSURE";
             case RETURN -> "RETURN";
             case RETURN_VOID -> "RETURN_VOID";

@@ -1629,7 +1629,7 @@ public abstract class ELNode implements Serializable
             }
         }
 
-        protected Object invokeOperator(ELContext elctx, String opname, Object rhs) {
+        public static Object invokeOperator(ELContext elctx, String opname, Object rhs) {
             if (rhs instanceof ClosureObject) {
                 // invoke operator procedure on closure object
                 return ((ClosureObject)rhs).invokeSpecial(elctx, opname, NO_PARAMS);
@@ -1709,7 +1709,8 @@ public abstract class ELNode implements Serializable
             }
         }
 
-        protected Object invokeOperator(ELContext elctx, String opname, Object lhs, Object rhs) {
+        public static Object invokeOperator(ELContext elctx, String opname,
+                                            Object lhs, Object rhs) {
             Closure[] args;
             Object result;
 

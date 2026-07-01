@@ -526,6 +526,55 @@ public final class Runtime {
         }
     }
 
+    public static Object invokeOperator(EvaluationContext context, String name,
+                                        Object rhs) {
+        ELContext elctx = context.getELContext();
+
+        if (rhs != null) {
+            Object result = ELNode.Unary.invokeOperator(elctx, name, rhs);
+            if (result != NO_RESULT)
+                return result;
+        }
+
+        Object target = resolveTarget(context, name);
+        if (target == null) {
+            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
+        }
+
+        try {
+            Closure[] args = new Closure[1];
+            args[0] = new LiteralClosure(rhs);
+            return ELEngine.invokeTarget(elctx, target, args);
+        } catch (RuntimeException ex) {
+            throw new EvaluationException(elctx, ex);
+        }
+    }
+
+    public static Object invokeOperator(EvaluationContext context, String name,
+                                        Object lhs, Object rhs) {
+        ELContext elctx = context.getELContext();
+
+        // invoke operator procedure
+        Object result = ELNode.Binary.invokeOperator(elctx, name, lhs, rhs);
+        if (result != NO_RESULT)
+            return result;
+
+        // invoke target procedure
+        Object target = resolveTarget(context, name);
+        if (target == null) {
+            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
+        }
+
+        try {
+            Closure[] args = new Closure[2];
+            args[0] = new LiteralClosure(lhs);
+            args[1] = new LiteralClosure(rhs);
+            return ELEngine.invokeTarget(elctx, target, args);
+        } catch (RuntimeException ex) {
+            throw new EvaluationException(elctx, ex);
+        }
+    }
+
     public static Object invokeDynMethod(ELContext elctx, Object base, Object key, Object[] args) {
         return ELNode.ACCESS.invoke(elctx, base, key, ELEngine.getCallArgs(args));
     }

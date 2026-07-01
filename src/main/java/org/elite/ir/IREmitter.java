@@ -482,6 +482,14 @@ public class IREmitter {
                     funcPoolIdx & 0xFFFF, argCount);
     }
 
+    public IREmitter emitInvokeOperator(int namePoolIdx, int argCount) {
+        if (fits16(namePoolIdx))
+            return emit2(INVOKE_OPERATOR, K_NONE, namePoolIdx, argCount);
+        else
+            return emit3(INVOKE_OPERATOR, K_NONE, namePoolIdx >>> 16,
+                namePoolIdx & 0xFFFF, argCount);
+    }
+
     // ── Memory ──
 
     public IREmitter emitStoreVar(int varIndex) {

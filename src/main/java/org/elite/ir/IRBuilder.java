@@ -766,6 +766,19 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitNewCons();
     }
 
+    public void visit(ELNode.PREFIX node) {
+        int nameIdx = putConstant(node.name);
+        build(node.right);
+        current.emitInvokeOperator(nameIdx, 1);
+    }
+
+    public void visit(ELNode.INFIX node) {
+        int nameIdx = putConstant(node.name);
+        build(node.left);
+        build(node.right);
+        current.emitInvokeOperator(nameIdx, 2);
+    }
+
     public void visit(ELNode.NIL node) {
         current.emitNil();
     }
@@ -1456,10 +1469,6 @@ public class IRBuilder extends ELNode.Visitor {
                     return;
                 }
             } else {
-                // Detect self-referential definitions (e.g. define xs = [1 : &f(xs)])
-                if (!node.symbol.captured && hasSelfReference(node.expr, node.id)) {
-                    node.symbol.captured = true;
-                }
                 build(node.expr);
             }
 
@@ -2504,27 +2513,6 @@ public class IRBuilder extends ELNode.Visitor {
         if (a == T_LONG || b == T_LONG)
             return T_LONG;
         return a >= 0 ? a : (b >= 0 ? b : T_INT);
-    }
-
-    /**
-     * Check whether an expression tree contains a reference to the given
-     * variable name. Used to detect self-referential definitions like
-     * {@code define x = [1 : &f(x)]} that need STORE_GLOBAL.
-     */
-    private static boolean hasSelfReference(ELNode expr, String name) {
-        boolean[] found = {false};
-        expr.accept(new DefaultVisitor() {
-            public void visit(ELNode.IDENT e) {
-                if (name.equals(e.id))
-                    found[0] = true;
-            }
-            // Don't descend into nested definitions, blocks, or lambdas —
-            // those have their own scope and can't refer to the outer var
-            // being defined.
-            public void visit(ELNode.DEFINE e) {}
-            public void visit(ELNode.LAMBDA e) {}
-        });
-        return found[0];
     }
 
     // ── Finalization ──
