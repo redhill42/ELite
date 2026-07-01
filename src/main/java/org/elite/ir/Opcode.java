@@ -148,6 +148,7 @@ public final class Opcode {
     public static final int JUMP_IF_NONNULL = 0x74;
     public static final int TABLE_SWITCH    = 0x75;
     public static final int TRY             = 0x76;  // push closures, then TRY handlerCount
+    public static final int SYNCHRONIZED    = 0x77;  // push lock, bodyClosure, then SYNCHRONIZED
 
     // ── Function (0x80-0x8F) ──
     public static final int INVOKE        = 0x80;
@@ -317,6 +318,7 @@ public final class Opcode {
             case RETURN_VOID -> "RETURN_VOID";
             case THROW -> "THROW";
             case TRY -> "TRY";
+            case SYNCHRONIZED -> "SYNCHRONIZED";
             case ASSERT -> "ASSERT";
             case DEFINE_GLOBAL -> "DEFINE_GLOBAL";
             case STORE_GLOBAL -> "STORE_GLOBAL";

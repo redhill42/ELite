@@ -763,6 +763,17 @@ public class IRInterpreter {
                     throw new UserException(elctx, s);
                 throw new UserException(elctx);
             }
+            case SYNCHRONIZED: {
+                IRClosure bodyClosure = (IRClosure) pop();
+                Object lock = pop();
+                Object result;
+                synchronized (lock != null ? lock : this) {
+                    result = new IRInterpreter(evalContext, bodyClosure.function).execute(null);
+                }
+                push(result != null ? result : null);
+                ip += 1;
+                break;
+            }
             case TRY: {
                 int handlerCount = pl & 0xFFFF;
                 // Pop closures: top → finally, handlerN..., handler1, body → bottom

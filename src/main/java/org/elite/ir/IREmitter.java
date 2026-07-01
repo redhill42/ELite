@@ -621,6 +621,11 @@ public class IREmitter {
         return emit1(TRY, K_DYN, handlerCount);
     }
 
+    /** Pop lock and body closure, execute synchronized(lock) { body(); }. */
+    public IREmitter emitSynchronized() {
+        return emit1(SYNCHRONIZED, K_DYN, 0);
+    }
+
     /**
      * Pop value, store to global variable (name in constant pool).
      */

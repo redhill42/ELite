@@ -2011,6 +2011,16 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitTry(handlerCount);
     }
 
+    // ── Synchronized ──
+
+    public void visit(ELNode.SYNCHRONIZED node) {
+        // Push lock object.
+        buildNode(node.exp);
+        // Push body as zero-param closure.
+        compileAsClosure(node.body);
+        current.emitSynchronized();
+    }
+
     /** Compile a subtree as a zero-param closure and push it. */
     private void compileAsClosure(ELNode body) {
         compileAsClosure(body, null);
