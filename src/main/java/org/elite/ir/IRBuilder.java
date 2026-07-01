@@ -1992,7 +1992,37 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.TRY node) {
-        buildTrampoline(node);
+        // Compile try body (zero-param closure).
+        compileAsClosure(node.body);
+
+        // Handlers: each handler is a DEFINE(id = exception var, expr = body).
+        int handlerCount = node.handlers != null ? node.handlers.length : 0;
+        for (int i = 0; i < handlerCount; i++) {
+            ELNode.DEFINE handler = node.handlers[i];
+            compileAsClosure(handler.expr, handler.id);
+        }
+
+        // Finally (optional, zero-param closure).
+        if (node.finalizer != null)
+            compileAsClosure(node.finalizer);
+        else
+            emitPushNull();
+
+        current.emitTry(handlerCount);
+    }
+
+    /** Compile a subtree as a zero-param closure and push it. */
+    private void compileAsClosure(ELNode body) {
+        compileAsClosure(body, null);
+    }
+
+    private void compileAsClosure(ELNode body, String paramName) {
+        int paramCount = paramName != null ? 1 : 0;
+        ELNode.DEFINE[] vars = paramCount == 0 ? new ELNode.DEFINE[0]
+            : new ELNode.DEFINE[]{ new ELNode.DEFINE(-1, paramName) };
+        ELNode.LAMBDA lam = new ELNode.LAMBDA(-1, null, vars, body);
+        lam.scope = currentScope;
+        lam.accept(this);
     }
 
     // ── Lambda ──

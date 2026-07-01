@@ -616,6 +616,11 @@ public class IREmitter {
                     funcPoolIdx & 0xFFFF);
     }
 
+    /** Pop closures from stack and execute try/catch/finally. */
+    public IREmitter emitTry(int handlerCount) {
+        return emit1(TRY, K_DYN, handlerCount);
+    }
+
     /**
      * Pop value, store to global variable (name in constant pool).
      */

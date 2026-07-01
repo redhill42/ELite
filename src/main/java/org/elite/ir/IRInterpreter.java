@@ -763,6 +763,51 @@ public class IRInterpreter {
                     throw new UserException(elctx, s);
                 throw new UserException(elctx);
             }
+            case TRY: {
+                int handlerCount = pl & 0xFFFF;
+                // Pop closures: top → finally, handlerN..., handler1, body → bottom
+                IRClosure finallyClosure = null;
+                Object finallyObj = pop();
+                if (finallyObj instanceof IRClosure fc)
+                    finallyClosure = fc;
+
+                IRClosure[] handlers = null;
+                if (handlerCount > 0) {
+                    handlers = new IRClosure[handlerCount];
+                    for (int i = handlerCount - 1; i >= 0; i--)
+                        handlers[i] = (IRClosure) pop();
+                }
+                IRClosure bodyClosure = (IRClosure) pop();
+
+                Object result = null;
+                try {
+                    result = new IRInterpreter(evalContext, bodyClosure.function).execute(null);
+                } catch (Throwable t) {
+                    boolean handled = false;
+                    if (handlers != null) {
+                        for (IRClosure h : handlers) {
+                            try {
+                                result = new IRInterpreter(evalContext, h.function)
+                                    .execute(new Object[]{t});
+                                handled = true;
+                                break;
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+                    if (!handled)
+                        throw (t instanceof RuntimeException re) ? re
+                            : new UserException(elctx, t);
+                } finally {
+                    if (finallyClosure != null) {
+                        try { new IRInterpreter(evalContext, finallyClosure.function).execute(null); }
+                        catch (Throwable ignored) {}
+                    }
+                }
+                push(result != null ? result : null);
+                ip += 1;
+                break;
+            }
             case ASSERT: {
                 Object msg = pop();
                 Boolean exp = (Boolean)pop();

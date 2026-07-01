@@ -72,6 +72,52 @@ class ExceptionTest extends EliteTestBase {
         assertEquals(2L, evalL("test()"));
     }
 
+    // ---- Try with outer variable reads and writes (IR closure compilation) ----
+
+    @Test
+    void tryBodyReadsOuterVariable() {
+        exec("define test() { define x = 42; define r = 0; try { r = x } catch (e) { r = -1 }; r }");
+        assertEquals(42L, evalL("test()"));
+    }
+
+    @Test
+    void tryBodyMutatesOuterVariable() {
+        exec("define test() { define x = 0; try { x = x + 1 } catch (e) { x = -1 }; x }");
+        assertEquals(1L, evalL("test()"));
+    }
+
+    @Test
+    void catchBlockReadsAndMutatesOuterVariable() {
+        exec("define test() { define x = 0; try { throw \"err\" } catch (e) { x = x + 5 }; x }");
+        assertEquals(5L, evalL("test()"));
+    }
+
+    @Test
+    void finallyBlockReadsAndMutatesOuterVariable() {
+        exec("define test() { define x = 1; try { x = 10 } finally { x = x * 2 }; x }");
+        assertEquals(20L, evalL("test()"));
+    }
+
+    @Test
+    void tryBodyWithMultipleOuterVariables() {
+        exec("define test() { define a = 1; define b = 2; define r = 0; try { r = a + b } catch (e) { r = 0 }; r }");
+        assertEquals(3L, evalL("test()"));
+    }
+
+    @Test
+    void tryBodyCapturesCapturedVariable() {
+        // Variable captured by inner function, accessed in try block
+        exec("define test() { define x = 0; define inc() => x += 1; try { inc() } finally { }; x }");
+        assertEquals(1L, evalL("test()"));
+    }
+
+    @Test
+    void tryReturnValueFromNestedCatch() {
+        exec("define test(x) { try { 1 / x } catch (e) { -1 } }");
+        assertEquals(-1L, evalL("test(0)"));
+        assertEquals(1L, evalL("test(1)"));
+    }
+
     // ---- Error messages ----
 
     @Test
