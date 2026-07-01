@@ -113,6 +113,8 @@ public final class SymbolTableBuilder {
                     param.id = pi.mangledName;
                 }
             }
+            // Lambda has its own evaluation context, no need to create redundant
+            // context for compound scope.
             if (e.body instanceof ELNode.COMPOUND stmts) {
                 scan(stmts.exps);
             } else {
@@ -243,6 +245,9 @@ public final class SymbolTableBuilder {
         }
 
         public void visit(ELNode.MATCH e) {
+            // Prescan patterns to find unsupported patterns.
+            boolean unsupported = hasUnsupportedPattern(e);
+
             // Each case body gets its own scope for pattern variables.
             scan(e.args);
             for (ELNode.CASE c : e.alts) {
@@ -250,9 +255,46 @@ public final class SymbolTableBuilder {
                 collectCaseBindings(c);
                 scan(c.guards);
                 scan(c.bodies);
+                if (unsupported) {
+                    if (c.guards != null) {
+                        for (ELNode g : c.guards)
+                            g.accept(trampolineFixup);
+                    }
+                    if (c.bodies != null) {
+                        for (ELNode b : c.bodies) {
+                            b.accept(trampolineFixup);
+                        }
+                    }
+                }
                 table.leaveScope();
             }
-            scan(e.deflt);
+
+            if (e.deflt != null) {
+                table.enterScope("case", e.deflt);
+                scan(e.deflt);
+                if (unsupported)
+                    e.deflt.accept(trampolineFixup);
+                table.leaveScope();
+            }
+        }
+
+        private boolean hasUnsupportedPattern(ELNode.MATCH e) {
+            boolean[] unsupported = new boolean[1];
+            ELNode.Visitor v = new DefaultVisitor() {
+                public void visit(ELNode.NEW e) {
+                    unsupported[0] = true;
+                }
+            };
+
+            for (ELNode.CASE c : e.alts) {
+                for (ELNode.Pattern pat : c.patterns) {
+                    ((ELNode)pat).accept(v);
+                    if (unsupported[0])
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         /** Register pattern variable names from CASE. */

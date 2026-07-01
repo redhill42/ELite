@@ -1010,12 +1010,10 @@ public class IRInterpreter {
 
             case ENTER_SCOPE:
                 evalContext = evalContext.pushContext();
-                push(null);
                 ip += 1;
                 break;
             case LEAVE_SCOPE:
                 evalContext = evalContext.popContext();
-                push(null);
                 ip += 1;
                 break;
 

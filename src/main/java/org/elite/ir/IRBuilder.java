@@ -68,6 +68,7 @@ public class IRBuilder extends ELNode.Visitor {
     // Tracking temporary slot allocation.
     private int maxLocals;
     private int nextTempSlot;
+    private final Deque<Integer> freeSlots = new ArrayDeque<>();
 
     // ── Block management (stored by ID, output in ID order) ──
     final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
@@ -160,9 +161,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (node.scope != null) {
             SymbolTable.Scope prevScope = currentScope;
-            int prevTempSlot = nextTempSlot;
             currentScope = node.scope;
-
             if (!(node instanceof ELNode.LAMBDA) && node.scope.hasCaptures()) {
                 // We need to set up new evaluation context if any variables
                 // captured in this scope.
@@ -172,9 +171,7 @@ public class IRBuilder extends ELNode.Visitor {
             } else {
                 node.accept(this);
             }
-
             currentScope = prevScope;
-            nextTempSlot = prevTempSlot;
         } else {
             node.accept(this);
         }
@@ -315,9 +312,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
-        ELNode base = node.right;
-        while (base instanceof ELNode.EXPR)
-            base = ((ELNode.EXPR)base).right;
+        ELNode base = deparen(node.right);
 
         if (base instanceof ELNode.IDENT ident) {
             if (ident.symbol != null) {
@@ -742,6 +737,8 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(exitB);
         emitPushNull();
         loopStack.pop();
+        release(endSlot);
+        release(indSlot);
         return true;
     }
 
@@ -892,8 +889,7 @@ public class IRBuilder extends ELNode.Visitor {
      */
     private void buildIncDec(ELNode target, boolean isInc, boolean isPre) {
         // Handle parentheses expression.
-        while (target instanceof ELNode.EXPR)
-            target = ((ELNode.EXPR)target).right;
+        target = deparen(target);
 
         // Evaluate right value.
         build(target);
@@ -1169,23 +1165,6 @@ public class IRBuilder extends ELNode.Visitor {
         sealAndStart(mergeB);
     }
 
-    /**
-     * Seal current block into blockMap and start a new block with the given ID.
-     */
-    private void sealAndStart(int blockId) {
-        int[] code = current.toArray();
-        blockMap.put(currentBlockId, code);
-        runningPc += code.length;
-        if (ELProgram.DEBUG && currentLine > 0) {
-            recordDebugLine(runningPc);
-        }
-        current.clear();
-        currentBlockId = blockId;
-    }
-
-    // Running PC counter for debug info
-    private int runningPc;
-
     // ── Coalesce ──
     public void visit(ELNode.COALESCE node) {
         if (node.left.op == Token.NULL) {
@@ -1239,11 +1218,7 @@ public class IRBuilder extends ELNode.Visitor {
                          Object.class, Object.class);
 
         // Now perform assignment.
-        ELNode left = node.left;
-        while (left instanceof ELNode.EXPR) {
-            left = ((ELNode.EXPR)left).right;
-        }
-
+        ELNode left = deparen(node.left);
         if (left instanceof ELNode.IDENT ident) {
             buildStoreVariable(ident);
         } else if (left instanceof ELNode.ACCESS access) {
@@ -1257,9 +1232,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Assign/Define ──
     private boolean buildAssign(ELNode left, ELNode right) {
-        while (left instanceof ELNode.EXPR) {
-            left = ((ELNode.EXPR)left).right;
-        }
+        left = deparen(left);
 
         if (left instanceof ELNode.IDENT ident) {
             build(right);
@@ -1273,14 +1246,33 @@ public class IRBuilder extends ELNode.Visitor {
             return true;
         }
 
-        if (left instanceof ELNode.TUPLE lhs &&
-            right instanceof ELNode.TUPLE rhs &&
-            isAssignableTuple(lhs, rhs)) {
-            buildTupleAssign(lhs, rhs);
+        if (left instanceof ELNode.TUPLE lhs) {
+            if (right instanceof  ELNode.TUPLE rhs &&
+                isAssignableTuple(lhs, rhs)) {
+                buildTupleAssign(lhs, rhs);
+            } else {
+                int failBlock = allocBlockId();
+                int doneBlock = allocBlockId();
+
+                build(right);
+                buildDynamicTupleAssign(lhs, failBlock);
+                current.emitJump(doneBlock);
+                startBlock(failBlock);
+                emitPushConst("tuple pattern not match");
+                current.emitThrow();
+                current.emitJump(doneBlock);
+                startBlock(doneBlock);
+            }
             return true;
         }
 
         return false;
+    }
+
+    private ELNode deparen(ELNode node) {
+        while (node instanceof ELNode.EXPR exp)
+            node = exp.right;
+        return node;
     }
 
     private void buildStoreVariable(ELNode.IDENT ident) {
@@ -1336,7 +1328,7 @@ public class IRBuilder extends ELNode.Visitor {
             return false;
 
         for (int i = 0; i < lhs.elems.length; i++) {
-            ELNode elem = lhs.elems[i];
+            ELNode elem = deparen(lhs.elems[i]);
             if (elem instanceof ELNode.IDENT)
                 continue;
             if (elem instanceof ELNode.ACCESS)
@@ -1359,36 +1351,41 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Must evaluate all right values before assign to left values.
-        List<Integer> tmpVars = new ArrayList<>();
+        List<Var> tmpVars = new ArrayList<>();
         buildFlattenTuple(rhs.elems, tmpVars);
 
         // Assign to left values sequentially.
         buildAssignFlattenTuple(lhs.elems, tmpVars);
     }
 
-    private void buildFlattenTuple(ELNode[] elems, List<Integer> tmpVars) {
+    private void buildFlattenTuple(ELNode[] elems, List<Var> tmpVars) {
         for (ELNode elem : elems) {
             if (elem instanceof ELNode.TUPLE tt) {
                 buildFlattenTuple(tt.elems, tmpVars);
             } else {
-                int varIdx = allocLocalVar();
-                tmpVars.add(varIdx);
+                Var varSlot = new Var();
+                tmpVars.add(varSlot);
                 build(elem);
-                current.emitStoreVar(varIdx);
+                varSlot.store();
                 current.emitPop();
             }
         }
     }
 
-    private void buildAssignFlattenTuple(ELNode[] elems, List<Integer> tmpVars) {
+    private void buildAssignFlattenTuple(ELNode[] elems, List<Var> tmpVars) {
         for (ELNode elem : elems) {
+            elem = deparen(elem);
             if (elem instanceof ELNode.TUPLE tt) {
                 buildAssignFlattenTuple(tt.elems, tmpVars);
             } else if (elem instanceof ELNode.IDENT ident) {
-                current.emitPushVar(tmpVars.remove(0));
+                Var var = tmpVars.remove(0);
+                var.load();
+                var.release();
                 buildStoreVariable(ident);
             } else if (elem instanceof ELNode.ACCESS access) {
-                current.emitPushVar(tmpVars.remove(0));
+                Var var = tmpVars.remove(0);
+                var.load();
+                var.release();
                 buildStoreProperty(access);
             } else {
                 assert(false); // already checked by isAssignableTuple
@@ -1397,6 +1394,39 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Elements kept in stack, build a tuple as assign result.
         current.emitNewTuple(elems.length);
+    }
+
+    private void buildDynamicTupleAssign(ELNode.TUPLE lhs, int failBlock) {
+        Var rhsSlot = new Var();
+        rhsSlot.store();
+
+        emitInvokeMethod(Object.class, "getClass");
+        emitInvokeMethod(Class.class, "isArray");
+        current.emitJumpIfFalse(failBlock);
+
+        rhsSlot.load();
+        emitInvokeStatic(Array.class, "getLength", Object.class);
+        emitPushConst(lhs.elems.length);
+        current.emitIEq();
+        current.emitJumpIfFalse(failBlock);
+
+        for (int i = 0; i < lhs.elems.length; i++) {
+            rhsSlot.load();
+            emitPushConst(i);
+            emitInvokeStatic(Array.class, "get", Object.class, int.class);
+            if (lhs.elems[i] instanceof ELNode.IDENT ident)
+                buildStoreVariable(ident);
+            else if (lhs.elems[i] instanceof ELNode.ACCESS acc)
+                buildStoreProperty(acc);
+            else if (lhs.elems[i] instanceof ELNode.TUPLE t)
+                buildDynamicTupleAssign(t, failBlock);
+            else
+                throw new UnsupportedOperationException();
+        }
+
+        // Tuple elements still on stack, build a tuple as return value
+        current.emitNewTuple(lhs.elems.length);
+        rhsSlot.release();
     }
 
     public void visit(ELNode.DEFINE node) {
@@ -1668,6 +1698,8 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(exitB);
         emitPushNull();
         loopStack.pop();
+        release(varSlot);
+        release(idxSlot);
     }
 
     private void buildDynamicRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
@@ -1675,17 +1707,17 @@ public class IRBuilder extends ELNode.Visitor {
         // Register loop variable first to claim its pre-allocated slot.
         Var varSlot = new Var(var);
         Var idxSlot = new Var(index);
-        int stepIdx = -1;
-        int countIdx = -1;
+        Var stepSlot = null;
+        Var countSlot = null;
 
         // Initialize local variables.
         if (range.next != null) {
-            stepIdx = allocLocalVar();
+            stepSlot = new Var();
             build(range.next);
             build(range.begin);
             varSlot.define();
             current.emitLSub();
-            current.emitStoreVar(stepIdx); // step = next - begin
+            stepSlot.store(); // step = next - begin
             current.emitPop();
         } else {
             build(range.begin);
@@ -1694,7 +1726,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (range.end != null) {
-            countIdx = allocLocalVar();
+            countSlot = new Var();
             build(range.end);
             if (range.exclude) {
                 emitPushConst(1L);
@@ -1702,13 +1734,13 @@ public class IRBuilder extends ELNode.Visitor {
             }
             varSlot.load();
             current.emitLSub();
-            if (range.next != null) {
-                current.emitPushVar(stepIdx);
+            if (stepSlot != null) {
+                stepSlot.load();
                 current.emitLDiv();
             }
             emitPushConst(1L);
             current.emitLAdd();
-            current.emitStoreVar(countIdx); // count = (end - begin) / step + 1
+            countSlot.store(); // count = (end - begin) / step + 1
             current.emitPop();
         }
 
@@ -1724,10 +1756,10 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(headerB);
 
         // Generate loop condition.
-        if (range.end != null) {
+        if (countSlot != null) {
             startBlock(headerB);
             idxSlot.load();
-            current.emitPushVar(countIdx);
+            countSlot.load();
             current.emitLLt();
             current.emitJumpIfTrue(bodyB);
             current.emitJump(exitB);
@@ -1750,8 +1782,8 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitPop();
 
         varSlot.load();
-        if (range.next != null)
-            current.emitPushVar(stepIdx);
+        if (stepSlot != null)
+            stepSlot.load();
         else
             emitPushConst(1L);
         current.emitDynAdd();
@@ -1763,6 +1795,10 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(exitB);
         emitPushNull();
         loopStack.pop();
+        release(varSlot);
+        release(idxSlot);
+        release(stepSlot);
+        release(countSlot);
     }
 
     private void buildIterateFor(ELNode.FOREACH node) {
@@ -1819,6 +1855,9 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(exit);
         emitPushNull();
         loopStack.pop();
+        release(varSlot);
+        release(idxSlot);
+        release(iterSlot);
     }
 
     // ── Break / Continue / Return ──
@@ -1930,15 +1969,15 @@ public class IRBuilder extends ELNode.Visitor {
     private void buildMatch(ELNode.MATCH node) {
         // Evaluate all args, store in temp locals except it's already a local var.
         int nargs = node.args.length;
-        int[] argSlots = new int[nargs];
+        Var[] argSlots = new Var[nargs];
         for (int i = 0; i < nargs; i++) {
             if (node.args[i] instanceof ELNode.IDENT ident &&
                 ident.symbol != null && !ident.symbol.captured) {
-                argSlots[i] = ident.symbol.slot;
+                argSlots[i] = new Var(ident);
             } else {
-                argSlots[i] = allocLocalVar();
+                argSlots[i] = new Var();
                 build(node.args[i]);
-                current.emitStoreVar(argSlots[i]);
+                argSlots[i].store();
                 current.emitPop();
             }
         }
@@ -1962,14 +2001,13 @@ public class IRBuilder extends ELNode.Visitor {
 
             // Each case gets its own control scope for variable bindings.
             // On failure, leaveControlScope discards bindings.
-            int prevTempSlot = nextTempSlot;
             SymbolTable.Scope prevScope = currentScope;
             currentScope = c.scope;
 
             // Compile patterns for each column
             if (c.patterns != null) {
                 for (int pi = 0; pi < c.patterns.length; pi++) {
-                    current.emitPushVar(argSlots[pi]);  // push arg value
+                    argSlots[pi].load();
                     if (compileMatchPattern(argSlots[pi], (ELNode)c.patterns[pi], failBlock))
                         current.emitJumpIfFalse(failBlock);
                 }
@@ -2005,7 +2043,6 @@ public class IRBuilder extends ELNode.Visitor {
             // On failure: discard case bindings, go to next case
             sealAndStart(failBlock);
             currentScope = prevScope;
-            nextTempSlot = prevTempSlot;
 
             // Falls through to next case entry (unless this was the last case)
             if (ci + 1 < node.alts.length)
@@ -2023,12 +2060,14 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(exitBlock);
 
         sealAndStart(exitBlock);
+        for (Var slot : argSlots)
+            slot.release();
     }
 
     /**
      * Compile a single pattern check, leaving TRUE on stack if matched.
      */
-    private boolean compileMatchPattern(int argSlot, ELNode pat, int failBlock) {
+    private boolean compileMatchPattern(Var argSlot, ELNode pat, int failBlock) {
         if (pat instanceof ELNode.DEFINE def) {
             // Type check if annotated
             if (def.type != null) {
@@ -2039,7 +2078,7 @@ public class IRBuilder extends ELNode.Visitor {
             // As-pattern check
             if (def.expr != null) {
                 if (def.type != null)
-                    current.emitPushVar(argSlot);
+                    argSlot.load();
                 if (compileMatchPattern(argSlot, def.expr, failBlock))
                     current.emitJumpIfFalse(failBlock);
             }
@@ -2051,7 +2090,7 @@ public class IRBuilder extends ELNode.Visitor {
 
             // Variable binding -> bind to new pattern variable.
             if (def.type != null || def.expr != null)
-                current.emitPushVar(argSlot);
+                argSlot.load();
             current.emitStoreVar(def.symbol.slot);
             if (def.symbol.captured)
                 current.emitDefineGlobal(putConstant(def.id));
@@ -2082,7 +2121,7 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitJump(done);
 
             sealAndStart(tryRight);
-            current.emitPushVar(argSlot);
+            argSlot.load();
             if (compileMatchPattern(argSlot, or.right, failBlock))
                 current.emitJumpIfFalse(failBlock);
             current.emitJump(done);
@@ -2139,7 +2178,7 @@ public class IRBuilder extends ELNode.Visitor {
             emitInstOf(String.class);
             current.emitJumpIfFalse(failBlock);
             emitPushConst(K_NONE, re.value); // the pattern
-            current.emitPushVar(argSlot);    // the string to match
+            argSlot.load();                  // the string to match
             emitInvokeMethod(java.util.regex.Pattern.class, "matcher", CharSequence.class);
             emitInvokeMethod(java.util.regex.Matcher.class, "matches");
             return true;
@@ -2152,26 +2191,26 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.TUPLE t) {
-            int tmpSlot = -1;
+            Var tmpSlot = null;
 
             emitInvokeMethod(Object.class, "getClass");
             emitInvokeMethod(Class.class, "isArray");
             current.emitJumpIfFalse(failBlock);
 
-            current.emitPushVar(argSlot);
+            argSlot.load();
             emitInvokeStatic(Array.class, "getLength", Object.class);
             emitPushConst(t.elems.length);
             current.emitIEq();
             current.emitJumpIfFalse(failBlock);
 
             for (int i = 0; i < t.elems.length; i++) {
-                current.emitPushVar(argSlot);
+                argSlot.load();
                 emitPushConst(i);
                 emitInvokeStatic(Array.class, "get", Object.class, int.class);
                 if (!isSimplePattern(t.elems[i])) {
-                    if (tmpSlot == -1)
-                        tmpSlot = allocLocalVar();
-                    current.emitStoreVar(tmpSlot);
+                    if (tmpSlot == null)
+                        tmpSlot = new Var();
+                    tmpSlot.store();
                 }
                 if (compileMatchPattern(tmpSlot, t.elems[i], failBlock)) {
                     if (i == t.elems.length - 1)
@@ -2179,35 +2218,40 @@ public class IRBuilder extends ELNode.Visitor {
                     current.emitJumpIfFalse(failBlock);
                 }
             }
+            release(tmpSlot);
             return false;
         }
 
         if (pat instanceof ELNode.CONS cons) {
-            int seqSlot = allocLocalVar();
-            int tmpSlot = -1;
+            Var seqSlot = new Var();
+            Var tmpSlot = null;
             if (!isSimplePattern(cons.head) || !isSimplePattern(cons.tail))
-                tmpSlot = allocLocalVar();
+                tmpSlot = new Var();
 
             emitInstOf(List.class);
             current.emitJumpIfFalse(failBlock);
-            current.emitPushVar(argSlot);
+            argSlot.load();
             emitInvokeStatic(TypeCoercion.class, "coerceToSeq", Object.class);
-            current.emitStoreVar(seqSlot);
+            seqSlot.store();
             emitInvokeMethod(List.class, "isEmpty");
             current.emitJumpIfTrue(failBlock);
 
-            current.emitPushVar(seqSlot);
+            seqSlot.load();
             emitInvokeMethod(Seq.class, "head");
             if (!isSimplePattern(cons.head))
-                current.emitStoreVar(tmpSlot);
+                tmpSlot.store();
             if (compileMatchPattern(tmpSlot, cons.head, failBlock))
                 current.emitJumpIfFalse(failBlock);
 
-            current.emitPushVar(seqSlot);
+            seqSlot.load();
             emitInvokeMethod(Seq.class, "tail");
             if (!isSimplePattern(cons.tail))
-                current.emitStoreVar(tmpSlot);
-            return compileMatchPattern(tmpSlot, cons.tail, failBlock);
+                tmpSlot.store();
+
+            boolean result = compileMatchPattern(tmpSlot, cons.tail, failBlock);
+            release(tmpSlot);
+            release(seqSlot);
+            return result;
         }
 
         if (pat instanceof ELNode.NIL) {
@@ -2218,24 +2262,24 @@ public class IRBuilder extends ELNode.Visitor {
         if (pat instanceof ELNode.RANGE) {
             current.emitPop(); // we will re-push arg after build tuple
             build(pat);
-            current.emitPushVar(argSlot);
+            argSlot.load();
             emitInvokeMethod(List.class, "contains", Object.class);
             return true;
         }
 
         if (pat instanceof ELNode.MAP map) {
-            int tmpSlot = -1;
+            Var tmpSlot = null;
             for (int i = 0; i < map.keys.length; i++) {
                 assert map.keys[i] instanceof ELNode.STRINGVAL;
-                current.emitPushVar(argSlot);
+                argSlot.load();
                 emitPushConst(((ELNode.STRINGVAL)map.keys[i]).value);
                 emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
                                  Object.class, Object.class);
 
                 if (!isSimplePattern(map.values[i])) {
-                    if (tmpSlot == -1)
-                        tmpSlot = allocLocalVar();
-                    current.emitStoreVar(tmpSlot);
+                    if (tmpSlot == null)
+                        tmpSlot = new Var();
+                    tmpSlot.store();
                 }
 
                 if (compileMatchPattern(tmpSlot, map.values[i], failBlock)) {
@@ -2244,6 +2288,7 @@ public class IRBuilder extends ELNode.Visitor {
                     current.emitJumpIfFalse(failBlock);
                 }
             }
+            release(tmpSlot);
             return false;
         }
 
@@ -2297,26 +2342,58 @@ public class IRBuilder extends ELNode.Visitor {
         current = new IREmitter();
     }
 
+    /**
+     * Seal current block into blockMap and start a new block with the given ID.
+     */
+    private void sealAndStart(int blockId) {
+        int[] code = current.toArray();
+        blockMap.put(currentBlockId, code);
+        runningPc += code.length;
+        if (ELProgram.DEBUG && currentLine > 0) {
+            recordDebugLine(runningPc);
+        }
+        current.clear();
+        currentBlockId = blockId;
+    }
+
+    // Running PC counter for debug info
+    private int runningPc;
+
     // ── Local management ──
 
     private class Var {
         private final int slot;
         private final boolean captured;
+        private final boolean isLocal;
 
         Var() {
             slot = allocLocalVar();
             captured = false;
+            isLocal = true;
         }
 
         Var(ELNode.DEFINE var) {
             if (var != null && var.symbol != null) {
                 captured = var.symbol.captured;
                 slot = captured ? putConstant(var.id) : var.symbol.slot;
+                isLocal = false;
             } else {
                 slot = allocLocalVar();
                 captured = false;
+                isLocal = true;
             }
+        }
 
+        Var(ELNode.IDENT var) {
+            if (var != null && var.symbol != null) {
+                captured = var.symbol.captured;
+                slot = captured ? putConstant(var.id) : var.symbol.slot;
+                isLocal = false;
+            } else {
+                slot = allocLocalVar();
+                captured = false;
+                isLocal = true;
+            }
         }
 
         void define() {
@@ -2339,12 +2416,25 @@ public class IRBuilder extends ELNode.Visitor {
             else
                 current.emitPushVar(slot);
         }
+
+        void release() {
+            if (isLocal)
+                freeSlots.push(slot);
+        }
+
+        private int allocLocalVar() {
+            if (!freeSlots.isEmpty()) {
+                return freeSlots.pop();
+            }
+            int slot = nextTempSlot++;
+            maxLocals = Math.max(maxLocals, nextTempSlot);
+            return slot;
+        }
     }
 
-    private int allocLocalVar() {
-        int slot = nextTempSlot++;
-        maxLocals = Math.max(maxLocals, nextTempSlot);
-        return slot;
+    private void release(Var var) {
+        if (var != null)
+            var.release();
     }
 
     /**
@@ -2747,8 +2837,7 @@ public class IRBuilder extends ELNode.Visitor {
             //  interpreter completely.
             // fn = IRSpecializer.specialize(fn, new int[paramCount]);
             if (isLambda)
-                fn = FOLDER.transform(fn);  // fold constants in specialized
-            // code
+                fn = FOLDER.transform(fn);  // fold constants in specialized code
         }
         return fn;
     }

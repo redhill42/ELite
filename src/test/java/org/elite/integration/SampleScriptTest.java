@@ -31,10 +31,10 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class SampleScriptTest {
 
-    // TODO: re-enable "dsl", "seq", "xml" once symbol table handles nested loops, data
+    // TODO: re-enable "seq", "monad", once symbol table handles nested loops, data
     // constructors, lazy sequences, and tail-call elimination.
     private static final List<String> SAMPLES = List.of(
-        "C", "hello", "list", "rbtree", "scheme", "uri", "xmlbuilder"
+        "C", "dsl", "hello", "list", "rbtree", "scheme", "uri", "xml", "xmlbuilder"
     );
 
     private static final String SAMPLE_DIR = "src/sample/";
