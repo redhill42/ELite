@@ -163,13 +163,13 @@ public class IRBuilder extends ELNode.Visitor {
             SymbolTable.Scope prevScope = currentScope;
             currentScope = node.scope;
             if (!(node instanceof ELNode.LAMBDA) && node.scope.hasCaptures()) {
-                // We need to set up new evaluation context if any variables
-                // captured in this scope.
-                current.emit1(ENTER_SCOPE, K_NONE, 0);
-                node.accept(this);
-                current.emit1(LEAVE_SCOPE, K_NONE, 0);
-            } else {
-                node.accept(this);
+            // We need to set up new evaluation context if any variables
+            // captured in this scope.
+            current.emit1(ENTER_SCOPE, K_NONE, 0);
+            node.accept(this);
+            current.emit1(LEAVE_SCOPE, K_NONE, 0);
+        } else {
+            node.accept(this);
             }
             currentScope = prevScope;
         } else {
@@ -1472,13 +1472,13 @@ public class IRBuilder extends ELNode.Visitor {
                 build(node.expr);
             }
 
-            if (currentScope.isTopLevel() || node.symbol.captured) {
+            if (node.symbol.captured) {
                 int nameIdx = putConstant(node.id);
                 current.emitDefineGlobal(nameIdx);
+            } else {
+                // Always store locally for fast access within this function.
+                current.emitStoreVar(node.symbol.slot);
             }
-
-            // Always store locally for fast access within this function.
-            current.emitStoreVar(node.symbol.slot);
         }
     }
 
@@ -1896,18 +1896,18 @@ public class IRBuilder extends ELNode.Visitor {
 
     public void visit(ELNode.TRY node) {
         // Compile try body (zero-param closure).
-        compileAsClosure(node.body);
+        build(node.body);
 
         // Handlers: each handler is a DEFINE(id = exception var, expr = body).
         int handlerCount = node.handlers != null ? node.handlers.length : 0;
         for (int i = 0; i < handlerCount; i++) {
-            ELNode.DEFINE handler = node.handlers[i];
-            compileAsClosure(handler.expr, handler.id);
+            buildConst(node.types[i]);
+            build(node.handlers[i]);
         }
 
         // Finally (optional, zero-param closure).
         if (node.finalizer != null)
-            compileAsClosure(node.finalizer);
+            build(node.finalizer);
         else
             current.emitPushNull();
 
@@ -1917,25 +1917,9 @@ public class IRBuilder extends ELNode.Visitor {
     // ── Synchronized ──
 
     public void visit(ELNode.SYNCHRONIZED node) {
-        // Push lock object.
-        buildNode(node.exp);
-        // Push body as zero-param closure.
-        compileAsClosure(node.body);
+        build(node.exp);
+        build(node.body);
         current.emitSynchronized();
-    }
-
-    /** Compile a subtree as a zero-param closure and push it. */
-    private void compileAsClosure(ELNode body) {
-        compileAsClosure(body, null);
-    }
-
-    private void compileAsClosure(ELNode body, String paramName) {
-        int paramCount = paramName != null ? 1 : 0;
-        ELNode.DEFINE[] vars = paramCount == 0 ? new ELNode.DEFINE[0]
-            : new ELNode.DEFINE[]{ new ELNode.DEFINE(-1, paramName) };
-        ELNode.LAMBDA lam = new ELNode.LAMBDA(-1, null, vars, body);
-        lam.scope = currentScope;
-        lam.accept(this);
     }
 
     // ── Lambda ──
@@ -2143,7 +2127,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (def.type != null || def.expr != null)
                 argSlot.load();
             current.emitStoreVar(def.symbol.slot);
-            if (currentScope.isTopLevel() || def.symbol.captured)
+            if (def.symbol.captured)
                 current.emitDefineGlobal(putConstant(def.id));
             return false;
         }

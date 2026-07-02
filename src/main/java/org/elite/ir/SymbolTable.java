@@ -162,6 +162,11 @@ public class SymbolTable {
         sym.slot = current.nextSlot++;
         current.maxSlots++;
 
+        if (current.isTopLevel()) {
+            // Always put top level defined variable in global context.
+            sym.captured = true;
+        }
+
         // Check if this name exists in any outer scope.
         if (current.lookupOuter(name) != null) {
             sym.mangledName = "*" + name + "$" + (++current.renameCounter) + "*";

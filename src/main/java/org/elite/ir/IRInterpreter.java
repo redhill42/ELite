@@ -764,58 +764,73 @@ public class IRInterpreter {
                 throw new UserException(elctx);
             }
             case SYNCHRONIZED: {
-                IRClosure bodyClosure = (IRClosure) pop();
+                IRClosure body = (IRClosure) pop();
                 Object lock = pop();
-                Object result;
-                synchronized (lock != null ? lock : this) {
-                    result = new IRInterpreter(evalContext, bodyClosure.function).execute(null);
+                synchronized (lock) {
+                    push(new IRInterpreter(evalContext, body.function).execute(null));
                 }
-                push(result != null ? result : null);
                 ip += 1;
                 break;
             }
             case TRY: {
-                int handlerCount = pl & 0xFFFF;
                 // Pop closures: top → finally, handlerN..., handler1, body → bottom
-                IRClosure finallyClosure = null;
-                Object finallyObj = pop();
-                if (finallyObj instanceof IRClosure fc)
-                    finallyClosure = fc;
-
+                int handlerCount = pl & 0xFFFF;
+                IRClosure body;
+                String[] types = null;
                 IRClosure[] handlers = null;
-                if (handlerCount > 0) {
-                    handlers = new IRClosure[handlerCount];
-                    for (int i = handlerCount - 1; i >= 0; i--)
-                        handlers[i] = (IRClosure) pop();
-                }
-                IRClosure bodyClosure = (IRClosure) pop();
+                IRClosure finalizer;
 
-                Object result = null;
+                finalizer = (IRClosure)pop();
+                if (handlerCount > 0) {
+                    types = new String[handlerCount];
+                    handlers = new IRClosure[handlerCount];
+                    for (int i = handlerCount - 1; i >= 0; i--) {
+                        handlers[i] = (IRClosure)pop();
+                        types[i] = (String)pop();
+                    }
+                }
+                body = (IRClosure)pop();
+
+                Object result;
                 try {
-                    result = new IRInterpreter(evalContext, bodyClosure.function).execute(null);
-                } catch (Throwable t) {
-                    boolean handled = false;
+                    result = new IRInterpreter(evalContext, body.function).execute(null);
+                } catch (RuntimeException | Error ex) {
+                    Throwable t = ex;
+                    if (ex instanceof EvaluationException) {
+                        t = ex.getCause();
+                        if (t == null)
+                            t = ex;
+                    }
+
+                    IRClosure handler = null;
                     if (handlers != null) {
-                        for (IRClosure h : handlers) {
-                            try {
-                                result = new IRInterpreter(evalContext, h.function)
-                                    .execute(new Object[]{t});
-                                handled = true;
+                        for (int i = 0; i < handlers.length; i++) {
+                            if (types[i] != null) {
+                                if (TypedClosure.typecheck(evalContext, types[i], t)) {
+                                    handler = handlers[i];
+                                    break;
+                                }
+                            } else {
+                                handler = handlers[i];
                                 break;
-                            } catch (Throwable ignored) {
                             }
                         }
                     }
-                    if (!handled)
-                        throw (t instanceof RuntimeException re) ? re
-                            : new UserException(elctx, t);
+
+                    if (handler != null) {
+                        result = new IRInterpreter(evalContext, handler.function)
+                            .execute(new Object[]{t});
+                    } else {
+                        // Rethrow exception
+                        throw ex;
+                    }
                 } finally {
-                    if (finallyClosure != null) {
-                        try { new IRInterpreter(evalContext, finallyClosure.function).execute(null); }
-                        catch (Throwable ignored) {}
+                    if (finalizer != null) {
+                        new IRInterpreter(evalContext, finalizer.function).execute(null);
                     }
                 }
-                push(result != null ? result : null);
+
+                push(result);
                 ip += 1;
                 break;
             }

@@ -197,41 +197,11 @@ public final class SymbolTableBuilder {
             }
         }
 
-        public void visit(ELNode.TRY e) {
-            table.enterScope("try", e.body);
-            scan(e.body);
-            e.accept(trampolineFixup);
-            table.leaveScope();
-
-            if (e.handlers != null) {
-                for (ELNode h : e.handlers) {
-                    table.enterScope("catch", h);
-                    scan(h);
-                    h.accept(trampolineFixup);
-                    table.leaveScope();
-                }
-            }
-
-            if (e.finalizer != null) {
-                table.enterScope("finally", e.finalizer);
-                scan(e.finalizer);
-                e.finalizer.accept(trampolineFixup);
-                table.leaveScope();
-            }
-        }
-
         public void visit(ELNode.CATCH e) {
             table.enterScope("catch", e);
             var sym = table.define(e.var);
             e.symbol = sym;
             e.var = sym.mangledName;
-            scan(e.body);
-            table.leaveScope();
-        }
-
-        public void visit(ELNode.SYNCHRONIZED e) {
-            scan(e.exp);
-            table.enterScope("synchronized", e.body);
             scan(e.body);
             table.leaveScope();
         }

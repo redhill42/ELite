@@ -4766,12 +4766,14 @@ public abstract class ELNode implements Serializable
      */
     public static class TRY extends ELNode {
         public final ELNode body;
-        public final DEFINE[] handlers;
+        public final String[] types;
+        public final ELNode[] handlers;
         public final ELNode finalizer;
 
-        public TRY(int pos, ELNode body, DEFINE[] handlers, ELNode finalizer) {
+        public TRY(int pos, ELNode body, String[] types, ELNode[] handlers, ELNode finalizer) {
             super(Token.TRY, pos);
             this.body = body;
+            this.types = types;
             this.handlers = handlers;
             this.finalizer = finalizer;
         }
@@ -4782,7 +4784,7 @@ public abstract class ELNode implements Serializable
 
             if (handlers != null) {
                 try {
-                    result = body.pos(f).getValue(context);
+                    result = body.pos(f).invoke(context, NO_PARAMS);
                 } catch (Control control) {
                     throw control;
                 } catch (EvaluationException ex) {
@@ -4802,14 +4804,14 @@ public abstract class ELNode implements Serializable
                     }
                 } finally {
                     if (finalizer != null) {
-                        finalizer.pos(f).getValue(context);
+                        finalizer.pos(f).invoke(context, NO_PARAMS);
                     }
                 }
             } else {
                 try {
-                    result = body.pos(f).getValue(context);
+                    result = body.pos(f).invoke(context, NO_PARAMS);
                 } finally {
-                    finalizer.pos(f).getValue(context);
+                    finalizer.pos(f).invoke(context, NO_PARAMS);
                 }
             }
 
@@ -4818,24 +4820,22 @@ public abstract class ELNode implements Serializable
 
         private Object handle(EvaluationContext context, Frame f, Throwable exc) {
             // find handler
-            DEFINE handler = null;
-            for (DEFINE def : handlers) {
-                if (def.type != null) {
-                    if (TypedClosure.typecheck(context, def.type, exc)) {
-                        handler = def;
+            ELNode handler = null;
+            for (int i = 0; i < handlers.length; i++) {
+                if (types[i] != null) {
+                    if (TypedClosure.typecheck(context, types[i], exc)) {
+                        handler = handlers[i];
                         break;
                     }
                 } else {
-                    handler = def;
+                    handler = handlers[i];
                     break;
                 }
             }
 
             if (handler != null) {
                 // evaluate handler
-                EvaluationContext env = context.pushContext();
-                env.setVariable(handler.id, new LiteralClosure(exc));
-                return handler.expr.pos(f).getValue(env);
+                return handler.invoke(context, getArgs(exc));
             } else {
                 // rethrow exception
                 return NO_RESULT;
@@ -4940,7 +4940,7 @@ public abstract class ELNode implements Serializable
             }
             
             synchronized (obj) {
-                return body.pos(f).getValue(context);
+                return body.pos(f).invoke(context, NO_PARAMS);
             }
         }
 

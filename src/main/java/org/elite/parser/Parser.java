@@ -3707,36 +3707,40 @@ public class Parser extends Scanner
      */
     private ELNode parseTryExpression(int p) {
         ELNode body;
-        ELNode.DEFINE[] handlers = null;
+        String[] types = null;
+        ELNode[] handlers = null;
         ELNode finalizer = null;
 
         expect(LBRACE);
-        body = parseCompoundExpression(pos);
+        body = new ELNode.LAMBDA(p, filename, EMPTY_DEFS, parseCompoundExpression(pos));
         expect(RBRACE);
 
         if (token == CATCH) {
-            List<ELNode.DEFINE> hlist = new ArrayList<ELNode.DEFINE>();
+            List<String> tlist = new ArrayList<>();
+            List<ELNode> hlist = new ArrayList<>();
             while (token == CATCH) {
                 int p2 = scan();
                 expect(LPAREN);
                 String id = idValue; expect(IDENT);
                 String type = parseTypeNameOpt();
                 expect(RPAREN);
-                open_scope();
-                ELNode.DEFINE h = new_symbol(p2, id, type, null);
+                ELNode.DEFINE var = new ELNode.DEFINE(p2, id);
                 expect(LBRACE);
-                h.expr = parseCompoundExpression(pos);
+                ELNode.LAMBDA h = new ELNode.LAMBDA(pos, filename,
+                    new ELNode.DEFINE[]{var}, parseCompoundExpression(pos));
                 expect(RBRACE);
-                close_scope();
+                tlist.add(type);
                 hlist.add(h);
             }
-            handlers = to_def_a(hlist);
+            types = to_sa(tlist);
+            handlers = to_a(hlist);
         }
 
         if (token == FINALLY) {
             scan();
             expect(LBRACE);
-            finalizer = parseCompoundExpression(pos);
+            finalizer = new ELNode.LAMBDA(pos, filename, EMPTY_DEFS,
+                                          parseCompoundExpression(pos));
             expect(RBRACE);
         }
 
@@ -3748,7 +3752,7 @@ public class Parser extends Scanner
             }
         }
 
-        return new ELNode.TRY(p, body, handlers, finalizer);
+        return new ELNode.TRY(p, body, types, handlers, finalizer);
     }
 
     /**
@@ -3773,7 +3777,8 @@ public class Parser extends Scanner
         ELNode exp = parseExpression();
         expect(RPAREN);
         expect(LBRACE);
-        ELNode body = parseCompoundExpression(pos);
+        ELNode body = new ELNode.LAMBDA(pos, filename, EMPTY_DEFS,
+                                        parseCompoundExpression(pos));
         expect(RBRACE);
         return new ELNode.SYNCHRONIZED(p, exp, body);
     }

@@ -361,6 +361,7 @@ public class TreeTransformer extends ELNode.Visitor
     public void visit(ELNode.TRY e) {
         result = new ELNode.TRY(e.pos,
                                 transform(e.body),
+                                e.types,
                                 transform(e.handlers),
                                 transform(e.finalizer));
     }
