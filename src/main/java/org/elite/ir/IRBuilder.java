@@ -622,50 +622,50 @@ public class IRBuilder extends ELNode.Visitor {
                 build(args[0]);
                 current.emitDup();
                 build(args[2]);
-                current.emitDynAdd();
+                emitDynBinOp(Token.ADD);
                 build(args[1]);
                 current.emitNewRange();
                 return true;
 
             case "upto":
-                return buildStepBuiltin(base, args[0], args[1], 1, DYNLE);
+                return buildStepBuiltin(base, args[0], args[1], 1, Token.LE);
             case "downto":
-                return buildStepBuiltin(base, args[0], args[1], -1, DYNGE);
+                return buildStepBuiltin(base, args[0], args[1], -1, Token.GE);
             case "step":
                 assert args.length == 3;
                 if (args[1] instanceof ELNode.NUMBER n) {
                     int step = n.value.intValue();
                     if (step != 0)
                         return buildStepBuiltin(base, args[0], args[2], step,
-                                                step > 0 ? DYNLE : DYNGE);
+                                                step > 0 ? Token.LE : Token.GE);
                 }
                 return false;
             case "times":
-                return buildStepBuiltin(new ELNode.NUMBER(-1, 0), base, args[0], 1, DYNLT);
+                return buildStepBuiltin(new ELNode.NUMBER(-1, 0), base, args[0], 1, Token.LT);
             }
         }
 
         if (method.getDeclaringClass() == MathLib.class) {
             switch (method.getName()) {
             case "sum":
-                return buildMathReduce(args, DYNADD);
+                return buildMathReduce(args, Token.ADD);
             case "difference":
-                return buildMathReduce(args, DYNSUB);
+                return buildMathReduce(args, Token.SUB);
             case "product":
-                return buildMathReduce(args, DYNMUL);
+                return buildMathReduce(args, Token.MUL);
             case "divide":
-                return buildMathReduce(args, DYNDIV);
+                return buildMathReduce(args, Token.DIV);
 
             case "remainder":
                 build(args[0]);
                 build(args[1]);
-                current.emitDynRem();
+                emitDynBinOp(Token.REM);
                 return true;
 
             case "pow":
                 build(args[0]);
                 build(args[1]);
-                current.emitDynPow();
+                emitDynBinOp(Token.POW);
                 return true;
             }
         }
@@ -688,7 +688,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // FIXME: induction variable may be captured, should put in evaluation context.
         build(begin);
-        indSlot.define();;
+        indSlot.define();
         current.emitPop();
         build(end);
         endSlot.store();
@@ -706,7 +706,7 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(headerB);
         indSlot.load();
         endSlot.load();
-        current.emit1(cmpop, K_DYN, 0);
+        emitDynBinOp(cmpop);
         current.emitJumpIfTrue(bodyB);
         current.emitJump(exitB);
 
@@ -718,10 +718,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Increment induction variable.
         indSlot.load();
         buildConst(Math.abs(step));
-        if (step > 0)
-            current.emitDynAdd();
-        else
-            current.emitDynSub();
+        emitDynBinOp(step > 0 ? Token.ADD : Token.SUB);
         indSlot.store();
         current.emitPop();
         current.emitJump(headerB);
@@ -742,7 +739,7 @@ public class IRBuilder extends ELNode.Visitor {
             build(args[0]);
             for (int i = 1; i < args.length; i++) {
                 build(args[i]);
-                current.emit1(op, K_DYN, 0);
+                emitDynBinOp(op);
             }
         }
         return true;
@@ -757,19 +754,6 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitNewDelayCons();
         else
             current.emitNewCons();
-    }
-
-    public void visit(ELNode.PREFIX node) {
-        int nameIdx = putConstant(node.name);
-        build(node.right);
-        current.emitInvokeOperator(nameIdx, 1);
-    }
-
-    public void visit(ELNode.INFIX node) {
-        int nameIdx = putConstant(node.name);
-        build(node.left);
-        build(node.right);
-        current.emitInvokeOperator(nameIdx, 2);
     }
 
     public void visit(ELNode.NIL node) {
@@ -798,7 +782,7 @@ public class IRBuilder extends ELNode.Visitor {
             // Exclusive range [begin..<end): push end-1 for inclusive range end
             build(node.end);
             buildConst(1);
-            current.emitDynSub();
+            emitDynBinOp(Token.SUB);
         } else {
             build(node.end);
         }
@@ -929,7 +913,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emit1(INSTOF, K_BOOL, clsid);
     }
 
-    // ── Binary arithmetic ──
+    // ── Binary and unary arithmetic ──
 
     public void visit(ELNode.ADD node)    { buildBinaryOp(node); }
     public void visit(ELNode.SUB node)    { buildBinaryOp(node); }
@@ -937,24 +921,45 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.DIV node)    { buildBinaryOp(node); }
     public void visit(ELNode.REM node)    { buildBinaryOp(node); }
     public void visit(ELNode.POW node)    { buildBinaryOp(node); }
-    public void visit(ELNode.BITOR node)  { buildBinaryOp(node); }
-    public void visit(ELNode.BITAND node) { buildBinaryOp(node); }
-    public void visit(ELNode.XOR node)    { buildBinaryOp(node); }
     public void visit(ELNode.SHL node)    { buildBinaryOp(node); }
+    public void visit(ELNode.CAT node)    { buildBinaryOp(node); }
     public void visit(ELNode.SHR node)    { buildBinaryOp(node); }
     public void visit(ELNode.USHR node)   { buildBinaryOp(node); }
+    public void visit(ELNode.BITAND node) { buildBinaryOp(node); }
+    public void visit(ELNode.BITOR node)  { buildBinaryOp(node); }
+    public void visit(ELNode.XOR node)    { buildBinaryOp(node); }
+    public void visit(ELNode.EQ node)     { buildBinaryOp(node); }
+    public void visit(ELNode.NE node)     { buildBinaryOp(node); }
+    public void visit(ELNode.LT node)     { buildBinaryOp(node); }
+    public void visit(ELNode.LE node)     { buildBinaryOp(node); }
+    public void visit(ELNode.GT node)     { buildBinaryOp(node); }
+    public void visit(ELNode.GE node)     { buildBinaryOp(node); }
+
+    public void visit(ELNode.NEG node)    {
+        build(node.right);
+        int t = typeIdFromNode(node.right);
+        switch (t) {
+        case T_INT -> current.emitINeg();
+        case T_LONG -> current.emitLNeg();
+        case T_DOUBLE -> current.emitDNeg();
+        default -> current.emitDynNeg();
+        }
+    }
+
+    public void visit(ELNode.POS node)    { /* nop */ }
+    public void visit(ELNode.BITNOT node) { buildUnaryOp(node); }
+    public void visit(ELNode.EMPTY node)  { buildUnaryOp(node); }
 
     private void buildBinaryOp(ELNode.Binary node) {
-        // tail position
         build(node.left);
         build(node.right);
 
         int l = typeIdFromNode(node.left), r = typeIdFromNode(node.right);
         if (l >= 0 && r >= 0 && !isNonNumericClassType(node.left) &&
             !isNonNumericClassType(node.right))
-            emitTypedOp(node.op, widerType(l, r));
+            emitTypedBinOp(node.op, widerType(l, r));
         else
-            emitDynamicOp(node.op);
+            emitDynBinOp(node.op);
     }
 
     private static boolean isNonNumericClassType(ELNode node) {
@@ -965,14 +970,110 @@ public class IRBuilder extends ELNode.Visitor {
                !String.class.isAssignableFrom(ct.javaClass);
     }
 
-    public void visit(ELNode.NEG node)    { buildUnaryOp(node); }
-    public void visit(ELNode.POS node)    { /* nop */ }
-    public void visit(ELNode.BITNOT node) { buildUnaryOp(node); }
-    public void visit(ELNode.EMPTY node)  { buildUnaryOp(node); }
+    private void emitTypedBinOp(int op, int t) {
+        int opcode = -1;
+
+        if (t == T_INT) {
+            opcode = switch (op) {
+                case Token.ADD -> IADD;
+                case Token.SUB -> ISUB;
+                case Token.MUL -> IMUL;
+                case Token.REM -> IREM;
+                case Token.EQ -> IEQ;
+                case Token.NE -> INE;
+                case Token.LT -> ILT;
+                case Token.LE -> ILE;
+                case Token.GT -> IGT;
+                case Token.GE -> IGE;
+                default -> -1;
+            };
+        } else if (t == T_LONG) {
+            opcode = switch (op) {
+                case Token.ADD -> LADD;
+                case Token.SUB -> LSUB;
+                case Token.MUL -> LMUL;
+                case Token.REM -> LREM;
+                case Token.EQ -> LEQ;
+                case Token.NE -> LNE;
+                case Token.LT -> LLT;
+                case Token.LE -> LLE;
+                case Token.GT -> LGT;
+                case Token.GE -> LGE;
+                default -> -1;
+            };
+        } else if (t == T_DOUBLE) {
+            opcode = switch (op) {
+                case Token.ADD -> DADD;
+                case Token.SUB -> DSUB;
+                case Token.MUL -> DMUL;
+                case Token.EQ -> DEQ;
+                case Token.NE -> DNE;
+                case Token.LT -> DLT;
+                case Token.LE -> DLE;
+                case Token.GT -> DGT;
+                case Token.GE -> DGE;
+                default -> -1;
+            };
+        }
+
+        if (opcode != -1) {
+            current.emit1(opcode, K_PRIM, t);
+        } else {
+            emitDynBinOp(op);
+        }
+    }
+
+    private void emitDynBinOp(int op) {
+        switch (op) {
+            case Token.ADD    -> current.emitDynAdd();
+            case Token.SUB    -> current.emitDynSub();
+            case Token.MUL    -> current.emitDynMul();
+            case Token.DIV    -> current.emitDynDiv();
+            case Token.IDIV   -> current.emitLDiv();
+            case Token.REM    -> current.emitDynRem();
+            case Token.POW    -> current.emitDynPow();
+            case Token.CAT    -> current.emitDynCat();
+            case Token.SHL    -> current.emitDynShl();
+            case Token.SHR    -> current.emitDynShr();
+            case Token.USHR   -> current.emitDynUShr();
+            case Token.BITAND -> current.emitDynBitAnd();
+            case Token.BITOR  -> current.emitDynBitOr();
+            case Token.XOR    -> current.emitDynXor();
+            case Token.EQ     -> current.emitDynEq();
+            case Token.NE     -> current.emitDynNe();
+            case Token.LT     -> current.emitDynLt();
+            case Token.LE     -> current.emitDynLe();
+            case Token.GT     -> current.emitDynGt();
+            case Token.GE     -> current.emitDynGe();
+            default -> throw new UnsupportedOperationException();
+        };
+    }
 
     private void buildUnaryOp(ELNode.Unary node) {
         build(node.right);
-        emitDynamicOp(node.op);
+        emitDynUnOp(node.op);
+    }
+
+    private void emitDynUnOp(int op) {
+        switch (op) {
+        case Token.BITNOT -> current.emitDynBitNot();
+        case Token.NEG -> current.emitDynNeg();
+        case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
+        case Token.EMPTY ->  current.emitDynEmpty();
+        default -> throw new UnsupportedOperationException();
+        }
+    }
+
+    public void visit(ELNode.IDEQ node) {
+        build(node.left);
+        build(node.right);
+        current.emitIdEq();
+    }
+
+    public void visit(ELNode.IDNE node) {
+        build(node.left);
+        build(node.right);
+        current.emitIdNe();
     }
 
     public void visit(ELNode.INC node) {
@@ -997,10 +1098,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Increment or decrement the value.
         buildConst(1);
-        if (isInc)
-            current.emitDynAdd();
-        else
-            current.emitDynSub();
+        emitDynBinOp(isInc ? Token.ADD : Token.SUB);
 
         // Assign to right value itself.
         if (target instanceof ELNode.IDENT ident)
@@ -1016,201 +1114,17 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPop();
     }
 
-    public void visit(ELNode.CAT node) {
+    public void visit(ELNode.PREFIX node) {
+        int nameIdx = putConstant(node.name);
+        build(node.right);
+        current.emitInvokeOperator(nameIdx, 1);
+    }
+
+    public void visit(ELNode.INFIX node) {
+        int nameIdx = putConstant(node.name);
         build(node.left);
         build(node.right);
-        current.emitDynCat();
-    }
-
-    private void emitTypedOp(int op, int t) {
-        switch (op) {
-        case Token.ADD -> {
-            if (t == T_INT)
-                current.emitIAdd();
-            else if (t == T_LONG)
-                current.emitLAdd();
-            else if (t == T_DOUBLE)
-                current.emitDAdd();
-            else
-                current.emitDynAdd();
-        }
-        case Token.SUB -> {
-            if (t == T_INT)
-                current.emitISub();
-            else if (t == T_LONG)
-                current.emitLSub();
-            else if (t == T_DOUBLE)
-                current.emitDSub();
-            else
-                current.emitDynSub();
-        }
-        case Token.MUL -> {
-            if (t == T_INT)
-                current.emitIMul();
-            else if (t == T_LONG)
-                current.emitLMul();
-            else if (t == T_DOUBLE)
-                current.emitDMul();
-            else
-                current.emitDynMul();
-        }
-        case Token.DIV ->
-            current.emitDynDiv();  // use dynamic path for correct ELite semantics
-        case Token.REM -> {
-            if (t == T_INT)
-                current.emitIRem();
-            else
-                current.emitDynRem();
-        }
-        case Token.NEG -> {
-            if (t == T_INT)
-                current.emitINeg();
-            else if (t == T_LONG)
-                current.emitLNeg();
-            else if (t == T_DOUBLE)
-                current.emitDNeg();
-            else
-                current.emitDynNeg();
-        }
-        default -> emitDynamicOp(op);
-        }
-    }
-
-    private void emitDynamicOp(int op) {
-        switch (op) {
-        case Token.ADD -> current.emitDynAdd();
-        case Token.SUB -> current.emitDynSub();
-        case Token.MUL -> current.emitDynMul();
-        case Token.DIV -> current.emitDynDiv();
-        case Token.IDIV -> current.emitLDiv();
-        case Token.REM -> current.emitDynRem();
-        case Token.POW -> current.emitDynPow();
-        case Token.SHL -> current.emitDynShl();
-        case Token.SHR -> current.emitDynShr();
-        case Token.USHR -> current.emitDynUShr();
-        case Token.BITAND -> current.emitDynBitAnd();
-        case Token.BITOR -> current.emitDynBitOr();
-        case Token.XOR -> current.emitDynXor();
-        case Token.BITNOT -> current.emitDynBitNot();
-        case Token.NEG -> current.emitDynNeg();
-        case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
-        case Token.EMPTY -> current.emitDynEmpty();
-        default ->
-                throw new UnsupportedOperationException("Unsupported " +
-                                                        "dynamic op: " + op);
-        }
-    }
-
-    // ── Comparisons ──
-    public void visit(ELNode.EQ node) { buildComparison(node); }
-    public void visit(ELNode.NE node) { buildComparison(node); }
-    public void visit(ELNode.LT node) { buildComparison(node); }
-    public void visit(ELNode.LE node) { buildComparison(node); }
-    public void visit(ELNode.GT node) { buildComparison(node); }
-    public void visit(ELNode.GE node) { buildComparison(node); }
-
-    private void buildComparison(ELNode.Binary node) {
-        int l = typeIdFromNode(node.left), r = typeIdFromNode(node.right);
-        build(node.left);
-        build(node.right);
-        if (l >= 0 && r >= 0)
-            emitTypedCmp(node.op, widerType(l, r));
-        else
-            emitDynamicCmp(node.op);
-    }
-
-    private void emitTypedCmp(int op, int t) {
-        switch (op) {
-        case Token.EQ -> {
-            if (t == T_INT)
-                current.emitIEq();
-            else if (t == T_LONG)
-                current.emitLEq();
-            else if (t == T_DOUBLE)
-                current.emitDEq();
-            else
-                current.emitDynEq();
-        }
-        case Token.NE -> {
-            if (t == T_INT)
-                current.emitINe();
-            else if (t == T_LONG)
-                current.emitLNe();
-            else if (t == T_DOUBLE)
-                current.emitDNe();
-            else {
-                current.emitDynNe();
-            }
-        }
-        case Token.LT -> {
-            if (t == T_INT)
-                current.emitILt();
-            else if (t == T_LONG)
-                current.emitLLt();
-            else if (t == T_DOUBLE)
-                current.emitDLt();
-            else
-                current.emitDynLt();
-        }
-        case Token.LE -> {
-            if (t == T_INT)
-                current.emitILe();
-            else if (t == T_LONG)
-                current.emitLLe();
-            else if (t == T_DOUBLE)
-                current.emitDLe();
-            else
-                current.emitDynLe();
-        }
-        case Token.GT -> {
-            if (t == T_INT)
-                current.emitIGt();
-            else if (t == T_LONG)
-                current.emitLGt();
-            else if (t == T_DOUBLE)
-                current.emitDGt();
-            else {
-                current.emitDynGt();
-            }
-        }
-        case Token.GE -> {
-            if (t == T_INT)
-                current.emitIGe();
-            else if (t == T_LONG)
-                current.emitLGe();
-            else if (t == T_DOUBLE)
-                current.emitDGe();
-            else {
-                current.emitDynGe();
-            }
-        }
-        default -> throw new UnsupportedOperationException();
-        }
-    }
-
-    private void emitDynamicCmp(int op) {
-        switch (op) {
-        case Token.EQ -> current.emitDynEq();
-        case Token.NE -> current.emitDynNe();
-        case Token.LT -> current.emitDynLt();
-        case Token.LE -> current.emitDynLe();
-        case Token.GT -> current.emitDynGt();
-        case Token.GE -> current.emitDynGe();
-        default -> throw new UnsupportedOperationException();
-        }
-    }
-
-    // ── Identity comparison (=== / !==) ──
-    public void visit(ELNode.IDEQ node) { buildIdentityCmp(node); }
-    public void visit(ELNode.IDNE node) { buildIdentityCmp(node); }
-
-    private void buildIdentityCmp(ELNode.Binary node) {
-        build(node.left);
-        build(node.right);
-        if (node.op == Token.IDNE)
-            current.emitIdNe();
-        else
-            current.emitIdEq();
+        current.emitInvokeOperator(nameIdx, 2);
     }
 
     // ── Logical AND/OR/NOT ──
@@ -1307,28 +1221,6 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    // ── Compound assignment (+=, -=, etc.) ──
-    private void buildAssignOp(ELNode.ASSIGNOP node) {
-        // Invoke dynamic assignment operator
-        buildConst(node.binary.op);
-        build(node.left);
-        build(node.right);
-        emitInvokeStatic(Runtime.class, "invokeAssignOp", ELContext.class, int.class,
-                         Object.class, Object.class);
-
-        // Now perform assignment.
-        ELNode left = deparen(node.left);
-        if (left instanceof ELNode.IDENT ident) {
-            buildStoreVariable(ident);
-        } else if (left instanceof ELNode.ACCESS access) {
-            buildStoreProperty(access);
-        } else {
-            assert false; // should not happen, parser disable other assignop syntax
-            current.emitPop();
-            buildTrampoline(node);
-        }
-    }
-
     // ── Assign/Define ──
     private boolean buildAssign(ELNode left, ELNode right) {
         left = deparen(left);
@@ -1366,6 +1258,28 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         return false;
+    }
+
+    // ── Compound assignment (+=, -=, etc.) ──
+    private void buildAssignOp(ELNode.ASSIGNOP node) {
+        // Invoke dynamic assignment operator
+        buildConst(node.binary.op);
+        build(node.left);
+        build(node.right);
+        emitInvokeStatic(Runtime.class, "invokeAssignOp", ELContext.class, int.class,
+                         Object.class, Object.class);
+
+        // Now perform assignment.
+        ELNode left = deparen(node.left);
+        if (left instanceof ELNode.IDENT ident) {
+            buildStoreVariable(ident);
+        } else if (left instanceof ELNode.ACCESS access) {
+            buildStoreProperty(access);
+        } else {
+            assert false; // should not happen, parser disable other assignop syntax
+            current.emitPop();
+            buildTrampoline(node);
+        }
     }
 
     private ELNode deparen(ELNode node) {
@@ -1598,7 +1512,6 @@ public class IRBuilder extends ELNode.Visitor {
         buildTail(node.exps[node.exps.length - 1]);
     }
 
-    // ── While ──
     public void visit(ELNode.WHILE node) {
         int header = allocBlockId();
         int body = allocBlockId();
@@ -1624,7 +1537,6 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.pop();
     }
 
-    // ── Repeat (post-test loop: body executes at least once) ──
     public void visit(ELNode.REPEAT node) {
         int body = allocBlockId();
         int cont = allocBlockId();   // condition-check block
@@ -1654,7 +1566,6 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.pop();
     }
 
-    // ── For ──
     public void visit(ELNode.FOR node) {
         int body = allocBlockId();
         int header = node.cond != null ? allocBlockId() : body;
@@ -1881,7 +1792,7 @@ public class IRBuilder extends ELNode.Visitor {
             stepSlot.load();
         else
             buildConst(1L);
-        current.emitDynAdd();
+        emitDynBinOp(Token.ADD);
         varSlot.store();
         current.emitPop();
         current.emitJump(headerB);
@@ -1955,7 +1866,6 @@ public class IRBuilder extends ELNode.Visitor {
         release(iterSlot);
     }
 
-    // ── Break / Continue / Return ──
     public void visit(ELNode.BREAK node) {
         current.emitJump(loopStack.peek().breakBlock());
     }
@@ -2240,7 +2150,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (pat instanceof ELNode.IDENT var) {
             current.emitPushVar(var.symbol.slot);
-            current.emitDynEq();
+            emitDynBinOp(Token.EQ);
             return true;
         }
 
@@ -2272,25 +2182,25 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (pat instanceof ELNode.NUMBER n) {
             buildConst(n.value);
-            current.emitDynEq();
+            emitDynBinOp(Token.EQ);
             return true;
         }
 
         if (pat instanceof ELNode.STRINGVAL s) {
             buildConst(s.value);
-            current.emitDynEq();
+            emitDynBinOp(Token.EQ);
             return true;
         }
 
         if (pat instanceof ELNode.BOOLEANVAL b) {
             buildConst(b.value);
-            current.emitDynEq();
+            emitDynBinOp(Token.EQ);
             return true;
         }
 
         if (pat instanceof ELNode.CHARVAL c) {
             buildConst(c.value);
-            current.emitDynEq();
+            emitDynBinOp(Token.EQ);
             return true;
         }
 
@@ -2322,7 +2232,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (pat instanceof ELNode.EXPR e) {
             build(e.right);
-            current.emitDynEq();
+            emitDynBinOp(Token.EQ);
             return true;
         }
 
@@ -2391,7 +2301,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.NIL) {
-            current.emitDynEmpty();
+            emitDynUnOp(Token.EMPTY);
             return true;
         }
 
