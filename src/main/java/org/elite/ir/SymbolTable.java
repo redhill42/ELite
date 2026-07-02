@@ -171,6 +171,12 @@ public class SymbolTable {
         return sym;
     }
 
+    public void skipSlot() {
+        // Skip slot for wildcard function parameter
+        current.nextSlot++;
+        current.maxSlots++;
+    }
+
     public Symbol lookup(String name) {
         return current.lookup(name);
     }

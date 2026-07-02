@@ -107,7 +107,9 @@ public final class SymbolTableBuilder {
             currentFn = e;
             table.enterScope(e.name != null ? "fn:" + e.name : "lambda", e);
             for (ELNode.DEFINE param : e.vars) {
-                if (!"_".equals(param.id)) {
+                if ("_".equals(param.id)) {
+                    table.skipSlot();
+                } else {
                     var pi = table.define(param.id);
                     param.symbol = pi;
                     param.id = pi.mangledName;
