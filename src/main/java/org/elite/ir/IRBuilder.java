@@ -143,7 +143,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildNode(ELNode node) {
         if (node == null) {
-            emitPushNull();
+            current.emitPushNull();
             return;
         }
 
@@ -196,30 +196,30 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.NUMBER node) {
         Number n = node.value;
         if (n instanceof Integer || n instanceof Short || n instanceof Byte) {
-            emitPushConst(n.intValue());
+            buildConst(n.intValue());
         } else if (n instanceof Long) {
             long v = n.longValue();
             if (v >= Integer.MIN_VALUE && v <= Integer.MAX_VALUE)
-                emitPushConst((int)v);
+                buildConst((int)v);
             else
-                emitPushConst(v);
+                buildConst(v);
         } else if (n instanceof Double || n instanceof Float) {
-            emitPushConst(n.doubleValue());
+            buildConst(n.doubleValue());
         } else {
-            emitPushConst(K_NONE, n);
+            buildConst(n);
         }
     }
 
     public void visit(ELNode.REGEXP node) {
-        emitPushConst(K_NONE, node.value);
+        buildConst(node.value);
     }
 
     public void visit(ELNode.STRINGVAL node) {
-        emitPushConst(node.value);
+        buildConst(node.value);
     }
 
     public void visit(ELNode.LITERAL node) {
-        emitPushConst(node.value);
+        buildConst(node.value);
     }
 
     public void visit(ELNode.CHARVAL node) {
@@ -227,22 +227,15 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.BOOLEANVAL node) {
-        if (node.value)
-            emitPushTrue();
-        else
-            emitPushFalse();
+        buildConst(node.value);
     }
 
     public void visit(ELNode.NULL node) {
-        emitPushNull();
+        current.emitPushNull();
     }
 
     public void visit(ELNode.SYMBOL node) {
         buildConst(node.value);
-    }
-
-    private void buildConst(Object value) {
-        emitPushConst(K_NONE, value);
     }
 
     public void visit(ELNode.ACCESS node) {
@@ -587,7 +580,7 @@ public class IRBuilder extends ELNode.Visitor {
             switch (method.getName()) {
             case "begin":
                 if (args.length == 0) {
-                    emitPushNull();
+                    current.emitPushNull();
                     return true;
                 }
                 for (int i = 0; i < args.length - 1; i++) {
@@ -724,7 +717,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Increment induction variable.
         indSlot.load();
-        emitPushConst(Math.abs(step));
+        buildConst(Math.abs(step));
         if (step > 0)
             current.emitDynAdd();
         else
@@ -735,7 +728,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Cleanup.
         startBlock(exitB);
-        emitPushNull();
+        current.emitPushNull();
         loopStack.pop();
         release(endSlot);
         release(indSlot);
@@ -744,7 +737,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private boolean buildMathReduce(ELNode[] args, int op) {
         if (args.length == 0) {
-            emitPushConst(0);
+            buildConst(0);
         } else {
             build(args[0]);
             for (int i = 1; i < args.length; i++) {
@@ -804,7 +797,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.exclude && node.end != null) {
             // Exclusive range [begin..<end): push end-1 for inclusive range end
             build(node.end);
-            emitPushConst(1);
+            buildConst(1);
             current.emitDynSub();
         } else {
             build(node.end);
@@ -863,14 +856,14 @@ public class IRBuilder extends ELNode.Visitor {
                 length = node.init.length;
 
             buildConst(type);
-            emitPushConst(length);
+            buildConst(length);
             emitInvokeStatic(Array.class, "newInstance", Class.class, int.class);
 
             if (node.init != null) {
                 Var tmpSlot = new Var();
                 tmpSlot.store();
                 for (int i = 0; i < node.init.length; i++) {
-                    emitPushConst(i);
+                    buildConst(i);
                     build(node.init[i]);
                     if (type != Object.class) {
                         buildConst(type);
@@ -887,12 +880,12 @@ public class IRBuilder extends ELNode.Visitor {
             Var tmpSlot = new Var();
             buildConst(type);
             buildConst(int.class);
-            emitPushConst(node.dims.length);
+            buildConst(node.dims.length);
             emitInvokeStatic(Array.class, "newInstance", Class.class, int.class);
             tmpSlot.store();
             for (int i = 0; i < node.dims.length; i++) {
-                emitPushConst(i);
-                emitPushConst(((ELNode.NUMBER)node.dims[i]).value.intValue());
+                buildConst(i);
+                buildConst(((ELNode.NUMBER)node.dims[i]).value.intValue());
                 emitInvokeStatic(Array.class, "set", Object.class, int.class, Object.class);
                 current.emitPop();
                 tmpSlot.load();
@@ -1003,7 +996,7 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitDup();
 
         // Increment or decrement the value.
-        emitPushConst(1);
+        buildConst(1);
         if (isInc)
             current.emitDynAdd();
         else
@@ -1317,7 +1310,7 @@ public class IRBuilder extends ELNode.Visitor {
     // ── Compound assignment (+=, -=, etc.) ──
     private void buildAssignOp(ELNode.ASSIGNOP node) {
         // Invoke dynamic assignment operator
-        emitPushConst(node.binary.op);
+        buildConst(node.binary.op);
         build(node.left);
         build(node.right);
         emitInvokeStatic(Runtime.class, "invokeAssignOp", ELContext.class, int.class,
@@ -1364,7 +1357,7 @@ public class IRBuilder extends ELNode.Visitor {
                 buildDynamicTupleAssign(lhs, failBlock);
                 current.emitJump(doneBlock);
                 startBlock(failBlock);
-                emitPushConst("tuple pattern not match");
+                buildConst("tuple pattern not match");
                 current.emitThrow();
                 current.emitJump(doneBlock);
                 startBlock(doneBlock);
@@ -1512,13 +1505,13 @@ public class IRBuilder extends ELNode.Visitor {
 
         rhsSlot.load();
         emitInvokeStatic(Array.class, "getLength", Object.class);
-        emitPushConst(lhs.elems.length);
+        buildConst(lhs.elems.length);
         current.emitIEq();
         current.emitJumpIfFalse(failBlock);
 
         for (int i = 0; i < lhs.elems.length; i++) {
             rhsSlot.load();
-            emitPushConst(i);
+            buildConst(i);
             emitInvokeStatic(Array.class, "get", Object.class, int.class);
             if (lhs.elems[i] instanceof ELNode.IDENT ident)
                 buildStoreVariable(ident);
@@ -1556,7 +1549,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (node.expr instanceof ELNode.CLASS clsNode) {
                 Class<?> cls = resolveClassAtCompileTime(clsNode.name);
                 if (cls != null) {
-                    emitPushConst(K_NONE, cls);
+                    buildConst(cls);
                 } else {
                     buildTrampoline(node);
                     return;
@@ -1587,7 +1580,7 @@ public class IRBuilder extends ELNode.Visitor {
      */
     public void visit(ELNode.Composite node) {
         if (node.elems.length == 0) {
-            emitPushConst("");
+            buildConst("");
             return;
         }
         for (ELNode elem : node.elems)
@@ -1597,7 +1590,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     public void visit(ELNode.COMPOUND node) {
         if (node.exps.length == 0)
-            emitPushNull();
+            current.emitPushNull();
         for (int i = 0; i < node.exps.length - 1; i++) {
             build(node.exps[i]);
             current.emitPop();
@@ -1625,7 +1618,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(header);
 
         startBlock(exit);
-        emitPushNull();
+        current.emitPushNull();
 
         // Exit block falls through to next — add RETURN at toplevel by caller
         loopStack.pop();
@@ -1656,7 +1649,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(exit);
 
         startBlock(exit);
-        emitPushNull();
+        current.emitPushNull();
 
         loopStack.pop();
     }
@@ -1702,7 +1695,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(header);
 
         startBlock(exit);
-        emitPushNull();
+        current.emitPushNull();
         loopStack.pop();
     }
 
@@ -1733,7 +1726,7 @@ public class IRBuilder extends ELNode.Visitor {
                 end--;
             count = (end - begin) / step + 1;
             if (count <= 0) {
-                emitPushNull();
+                current.emitPushNull();
                 return;
             }
         }
@@ -1743,11 +1736,11 @@ public class IRBuilder extends ELNode.Visitor {
         Var varSlot = var.symbol != null ? new Var(var) : null;
         Var idxSlot = new Var(index);
 
-        emitPushConst(0L);
+        buildConst(0L);
         idxSlot.define();
         current.emitPop();
         if (varSlot != null) {
-            emitPushConst(begin);
+            buildConst(begin);
             varSlot.define();
             current.emitPop();
         }
@@ -1765,7 +1758,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (range.end != null) {
             startBlock(headerB);
             idxSlot.load();
-            emitPushConst(count);
+            buildConst(count);
             current.emitLLt();
             current.emitJumpIfTrue(bodyB);
             current.emitJump(exitB);
@@ -1782,14 +1775,14 @@ public class IRBuilder extends ELNode.Visitor {
         // Generate loop step.
         startBlock(contB);
         idxSlot.load();
-        emitPushConst(1L);
+        buildConst(1L);
         current.emitLAdd();
         idxSlot.store();
         current.emitPop();
 
         if (varSlot != null) {
             varSlot.load();
-            emitPushConst(step);
+            buildConst(step);
             current.emitLAdd();
             varSlot.store();
             current.emitPop();
@@ -1798,7 +1791,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Cleanup
         startBlock(exitB);
-        emitPushNull();
+        current.emitPushNull();
         loopStack.pop();
         release(varSlot);
         release(idxSlot);
@@ -1831,7 +1824,7 @@ public class IRBuilder extends ELNode.Visitor {
             countSlot = new Var();
             build(range.end);
             if (range.exclude) {
-                emitPushConst(1L);
+                buildConst(1L);
                 current.emitLSub();
             }
             varSlot.load();
@@ -1840,13 +1833,13 @@ public class IRBuilder extends ELNode.Visitor {
                 stepSlot.load();
                 current.emitLDiv();
             }
-            emitPushConst(1L);
+            buildConst(1L);
             current.emitLAdd();
             countSlot.store(); // count = (end - begin) / step + 1
             current.emitPop();
         }
 
-        emitPushConst(0L);
+        buildConst(0L);
         idxSlot.store();
 
         int bodyB = allocBlockId();
@@ -1878,7 +1871,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Generate loop step.
         startBlock(contB);
         idxSlot.load();
-        emitPushConst(1L);
+        buildConst(1L);
         current.emitLAdd();
         idxSlot.store();
         current.emitPop();
@@ -1887,7 +1880,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (stepSlot != null)
             stepSlot.load();
         else
-            emitPushConst(1L);
+            buildConst(1L);
         current.emitDynAdd();
         varSlot.store();
         current.emitPop();
@@ -1895,7 +1888,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Cleanup
         startBlock(exitB);
-        emitPushNull();
+        current.emitPushNull();
         loopStack.pop();
         release(varSlot);
         release(idxSlot);
@@ -1915,7 +1908,7 @@ public class IRBuilder extends ELNode.Visitor {
         Var idxSlot = null;
         if (node.index != null) {
             idxSlot = new Var(node.index);
-            emitPushConst(-1L);
+            buildConst(-1L);
             idxSlot.define();
             current.emitPop();
         }
@@ -1942,7 +1935,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (node.index != null) {
             idxSlot.load();
-            emitPushConst(1L);
+            buildConst(1L);
             current.emitIAdd();
             idxSlot.store();
             current.emitPop();
@@ -1955,7 +1948,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(header);
 
         startBlock(exit);
-        emitPushNull();
+        current.emitPushNull();
         loopStack.pop();
         release(varSlot);
         release(idxSlot);
@@ -2006,7 +1999,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.finalizer != null)
             compileAsClosure(node.finalizer);
         else
-            emitPushNull();
+            current.emitPushNull();
 
         current.emitTry(handlerCount);
     }
@@ -2202,7 +2195,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.deflt != null) {
             buildTail(node.deflt);
         } else {
-            emitPushConst("no pattern matched");
+            buildConst("no pattern matched");
             current.emitThrow();
         }
         current.emitJump(exitBlock);
@@ -2278,29 +2271,25 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.NUMBER n) {
-            int idx = putConstant(n.value);
-            current.emitPushConst(idx);
+            buildConst(n.value);
             current.emitDynEq();
             return true;
         }
 
         if (pat instanceof ELNode.STRINGVAL s) {
-            int idx = putConstant(s.value);
-            current.emitPushConst(idx);
+            buildConst(s.value);
             current.emitDynEq();
             return true;
         }
 
         if (pat instanceof ELNode.BOOLEANVAL b) {
-            int idx = putConstant(b.value);
-            current.emitPushConst(idx);
+            buildConst(b.value);
             current.emitDynEq();
             return true;
         }
 
         if (pat instanceof ELNode.CHARVAL c) {
-            int idx = putConstant(c.value);
-            current.emitPushConst(idx);
+            buildConst(c.value);
             current.emitDynEq();
             return true;
         }
@@ -2311,8 +2300,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.SYMBOL sym) {
-            int idx = putConstant(sym.value);
-            current.emitPushConst(idx);
+            buildConst(sym.value);
             current.emitIdEq();
             return true;
         }
@@ -2347,13 +2335,13 @@ public class IRBuilder extends ELNode.Visitor {
 
             argSlot.load();
             emitInvokeStatic(Array.class, "getLength", Object.class);
-            emitPushConst(t.elems.length);
+            buildConst(t.elems.length);
             current.emitIEq();
             current.emitJumpIfFalse(failBlock);
 
             for (int i = 0; i < t.elems.length; i++) {
                 argSlot.load();
-                emitPushConst(i);
+                buildConst(i);
                 emitInvokeStatic(Array.class, "get", Object.class, int.class);
                 if (!isSimplePattern(t.elems[i])) {
                     if (tmpSlot == null)
@@ -2420,7 +2408,7 @@ public class IRBuilder extends ELNode.Visitor {
             for (int i = 0; i < map.keys.length; i++) {
                 assert map.keys[i] instanceof ELNode.STRINGVAL;
                 argSlot.load();
-                emitPushConst(((ELNode.STRINGVAL)map.keys[i]).value);
+                buildConst(((ELNode.STRINGVAL)map.keys[i]).value);
                 emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
                                  Object.class, Object.class);
 
@@ -2479,7 +2467,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(exitBlock);
 
         startBlock(failBlock);
-        emitPushConst("pattern not match");
+        buildConst("pattern not match");
         current.emitThrow();
         current.emitJump(exitBlock);
 
@@ -2622,13 +2610,6 @@ public class IRBuilder extends ELNode.Visitor {
      */
     private void reserveSlots(int maxSlots) {
         maxLocals = nextTempSlot = maxSlots;
-    }
-
-    private int putConstant(Object value) {
-        return constIndex.computeIfAbsent(value, k -> {
-            constants.add(k);
-            return constants.size() - 1;
-        });
     }
 
     // ── Constant pool management ──
@@ -2798,6 +2779,13 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Convenience emits ──
 
+    private int putConstant(Object value) {
+        return constIndex.computeIfAbsent(value, k -> {
+            constants.add(k);
+            return constants.size() - 1;
+        });
+    }
+
     private void emitPushConst(int typeId, Object value) {
         int idx = putConstant(value);
         int kind = (typeId >= 0) ? K_PRIM : K_NONE;
@@ -2808,32 +2796,34 @@ public class IRBuilder extends ELNode.Visitor {
             current.emit2(PUSH_CONST, kind, idx >>> 16, idx & 0xFFFF);
     }
 
-    private void emitPushConst(int value) {
-        emitPushConst(T_INT, Integer.valueOf(value));
+    private void buildConst(Boolean value) {
+        if (value)
+            current.emitPushTrue();
+        else
+            current.emitPushFalse();
     }
 
-    private void emitPushConst(long value) {
-        emitPushConst(T_LONG, Long.valueOf(value));
+    private void buildConst(int value) {
+        emitPushConst(T_INT, value);
     }
 
-    private void emitPushConst(double value) {
-        emitPushConst(T_DOUBLE, Double.valueOf(value));
+    private void buildConst(long value) {
+        emitPushConst(T_LONG, value);
     }
 
-    private void emitPushConst(String value) {
+    private void buildConst(double value) {
+        emitPushConst(T_DOUBLE, value);
+    }
+
+    private void buildConst(String value) {
         emitPushConst(T_STRING, value);
     }
 
-    private void emitPushTrue() {
-        current.emitPushTrue();
-    }
-
-    private void emitPushFalse() {
-        current.emitPushFalse();
-    }
-
-    private void emitPushNull() {
-        current.emitPushNull();
+    private void buildConst(Object value) {
+        if (value == null)
+            current.emitPushNull();
+        else
+            emitPushConst(K_NONE, value);
     }
 
     private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {
