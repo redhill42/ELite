@@ -22,7 +22,6 @@ import java.util.*;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 import org.elite.types.TypeChecker;
-import org.elite.parser.Token;
 
 import javax.el.ELContext;
 
@@ -32,21 +31,6 @@ import javax.el.ELContext;
 public final class IRPrinter {
 
     private IRPrinter() {}
-
-    public static String dump(String source) {
-        ELNode node = Parser.parseExpression(source);
-        IRFunction fn = IRBuilder.compile(node);
-        return format(fn, source);
-    }
-
-    /** Dump symbol table for a program (first-pass analysis only, no IR emission). */
-    public static String dumpSymbolTable(ELContext elctx, String source) {
-        Parser parser = new Parser(source);
-        var program = parser.parse();
-        program.importExternal(elctx);
-        SymbolTable table = SymbolTableBuilder.build(program);
-        return table.dump();
-    }
 
     /** Dump full program IR (definitions + expressions + combined). */
     public static String dumpProgramIR(ELContext elctx, String source) {
@@ -90,10 +74,6 @@ public final class IRPrinter {
         IRFunction fn = IRBuilder.compile(program);
         sb.append(dumpBytecode(fn));
         return sb.toString();
-    }
-
-    private static String format(IRFunction fn, String source) {
-        return "; " + source + "\n" + formatIR(fn);
     }
 
     /** Dump JVM bytecode for an IRFunction (requires bytecode compiler). */
@@ -229,21 +209,5 @@ public final class IRPrinter {
         if (c instanceof Method m) return "<Method " + m.getName() + ">";
         if (c instanceof ELNode n) return "<" + n.getClass().getSimpleName() + ">";
         return c.getClass().getSimpleName();
-    }
-
-    private static String indent(String s, String prefix) {
-        return prefix + s.replace("\n", "\n" + prefix);
-    }
-
-    private static String nodeName(ELNode node) {
-        if (node == null) return "null";
-        return switch (node.op) {
-            case Token.DEFINE ->
-                "DEFINE " + ((ELNode.DEFINE) node).id;
-            case Token.LAMBDA -> "LAMBDA";
-            case Token.IDENT ->
-                "IDENT " + ((ELNode.IDENT) node).id;
-            default -> node.getClass().getSimpleName();
-        };
     }
 }

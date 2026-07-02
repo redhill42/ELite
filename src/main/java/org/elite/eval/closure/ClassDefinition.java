@@ -874,6 +874,10 @@ public class ClassDefinition extends AnnotatedClosure
         }
     }
 
+    public Object invoke(ELContext elctx, Object[] args) {
+        return invoke(elctx, ELEngine.getCallArgs(args));
+    }
+
     public int arity(ELContext elctx) {
         Closure proc = getClosure(elctx, "valueOf");
         if (proc != null) {

@@ -708,6 +708,10 @@ public final class ELEngine
         }
     }
 
+    public static Object newInstance(ELContext elctx, Class<?> cls, Object[] args) {
+        return newInstance(elctx, cls, getCallArgs(args));
+    }
+
     // Implementation -----------------------------------
 
     private static int distanceof(ELContext elctx, Closure arg, Class type) {

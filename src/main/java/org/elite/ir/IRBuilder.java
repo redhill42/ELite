@@ -24,6 +24,7 @@ import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.Runtime;
 import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.ClassDefinition;
 import org.elite.parser.*;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
@@ -191,6 +192,12 @@ public class IRBuilder extends ELNode.Visitor {
         buildNode(node);
     }
 
+    private int build(ELNode[] nodes) {
+        for (ELNode node : nodes)
+            build(node);
+        return nodes.length;
+    }
+
     // ── Literals ──
 
     public void visit(ELNode.NUMBER node) {
@@ -313,11 +320,8 @@ public class IRBuilder extends ELNode.Visitor {
                     // TCO: build args (never in tail position), emit INVOKE_TAIL
                     int argc = buildCallArgs((ELNode.LAMBDA)ident.symbol.node,
                                               node.args, node.keys);
-                    if (argc == -1) {
-                        for (ELNode e : node.args)
-                            build(e);
-                        argc = node.args.length;
-                    }
+                    if (argc == -1)
+                        argc = build(node.args);
                     current.emitInvokeTail(argc);
                     return;
                 }
@@ -326,20 +330,27 @@ public class IRBuilder extends ELNode.Visitor {
                     int funcIdx = putConstant(ident.symbol.func);
                     int argc = buildCallArgs((ELNode.LAMBDA)ident.symbol.node,
                                              node.args, node.keys);
-                    if (argc == -1) {
-                        for (ELNode e : node.args)
-                            build(e);
-                        argc = node.args.length;
-                    }
+                    if (argc == -1)
+                        argc = build(node.args);
                     current.emitInvokeDirect(funcIdx, argc);
                     return;
                 }
 
                 if (ident.symbol.node instanceof ELNode.CLASSDEF) {
-                    // FIXME: @data constructors have lazy fields (&tail) — AST must evaluate
-                    // the call to wrap deferred arguments in EvalClosure. IR eagerly
-                    // builds all arguments before INVOKE_DYN, causing infinite recursion.
-                    buildTrampoline(node);
+                    // The target is a CLASSDEF, so the defined object must be
+                    // a ClassDefinition, just invoke the "invoke" method
+                    // on target.
+
+                    // Fist, build ident node to generate PUSH_GLOBAL
+                    // or PUSH_VAR instruction.
+                    build(ident);
+
+                    // Then invoke the ClassDefinition.invoke method to create
+                    // new instance of user defined class.
+                    build(node.args);
+                    current.emitNewTuple(node.args.length);
+                    emitInvokeMethod(ClassDefinition.class, "invoke",
+                                     ELContext.class, Object[].class);
                     return;
                 }
             }
@@ -349,10 +360,9 @@ public class IRBuilder extends ELNode.Visitor {
                 if (tryBuildGlobalMethodCall(ident.id, node.args))
                     return;
 
-                // resolve target at runtime if the given id is not a local var
+                // Resolve target at runtime if the given id is not a local var
                 int nameIdx = putConstant(ident.id);
-                for (ELNode arg : node.args)
-                    build(arg);
+                build(node.args);
                 current.emitInvokeTarget(nameIdx, node.args.length);
                 return;
             }
@@ -368,8 +378,7 @@ public class IRBuilder extends ELNode.Visitor {
             // resolve method at runtime
             build(acc.right);
             build(acc.index);
-            for (ELNode arg : node.args)
-                build(arg);
+            build(node.args);
             current.emitInvokeDynMethod(node.args.length);
             return;
         }
@@ -380,18 +389,14 @@ public class IRBuilder extends ELNode.Visitor {
             // Inline lambda call.
             int funcIdx = putConstant(lam.symbol.func);
             int argc = buildCallArgs(lam, node.args, node.keys);
-            if (argc == -1) {
-                for (ELNode e : node.args)
-                    build(e);
-                argc = node.args.length;
-            }
+            if (argc == -1)
+                argc = build(node.args);
             current.emitInvokeDirect(funcIdx, argc);
             return;
         }
 
         // evaluate base and generate dynamic call
-        for (ELNode arg : node.args)
-            build(arg);
+        build(node.args);
         current.emitInvokeDyn(node.args.length);
     }
 
@@ -610,8 +615,7 @@ public class IRBuilder extends ELNode.Visitor {
             }
 
             case "list":
-                for (ELNode arg : args)
-                    build(arg);
+                build(args);
                 current.emitNil();
                 for (int i = 0; i < args.length; i++)
                     current.emitNewCons();
@@ -770,8 +774,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.TUPLE node) {
-        for (ELNode e : node.elems)
-            build(e);
+        build(node.elems);
         current.emitNewTuple(node.elems.length);
     }
 
@@ -1444,13 +1447,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     public void visit(ELNode.DEFINE node) {
         if (node.expr != null) {
-            // @data constructors (CLASSDEF) have lazy fields (&tail)
-            // that must be wrapped in EvalClosure by AST.
-            if (node.expr instanceof ELNode.CLASSDEF) {
-                buildTrampoline(node);
-                return;
-            }
-
             // All DEFINE nodes should carry a symbol annotation from the Phase 1
             // pre-pass.  If one is missing (e.g. dynamically generated node),
             // fall through to buildTrampoline.
@@ -1495,11 +1491,10 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.Composite node) {
         if (node.elems.length == 0) {
             buildConst("");
-            return;
+        } else {
+            build(node.elems);
+            current.emitCat(node.elems.length);
         }
-        for (ELNode elem : node.elems)
-            build(elem);
-        current.emitCat(node.elems.length);
     }
 
     public void visit(ELNode.COMPOUND node) {
@@ -2371,6 +2366,65 @@ public class IRBuilder extends ELNode.Visitor {
         argSlot.release();
     }
 
+    public void visit(ELNode.NEW node) {
+        // NEW can be used to create new instance of a Java class, a user defined elite
+        // class or a data class. First let me try Java class, then lookup symbol to see
+        // if the target is a CLASSDEF, then fallback to trampoline.
+
+        if (node.props != null || node.keys != null) {
+            // FIXME: we cannot handle properties and named arguments yet.
+            buildTrampoline(node);
+            return;
+        }
+
+        if (node.base.indexOf('.') != -1) {
+            // An explicit Java class, resolve at compile time.
+            Class<?> cls = resolveClassAtCompileTime(node.base);
+            if (cls == null)
+                throw new ParseException(currentFile, Position.line(node.pos),
+                    Position.column(node.pos), "class not found: " + node.base);
+
+            buildConst(cls);
+            build(node.args);
+            current.emitNewTuple(node.args.length);
+            emitInvokeStatic(ELEngine.class, "newInstance", ELContext.class,
+                             Class.class, Object[].class);
+            return;
+        }
+
+        SymbolTable.Symbol sym = currentScope.lookup(node.base);
+        if (sym != null && sym.node instanceof ELNode.CLASSDEF) {
+            // Load the ClassDefinition.
+            if (sym.captured) {
+                current.emitPushGlobal(putConstant(sym.mangledName));
+            } else {
+                current.emitPushVar(sym.slot);
+            }
+
+            // Invoke ClassDefinition.invoke with arguments.
+            build(node.args);
+            current.emitNewTuple(node.args.length);
+            emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class,
+                             Object[].class);
+            return;
+        }
+
+        // Resolve Java class again without package.
+        // FIXME: handle DataClass at compile time.
+        Class<?> cls = resolveClassAtCompileTime(node.base);
+        if (cls != null) {
+            buildConst(cls);
+            build(node.args);
+            current.emitNewTuple(node.args.length);
+            emitInvokeStatic(ELEngine.class, "newInstance", ELContext.class,
+                             Class.class, Object[].class);
+            return;
+        }
+
+        // Otherwise, fallback to trampoline.
+        buildTrampoline(node);
+    }
+
     // ── Trampoline ──
 
     public void visitNode(ELNode node) {
@@ -2815,7 +2869,7 @@ public class IRBuilder extends ELNode.Visitor {
             int typeId = b.typeIdFromNode(node);
             b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
         }
-        return finishIR(b.finish("<expr>"), 0, optimize, false);
+        return finishIR(b.finish("<expr>"), 0, optimize);
     }
 
     public static IRFunction compile(ELProgram program) {
@@ -2865,21 +2919,19 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
-        return finishIR(b.finish("<program>"), 0, optimize, false);
+        return finishIR(b.finish("<program>"), 0, optimize);
     }
 
     /**
      * Apply (or skip) optimization passes to a finished IR function.
      */
-    private static IRFunction finishIR(IRFunction fn, int paramCount,
-                                       boolean optimize, boolean isLambda) {
+    private static IRFunction finishIR(IRFunction fn, int paramCount, boolean optimize) {
         if (optimize) {
             fn = FOLDER.transform(fn);
             // FIXME: temporary disable type specializer until we finish IR
             //  interpreter completely.
             // fn = IRSpecializer.specialize(fn, new int[paramCount]);
-            if (isLambda)
-                fn = FOLDER.transform(fn);  // fold constants in specialized code
+            fn = FOLDER.transform(fn);  // fold constants in specialized code
         }
         return fn;
     }

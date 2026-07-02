@@ -8,7 +8,7 @@ public class SymbolTable {
 
     /** Information about a single symbol. */
     public static class Symbol {
-        public final Scope scope;
+        public final Scope scope;       // the scope of this symbol defined
         public final String name;       // symbol name from source
         public String mangledName;      // renamed if shadowed
         public int slot = -1;           // IR locals[] index
@@ -25,25 +25,11 @@ public class SymbolTable {
         public boolean isFunction() {
             return func != null;
         }
-
-        @Override
-        public String toString() {
-            StringBuilder sb = new StringBuilder();
-            sb.append(mangledName);
-            if (!mangledName.equals(name))
-                sb.append("(=").append(name).append(")");
-            sb.append(": slot ").append(slot);
-            if (captured)
-                sb.append(" captured");
-            if (isFunction())
-                sb.append(" fn");
-            return sb.toString();
-        }
     }
 
     /** A single scope layer holding name -> symbol mappings. */
     public static class Scope {
-        final Scope parent;   // chained to direct enclosing scope
+        final Scope parent; // chained to direct enclosing scope
         final String label; // for debugging
         final int depth;    // nesting depth (0 = root)
         final Map<String, Symbol> symbols = new LinkedHashMap<>();
@@ -110,42 +96,25 @@ public class SymbolTable {
             }
             return null;
         }
-
-        public Collection<Symbol> entries() {
-            return symbols.values();
-        }
-
-        public boolean isEmpty() {
-            return symbols.isEmpty();
-        }
-
-        @Override
-        public String toString() {
-            return "Scope[" + label + "]";
-        }
     }
 
     private Scope current = null;
-    private final List<Scope> allScopes = new ArrayList<>(); // for debugging
 
-    public Scope enterScope(String label, ELNode node) {
+    public void enterScope(String label, ELNode node) {
         boolean fresh = node instanceof ELNode.LAMBDA;
         int depth = current == null ? 0 : current.depth + 1;
         int startSlot = fresh || current == null ? 0 : current.nextSlot;
         current = new Scope(current, label, depth, fresh, startSlot);
-        allScopes.add(current);
         if (node != null)
             node.scope = current;
-        return current;
     }
 
-    public Scope leaveScope() {
+    public void leaveScope() {
         assert current != null;
         Scope parent = current.parent;
         if (parent != null && !current.fresh)
             parent.maxSlots = Math.max(parent.maxSlots, current.maxSlots);
         current = parent;
-        return parent;
     }
 
     public Scope currentScope() {
@@ -156,18 +125,16 @@ public class SymbolTable {
         assert current != null;
         Symbol sym = new Symbol(current, name);
 
-        // Allocate slot: increments this scope's counter.
-        // On leaveScope, the parent's counter is UNCHANGED, so sibling
-        // scopes reuse the same slot range.
-        sym.slot = current.nextSlot++;
-        current.maxSlots++;
-
         if (current.isTopLevel()) {
             // Always put top level defined variable in global context.
             sym.captured = true;
+        } else {
+            // Allocate local slot for nested scope.
+            sym.slot = current.nextSlot++;
+            current.maxSlots++;
         }
 
-        // Check if this name exists in any outer scope.
+        // Rename the variable if this name exists in any outer scope.
         if (current.lookupOuter(name) != null) {
             sym.mangledName = "*" + name + "$" + (++current.renameCounter) + "*";
         }
@@ -192,20 +159,5 @@ public class SymbolTable {
 
     public Symbol lookupOuter(String name) {
         return current.lookupOuter(name);
-    }
-
-    public String dump() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("=== Symbol Table (").append(allScopes.size()).append(" scopes) ===\n");
-        for (Scope s : allScopes) {
-            for (int i = 0; i < s.depth; i++) sb.append("  ");
-            sb.append("[").append(s.depth).append("] ").append(s.label);
-            sb.append("\n");
-            for (Symbol si : s.entries()) {
-                for (int i = 0; i <= s.depth; i++) sb.append("  ");
-                sb.append(si).append("\n");
-            }
-        }
-        return sb.toString();
     }
 }
