@@ -25,6 +25,7 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.Runtime;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.ClassDefinition;
+import org.elite.eval.closure.MethodClosure;
 import org.elite.parser.*;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
@@ -512,7 +513,51 @@ public class IRBuilder extends ELNode.Visitor {
         return buildMethodCall(method, null, args);
     }
 
+    private String getBaseClassName(ELNode base) {
+        if (base instanceof ELNode.IDENT var) {
+            if (var.symbol == null)
+                return var.id;
+            else if (var.symbol.node instanceof ELNode.DEFINE def &&
+                     def.expr instanceof ELNode.CLASS c)
+                return c.name;
+        } else if (base instanceof ELNode.ACCESS) {
+            StringBuilder sb = new StringBuilder();
+            while (base instanceof ELNode.ACCESS acc) {
+                if (acc.index instanceof ELNode.STRINGVAL s) {
+                    sb.insert(0, s.value);
+                    sb.insert(0, '.');
+                    base = acc.right;
+                } else {
+                    return null;
+                }
+            }
+            if (base instanceof ELNode.IDENT var && var.symbol == null) {
+                sb.insert(0, var.id);
+                return sb.toString();
+            }
+        }
+
+        return null;
+    }
+
     private boolean tryBuildDirectMethodCall(ELNode base, String name, ELNode[] args) {
+        String baseClassName = getBaseClassName(base);
+        if (baseClassName != null) {
+            Class<?> cls = resolveClassAtCompileTime(baseClassName);
+            if (cls != null) {
+                MethodClosure mc = MethodResolver.getInstance(elctx)
+                    .resolveStaticMethod(cls, name);
+                if (mc != null) {
+                    Method method = mc.getJavaMethod();
+                    if (method != null) {
+                        build(args);
+                        emitInvokeStatic(method);
+                        return true;
+                    }
+                }
+            }
+        }
+
         Class<?> baseClass = null;
         if (base.inferredType != null)
             baseClass = resolveJavaClass(base.inferredType);
@@ -2369,6 +2414,7 @@ public class IRBuilder extends ELNode.Visitor {
         // NEW can be used to create new instance of a Java class, a user defined elite
         // class or a data class. First let me try Java class, then lookup symbol to see
         // if the target is a CLASSDEF, then fallback to trampoline.
+        String className = node.getClassName();
 
         if (node.props != null || node.keys != null) {
             // FIXME: we cannot handle properties and named arguments yet.
@@ -2376,20 +2422,26 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        if (node.base instanceof ELNode.IDENT var && var.symbol != null &&
-            var.symbol.node instanceof ELNode.CLASSDEF) {
-            // Load the ClassDefinition.
-            build(node.base);
+        if (node.base instanceof ELNode.IDENT var && var.symbol != null) {
+            if (var.symbol.node instanceof ELNode.CLASSDEF) {
+                // Load the ClassDefinition.
+                build(node.base);
 
-            // Invoke ClassDefinition.invoke with arguments.
-            // FIXME: handle named arguments for constructor
-            build(node.args);
-            current.emitNewTuple(node.args.length);
-            emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class, Object[].class);
-            return;
+                // Invoke ClassDefinition.invoke with arguments.
+                // FIXME: handle named arguments for constructor
+                build(node.args);
+                current.emitNewTuple(node.args.length);
+                emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class, Object[].class);
+                return;
+            }
+
+            if (var.symbol.node instanceof ELNode.DEFINE def &&
+                def.expr instanceof ELNode.CLASS c && c.slots == null) {
+                className = c.name;
+            }
         }
 
-        Class<?> cls = resolveClassAtCompileTime(node.getClassName());
+        Class<?> cls = resolveClassAtCompileTime(className);
         if (cls != null) {
             buildConst(cls);
             build(node.args);
@@ -2767,14 +2819,19 @@ public class IRBuilder extends ELNode.Visitor {
     private void emitInvokeStatic(Class<?> c, String name, Class<?>... types) {
         try {
             Method method = c.getMethod(name, types);
-            int argc = types.length;
-            if (argc > 0 && types[0] == ELContext.class)
-                argc--;
-            int methodIdx = putConstant(method);
-            current.emitInvokeStatic(methodIdx, argc);
+            emitInvokeStatic(method);
         } catch (NoSuchMethodException e) {
             throw new AssertionError(e);
         }
+    }
+
+    private void emitInvokeStatic(Method method) {
+        Class<?>[] types = method.getParameterTypes();
+        int argc = types.length;
+        if (argc > 0 && types[0] == ELContext.class)
+            argc--;
+        int methodIdx = putConstant(method);
+        current.emitInvokeStatic(methodIdx, argc);
     }
 
     /**
