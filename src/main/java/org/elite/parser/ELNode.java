@@ -342,9 +342,6 @@ public abstract class ELNode implements Serializable
             public void visit(IDENT node) {
                 vm.resolveVariable(node.id);
             }
-            public void visit(NEW node) {
-                vm.resolveVariable(node.base);
-            }
         };
         accept(v);
     }
@@ -491,7 +488,7 @@ public abstract class ELNode implements Serializable
      */
     public static class LAMBDA extends ELNode {
         public final String    file;
-        public       String    name;
+        public final String    name;
         public final String    rtype;
         public final DEFINE[]  vars;
         public final boolean   varargs;
@@ -1055,8 +1052,8 @@ public abstract class ELNode implements Serializable
     /**
      * Identifier expression.
      */
-    public static class IDENT extends ELNode implements Pattern{
-        public String id;  // mutable for variable renaming pass
+    public static class IDENT extends ELNode implements Pattern {
+        public final String id;
 
         public IDENT(int pos, String id) {
             super(Token.IDENT, pos);
@@ -4855,7 +4852,7 @@ public abstract class ELNode implements Serializable
      * The catch expression.
      */
     public static class CATCH extends ELNode {
-        public String var;
+        public final String var;
         public final ELNode body;
 
         public CATCH(int pos, String var, ELNode body) {
@@ -5930,12 +5927,12 @@ public abstract class ELNode implements Serializable
      * New expression.
      */
     public static class NEW extends ELNode implements Pattern {
-        public final String base;
+        public final ELNode base;
         public final ELNode[] args;
         public final String[] keys;
         public final MAP props;
 
-        public NEW(int pos, String base, ELNode[] args, String[] keys, MAP props) {
+        public NEW(int pos, ELNode base, ELNode[] args, String[] keys, MAP props) {
             super(Token.NEW, pos);
             this.base = base;
             this.args = args;
@@ -5943,21 +5940,27 @@ public abstract class ELNode implements Serializable
             this.props = props;
         }
 
+        public String getClassName() {
+            if (base instanceof STRINGVAL)
+                return ((STRINGVAL)base).value;
+            else
+                return ((IDENT)base).id;
+        }
+
         public Object getValue(EvaluationContext context) {
             ELContext elctx = context.getELContext();
-            Object cls = ELEngine.resolveClass(context, base);
+            Object cls = ELEngine.resolveClass(context, getClassName());
             Closure[] argv = getCallArgs(context);
 
             Object obj;
             if (cls instanceof ClassDefinition) {
                 obj = ((ClassDefinition)cls)._new(elctx, argv);
             } else {
-                obj = ELEngine.newInstance(elctx, (Class)cls, argv);
+                obj = ELEngine.newInstance(elctx, (Class<?>)cls, argv);
             }
 
             if (obj != null && props != null) {
-                if (obj instanceof ClosureObject) {
-                    ClosureObject clo = (ClosureObject)obj;
+                if (obj instanceof ClosureObject clo) {
                     for (int i = 0; i < props.keys.length; i++) {
                         Object key = props.keys[i].getValue(context);
                         Object value = props.values[i].getValue(context);
@@ -5997,10 +6000,10 @@ public abstract class ELNode implements Serializable
             return extra;
         }
 
-        public Class getType(EvaluationContext context) {
-            Object cls = ELEngine.resolveClass(context, base);
+        public Class<?> getType(EvaluationContext context) {
+            Object cls = ELEngine.resolveClass(context, getClassName());
             if (cls instanceof Class) {
-                return (Class)cls;
+                return (Class<?>)cls;
             } else {
                 return ClosureObject.class;
             }
@@ -6008,10 +6011,10 @@ public abstract class ELNode implements Serializable
 
         public boolean matches(EvaluationContext context, Object value) {
             if (value instanceof Enum && args.length == 0) {
-                return base.equals(((Enum)value).name());
+                return getClassName().equals(((Enum<?>)value).name());
             }
 
-            Object cls = ELEngine.resolveDataClass(context, base);
+            Object cls = ELEngine.resolveDataClass(context, getClassName());
             if (cls instanceof ClassDefinition) {
                 if (value instanceof ClosureObject) {
                     return ((ClassDefinition)cls).matches(context, (ClosureObject)value, args, keys);

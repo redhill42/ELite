@@ -735,12 +735,12 @@ public class TypeInferrer {
 
     private Type inferNew(ELNode.NEW node) {
         // Check if it's a user-defined class registered in the environment
-        Type envType = env.get(node.base);
+        Type envType = env.get(node.getClassName());
         if (envType != null) return envType;
 
         // Try to resolve as a Java class
         try {
-            Class<?> cls = ELEngine.resolveJavaClass(elctx, node.base);
+            Class<?> cls = ELEngine.resolveJavaClass(elctx, node.getClassName());
             return new ClassType(cls);
         } catch (Exception e) {
             return Type.DYNAMIC;

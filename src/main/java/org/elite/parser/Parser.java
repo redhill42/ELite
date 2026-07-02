@@ -836,7 +836,9 @@ public class Parser extends Scanner
      * Parse a new expression.
      */
     private ELNode parseNewExpression(int p) {
-        String cls = parseClassLiteral(false);
+        String clsName = parseClassLiteral(false);
+        ELNode cls = clsName.indexOf('.') != -1 ? new ELNode.STRINGVAL(pos, clsName)
+                                                : new ELNode.IDENT(pos, clsName);
 
         if (token == LPAREN) {
             String[] keys;
@@ -891,7 +893,7 @@ public class Parser extends Scanner
                     body = tmp;
                 }
 
-                return new ELNode.NEWOBJ(p, filename, cls, clstag, body);
+                return new ELNode.NEWOBJ(p, filename, clsName, clstag, body);
             }
         }
 
@@ -903,7 +905,7 @@ public class Parser extends Scanner
                 scan();
                 init = parseArrayInitializer();
             }
-            return new ELNode.ARRAY(p, cls, dims, init);
+            return new ELNode.ARRAY(p, clsName, dims, init);
         }
 
         if (token != LBRACE) {
@@ -920,7 +922,7 @@ public class Parser extends Scanner
             String clstag = clstag();
             ELNode.DEFINE[] body = parseClassBody();
             close_scope();
-            return new ELNode.NEWOBJ(p, filename, cls, clstag, body);
+            return new ELNode.NEWOBJ(p, filename, clsName, clstag, body);
         }
     }
 
@@ -3699,7 +3701,8 @@ public class Parser extends Scanner
         }
 
         expect(RPAREN);
-        return new ELNode.NEW(p, id, to_a(args), (keys.isEmpty() ? null : to_sa(keys)), null);
+        return new ELNode.NEW(p, new ELNode.IDENT(p, id), to_a(args),
+                              (keys.isEmpty() ? null : to_sa(keys)), null);
     }
 
     /**

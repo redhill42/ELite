@@ -248,6 +248,7 @@ public class DefaultVisitor extends ELNode.Visitor
     }
 
     public void visit(ELNode.NEW e) {
+        scan(e.base);
         scan(e.args);
         scan(e.props);
     }

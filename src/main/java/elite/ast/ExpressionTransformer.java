@@ -62,7 +62,7 @@ final class ExpressionTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.NEW e) {
-        result = new NewExpression(e.base, transform(e.args));
+        result = new NewExpression(e.getClassName(), transform(e.args));
     }
 
     public void visit(ELNode.LAMBDA e) {

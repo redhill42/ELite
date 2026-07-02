@@ -1926,7 +1926,6 @@ public class IRBuilder extends ELNode.Visitor {
             func = new IRFunction("<lambda>", node.vars.length);
             node.symbol = new SymbolTable.Symbol(node.scope, "");
             node.symbol.func = func;
-            node.symbol.mangledName = "";
         }
 
         IRBuilder nested = new IRBuilder(this, func, node.scope);
@@ -2377,47 +2376,25 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        if (node.base.indexOf('.') != -1) {
-            // An explicit Java class, resolve at compile time.
-            Class<?> cls = resolveClassAtCompileTime(node.base);
-            if (cls == null)
-                throw new ParseException(currentFile, Position.line(node.pos),
-                    Position.column(node.pos), "class not found: " + node.base);
-
-            buildConst(cls);
-            build(node.args);
-            current.emitNewTuple(node.args.length);
-            emitInvokeStatic(ELEngine.class, "newInstance", ELContext.class,
-                             Class.class, Object[].class);
-            return;
-        }
-
-        SymbolTable.Symbol sym = currentScope.lookup(node.base);
-        if (sym != null && sym.node instanceof ELNode.CLASSDEF) {
+        if (node.base instanceof ELNode.IDENT var && var.symbol != null &&
+            var.symbol.node instanceof ELNode.CLASSDEF) {
             // Load the ClassDefinition.
-            if (sym.captured) {
-                current.emitPushGlobal(putConstant(sym.mangledName));
-            } else {
-                current.emitPushVar(sym.slot);
-            }
+            build(node.base);
 
             // Invoke ClassDefinition.invoke with arguments.
+            // FIXME: handle named arguments for constructor
             build(node.args);
             current.emitNewTuple(node.args.length);
-            emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class,
-                             Object[].class);
+            emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class, Object[].class);
             return;
         }
 
-        // Resolve Java class again without package.
-        // FIXME: handle DataClass at compile time.
-        Class<?> cls = resolveClassAtCompileTime(node.base);
+        Class<?> cls = resolveClassAtCompileTime(node.getClassName());
         if (cls != null) {
             buildConst(cls);
             build(node.args);
             current.emitNewTuple(node.args.length);
-            emitInvokeStatic(ELEngine.class, "newInstance", ELContext.class,
-                             Class.class, Object[].class);
+            emitInvokeStatic(ELEngine.class, "newInstance", ELContext.class, Class.class, Object[].class);
             return;
         }
 

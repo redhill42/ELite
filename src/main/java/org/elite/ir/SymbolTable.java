@@ -10,7 +10,6 @@ public class SymbolTable {
     public static class Symbol {
         public final Scope scope;       // the scope of this symbol defined
         public final String name;       // symbol name from source
-        public String mangledName;      // renamed if shadowed
         public int slot = -1;           // IR locals[] index
         public boolean captured;        // captured by an inner closure?
         public IRFunction func;         // known function: the compiled IRFunction
@@ -19,7 +18,6 @@ public class SymbolTable {
         Symbol(Scope scope, String name) {
             this.scope = scope;
             this.name = name;
-            this.mangledName = name;
         }
 
         public boolean isFunction() {
@@ -36,7 +34,6 @@ public class SymbolTable {
         boolean fresh;      // a fresh closure scope
         int nextSlot;       // currently allocated slots
         int maxSlots;       // max slot index used across this scope and all nested sub-scopes
-        int renameCounter;  // the counter used to generate mangled name
 
         Scope(Scope parent, String label, int depth, boolean fresh, int startSlot) {
             this.parent = parent;
@@ -132,11 +129,6 @@ public class SymbolTable {
             // Allocate local slot for nested scope.
             sym.slot = current.nextSlot++;
             current.maxSlots++;
-        }
-
-        // Rename the variable if this name exists in any outer scope.
-        if (current.lookupOuter(name) != null) {
-            sym.mangledName = "*" + name + "$" + (++current.renameCounter) + "*";
         }
 
         current.put(name, sym);

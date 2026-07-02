@@ -43,7 +43,9 @@ public class NewExpression extends Expression
         ELNode[] args = new ELNode[this.args.length];
         for (int i = 0; i < args.length; i++)
             args[i] = this.args[i].getNode(pos);
-        return new ELNode.NEW(pos, type, args, null, null);
+        ELNode base = type.indexOf('.') != -1 ? new ELNode.STRINGVAL(pos, type)
+                                              : new ELNode.IDENT(pos, type);
+        return new ELNode.NEW(pos, base, args, null, null);
     }
 
     public String toString() {
