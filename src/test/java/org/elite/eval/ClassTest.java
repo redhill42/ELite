@@ -83,10 +83,9 @@ class ClassTest extends EliteTestBase {
     // ---- Multi-methods (pattern-matched methods) ----
 
     @Test
-    @org.junit.jupiter.api.Disabled("Multi-methods with pattern-matching inside class not supported")
     void patternMatchedMethod() {
         exec("class TreeSet { " +
-             "  member(t, x) { | null, _ => false | _, _ => true } " +
+             "  member(t, x) { | null, _ => false; | _, _ => true } " +
              "}");
         exec("define ts = TreeSet()");
         assertNotNull(eval("ts"));

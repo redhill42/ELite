@@ -12,19 +12,16 @@ import org.elite.EliteTestBase;
 class ModuleTest extends EliteTestBase {
 
     @Test
-    @Disabled("Built-in modules may not be loadable in test environment")
     void requireSyntaxModule() {
         exec("require 'syntax'");
     }
 
     @Test
-    @Disabled("Built-in modules may not be loadable in test environment")
     void requireMathModule() {
         exec("require 'math'");
     }
 
     @Test
-    @Disabled("Built-in modules may not be loadable in test environment")
     void requireIOModule() {
         exec("require 'io'");
     }

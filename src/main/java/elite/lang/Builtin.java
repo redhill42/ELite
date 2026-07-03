@@ -42,6 +42,7 @@ import static elite.lang.annotation.ExpandoScope.*;
 import org.elite.eval.*;
 import org.elite.eval.closure.*;
 import org.elite.eval.seq.*;
+import org.elite.ir.IRClosure;
 import org.elite.resolver.MethodResolver;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
@@ -1519,6 +1520,54 @@ public final class Builtin
         }
 
         if (arg instanceof Iterable it) {
+            for (Object e : it) {
+                try {
+                    proc.call_with(elctx, e);
+                } catch (Control.Continue c) {
+                    continue;
+                } catch (Control.Break b) {
+                    break;
+                }
+            }
+            return null;
+        }
+
+        if (arg instanceof Object[] a) {
+            for (Object e : a) {
+                try {
+                    proc.call_with(elctx, e);
+                } catch (Control.Continue c) {
+                    continue;
+                } catch (Control.Break b) {
+                    break;
+                }
+            }
+            return null;
+        }
+
+        if (arg.getClass().isArray()) {
+            for (int i = 0, len = Array.getLength(arg); i < len; i++) {
+                try {
+                    proc.call_with(elctx, Array.get(arg, i));
+                } catch (Control.Continue c) {
+                    continue;
+                } catch (Control.Break b) {
+                    break;
+                }
+            }
+            return null;
+        }
+
+        return proc.call_with(elctx, arg);
+    }
+
+    @Expando(name="do")
+    public static Object __do(ELContext elctx, Object arg, IRClosure proc) {
+        if (arg == null) {
+            return null;
+        }
+
+        if (arg instanceof Iterable<?> it) {
             for (Object e : it) {
                 try {
                     proc.call_with(elctx, e);

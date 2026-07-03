@@ -35,19 +35,12 @@ class CoercionTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Conditional requires boolean; Integer→Boolean coercion not automatic")
     void integerAsBooleanInConditional() {
         assertEquals(1L, evalL("(1 != 0) ? 1 : 0"));
         assertEquals(0L, evalL("(0 != 0) ? 1 : 0"));
     }
 
     // ---- Null handling ----
-
-    @Test
-    @org.junit.jupiter.api.Disabled("null arithmetic throws NPE, not coerced to 0")
-    void nullArithmeticReturnsZero() {
-        assertEquals(0L, evalL("null + 10"));
-    }
 
     @Test
     void nullComparison() {

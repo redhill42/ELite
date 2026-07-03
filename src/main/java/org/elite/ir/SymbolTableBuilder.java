@@ -161,16 +161,16 @@ public final class SymbolTableBuilder {
 
         public void visit(ELNode.FOR e) {
             if (e.local) {
+                table.enterScope("for", e);
+                super.visit(e);
+                table.leaveScope();
+            } else {
                 scan(e.init);
                 scan(e.cond);
                 table.enterScope("for", e.body);
                 scan(e.body);
                 table.leaveScope();
                 scan(e.step);
-            } else {
-                table.enterScope("for", e);
-                super.visit(e);
-                table.leaveScope();
             }
         }
 
@@ -287,6 +287,8 @@ public final class SymbolTableBuilder {
                 if (sym != null && (sym.node instanceof ELNode.LAMBDA ||
                                     sym.node instanceof ELNode.CLASSDEF)) {
                     undef.var.symbol = sym;
+                    if (sym.scope.enclosingScope() != undef.scope.enclosingScope())
+                        sym.captured = true;
                 }
             }
         }

@@ -425,8 +425,8 @@ public class IREmitter {
 
     // ── Function ──
 
-    public IREmitter emitReturn(int primTypeId) {
-        return emit1(RETURN, K_PRIM, primTypeId);
+    public IREmitter emitReturn() {
+        return emit1(RETURN, K_PRIM, 0);
     }
 
     public IREmitter emitReturnVoid() {

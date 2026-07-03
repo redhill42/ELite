@@ -103,10 +103,8 @@ class LambdaClosureTest extends EliteTestBase {
     // ---- Variadic functions ----
 
     @Test
-    @org.junit.jupiter.api.Disabled("Variadic args and foldl not available in current build")
     void variadicFunctionSum() {
-        exec("define sum(args...) { define s = 0; for (a in args) { s = s + a }; s }");
-        assertEquals(10L, evalL("sum(1, 2, 3, 4)"));
+        assertEquals(10L, evalL("define sum(args...) { define s = 0; for (a in args) { s = s + a }; s }; sum(1, 2, 3, 4)"));
     }
 
     // ---- Named arguments ----

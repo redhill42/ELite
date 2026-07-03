@@ -21,7 +21,6 @@ import java.util.*;
 
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
-import org.elite.types.TypeChecker;
 
 import javax.el.ELContext;
 
@@ -37,10 +36,6 @@ public final class IRPrinter {
         Parser parser = new Parser(source);
         var program = parser.parse();
         program.importExternal(elctx);
-
-        // Run TypeChecker for type inference. Ignore errors.
-        TypeChecker checker = new TypeChecker(elctx, null);
-        checker.checkProgram(program.getDefinitions(), program.getExpressions());
 
         LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
         ArrayDeque<IRFunction> worklist = new ArrayDeque<>();

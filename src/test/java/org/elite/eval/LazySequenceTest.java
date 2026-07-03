@@ -42,10 +42,9 @@ class LazySequenceTest extends EliteTestBase {
     // ---- Map over lazy sequences ----
 
     @Test
-    @Disabled("map() requires Seq but delay (&) returns Procedure; lazy seq API may differ")
     void mapLazySequence() {
         exec("define from(n) => [n : &from(n+1)]");
-        exec("define doubles = map(\\x => x * 2, from(1))");
+        exec("define doubles = map(from(1), \\x => x * 2)");
         Object result = eval("doubles[0..3]");
         assertNotNull(result);
     }
@@ -53,10 +52,9 @@ class LazySequenceTest extends EliteTestBase {
     // ---- Filter lazy sequences ----
 
     @Test
-    @Disabled("filter() requires Seq but delay (&) returns Procedure; lazy seq API may differ")
     void filterLazySequence() {
         exec("define from(n) => [n : &from(n+1)]");
-        exec("define evens = filter(\\x => x % 2 == 0, from(1))");
+        exec("define evens = filter(from(1), \\x => x % 2 == 0)");
         Object result = eval("evens[0..3]");
         assertNotNull(result);
     }
@@ -64,9 +62,8 @@ class LazySequenceTest extends EliteTestBase {
     // ---- Fibonacci via lazy sequence ----
 
     @Test
-    @Disabled("Lazy fib sequence with complex self-referencing not fully supported")
     void lazyFibSequence() {
-        exec("define fibs = [1 : &[1 : &map2((+), fibs, fibs.tail)]]");
+        exec("define fibs = [1 : &[1 : &map2(fibs, fibs.tail, (+))]]");
         assertEquals(1L, evalL("fibs[0]"));
         assertEquals(1L, evalL("fibs[1]"));
         assertEquals(2L, evalL("fibs[2]"));
@@ -74,7 +71,7 @@ class LazySequenceTest extends EliteTestBase {
 
     // ---- Thunk/delay ----
 
-    @Test @Disabled("&expr lazy syntax removed; use \\=> expr instead")
+    @Test
     void delayThunk() {
         exec("define x = \\=> 1 + 2");
         Object result = eval("x");
@@ -82,10 +79,9 @@ class LazySequenceTest extends EliteTestBase {
     }
 
     @Test
-    @Disabled("force() method on delay thunk may use different API")
     void forceThunk() {
         exec("define x = &(10 * 3)");
-        assertEquals(30L, evalL("x.force()"));
+        assertEquals(30L, evalL("x()"));
     }
 
     // ---- Lazy evaluation prevents computation ----

@@ -20,13 +20,6 @@ class ControlFlowTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("if without parentheses ('if x > 0 => ...') not supported")
-    void ifWithoutParentheses() {
-        exec("define testIf(x) { if x > 0 => 1 else => -1 }");
-        assertEquals(1L, evalL("testIf(5)"));
-    }
-
-    @Test
     void ifWithBlockBody() {
         exec("define abs(x) { if (x >= 0) { x } else { -x } }");
         assertEquals(5L, evalL("abs(5)"));
@@ -67,9 +60,8 @@ class ControlFlowTest extends EliteTestBase {
     // ---- do/while loop ----
 
     @Test
-    @org.junit.jupiter.api.Disabled("do/while loop not supported in current build")
     void doWhileLoop() {
-        exec("define firstPositive() { define x = 0; do { x = x + 1 } while (x <= 0); x }");
+        exec("define firstPositive() { define x = 0; repeat { x = x + 1 } while (x <= 0); x }");
         assertEquals(1L, evalL("firstPositive()"));
     }
 
@@ -99,7 +91,6 @@ class ControlFlowTest extends EliteTestBase {
     // ---- Nested loops ----
 
     @Test
-    @org.junit.jupiter.api.Disabled("symbol table: nested for-loop slot collision")
     void nestedForLoops() {
         exec("define pairs(n) { define r = []; for (i in [1..n]) { for (j in [1..i]) { r = r ~ [i * j] } }; r.size() }");
         assertEquals(15L, evalL("pairs(5)"));

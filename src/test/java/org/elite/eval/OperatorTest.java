@@ -111,7 +111,6 @@ class OperatorTest extends EliteTestBase {
     // ---- Stream operator ----
 
     @Test
-    @org.junit.jupiter.api.Disabled("print via -> stream operator returns void, not the string")
     void streamOperator() {
         exec("\"hello, world\" -> print");
     }

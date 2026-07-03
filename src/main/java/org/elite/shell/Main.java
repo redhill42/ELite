@@ -27,7 +27,6 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
-import org.elite.ir.SymbolTable;
 import org.elite.ir.SymbolTableBuilder;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;

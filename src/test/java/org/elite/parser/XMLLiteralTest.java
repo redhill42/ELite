@@ -14,7 +14,6 @@ import org.elite.EliteTestBase;
 class XMLLiteralTest extends EliteTestBase {
 
     @Test
-    @Disabled("XML literal syntax requires grammar extension (require 'xml')")
     void xmlLiteralElement() {
         exec("require 'xml'");
         Object result = eval("<hello/>");
@@ -22,7 +21,6 @@ class XMLLiteralTest extends EliteTestBase {
     }
 
     @Test
-    @Disabled("XML literal syntax requires grammar extension (require 'xml')")
     void xmlLiteralWithContent() {
         exec("require 'xml'");
         Object result = eval("<greeting>Hello, World!</greeting>");
@@ -30,17 +28,9 @@ class XMLLiteralTest extends EliteTestBase {
     }
 
     @Test
-    @Disabled("XML literal syntax requires grammar extension (require 'xml')")
     void xmlLiteralWithAttributes() {
         exec("require 'xml'");
         Object result = eval("<person name=\"Alice\" age=\"30\"/>");
         assertNotNull(result);
-    }
-
-    @Test
-    @Disabled("XmlDocument not registered as a global function; XML support requires grammar extension")
-    void xmlVirtualNodeExists() {
-        Object node = eval("XmlDocument(\"<root/>\")");
-        assertNotNull(node);
     }
 }

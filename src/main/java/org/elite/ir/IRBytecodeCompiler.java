@@ -56,6 +56,7 @@ public class IRBytecodeCompiler {
     private static final String ELCTX_DESC = "Ljavax/el/ELContext;";
     private static final String LOCALS_DESC = "[Ljava/lang/Object;";
     private static final String EXECUTE_DESC = "(" + ELCTX_DESC + LOCALS_DESC + ")Ljava/lang/Object;";
+
     /** Slot for ELContext (first parameter of generated execute). */
     private static final int S_CTX = 0;
     /** Slot for locals array. */
@@ -66,12 +67,8 @@ public class IRBytecodeCompiler {
     private final IRFunction fn;
     private final ClassWriter cw;
     private final MethodVisitor mv;
-    private final String className;
     private final String internalName;
     private final Label[] blockLabels;
-    private final String methodDescriptor;
-    private final int[] argTypeIds;      // param types for typed mode, null for Object[] mode
-    private boolean typedMode;
 
     // Shared class loader so compiled callees are visible to callers.
     // TODO: In long-running applications, compiled classes accumulate in this
@@ -87,73 +84,25 @@ public class IRBytecodeCompiler {
     }
 
     public static CompiledFunction compile(IRFunction fn) {
-        return compileWithTypes(fn, null);
-    }
-
-    /** Compile with typed params. argTypes[i] = T_INT/T_LONG/T_DOUBLE or -1 for Object. */
-    public static CompiledFunction compileWithTypes(IRFunction fn, int[] argTypes) {
         String name = "ELiteCompiled$" + CLASS_COUNTER.incrementAndGet();
-        String desc = typeDescriptor(argTypes);
         // Register IRFunction constant pool so CLOSURE bytecode can look up via funcIdx
         Runtime.setFuncPool(fn.constantPool());
-        byte[] bc = new IRBytecodeCompiler(fn, name, desc, argTypes).compileBytecode();
+        byte[] bc = new IRBytecodeCompiler(fn, name).compileBytecode();
         try {
             Class<?> c = LOADER.define(name, bc);
-            String methodDesc = desc != null ? desc : EXECUTE_DESC;
             java.lang.reflect.Method m = c.getMethod("execute",
-                desc != null ? typeParamClasses(argTypes) : new Class[]{javax.el.ELContext.class, Object[].class});
-            return new CompiledFunction(m, bc, name, argTypes, fn.maxLocalCount(),
+                javax.el.ELContext.class, Object[].class);
+            return new CompiledFunction(m, bc, name, fn.maxLocalCount(),
                 fn.defaultValues());
         } catch (Exception e) {
             throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
         }
     }
 
-    private static boolean allKnown(int[] types) {
-        if (types == null) return false;
-        for (int t : types) if (t < 0) return false;
-        return true;
-    }
-
-    /** Build JVM type descriptor from arg types, e.g. "(II)Ljava/lang/Object;". */
-    static String typeDescriptor(int[] argTypes) {
-        if (argTypes == null || !allKnown(argTypes)) return null;
-        StringBuilder sb = new StringBuilder("(Ljavax/el/ELContext;"); // ELContext first
-        for (int t : argTypes) {
-            sb.append(switch (t) {
-                case IRFormat.T_INT, IRFormat.T_BOOL -> "I";
-                case IRFormat.T_LONG -> "J";
-                case IRFormat.T_DOUBLE -> "D";
-                default -> "Ljava/lang/Object;";
-            });
-        }
-        sb.append(")Ljava/lang/Object;");
-        return sb.toString();
-    }
-
-    private static Class<?>[] typeParamClasses(int[] argTypes) {
-        if (argTypes == null) return new Class[]{javax.el.ELContext.class, Object[].class};
-        Class<?>[] cs = new Class[argTypes.length + 1];
-        cs[0] = javax.el.ELContext.class;
-        for (int i = 0; i < argTypes.length; i++) {
-            cs[i + 1] = switch (argTypes[i]) {
-                case IRFormat.T_INT, IRFormat.T_BOOL -> int.class;
-                case IRFormat.T_LONG -> long.class;
-                case IRFormat.T_DOUBLE -> double.class;
-                default -> Object.class;
-            };
-        }
-        return cs;
-    }
-
-    private IRBytecodeCompiler(IRFunction fn, String className, String desc, int[] argTypes) {
+    private IRBytecodeCompiler(IRFunction fn, String className) {
         this.fn = fn;
-        this.className = className;
         this.internalName = className.replace('.', '/');
         this.blockLabels = new Label[fn.blockCount()];
-        this.methodDescriptor = desc;
-        this.argTypeIds = argTypes;
-        this.typedMode = desc != null;
 
         cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         cw.visit(61, 1 | 0x20, internalName, null, "java/lang/Object", null);
@@ -166,52 +115,7 @@ public class IRBytecodeCompiler {
         cm.visitMaxs(1, 1);
         cm.visitEnd();
 
-        String methodDesc = desc != null ? desc : EXECUTE_DESC;
-        mv = cw.visitMethod(1 | 8, "execute", methodDesc, null, null);
-        // In typed mode: box params into Object[] locals array at entry
-        if (typedMode && argTypeIds != null) {
-            // Compute total JVM slots used by params (slot 0 = ELContext)
-            int totalSlots = 1; // ELContext in slot 0
-            for (int t : argTypeIds) totalSlots += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
-            int arrSlot = totalSlots; // put locals array after all params + ELContext
-            // Create Object[maxLocals] — use maxLocalCount so there is room
-            // for default parameter values beyond the explicitly passed args.
-            int maxLoc = Math.max(argTypeIds.length, fn.maxLocalCount());
-            emitIntConst(maxLoc);
-            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-            mv.visitVarInsn(A_ASTORE, arrSlot); // locals array in safe slot
-            // Box each param into locals[i]
-            int jvmSlot = 1; // start after ELContext
-            for (int i = 0; i < argTypeIds.length; i++) {
-                mv.visitVarInsn(A_ALOAD, arrSlot); // locals array
-                emitIntConst(i);
-                int t = argTypeIds[i];
-                switch (t) {
-                    case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(21, jvmSlot);
-                    case IRFormat.T_LONG -> mv.visitVarInsn(22, jvmSlot);
-                    case IRFormat.T_DOUBLE -> mv.visitVarInsn(24, jvmSlot);
-                    default -> mv.visitVarInsn(A_ALOAD, jvmSlot);
-                }
-                switch (t) {
-                    case IRFormat.T_INT -> mv.visitMethodInsn(A_INVOKESTATIC,
-                        "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                    case IRFormat.T_LONG -> mv.visitMethodInsn(A_INVOKESTATIC,
-                        "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-                    case IRFormat.T_DOUBLE -> mv.visitMethodInsn(A_INVOKESTATIC,
-                        "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-                }
-                mv.visitInsn(A_AASTORE);
-                jvmSlot += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
-            }
-            // Now the body uses Object[]-based access (slot arrSlot has the locals array)
-            // PUSH_VAR/STORE_VAR are already compiled to use ALOAD 0 → AALOAD pattern
-            // which loads from locals array at slot 0. We need to remap slot 0 → arrSlot.
-            // Copy array to slot 0 for body's Object[]-based PUSH_VAR/STORE_VAR
-            mv.visitVarInsn(A_ALOAD, arrSlot);
-            mv.visitVarInsn(A_ASTORE, S_LOCALS);
-            // Body uses Object[] access, not typed access
-            this.typedMode = false;
-        }
+        mv = cw.visitMethod(1 | 8, "execute", EXECUTE_DESC, null, null);
     }
 
     private byte[] compileBytecode() {
@@ -296,28 +200,18 @@ public class IRBytecodeCompiler {
             case IDNE -> emitIdCmp(A_IF_ACMPNE);
 
             case PUSH_VAR -> {
-                if (typedMode && v.varIndex() < argTypeIds.length) {
-                    emitTypedLoad(v.varIndex());
-                } else {
-                    mv.visitVarInsn(A_ALOAD, S_LOCALS);
-                    emitIntConst(v.varIndex());
-                    mv.visitInsn(A_AALOAD);
-                }
+                mv.visitVarInsn(A_ALOAD, S_LOCALS);
+                emitIntConst(v.varIndex());
+                mv.visitInsn(A_AALOAD);
             }
             case STORE_VAR -> {
                 int varIdx = pl & 0xFFFF;
                 mv.visitInsn(A_DUP);
-                if (typedMode && varIdx < argTypeIds.length) {
-                    int t = argTypeIds[varIdx];
-                    // Store typed value AND keep on stack (assignment returns value)
-                    emitTypedStore(varIdx, t);
-                } else {
-                    mv.visitVarInsn(A_ALOAD, S_LOCALS);
-                    mv.visitInsn(A_SWAP);
-                    emitIntConst(varIdx);
-                    mv.visitInsn(A_SWAP);
-                    mv.visitInsn(A_AASTORE);
-                }
+                mv.visitVarInsn(A_ALOAD, S_LOCALS);
+                mv.visitInsn(A_SWAP);
+                emitIntConst(varIdx);
+                mv.visitInsn(A_SWAP);
+                mv.visitInsn(A_AASTORE);
             }
             case DUP -> mv.visitInsn(A_DUP);
             case POP -> mv.visitInsn(A_POP);
@@ -369,14 +263,9 @@ public class IRBytecodeCompiler {
                 int argc = oc == 0 ? 0 : v.operand(0);
                 IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
                 // Self-recursive in typed mode → direct typed call
-                if (typedMode && target == fn && argc > 0 && allKnown(argTypeIds)) {
-                    CompiledFunction calleeCf = compileOrGet(target, argTypeIds);
-                    emitPackArgsAndCall(argc, true, calleeCf);
-                } else {
-                    // General case: register funcId, call invokeDirect at runtime
-                    int funcId = registerOrGetId(target);
-                    emitPackArgsAndCall(argc, true, funcId);
-                }
+                // General case: register funcId, call invokeDirect at runtime
+                int funcId = registerOrGetId(target);
+                emitPackArgsAndCall(argc, true, funcId);
             }
             case INVOKE_DYN -> {
                 int argc = pl; // emitInvokeDyn stores argCount in payload
@@ -491,7 +380,7 @@ public class IRBytecodeCompiler {
                     "(Ljavax/el/ELContext;I[Ljava/lang/Object;)Lorg/elite/ir/IRClosure;", false);
             }
 
-            case INVOKE_METHOD -> {
+            case INVOKE_METHOD, INVOKE_STATIC -> {
                 java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.constPoolIndex()];
                 int argc = v.opCount() > 0 ? v.operand(0) : 0;
                 emitDirectMethod(m, argc);
@@ -507,24 +396,10 @@ public class IRBytecodeCompiler {
             // After AST eval, sync globals back to locals so PUSH_VAR sees updates.
             case TRAMPOLINE -> {
                 int poolIdx = v.constPoolIndex();
-                Object nodeObj = fn.constantPool()[poolIdx];
-                if (nodeObj instanceof TryDescriptor) {
-                    // TODO: Call emitTryCatch(td) to generate native JVM exception
-                    // tables instead of falling back to AST evaluation. The
-                    // emitTryCatch method (below) is implemented and correct, but
-                    // not yet activated because it needs dedicated try/catch/finally
-                    // bytecode integration tests. Once activated, remove the
-                    // trampolineTry call and the Runtime.trampolineTry helper.
-                    mv.visitVarInsn(A_ALOAD, S_CTX);
-                    mv.visitLdcInsn(poolIdx);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
-                        "trampolineTry", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
-                } else {
-                    mv.visitVarInsn(A_ALOAD, S_CTX);
-                    mv.visitLdcInsn(poolIdx);
-                    mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
-                        "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
-                }
+                mv.visitVarInsn(A_ALOAD, S_CTX);
+                mv.visitLdcInsn(poolIdx);
+                mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
+                    "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
             }
             case GUARD_TYPE -> {
                 int typeId = v.payload() & 0xFF;
@@ -648,15 +523,8 @@ public class IRBytecodeCompiler {
     }
 
     private CompiledFunction compileOrGet(IRFunction target, int[] argTypes) {
-        if (argTypes != null && allKnown(argTypes)) {
-            return calleeCache.computeIfAbsent(target, fn -> {
-                IRFunction specialized = IRSpecializer.specialize(fn, argTypes);
-                return compileWithTypes(specialized, argTypes);
-            });
-        }
         return calleeCache.computeIfAbsent(target, fn -> {
-            IRFunction specialized = IRSpecializer.specialize(fn, new int[fn.paramCount()]);
-            return compile(specialized);
+            return compile(target);
         });
     }
 
@@ -706,44 +574,10 @@ public class IRBytecodeCompiler {
             }
         }
         if (direct && cf != null) {
-            String desc = cf.methodDescriptor();
-            if (desc != null && cf.argTypes() != null && argc > 0) {
-                // Typed call with ELContext: push ctx, unbox args, store to temps, reload in order
-                mv.visitVarInsn(A_ALOAD, S_CTX);   // ELContext is first typed param
-                int[] types = cf.argTypes();
-                int[] slots = new int[argc];
-                int nextSlot = S_TMP + 2; // after ctx + locals
-                // Step 1: pop args in reverse, unbox, store to temp slots
-                for (int i = argc - 1; i >= 0; i--) {
-                    int t = types[i];
-                    slots[i] = nextSlot;
-                    compileUnbox(t);
-                    switch (t) {
-                        case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(54 /* ISTORE */, nextSlot);
-                        case IRFormat.T_LONG -> mv.visitVarInsn(55 /* LSTORE */, nextSlot);
-                        case IRFormat.T_DOUBLE -> mv.visitVarInsn(57 /* DSTORE */, nextSlot);
-                        default -> mv.visitVarInsn(A_ASTORE, nextSlot);
-                    }
-                    nextSlot += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
-                }
-                // Step 2: reload args in forward order
-                for (int i = 0; i < argc; i++) {
-                    int t = types[i];
-                    switch (t) {
-                        case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(21 /* ILOAD */, slots[i]);
-                        case IRFormat.T_LONG -> mv.visitVarInsn(22 /* LLOAD */, slots[i]);
-                        case IRFormat.T_DOUBLE -> mv.visitVarInsn(24 /* DLOAD */, slots[i]);
-                        default -> mv.visitVarInsn(A_ALOAD, slots[i]);
-                    }
-                }
-                // Step 3: call typed method (desc already includes ELContext prefix)
-                mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute", desc, false);
-            } else {
-                // Generic Object[] call with ELContext
-                mv.visitVarInsn(A_ALOAD, S_CTX);
-                mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute",
-                    "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
-            }
+            // Generic Object[] call with ELContext
+            mv.visitVarInsn(A_ALOAD, S_CTX);
+            mv.visitMethodInsn(A_INVOKESTATIC, cf.internalName(), "execute",
+                "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
         } else if (direct) {
             // No compiled function — invokeDyn with ELContext from slot 0
             // Stack: [target, argsArray]. Need [ctx, target, argsArray].
@@ -791,29 +625,10 @@ public class IRBytecodeCompiler {
         // Check cache first
         CompiledFunction cf = compiledCache.get().get(fn);
         if (cf == null) {
-            int[] argTypes = inferTypes(args);
-            IRFunction specialized = args.length > 0 ? IRSpecializer.specialize(fn, argTypes) : fn;
-            cf = compile(specialized);  // generic Object[] version
+            cf = compile(fn);  // generic Object[] version
             compiledCache.get().put(fn, cf);
         }
         return cf.execute(elctx, args);
-    }
-
-    private static int[] inferTypes(Object[] args) {
-        int[] types = new int[args.length];
-        for (int i = 0; i < args.length; i++) {
-            types[i] = typeOf(args[i]);
-        }
-        return types;
-    }
-
-    private static int typeOf(Object v) {
-        if (v instanceof Integer || v instanceof Short || v instanceof Byte) return IRFormat.T_INT;
-        if (v instanceof Long) return IRFormat.T_LONG;
-        if (v instanceof Double || v instanceof Float) return IRFormat.T_DOUBLE;
-        if (v instanceof Boolean) return IRFormat.T_BOOL;
-        if (v instanceof String) return IRFormat.T_STRING;
-        return -1;
     }
 
     // ── Simple call helpers (1-2 args popped from stack) ──
@@ -921,10 +736,16 @@ public class IRBytecodeCompiler {
             mv.visitTypeInsn(A_CHECKCAST, owner);
         }
 
+        int j = 0;
+        if (paramTypes.length > 0 && paramTypes[0] == javax.el.ELContext.class) {
+            mv.visitVarInsn(A_ALOAD, S_CTX);
+            j++;
+        }
+
         // Load args in order, narrow/unbox each
-        for (int i = 0; i < argc; i++) {
+        for (int i = 0; i < argc; i++, j++) {
             mv.visitVarInsn(A_ALOAD, S_TMP + i);
-            emitUnboxIfPrimitive(paramTypes[i]);
+            emitUnboxIfPrimitive(paramTypes[j]);
         }
 
         int invokeOp = isStatic ? A_INVOKESTATIC
@@ -984,7 +805,7 @@ public class IRBytecodeCompiler {
         } else if (type == char.class) {
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Character");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
-        } else {
+        } else if (type != Object.class) {
             // Reference type — just checkcast
             mv.visitTypeInsn(A_CHECKCAST, Type.getInternalName(type));
         }
@@ -1062,18 +883,6 @@ public class IRBytecodeCompiler {
         }
     }
 
-    /** Emit typed load from local var slot. */
-    private void emitTypedLoad(int varIdx) {
-        int t = argTypeIds[varIdx];
-        int slot = typedSlot(varIdx);
-        switch (t) {
-            case IRFormat.T_INT, IRFormat.T_BOOL -> mv.visitVarInsn(21 /* ILOAD */, slot);
-            case IRFormat.T_LONG -> mv.visitVarInsn(22 /* LLOAD */, slot);
-            case IRFormat.T_DOUBLE -> mv.visitVarInsn(24 /* DLOAD */, slot);
-            default -> mv.visitVarInsn(A_ALOAD, slot);
-        }
-    }
-
     /** Emit typed store to local var slot. */
     private void emitTypedStore(int varIdx, int t) {
         int slot = typedSlot(varIdx);
@@ -1091,18 +900,9 @@ public class IRBytecodeCompiler {
     private int typedSlot(int varIdx) {
         int slot = 1; // offset for ELContext in slot 0
         for (int i = 0; i < varIdx; i++) {
-            int t = argTypeIds[i];
-            slot += (t == IRFormat.T_LONG || t == IRFormat.T_DOUBLE) ? 2 : 1;
+            slot += 1;
         }
         return slot;
-    }
-
-    private void emitDynCall(String method, int argCount) {
-        String desc = argCount == 2
-            ? "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
-            : "(Ljava/lang/Object;)Ljava/lang/Object;";
-        mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
-            method, desc, false);
     }
 
     private void emitDynBinOp(String method) {
@@ -1115,101 +915,6 @@ public class IRBytecodeCompiler {
         String desc = "(Ljavax/el/ELContext;Ljava/lang/Object;)Ljava/lang/Object;";
         mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
             method, desc, false);
-    }
-
-    /**
-     * Generate JVM exception table bytecode from a TryDescriptor.
-     *
-     * TODO: Activate by calling this from the TRAMPOLINE handler
-     * (compileInst, case TRAMPOLINE) instead of trampolineTry.
-     * Requires dedicated try/catch/finally bytecode integration tests.
-     * Once activated, Runtime.trampolineTry can be removed.
-     */
-    private void emitTryCatch(TryDescriptor td) {
-        // Compile each sub-function to bytecode
-        CompiledFunction tryCF = compile(td.tryBody);
-        CompiledFunction[] catchCFs = new CompiledFunction[td.catchBodies.length];
-        for (int i = 0; i < catchCFs.length; i++) {
-            catchCFs[i] = compile(td.catchBodies[i]);
-        }
-        CompiledFunction finallyCF = td.finallyBlock != null
-            ? compile(td.finallyBlock) : null;
-
-        // Resolve catch types
-        String[] catchTypes = new String[td.catchTypes.length];
-        for (int i = 0; i < catchTypes.length; i++) {
-            if (td.catchTypes[i] != null) {
-                catchTypes[i] = td.catchTypes[i].replace('.', '/');
-            }
-        }
-
-        // Labels
-        Label tryStart = new Label();
-        Label tryEnd = new Label();
-        Label finallyStart = new Label();
-        Label[] handlerStarts = new Label[catchCFs.length];
-        for (int i = 0; i < handlerStarts.length; i++) handlerStarts[i] = new Label();
-
-        // --- Try body ---
-        mv.visitLabel(tryStart);
-        mv.visitVarInsn(A_ALOAD, S_CTX);  // ELContext for execute()
-        mv.visitInsn(A_ACONST_NULL);       // locals array = null
-        mv.visitMethodInsn(A_INVOKESTATIC, tryCF.internalName(), "execute",
-            "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
-        mv.visitInsn(A_POP);  // discard result
-        mv.visitLabel(tryEnd);
-
-        // --- Go to finally if no exception ---
-        if (finallyCF != null) {
-            mv.visitJumpInsn(A_GOTO, finallyStart);
-        } else {
-            mv.visitInsn(A_ACONST_NULL);
-            mv.visitInsn(A_ARETURN);
-        }
-
-        // --- Catch handlers ---
-        for (int i = 0; i < catchCFs.length; i++) {
-            mv.visitLabel(handlerStarts[i]);
-            // Exception is on JVM stack. Save it.
-            int exSlot = S_TMP + 2;
-            mv.visitVarInsn(A_ASTORE, exSlot);
-            // Call handler CF with exception as locals[0]
-            mv.visitVarInsn(A_ALOAD, S_CTX);    // ELContext
-            mv.visitInsn(A_ICONST_1);
-            mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-            mv.visitInsn(A_DUP);
-            mv.visitInsn(A_ICONST_0);
-            mv.visitVarInsn(A_ALOAD, exSlot);    // exception
-            mv.visitInsn(A_AASTORE);              // locals[0] = exception
-            mv.visitMethodInsn(A_INVOKESTATIC, catchCFs[i].internalName(), "execute",
-                "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
-            mv.visitInsn(A_POP);
-            if (finallyCF != null) {
-                mv.visitJumpInsn(A_GOTO, finallyStart);
-            } else {
-                mv.visitInsn(A_ACONST_NULL);
-                mv.visitInsn(A_ARETURN);
-            }
-        }
-
-        // --- Finally ---
-        if (finallyCF != null) {
-            mv.visitLabel(finallyStart);
-            mv.visitVarInsn(A_ALOAD, S_CTX);
-            mv.visitInsn(A_ACONST_NULL);
-            mv.visitMethodInsn(A_INVOKESTATIC, finallyCF.internalName(), "execute",
-                "(Ljavax/el/ELContext;[Ljava/lang/Object;)Ljava/lang/Object;", false);
-            mv.visitInsn(A_POP);  // discard finally result
-            mv.visitInsn(A_ACONST_NULL);
-            mv.visitInsn(A_ARETURN);
-        }
-
-        // --- Exception table ---
-        for (int i = 0; i < catchCFs.length; i++) {
-            String catchType = catchTypes[i];
-            if (catchType == null) catchType = "java/lang/Exception";
-            mv.visitTryCatchBlock(tryStart, tryEnd, handlerStarts[i], catchType);
-        }
     }
 
     private void emitPush(InstructionView v) {
@@ -1252,14 +957,13 @@ public class IRBytecodeCompiler {
         private final java.lang.reflect.Method method;
         private final byte[] bytecode;
         private final String className;
-        private final int[] argTypes;
         private final int maxLocals;
         private final Object[] defaultValues;
 
         CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className,
-                         int[] argTypes, int maxLocals, Object[] defaultValues) {
+                         int maxLocals, Object[] defaultValues) {
             this.method = m; this.className = className; this.bytecode = bc;
-            this.argTypes = argTypes; this.maxLocals = maxLocals;
+            this.maxLocals = maxLocals;
             this.defaultValues = defaultValues;
         }
 
@@ -1294,8 +998,6 @@ public class IRBytecodeCompiler {
 
         /** Internal name for invokestatic bytecode. */
         public String internalName() { return className.replace('.', '/'); }
-        public String methodDescriptor() { return typeDescriptor(argTypes); }
-        public int[] argTypes() { return argTypes; }
 
         /** Return a human-readable disassembly of the generated bytecode. */
         public String bytecodeAsString() {

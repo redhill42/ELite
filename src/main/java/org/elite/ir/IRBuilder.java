@@ -32,16 +32,10 @@ import org.elite.eval.closure.MethodClosure;
 import org.elite.parser.*;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
-import org.elite.types.ClassType;
-import org.elite.types.PrimitiveType;
-import org.elite.types.Type;
-import org.elite.util.BeanUtils;
 
 import javax.el.ELContext;
-import java.beans.IntrospectionException;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.*;
 
@@ -250,58 +244,11 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.ACCESS node) {
-        // For simple string keys, use native LOAD_PROPERTY
-        if (node.index instanceof ELNode.STRINGVAL) {
-            // Try to resolve field/getter access at compile time for known
-            // Java types
-            String fieldName = ((ELNode.STRINGVAL)node.index).value;
-            org.elite.types.Type baseType = node.right != null ?
-                            node.right.inferredType :
-                            null;
-            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
-
-            if (javaClass != null) {
-                try {
-                    Method getter = BeanUtils.getReadMethod(javaClass, fieldName);
-                    if (getter != null) {
-                        build(node.right); // push base
-                        int methodIdx = putConstant(getter);
-                        current.emit2(INVOKE_GETTER, K_FN, methodIdx, 0);
-                        return;
-                    }
-                } catch (IntrospectionException ex) { /* fallthrough */ }
-
-                // Check for public field (fallback)
-                try {
-                    Field field = javaClass.getField(fieldName);
-                    if (Modifier.isPublic(field.getModifiers())) {
-                        build(node.right); // base
-                        int nameIdx = putConstant(fieldName);
-                        current.emitLoadField(nameIdx);
-                        return;
-                    }
-                } catch (NoSuchFieldException e) { /* fall through */ }
-            }
-        }
-
         // Neither getter nor field — fall back to ELResolver
         // (could be a method reference, static member, or nested class)
         build(node.right);   // base object
         build(node.index);   // key
         current.emitLoadProperty();
-    }
-
-    /**
-     * Resolve a Type to a concrete Java Class, or null if unknown.
-     */
-    private static Class<?> resolveJavaClass(Type type) {
-        if (type instanceof ClassType ct) {
-            return ct.javaClass;
-        }
-        if (type instanceof PrimitiveType pt) {
-            return pt.javaClass;
-        }
-        return null;
     }
 
     // ── Identifiers ──
@@ -561,12 +508,7 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
-        Class<?> baseClass = null;
-        if (base.inferredType != null)
-            baseClass = resolveJavaClass(base.inferredType);
-        if (baseClass == null)
-            baseClass = Object.class;
-
+        Class<?> baseClass = Object.class;
         var mc = MethodResolver.getInstance(elctx).resolveMethod(baseClass, name);
         if (mc == null)
             return false;
@@ -602,7 +544,8 @@ public class IRBuilder extends ELNode.Visitor {
         if (buildBuiltin(method, base, args))
             return true;
 
-        build(base);
+        if (base != null)
+            build(base);
 
         // Build fixed arguments.
         int i = 0;
@@ -620,6 +563,8 @@ public class IRBuilder extends ELNode.Visitor {
         int methodIdx = putConstant(method);
         if (expando)
             current.emitInvokeExpando(methodIdx, args.length);
+        else if (base == null)
+            current.emitInvokeStatic(methodIdx, args.length);
         else
             current.emitInvokeMethod(methodIdx, args.length);
         return true;
@@ -988,13 +933,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     public void visit(ELNode.NEG node)    {
         build(node.right);
-        int t = typeIdFromNode(node.right);
-        switch (t) {
-        case T_INT -> current.emitINeg();
-        case T_LONG -> current.emitLNeg();
-        case T_DOUBLE -> current.emitDNeg();
-        default -> current.emitDynNeg();
-        }
+        current.emitDynNeg();
     }
 
     public void visit(ELNode.POS node)    { /* nop */ }
@@ -1004,74 +943,7 @@ public class IRBuilder extends ELNode.Visitor {
     private void buildBinaryOp(ELNode.Binary node) {
         build(node.left);
         build(node.right);
-
-        int l = typeIdFromNode(node.left), r = typeIdFromNode(node.right);
-        if (l >= 0 && r >= 0 && !isNonNumericClassType(node.left) &&
-            !isNonNumericClassType(node.right))
-            emitTypedBinOp(node.op, widerType(l, r));
-        else
-            emitDynBinOp(node.op);
-    }
-
-    private static boolean isNonNumericClassType(ELNode node) {
-        if (node == null || node.inferredType == null)
-            return false;
-        return node.inferredType instanceof ClassType ct &&
-               !Number.class.isAssignableFrom(ct.javaClass) &&
-               !String.class.isAssignableFrom(ct.javaClass);
-    }
-
-    private void emitTypedBinOp(int op, int t) {
-        int opcode = -1;
-
-        if (t == T_INT) {
-            opcode = switch (op) {
-                case Token.ADD -> IADD;
-                case Token.SUB -> ISUB;
-                case Token.MUL -> IMUL;
-                case Token.REM -> IREM;
-                case Token.EQ -> IEQ;
-                case Token.NE -> INE;
-                case Token.LT -> ILT;
-                case Token.LE -> ILE;
-                case Token.GT -> IGT;
-                case Token.GE -> IGE;
-                default -> -1;
-            };
-        } else if (t == T_LONG) {
-            opcode = switch (op) {
-                case Token.ADD -> LADD;
-                case Token.SUB -> LSUB;
-                case Token.MUL -> LMUL;
-                case Token.REM -> LREM;
-                case Token.EQ -> LEQ;
-                case Token.NE -> LNE;
-                case Token.LT -> LLT;
-                case Token.LE -> LLE;
-                case Token.GT -> LGT;
-                case Token.GE -> LGE;
-                default -> -1;
-            };
-        } else if (t == T_DOUBLE) {
-            opcode = switch (op) {
-                case Token.ADD -> DADD;
-                case Token.SUB -> DSUB;
-                case Token.MUL -> DMUL;
-                case Token.EQ -> DEQ;
-                case Token.NE -> DNE;
-                case Token.LT -> DLT;
-                case Token.LE -> DLE;
-                case Token.GT -> DGT;
-                case Token.GE -> DGE;
-                default -> -1;
-            };
-        }
-
-        if (opcode != -1) {
-            current.emit1(opcode, K_PRIM, t);
-        } else {
-            emitDynBinOp(op);
-        }
+        emitDynBinOp(node.op);
     }
 
     private void emitDynBinOp(int op) {
@@ -1350,38 +1222,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private void buildStoreProperty(ELNode.ACCESS access) {
-        if (access.index instanceof ELNode.STRINGVAL) {
-            // obj.prop = value — try direct field store for known Java types
-            String fieldName = ((ELNode.STRINGVAL)access.index).value;
-            Type baseType =
-                access.right != null ? access.right.inferredType : null;
-            java.lang.Class<?> javaClass = resolveJavaClass(baseType);
-            if (javaClass != null) {
-                // Check for JavaBean setter: setXxx(type) (primary Java
-                // interface)
-                try {
-                    var setter = BeanUtils.getWriteMethod(javaClass, fieldName);
-                    if (setter != null) {
-                        build(access.right); // base below value: [value, base]
-                        int methodIdx = putConstant(setter);
-                        current.emit2(INVOKE_SETTER, K_FN, methodIdx, 0);
-                        return;
-                    }
-                } catch (IntrospectionException ex) { /* fallthrough */ }
-
-                // Check for public field (fallback)
-                try {
-                    Field field = javaClass.getField(fieldName);
-                    if (Modifier.isPublic(field.getModifiers())) {
-                        build(access.right); // base below value: [value, base]
-                        int nameIdx = putConstant(fieldName);
-                        current.emitStoreField(nameIdx);
-                        return;
-                    }
-                } catch (NoSuchFieldException e) { /* fall through */ }
-            }
-        }
-
         build(access.right);
         build(access.index);
         current.emitStoreProperty();
@@ -1920,8 +1760,7 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.RETURN node) {
         if (node.right != null) {
             build(node.right);
-            int t = typeIdFromNode(node.right);
-            current.emitReturn(t >= 0 ? t : T_INT);
+            current.emitReturn();
         } else
             current.emitReturnVoid();
     }
@@ -1997,8 +1836,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         nested.buildTail(node.body);
         if (!endsWithReturn(nested)) {
-            int t = nested.typeIdFromNode(node.body);
-            nested.current.emitReturn(t >= 0 ? t : T_INT);
+            nested.current.emitReturn();
         }
 
         IRFunction rawFn = nested.finish(
@@ -2776,60 +2614,6 @@ public class IRBuilder extends ELNode.Visitor {
         maxLocals = nextTempSlot = maxSlots;
     }
 
-    // ── Constant pool management ──
-
-    private int typeIdFromNode(ELNode node) {
-        if (node == null)
-            return -1;
-        if (node.inferredType != null)
-            return typeIdFromEliteType(node.inferredType);
-        return switch (node.op) {
-            case Token.NUMBER -> {
-                Number n = ((ELNode.NUMBER)node).value;
-                if (n instanceof Integer || n instanceof Short || n instanceof Byte)
-                    yield T_INT;
-                if (n instanceof Long) {
-                    long v = n.longValue();
-                    yield (v >= Integer.MIN_VALUE && v <= Integer.MAX_VALUE)
-                          ? T_INT : T_LONG;
-                }
-                if (n instanceof Double || n instanceof Float)
-                    yield T_DOUBLE;
-                yield -1;
-            }
-            case Token.STRINGVAL, Token.LITERAL -> T_STRING;
-            case Token.CHARVAL -> T_CHAR;
-            case Token.TRUE, Token.FALSE -> T_BOOL;
-            default -> -1;
-        };
-    }
-
-    private static int typeIdFromEliteType(Type t) {
-        if (t == Type.INTEGER)
-            return T_INT;
-        if (t == Type.LONG)
-            return T_LONG;
-        if (t == Type.DOUBLE)
-            return T_DOUBLE;
-        if (t == Type.FLOAT)
-            return T_DOUBLE;
-        if (t == Type.BOOLEAN)
-            return T_BOOL;
-        if (t == Type.STRING)
-            return T_STRING;
-        if (t == Type.CHAR)
-            return T_CHAR;
-        return -1;
-    }
-
-    private static int widerType(int a, int b) {
-        if (a == T_DOUBLE || b == T_DOUBLE)
-            return T_DOUBLE;
-        if (a == T_LONG || b == T_LONG)
-            return T_LONG;
-        return a >= 0 ? a : (b >= 0 ? b : T_INT);
-    }
-
     // ── Finalization ──
     static boolean endsWithReturn(IRBuilder b) {
         if (b.current != null && !b.current.isEmpty()) {
@@ -3066,8 +2850,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Static API ──
 
-    private static final ConstantFolder FOLDER = new ConstantFolder();
-
     public static IRFunction compile(ELNode node) {
         return compile(ELEngine.createELContext(), node, true);
     }
@@ -3079,10 +2861,9 @@ public class IRBuilder extends ELNode.Visitor {
         IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
         b.build(node);
         if (!endsWithReturn(b)) {
-            int typeId = b.typeIdFromNode(node);
-            b.current.emitReturn(typeId >= 0 ? typeId : T_INT);
+            b.current.emitReturn();
         }
-        return finishIR(b.finish("<expr>"), 0, optimize);
+        return b.finish("<expr>");
     }
 
     public static IRFunction compile(ELProgram program) {
@@ -3127,25 +2908,10 @@ public class IRBuilder extends ELNode.Visitor {
             if (last == null) {
                 b.current.emitReturnVoid();
             } else {
-                int t = b.typeIdFromNode(last);
-                b.current.emitReturn(t >= 0 ? t : T_INT);
+                b.current.emitReturn();
             }
         }
 
-        return finishIR(b.finish("<program>"), 0, optimize);
-    }
-
-    /**
-     * Apply (or skip) optimization passes to a finished IR function.
-     */
-    private static IRFunction finishIR(IRFunction fn, int paramCount, boolean optimize) {
-        if (optimize) {
-            fn = FOLDER.transform(fn);
-            // FIXME: temporary disable type specializer until we finish IR
-            //  interpreter completely.
-            // fn = IRSpecializer.specialize(fn, new int[paramCount]);
-            fn = FOLDER.transform(fn);  // fold constants in specialized code
-        }
-        return fn;
+        return b.finish("<program>");
     }
 }

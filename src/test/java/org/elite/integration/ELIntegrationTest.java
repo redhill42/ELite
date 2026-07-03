@@ -357,22 +357,6 @@ class ELIntegrationTest extends EliteTestBase {
         assertTrue(result instanceof java.util.Date);
     }
 
-    // ---- Type checker errors ----
-
-    @Test
-    @Disabled("temporarily disable type checking")
-    void undefinedTypeAnnotationThrowsError() {
-        ScriptEngine eng = freshEngine();
-        assertEvalThrows(eng, "define x::NonExistentType = 42");
-    }
-
-    @Test
-    @Disabled("temporarily disable type checking")
-    void undefinedParamTypeThrowsError() {
-        ScriptEngine eng = freshEngine();
-        assertEvalThrows(eng, "define add(a::Unknown, b::Integer)::Integer => a + b");
-    }
-
     @Test
     void validParamTypesPass() throws ScriptException {
         ScriptEngine eng = freshEngine();
@@ -384,12 +368,6 @@ class ELIntegrationTest extends EliteTestBase {
     void argTypeMismatchCrossEval() {
         ScriptEngine eng = freshEngine();
         assertEvalThrows(eng, "define add(a::Integer, b::Integer)::Integer => a + b; print(add(\"1\", 2))");
-    }
-
-    @Test
-    void returnTypeMismatchThrowsError() {
-        ScriptEngine eng = freshEngine();
-        assertEvalThrows(eng, "define hello()::Integer => \"hello, world\"");
     }
 
     // ---- Hello World styles ----

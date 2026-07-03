@@ -73,9 +73,6 @@ public abstract class ELNode implements Serializable
     public final int op;
     public final int pos;
 
-    /** Inferred type populated by the type checker (null if not yet inferred). */
-    public transient org.elite.types.Type inferredType;
-
     /**
      * The {@link org.elite.ir.SymbolTable.Symbol} for this node,
      * set by {@code SymbolTableBuilder} during the analysis pass.

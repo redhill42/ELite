@@ -700,7 +700,6 @@ class ScopeCaptureTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("symbol table: tuple temp var slot collision")
     void tupleAssignInFunctionWithCapturedVar() {
         exec("define foo() {"
            + "  define a = 0; define b = 0;"
@@ -777,17 +776,16 @@ class ScopeCaptureTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Parser extracts defines inside blocks as top-level defs")
     void functionDefinedInIfBlockVisibleInsideBlock() {
         exec("define result = 0");
         exec("if (true) {"
-           + "  define double(x) => x * 2;"
-           + "  result = double(5)"
+           + "  define twice(x) => x * 2;"
+           + "  result = twice(5)"
            + "}");
         assertEquals(10L, evalL("result"));
         // double must not leak
         assertThrows(javax.script.ScriptException.class,
-            () -> engine.eval("double(5)"));
+            () -> engine.eval("twice(5)"));
     }
 
     @Test
@@ -804,7 +802,7 @@ class ScopeCaptureTest extends EliteTestBase {
             () -> engine.eval("triple(3)"));
     }
 
-    @Test @org.junit.jupiter.api.Disabled("function define in for block: slot reservation interaction")
+    @Test
     void functionDefinedInForBlockDoesNotLeak() {
         exec("define result = 0");
         exec("for (j in [1..1]) {"

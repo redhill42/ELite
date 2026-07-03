@@ -1099,30 +1099,9 @@ public class IRInterpreter {
                 Object obj = constantPool[poolIdx];
                 // TryDescriptor wraps pre-compiled IR blocks; evaluate
                 // the original TRY node
-                if (obj instanceof TryDescriptor td) {
-                    obj = td.tryNode;
-                }
                 ELNode node = (ELNode)obj;
                 Object result = node.getValue(evalContext);
                 push(result);
-                ip += 1 + oc;
-                break;
-            }
-
-            // ============ Type guard ============
-            case GUARD_TYPE: {
-                int typeId = IRFormat.payload(code[ip]);
-                int deoptBlockId = oc > 0 ? code[ip + 1] : 0;
-                Object val = peek();
-                if (!checkType(val, typeId)) {
-                    if (deoptBlockId == Opcode.STRICT_GUARD) {
-                        String expected = IRFormat.primTypeName(typeId);
-                        String actual = val == null ? "null" : val.getClass().getName();
-                        throw new RuntimeException(_T(IR_TYPE_MISMATCH, expected, actual));
-                    }
-                    ip = blockOffsets[deoptBlockId];
-                    break;
-                }
                 ip += 1 + oc;
                 break;
             }

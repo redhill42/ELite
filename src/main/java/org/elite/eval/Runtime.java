@@ -29,7 +29,6 @@ import org.elite.eval.seq.Cons;
 import org.elite.ir.IRClosure;
 import org.elite.ir.IRFormat;
 import org.elite.ir.IRFunction;
-import org.elite.ir.TryDescriptor;
 import org.elite.parser.ELNode;
 import org.elite.parser.Token;
 import org.elite.resolver.MethodResolver;
@@ -91,15 +90,6 @@ public final class Runtime {
     /** Evaluate a trampoline node by pool index (for bytecode — LDC can't embed ELNode). */
     public static Object trampolineById(ELContext c, int poolIdx) {
         return trampoline(c, funcPool.get()[poolIdx]);
-    }
-
-    /** Evaluate a TRY node via AST (using TryDescriptor's original TRY node). */
-    public static Object trampolineTry(ELContext c, int poolIdx) {
-        Object obj = funcPool.get()[poolIdx];
-        if (obj instanceof TryDescriptor td) {
-            return trampoline(c, td.tryNode);
-        }
-        return trampoline(c, obj);
     }
 
     /**

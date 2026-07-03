@@ -15,7 +15,7 @@ define celsius_fahrenheit_converter() {
         fahrenheit.text = "${1.8*c+32} Fahrenheit";
     });
 
-    JFrame.new().do {
+    (new JFrame).do {
 	title = 'Celsius Converter'
 	layout = new GridLayout(2,2,3,3)
 	defaultCloseOperation = JFrame.EXIT_ON_CLOSE

@@ -40,9 +40,8 @@ class PatternMatchingTest extends EliteTestBase {
     }
 
     @Test
-    @Disabled("Guard syntax 'define f(x) if cond => ...' not fully supported")
     void patternMatchedWithGuard() {
-        exec("define sign(x) if x > 0 => 1 | sign(x) if x < 0 => -1 | sign(_) => 0");
+        exec("define sign(x) { | if x > 0 => 1; | if x < 0 => -1; | _ => 0 }");
         assertEquals(1L, evalL("sign(10)"));
         assertEquals(-1L, evalL("sign(-5)"));
         assertEquals(0L, evalL("sign(0)"));
@@ -79,7 +78,6 @@ class PatternMatchingTest extends EliteTestBase {
     // ---- Expression-based match (case keyword) ----
 
     @Test
-    @Disabled("case (expr) { | pat => body } syntax requires specific statement separators")
     void caseExpressionLiteral() {
         exec("define describe(x) { case (x) { | 0 => \"zero\" } }");
         assertEquals("zero", eval("describe(0)"));
@@ -88,17 +86,15 @@ class PatternMatchingTest extends EliteTestBase {
     // ---- Pattern matching with types ----
 
     @Test
-    @Disabled("Type-ascribed patterns (n::Integer) in match may use different syntax")
     void matchWithTypeAnnotation() {
-        exec("define isInt(x) { case (x) { | n::Integer => true | _ => false } }");
+        exec("define isInt(x) { case (x) { | n::Integer => true; | _ => false } }");
         assertEquals(true, eval("isInt(42)"));
         assertEquals(false, eval("isInt(\"hello\")"));
     }
 
     @Test
-    @Disabled("Record destructuring in patterns not fully supported")
     void matchWithRecordPattern() {
-        exec("define getAge({name, age}) => age");
+        exec("define getAge({name:name, age:age}) => age");
         assertEquals(30L, evalL("getAge({name: \"Alice\", age: 30})"));
     }
 }

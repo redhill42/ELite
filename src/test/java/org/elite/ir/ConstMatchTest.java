@@ -109,8 +109,4 @@ public class ConstMatchTest extends EliteTestBase {
         assertEquals(0L, evalL("describe([])"));
         assertEquals(10L, evalL("describe([10, 20])"));
     }
-
-    // ── OR pattern (pending compileOrPattern fix) ──
-    // @Test @Disabled("compileOrPattern has stack underflow bug")
-    // void matchOrPattern() { ... }
 }

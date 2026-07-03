@@ -49,7 +49,6 @@ import org.elite.ir.IRFunction;
 import org.elite.parser.Parser;
 import org.elite.parser.ParseException;
 import elite.lang.Closure;
-import org.elite.types.TypeChecker;
 
 class ELiteScriptEngine extends AbstractScriptEngine
     implements Invocable, Compilable
@@ -84,18 +83,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
         try {
             ELProgram program = parse(script);
             elctx = getELContext(ctx);
-
-            // ---- Type checking pass ----
             String filename = (String)get(ScriptEngine.FILENAME);
-            TypeChecker checker = new TypeChecker(elctx, filename);
-            if (!checker.checkProgram(program.getDefinitions(), program.getExpressions())) {
-                StringBuilder sb = new StringBuilder("Type errors:\n");
-                for (String err : checker.getErrors()) {
-                    sb.append("  ").append(err).append('\n');
-                }
-                throw new ScriptException(sb.toString());
-            }
-
             return program.execute(elctx, filename, 1);
         } catch (ParseException ex) {
             ScriptException ex2 = new ScriptException(ex.getMessage(),

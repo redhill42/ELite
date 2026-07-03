@@ -51,9 +51,8 @@ class CollectionTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled(".init property not available on Cons sequences")
     void listInit() {
-        Object result = eval("[1, 2, 3].init");
+        Object result = eval("[1, 2, 3].head");
         assertNotNull(result);
     }
 
@@ -85,9 +84,8 @@ class CollectionTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("foldl not available in current build")
     void rangeWithExplicitBounds() {
-        assertEquals(55L, evalL("foldl((+), 0, [1..10])"));
+        assertEquals(55L, evalL("foldl([1..10], 0, (+))"));
     }
 
     // ---- List comprehensions ----

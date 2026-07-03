@@ -16,7 +16,7 @@ class IRCoreTest {
         out.emitPushConst(42)
            .emitPushConst(58)
            .emitIAdd()
-           .emitReturn(IRFormat.T_INT);
+           .emitReturn();
 
         int[] code = out.toArray();
         assertEquals(4, code.length, "should be 4 words: 2x PUSH_CONST(1w each) + IADD(1w) + RETURN(1w)");
@@ -47,7 +47,7 @@ class IRCoreTest {
         out.emitPushTrue()
            .emitJumpIfFalse(99)
            .emitPushConst(1)
-           .emitReturn(IRFormat.T_INT);
+           .emitReturn();
 
         int[] code = out.toArray();
 
@@ -72,7 +72,7 @@ class IRCoreTest {
         out.emitPushVar(0)
            .emitPushVar(1)
            .emitDynAdd()
-           .emitReturn(IRFormat.T_INT);
+           .emitReturn();
 
         int[] code = out.toArray();
 

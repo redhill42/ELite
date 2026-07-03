@@ -16,14 +16,12 @@ class GrammarDSLTest extends EliteTestBase {
     // ---- Operator declarations ----
 
     @Test
-    @Disabled("@infix/@prefix operator declarations not fully supported")
     void infixOperatorDeclaration() {
-        exec("@infix(7) '%%' = MOD");
+        exec("@infix(7) '%%' = (%)");
         // If supported, should parse without errors
     }
 
     @Test
-    @Disabled("@infix/@prefix operator declarations not fully supported")
     void prefixOperatorDeclaration() {
         exec("@prefix '!!'");
     }
@@ -31,14 +29,12 @@ class GrammarDSLTest extends EliteTestBase {
     // ---- Grammar extension ----
 
     @Test
-    @Disabled("grammar extension not fully supported in current build")
     void simpleGrammarRule() {
         exec("grammar { goal : 'hello' -> print(\"Hello from grammar\") }");
         // If supported, should parse and evaluate without errors
     }
 
     @Test
-    @Disabled("grammar extension not fully supported in current build")
     void grammarWithCaptures() {
         exec("grammar { goal : 'greet' #name -> print(\"Hello, \" ~ name) }");
     }
