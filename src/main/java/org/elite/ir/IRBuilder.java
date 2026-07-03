@@ -17,14 +17,17 @@
 package org.elite.ir;
 
 import elite.lang.Builtin;
+import elite.lang.Closure;
 import elite.lang.MathLib;
 import elite.lang.Seq;
+import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.Runtime;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.ClassDefinition;
+import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.parser.*;
 import org.elite.resolver.ClassResolver;
@@ -2013,28 +2016,6 @@ public class IRBuilder extends ELNode.Visitor {
      * to fall back to trampoline.
      */
     public void visit(ELNode.MATCH node) {
-        if (hasUnsupportedMatchPattern(node))
-            buildTrampoline(node);
-        else
-            buildMatch(node);
-    }
-
-    private boolean hasUnsupportedMatchPattern(ELNode.MATCH node) {
-        final boolean[] unsupported = {false};
-        ELNode.Visitor v = new DefaultVisitor() {
-            public void visit(ELNode.NEW e)   { unsupported[0] = true; }
-        };
-        for (ELNode.CASE c : node.alts) {
-            for (ELNode.Pattern p : c.patterns) {
-                ((ELNode)p).accept(v);
-                if (unsupported[0])
-                    return true;
-            }
-        }
-        return false;
-    }
-
-    private void buildMatch(ELNode.MATCH node) {
         // Evaluate all args, store in temp locals except it's already a local var.
         int nargs = node.args.length;
         Var[] argSlots = new Var[nargs];
@@ -2075,38 +2056,53 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emit1(ENTER_SCOPE, K_NONE, 0);
 
             // Compile patterns for each column
+            boolean alwaysFail = false;
             if (c.patterns != null) {
-                for (int pi = 0; pi < c.patterns.length; pi++) {
-                    argSlots[pi].load();
-                    if (compileMatchPattern(argSlots[pi], (ELNode)c.patterns[pi], failBlock))
-                        current.emitJumpIfFalse(failBlock);
+                for (ELNode.Pattern p : c.patterns) {
+                    if (checkForAlwaysFail((ELNode)p)) {
+                        alwaysFail = true;
+                        break;
+                    }
                 }
             }
 
-            if (c.guards == null) {
-                // no guards, evaluate the single body
-                assert c.bodies != null && c.bodies.length == 1;
-                buildTail(c.bodies[0]);
-                current.emitJump(exitBlock);
+            if (alwaysFail) {
+                // Completely skip this case
+                current.emitJump(failBlock);
             } else {
-                // Evaluate each guard and body
-                assert c.bodies.length == c.guards.length;
-                for (int i = 0; i < c.guards.length; i++) {
-                    int nextGuard = -1;
-                    if (c.guards[i] != null) {
-                        if (i != c.guards.length - 1) {
-                            nextGuard = allocBlockId();
-                            build(c.guards[i]);
-                            current.emitJumpIfFalse(nextGuard);
-                        } else {
-                            build(c.guards[i]);
+                if (c.patterns != null) {
+                    for (int pi = 0; pi < c.patterns.length; pi++) {
+                        argSlots[pi].load();
+                        if (compileMatchPattern(argSlots[pi], (ELNode)c.patterns[pi], failBlock))
                             current.emitJumpIfFalse(failBlock);
-                        }
                     }
-                    buildTail(c.bodies[i]);
+                }
+
+                if (c.guards == null) {
+                    // no guards, evaluate the single body
+                    assert c.bodies != null && c.bodies.length == 1;
+                    buildTail(c.bodies[0]);
                     current.emitJump(exitBlock);
-                    if (nextGuard != -1)
-                        startBlock(nextGuard);
+                } else {
+                    // Evaluate each guard and body
+                    assert c.bodies.length == c.guards.length;
+                    for (int i = 0; i < c.guards.length; i++) {
+                        int nextGuard = -1;
+                        if (c.guards[i] != null) {
+                            if (i != c.guards.length - 1) {
+                                nextGuard = allocBlockId();
+                                build(c.guards[i]);
+                                current.emitJumpIfFalse(nextGuard);
+                            } else {
+                                build(c.guards[i]);
+                                current.emitJumpIfFalse(failBlock);
+                            }
+                        }
+                        buildTail(c.bodies[i]);
+                        current.emitJump(exitBlock);
+                        if (nextGuard != -1)
+                            startBlock(nextGuard);
+                    }
                 }
             }
 
@@ -2159,15 +2155,18 @@ public class IRBuilder extends ELNode.Visitor {
 
             // Wildcard: always matches
             if ("_".equals(def.id)) {
+                current.emitPop();
                 return false;
             }
 
             // Variable binding -> bind to new pattern variable.
             if (def.type != null || def.expr != null)
                 argSlot.load();
-            current.emitStoreVar(def.symbol.slot);
             if (def.symbol.captured)
                 current.emitDefineGlobal(putConstant(def.id));
+            else
+                current.emitStoreVar(def.symbol.slot);
+            current.emitPop();
             return false;
         }
 
@@ -2186,6 +2185,12 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.OR or) {
+            if (checkForAlwaysFail(or.left)) {
+                return compileMatchPattern(argSlot, or.right, failBlock);
+            } else if (checkForAlwaysFail(or.right)) {
+                return compileMatchPattern(argSlot, or.left, failBlock);
+            }
+
             int tryRight = allocBlockId();
             int done = allocBlockId();
 
@@ -2281,11 +2286,8 @@ public class IRBuilder extends ELNode.Visitor {
                         tmpSlot = new Var();
                     tmpSlot.store();
                 }
-                if (compileMatchPattern(tmpSlot, t.elems[i], failBlock)) {
-                    if (i == t.elems.length - 1)
-                        return true;
+                if (compileMatchPattern(tmpSlot, t.elems[i], failBlock))
                     current.emitJumpIfFalse(failBlock);
-                }
             }
             release(tmpSlot);
             return false;
@@ -2316,11 +2318,12 @@ public class IRBuilder extends ELNode.Visitor {
             emitInvokeMethod(Seq.class, "tail");
             if (!isSimplePattern(cons.tail))
                 tmpSlot.store();
+            if (compileMatchPattern(tmpSlot, cons.tail, failBlock))
+                current.emitJumpIfFalse(failBlock);
 
-            boolean result = compileMatchPattern(tmpSlot, cons.tail, failBlock);
             release(tmpSlot);
             release(seqSlot);
-            return result;
+            return false;
         }
 
         if (pat instanceof ELNode.NIL) {
@@ -2344,26 +2347,143 @@ public class IRBuilder extends ELNode.Visitor {
                 buildConst(((ELNode.STRINGVAL)map.keys[i]).value);
                 emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
                                  Object.class, Object.class);
-
                 if (!isSimplePattern(map.values[i])) {
                     if (tmpSlot == null)
                         tmpSlot = new Var();
                     tmpSlot.store();
                 }
-
-                if (compileMatchPattern(tmpSlot, map.values[i], failBlock)) {
-                    if (i == map.keys.length - 1)
-                        return true;
+                if (compileMatchPattern(tmpSlot, map.values[i], failBlock))
                     current.emitJumpIfFalse(failBlock);
-                }
             }
             release(tmpSlot);
             return false;
         }
 
-        // Should not reach here (unsupported patterns pre-filtered)
-        buildTrampoline(pat);
-        return true;
+        if (pat instanceof ELNode.NEW data) {
+            ELNode.IDENT base = (ELNode.IDENT)data.base;
+            ELNode[] args = data.args;
+            int argc = args.length;
+
+            if (base.symbol != null &&
+                base.symbol.node instanceof ELNode.CLASSDEF cdef) {
+                Var cdefSlot = new Var(base);
+                Var targetSlot = new Var();
+                Var tmpSlot = null;
+
+                emitInstOf(ClosureObject.class);
+                current.emitJumpIfFalse(failBlock);
+
+                cdefSlot.load();
+                argSlot.load();
+                emitInvokeMethod(ClosureObject.class, "get_owner");
+                targetSlot.store();
+                emitInvokeMethod(ClosureObject.class, "get_class");
+                emitInvokeMethod(ClassDefinition.class, "isAssignableFrom",
+                    ELContext.class, ClassDefinition.class);
+                current.emitJumpIfFalse(failBlock);
+
+                if (argc == 0)
+                    return false;
+
+                if (data.keys != null) {
+                    // matches for closure object properties
+                    for (int i = 0; i < argc; i++) {
+                        targetSlot.load();
+                        buildConst(data.keys[i]);
+                        emitInvokeMethod(ClosureObject.class, "getValue",
+                            ELContext.class, Object.class);
+                        if (!isSimplePattern(args[i])) {
+                            if (tmpSlot == null)
+                                tmpSlot = new Var();
+                            tmpSlot.store();
+                        }
+                        if (compileMatchPattern(tmpSlot, args[i], failBlock))
+                            current.emitJumpIfFalse(failBlock);
+                    }
+                } else {
+                    // matches for constructor variables
+                    targetSlot.load();
+                    emitInvokeMethod(ClosureObject.class, "get_this");
+                    targetSlot.store();
+
+                    assert cdef.vars.length == argc; // already checked
+                    for (int i = 0; i < argc; i++) {
+                        ELNode arg = args[i];
+                        buildConst(cdef.vars[i].id);
+                        emitInvokeMethod(ClosureObject.class, "get_closure", ELContext.class, String.class);
+                        emitInvokeMethod(Closure.class, "getValue", ELContext.class);
+                        if (!isSimplePattern(args[i])) {
+                            if (tmpSlot == null)
+                                tmpSlot = new Var();
+                            tmpSlot.store();
+                        }
+                        if (compileMatchPattern(tmpSlot, arg, failBlock))
+                            current.emitJumpIfFalse(failBlock);
+                        if (i != argc - 1)
+                            targetSlot.load();
+                    }
+                }
+
+                release(targetSlot);
+                release(tmpSlot);
+            } else {
+                String className;
+                String[] slots = null;
+
+                if (base.symbol != null && base.symbol.node instanceof ELNode.CLASS c) {
+                    className = c.name;
+                    slots = c.slots;
+                } else {
+                    className = base.id;
+                }
+
+                Class<?> cls = resolveClassAtCompileTime(className);
+                if (cls == null) {
+                    emitInstOf(className);
+                    return true;
+                }
+
+                if (argc == 0) {
+                    emitInstOf(cls);
+                    return true;
+                }
+
+                if (data.keys != null) {
+                    slots = data.keys;
+                } else {
+                    if (slots == null) {
+                        Data d = cls.getAnnotation(Data.class);
+                        if (d != null)
+                            slots = d.value();
+                    }
+                    assert slots != null && slots.length == argc; // already checked
+                }
+
+                emitInstOf(cls);
+                current.emitJumpIfFalse(failBlock);
+
+                Var tmpSlot = null;
+                for (int i = 0; i < argc; i++) {
+                    argSlot.load();
+                    buildConst(slots[i]);
+                    current.emitLoadProperty();
+                    if (!isSimplePattern(args[i])) {
+                        if (tmpSlot == null)
+                            tmpSlot = new Var();
+                        tmpSlot.store();
+                    }
+                    if (compileMatchPattern(tmpSlot, args[i], failBlock))
+                        current.emitJumpIfFalse(failBlock);
+                }
+
+                release(tmpSlot);
+            }
+
+            return false;
+        }
+
+        // Should not reach here
+        throw new UnsupportedOperationException();
     }
 
     private boolean isSimplePattern(ELNode pat) {
@@ -2377,6 +2497,73 @@ public class IRBuilder extends ELNode.Visitor {
                pat instanceof ELNode.IDENT ||
                pat instanceof ELNode.NOT ||
                pat instanceof ELNode.EXPR;
+    }
+
+    private boolean checkForAlwaysFail(ELNode pat) {
+        if (pat instanceof ELNode.NEW data) {
+            ELNode.IDENT base = (ELNode.IDENT)data.base;
+            ELNode[] args = data.args;
+            int argc = args.length;
+
+            for (ELNode e : args) {
+                if (checkForAlwaysFail(e))
+                    return true;
+            }
+
+            if (argc == 0 || data.keys != null)
+                return false;
+
+            if (base.symbol != null && base.symbol.node instanceof ELNode.CLASSDEF cdef) {
+                return cdef.vars == null || cdef.vars.length != argc;
+            } else {
+                String className;
+                String[] slots = null;
+
+                if (base.symbol != null && base.symbol.node instanceof ELNode.CLASS c) {
+                    className = c.name;
+                    slots = c.slots;
+                } else {
+                    className = base.id;
+                }
+
+                Class<?> cls = resolveClassAtCompileTime(className);
+                if (cls != null) {
+                    if (slots == null) {
+                        Data d = cls.getAnnotation(Data.class);
+                        if (d != null)
+                            slots = d.value();
+                    }
+                    return slots == null || slots.length != argc;
+                }
+            }
+
+            return false;
+        }
+
+        if (pat instanceof ELNode.OR or) {
+            return checkForAlwaysFail(or.left) && checkForAlwaysFail(or.right);
+        }
+
+        if (pat instanceof ELNode.TUPLE t) {
+            for (ELNode p : t.elems) {
+                if (checkForAlwaysFail(p))
+                    return true;
+            }
+            return false;
+        }
+
+        if (pat instanceof ELNode.CONS c) {
+            return checkForAlwaysFail(c.head) || checkForAlwaysFail(c.tail);
+        }
+
+        if (pat instanceof ELNode.MAP m) {
+            for (ELNode e : m.values)
+                if (checkForAlwaysFail(e))
+                    return true;
+            return false;
+        }
+
+        return false;
     }
 
     public void visit(ELNode.LET node) {
