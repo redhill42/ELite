@@ -16,6 +16,7 @@
 
 package org.elite.ir;
 
+import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.lang.Seq;
 import org.elite.eval.*;
@@ -713,7 +714,6 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
-
             case INVOKE_OPERATOR: {
                 int nameIdx = pl;
                 int argc = oc == 0 ? 0 : code[ip + 1];
@@ -729,7 +729,6 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
-
             case INVOKE_DYN: {
                 int argc = pl;  // argCount is always in payload
                 Object result = dynamicInvoke(argc);
@@ -737,22 +736,12 @@ public class IRInterpreter {
                 ip += 1 + oc;
                 break;
             }
-            case INVOKE: {
-                int argc = pl;
-                Object result = dynamicInvoke(argc);
-                push(result);
-                ip += 1 + oc;
-                break;
-            }
 
             // ============ Return ============
-            case RETURN: {
-                Object result = pop();
-                return result;
-            }
-            case RETURN_VOID: {
+            case RETURN:
+                return pop();
+            case RETURN_VOID:
                 return null;
-            }
             case THROW: {
                 Object cause = pop();
                 if (cause instanceof RuntimeException re)
@@ -977,7 +966,7 @@ public class IRInterpreter {
             case DYNIN: {
                 Object elem = pop();
                 Object coll = pop();
-                push(Runtime.dynIn(elctx, coll, elem));
+                push(Builtin.__in__(elctx, elem, coll));
                 ip += 1;
                 break;
             }
@@ -1159,14 +1148,13 @@ public class IRInterpreter {
                 ip += 1;
                 break;
 
-            default: {
+            default:
                 // Unknown opcode — trampoline to AST eval
                 // This handles all the instructions we haven't
                 // implemented yet
                 throw new UnsupportedOperationException(
                         "Unknown IR " +  "opcode: " + Opcode.name(op) +
                         " (" + op + ") at " + "ip=" + ip);
-            }
             }
         }
     }
@@ -1202,25 +1190,25 @@ public class IRInterpreter {
         Object rhs = pop();
         Object lhs = pop();
         return switch (irOpcode) {
-            case DYNADD -> Runtime.dynAdd(elctx, lhs, rhs);
-            case DYNSUB -> Runtime.dynSub(elctx, lhs, rhs);
-            case DYNMUL -> Runtime.dynMul(elctx, lhs, rhs);
-            case DYNDIV -> Runtime.dynDiv(elctx, lhs, rhs);
-            case DYNREM -> Runtime.dynRem(elctx, lhs, rhs);
-            case DYNPOW -> Runtime.dynPow(elctx, lhs, rhs);
-            case DYNCAT -> Runtime.dynCat(elctx, lhs, rhs);
-            case DYNSHL -> Runtime.dynShl(elctx, lhs, rhs);
-            case DYNSHR -> Runtime.dynShr(elctx, lhs, rhs);
-            case DYNUSHR -> Runtime.dynUShr(elctx, lhs, rhs);
-            case DYNEQ -> Runtime.dynEq(elctx, lhs, rhs);
-            case DYNNE -> Runtime.dynNe(elctx, lhs, rhs);
-            case DYNLT -> Runtime.dynLt(elctx, lhs, rhs);
-            case DYNLE -> Runtime.dynLe(elctx, lhs, rhs);
-            case DYNGT -> Runtime.dynGt(elctx, lhs, rhs);
-            case DYNGE -> Runtime.dynGe(elctx, lhs, rhs);
-            case DYNAND -> Runtime.dynBitAnd(elctx, lhs, rhs);
-            case DYNOR -> Runtime.dynBitOr(elctx, lhs, rhs);
-            case DYNXOR -> Runtime.dynXor(elctx, lhs, rhs);
+            case DYNADD -> Builtin.__add__(elctx, lhs, rhs);
+            case DYNSUB -> Builtin.__sub__(elctx, lhs, rhs);
+            case DYNMUL -> Builtin.__mul__(elctx, lhs, rhs);
+            case DYNDIV -> Builtin.__div__(elctx, lhs, rhs);
+            case DYNREM -> Builtin.__rem__(elctx, lhs, rhs);
+            case DYNPOW -> Builtin.__pow__(elctx, lhs, rhs);
+            case DYNCAT -> Builtin.__cat__(elctx, lhs, rhs);
+            case DYNSHL -> Builtin.__shl__(elctx, lhs, rhs);
+            case DYNSHR -> Builtin.__shr__(elctx, lhs, rhs);
+            case DYNUSHR -> Builtin.__ushr__(elctx, lhs, rhs);
+            case DYNEQ -> Builtin.__eq__(elctx, lhs, rhs);
+            case DYNNE -> Builtin.__ne__(elctx, lhs, rhs);
+            case DYNLT -> Builtin.__lt__(elctx, lhs, rhs);
+            case DYNLE -> Builtin.__le__(elctx, lhs, rhs);
+            case DYNGT -> Builtin.__gt__(elctx, lhs, rhs);
+            case DYNGE -> Builtin.__ge__(elctx, lhs, rhs);
+            case DYNAND -> Builtin.__bitand__(elctx, lhs, rhs);
+            case DYNOR -> Builtin.__bitor__(elctx, lhs, rhs);
+            case DYNXOR -> Builtin.__xor__(elctx, lhs, rhs);
             default -> { assert (false); yield null; }
         };
     }
@@ -1228,9 +1216,9 @@ public class IRInterpreter {
     private Object dynamicUnaryOp(int irOpcode) {
         Object rhs = pop();
         return switch (irOpcode) {
-            case DYNNEG -> Runtime.dynNeg(elctx, rhs);
-            case DYNNOT -> Runtime.dynBitNot(elctx, rhs);
-            case DYNEMPTY -> Runtime.dynEmpty(elctx, rhs);
+            case DYNNEG -> Builtin.__neg__(elctx, rhs);
+            case DYNNOT -> Builtin.__bitnot__(elctx, rhs);
+            case DYNEMPTY -> Builtin.empty(elctx, rhs);
             default -> { assert(false); yield null; }
         };
     }

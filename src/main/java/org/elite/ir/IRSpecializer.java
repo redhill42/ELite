@@ -135,7 +135,7 @@ public class IRSpecializer implements IRPass {
             newOffsets[i] = merged.size();
             merged.addAll(allBlocks.get(i).toArray());
         }
-        fn.populate(merged.toArray(), fn.maxLocals, newOffsets, fn.constantPool(),
+        fn.populate(merged.toArray(), fn.maxLocals(), newOffsets, fn.constantPool(),
                     fn.debugInfo(), fn.defaultValues());
         return fn;
     }
@@ -449,7 +449,7 @@ public class IRSpecializer implements IRPass {
                 }
 
                 // Function calls: clear all guarded state (calls can modify any variable)
-                case INVOKE_DIRECT, INVOKE_DYN, INVOKE, INVOKE_TAIL -> {
+                case INVOKE_DIRECT, INVOKE_DYN, INVOKE_TAIL -> {
                     Arrays.fill(varGuarded, false);
                     copyInst(out, code, v);
                 }

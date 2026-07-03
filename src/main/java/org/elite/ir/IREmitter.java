@@ -444,10 +444,6 @@ public class IREmitter {
         return emit1(ASSERT, K_NONE, 0);
     }
 
-    public IREmitter emitInvoke(int funcIndex, int argCount) {
-        return emit2(INVOKE, K_FN, funcIndex & 0xFFFF, argCount);
-    }
-
     public IREmitter emitInvokeDyn(int argCount) {
         return emit2(INVOKE_DYN, K_DYN, argCount, 0);
     }

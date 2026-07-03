@@ -16,8 +16,6 @@
 
 package org.elite.ir;
 
-import static org.elite.ir.Opcode.TRAMPOLINE;
-
 /**
  * A compiled function in IR form.
  *
@@ -35,7 +33,7 @@ public class IRFunction {
     /** Single contiguous code array for all blocks. */
     private int[] code;
     /** Number of local variable slots */
-    int maxLocals;
+    private int maxLocals;
     /** Start offset of each basic block in the code array. */
     private int[] blockOffsets;
     /** Constant pool: literals indexed by PUSH_CONST payload. */
@@ -70,12 +68,13 @@ public class IRFunction {
 
     public boolean isDeclaration() { return code == null; }
 
-    public String name()       { return name; }
-    public int paramCount()    { return paramCount; }
-    public int[] code()        { return code; }
-    public int[] blockOffsets() { return blockOffsets; }
+    public String name()           { return name; }
+    public int paramCount()        { return paramCount; }
+    public int maxLocals()         { return maxLocals; }
+    public int[] code()            { return code; }
+    public int[] blockOffsets()    { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
-    public DebugInfo debugInfo() { return debugInfo; }
+    public DebugInfo debugInfo()   { return debugInfo; }
 
     /** Check if parameter at index {@code paramIdx} has an explicit type annotation. */
     public boolean isExplicitParamType(int paramIdx) {

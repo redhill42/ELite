@@ -2377,6 +2377,7 @@ public final class Builtin
     private static final ELNode.IDIV __IDIV__ = new ELNode.IDIV(-1, null, null);
     private static final ELNode.REM __REM__ = new ELNode.REM(-1, null, null);
     private static final ELNode.POW __POW__ = new ELNode.POW(-1, null, null);
+    private static final ELNode.NEG __NEG__ = new ELNode.NEG(-1, null);
     private static final ELNode.BITNOT __BITNOT__ = new ELNode.BITNOT(-1, null);
     private static final ELNode.BITOR  __BITOR__  = new ELNode.BITOR(-1, null, null);
     private static final ELNode.BITAND __BITAND__ = new ELNode.BITAND(-1, null, null);
@@ -2393,6 +2394,7 @@ public final class Builtin
     private static final ELNode.IDEQ __IDEQ__ = new ELNode.IDEQ(-1, null, null);
     private static final ELNode.IDNE __IDNE__ = new ELNode.IDNE(-1, null, null);
     private static final ELNode.EMPTY __EMPTY__ = new ELNode.EMPTY(-1, null);
+    private static final ELNode.IN __IN__ = new ELNode.IN(-1, null, null, false);
 
     @Expando(name="~", scope=GLOBAL)
     public static Object __cat__(ELContext elctx, Object x, Object y) {
@@ -2432,6 +2434,14 @@ public final class Builtin
     @Expando(name="^", scope=GLOBAL)
     public static Object __pow__(ELContext elctx, Object x, Object y) {
         return __POW__.getValue(elctx, x, y);
+    }
+
+    public static Object __neg__(ELContext elctx, Object x) {
+        return __NEG__.getValue(elctx, x);
+    }
+
+    public static Object __in__(ELContext elctx, Object x, Object y) {
+        return __IN__.eval(elctx, x, y);
     }
 
     @Expando(name=":!:", scope=GLOBAL)

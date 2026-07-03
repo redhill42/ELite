@@ -151,7 +151,6 @@ public final class Opcode {
     public static final int SYNCHRONIZED    = 0x77;  // push lock, bodyClosure, then SYNCHRONIZED
 
     // ── Function (0x80-0x8F) ──
-    public static final int INVOKE        = 0x80;
     public static final int INVOKE_DYN    = 0x81;
     public static final int INVOKE_TAIL   = 0x82;
     public static final int INVOKE_DIRECT = 0x83;  // direct IRFunction call
@@ -307,7 +306,6 @@ public final class Opcode {
             case JUMP_IF_NULL -> "JUMP_IF_NULL";
             case JUMP_IF_NONNULL -> "JUMP_IF_NONNULL";
             case TABLE_SWITCH -> "TABLE_SWITCH";
-            case INVOKE -> "INVOKE";
             case INVOKE_DYN -> "INVOKE_DYN";
             case INVOKE_TAIL -> "INVOKE_TAIL";
             case INVOKE_DIRECT -> "INVOKE_DIRECT";

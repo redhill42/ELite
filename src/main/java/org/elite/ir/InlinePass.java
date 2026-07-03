@@ -95,7 +95,7 @@ public class InlinePass implements IRPass {
             merged.addAll(newBlocks[b]);
         }
 
-        input.populate(merged.toArray(), input.maxLocals + tempSlots, newOffsets, mergedPool,
+        input.populate(merged.toArray(), input.maxLocals() + tempSlots, newOffsets, mergedPool,
                input.debugInfo(), input.defaultValues());
         return input;
     }
@@ -183,7 +183,7 @@ public class InlinePass implements IRPass {
             if (count > MAX_INLINE_SIZE)
                 return false;
             int op = v.opcode();
-            if (op == INVOKE_DIRECT || op == INVOKE_DYN || op == INVOKE
+            if (op == INVOKE_DIRECT || op == INVOKE_DYN
                     || Opcode.isJump(op) || op == INVOKE_TAIL)
                 return false;
             v.advance();

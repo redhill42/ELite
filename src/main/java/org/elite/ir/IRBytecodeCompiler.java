@@ -382,10 +382,6 @@ public class IRBytecodeCompiler {
                 int argc = pl; // emitInvokeDyn stores argCount in payload
                 emitPackArgsAndCall(argc, false, null);
             }
-            case INVOKE -> {
-                int argc = oc == 0 ? pl : v.operand(0); // emitInvoke stores argCount in operand(0)
-                emitPackArgsAndCall(argc, false, null);
-            }
             // ─── Property access, globals ───
             case LOAD_PROPERTY -> {
                 // Stack: [base, key]. Need [ctx, base, key].

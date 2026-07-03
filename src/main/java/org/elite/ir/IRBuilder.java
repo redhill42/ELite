@@ -2903,21 +2903,13 @@ public class IRBuilder extends ELNode.Visitor {
     IRFunction finish(String name) {
         // Seal current block and record its debug line
         if (current != null) {
-            if (!current.isEmpty()) {
-                int[] code = current.toArray();
-                blockMap.put(currentBlockId, code);
-                if (ELProgram.DEBUG && currentLine > 0) {
-                    runningPc += code.length;
-                    recordDebugLine(runningPc);
-                }
-            } else {
+            if (current.isEmpty())
                 current.emitReturnVoid();
-                int[] code = current.toArray();
-                blockMap.put(currentBlockId, code);
-                if (ELProgram.DEBUG && currentLine > 0) {
-                    runningPc += code.length;
-                    recordDebugLine(runningPc);
-                }
+            int[] code = current.toArray();
+            blockMap.put(currentBlockId, code);
+            if (ELProgram.DEBUG && currentLine > 0) {
+                runningPc += code.length;
+                recordDebugLine(runningPc);
             }
         }
 
