@@ -31,7 +31,6 @@ import javax.script.ScriptException;
 import org.elite.eval.ELProgram;
 import org.elite.eval.VariableMapperImpl;
 import org.elite.ir.IRPrinter;
-import org.elite.ir.SymbolTable;
 import org.elite.ir.SymbolTableBuilder;
 import org.elite.parser.ASTDumper;
 import org.elite.parser.Parser;
@@ -80,6 +79,18 @@ public final class CommandProvider {
         shellContext.setCompleted(true);
     }
 
+    @Command("dump-ast")
+    public static void dump_ast(ShellContext shellContext, String script) {
+        if (script.isBlank())
+            script = shellContext.getLastScript();
+        if (script.isBlank())
+            return;
+        Parser parser = new Parser(script);
+        ELProgram program = parser.parse();
+        SymbolTableBuilder.build(program);
+        System.out.println(ASTDumper.dump(program));
+    }
+
     public static void dump(ShellContext shellContext, String script) {
         if (script.isBlank())
             script = shellContext.getLastScript();
@@ -90,17 +101,13 @@ public final class CommandProvider {
         System.out.println(IRPrinter.dumpProgramIR(elctx, script));
     }
 
-    @Command("dump-ast")
-    public static void dump_ast(ShellContext shellContext, String script) {
+    @Command("dump-bc")
+    public static void dump_bc(ShellContext shellContext, String script) {
         if (script.isBlank())
             script = shellContext.getLastScript();
         if (script.isBlank())
             return;
-
-        Parser parser = new Parser(script);
-        ELProgram program = parser.parse();
-        SymbolTableBuilder.build(program);
-        System.out.println(ASTDumper.dump(program));
+        System.out.println(IRPrinter.dumpProgramBC(script));
     }
 
     public static void ls(ShellContext shellContext, String args) {

@@ -19,7 +19,9 @@ package org.elite.shell;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 import javax.el.ELContext;
@@ -27,7 +29,8 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
-import org.elite.ir.SymbolTableBuilder;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.ParameterException;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -37,14 +40,10 @@ import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.AttributedString;
 import org.jline.utils.AttributedStyle;
 
-import org.elite.eval.ELProgram;
 import org.elite.shell.command.Command;
 import org.elite.shell.command.CommandProvider;
 import org.elite.parser.IncompleteException;
 import org.elite.parser.Position;
-import org.elite.parser.Parser;
-import org.elite.ir.IRPrinter;
-import org.elite.parser.ASTDumper;
 import org.elite.eval.StackTrace;
 import static org.elite.resources.Resources.*;
 import elite.lang.Builtin;
@@ -52,12 +51,9 @@ import elite.lang.Builtin;
 // Experimental
 public class Main
 {
-    private ShellContext shellContext;
-    private String script;
+    private final ShellContext shellContext;
+    private CommandOptions options;
     private String filename;
-    private boolean dumpIR = false;
-    private boolean dumpAST = false;
-    private boolean dumpBC  = false;
 
     private static final Path HISTORY_FILE = Path.of(
         System.getProperty("user.home"), ".elite_history");
@@ -66,7 +62,7 @@ public class Main
         this.shellContext = new ShellContext();
     }
 
-    public static void main(String args[]) {
+    public static void main(String[] args) {
         Main main = new Main();
         int status = main.run(args);
         if (status != 0) {
@@ -74,7 +70,7 @@ public class Main
         }
     }
 
-    public int run(String args[]) {
+    public int run(String[] args) {
         if (!parseOptions(args)) {
             return 1;
         }
@@ -89,21 +85,18 @@ public class Main
             int status = 0;
 
             if (filename != null) {
-                if (dumpAST || dumpIR || dumpBC) {
-                    String source = new String(java.nio.file.Files.readAllBytes(
-                        java.nio.file.Paths.get(filename)));
-                    ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
-                    dumpWithFlags(elctx, source);
+                if (options.hasDump()) {
+                    String source = new String(Files.readAllBytes(Paths.get(filename)));
+                    dumpWithFlags(source);
                     return 0;
                 }
                 status = CommandProvider.exec(shellContext, filename);
-            } else if (script != null) {
-                if (dumpAST || dumpIR || dumpBC) {
-                    ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
-                    dumpWithFlags(elctx, script);
+            } else if (options.script != null) {
+                if (options.hasDump()) {
+                    dumpWithFlags(options.script);
                     return 0;
                 }
-                status = exec_script(engine, script);
+                status = exec_script(engine, options.script);
             }
 
             if (status != 0) {
@@ -122,62 +115,55 @@ public class Main
     }
 
     private boolean parseOptions(String[] args) {
-        int argIndex = 0;
+        List<String> newArgs = new ArrayList<>();
+        for (String arg : args) {
+            if (arg.startsWith("-O")) {
+                newArgs.add("-O");
+                newArgs.add(arg.substring(2));
+            } else {
+                newArgs.add(arg);
+            }
+        }
+
+        options = new CommandOptions();
+        JCommander commander = JCommander.newBuilder()
+            .programName("elite")
+            .addObject(options)
+            .build();
 
         try {
-            for (; argIndex < args.length; argIndex++) {
-                if (args[argIndex].equals("-e")) {
-                    script = args[++argIndex];
-                } else if (args[argIndex].equals("-c") || args[argIndex].equals("-encoding")) {
-                    shellContext.setEncoding(args[++argIndex]);
-                } else if (args[argIndex].equals("-i")) {
-                    shellContext.setInteractive(true);
-                } else if (args[argIndex].equals("--debug")) {
-                    System.setProperty("elite.debug", "true");
-                } else if (args[argIndex].equals("--dump-ir")) {
-                    dumpIR = true;
-                } else if (args[argIndex].equals("--dump-bc")) {
-                    dumpBC = true;
-                } else if (args[argIndex].equals("--dump-ast")) {
-                    dumpAST = true;
-                } else if (args[argIndex].startsWith("-O")) {
-                    String level = args[argIndex].substring(2);
-                    if (level.matches("[0-3]")) {
-                        System.setProperty("elite.opt.level", level);
-                    } else {
-                        System.err.println("Invalid optimization level: " + args[argIndex] + " (use -O0, -O1, -O2, -O3)");
-                        printUsage();
-                        return false;
-                    }
-                } else if (args[argIndex].startsWith("-")) {
-                    printUsage();
-                    return false;
-                } else {
-                    break;
-                }
-            }
-        } catch (ArrayIndexOutOfBoundsException ex) {
-            printUsage();
+            commander.parse(newArgs.toArray(new String[0]));
+        } catch (ParameterException ex) {
+            System.out.println(ex.getMessage());
+            System.out.println();
+            commander.usage();
             return false;
         }
 
-        if (argIndex < args.length) {
-            filename = args[argIndex++];
+        if (options.help) {
+            commander.usage();
+            return false;
         }
 
-        String[] arguments = new String[args.length - argIndex];
-        System.arraycopy(args, argIndex, arguments, 0, arguments.length);
-        shellContext.setArguments(arguments);
+        if (options.encoding != null)
+            shellContext.setEncoding(options.encoding);
+        if (options.interactive)
+            shellContext.setInteractive(true);
+        if (options.debug)
+            System.setProperty("elite.debug", "true");
+        System.setProperty("elite.opt.level", String.valueOf(options.optLevel));
 
-        if (filename == null && script == null) {
+        if (options.args.size() != 0) {
+            filename = options.args.get(0);
+            options.args.remove(0);
+            shellContext.setArguments(options.args.toArray(new String[0]));
+        }
+
+        if (filename == null && options.script == null) {
             shellContext.setInteractive(true);
         }
 
         return true;
-    }
-
-    private void printUsage() {
-        System.err.println(_T(ELITE_USAGE));
     }
 
     private void repl(ScriptEngine engine) throws IOException {
@@ -296,35 +282,27 @@ public class Main
         return 0;
     }
 
-    private static final String DUMP_SEPARATOR =
-        "\n" + "═".repeat(60) + "\n";
+    private static final String DUMP_SEPARATOR = "\n" + "═".repeat(60) + "\n";
 
-    private void dumpWithFlags(ELContext elctx, String source) throws IOException {
+    private void dumpWithFlags(String source) throws IOException {
         int count = 0;
-        if (dumpAST) count++;
-        if (dumpIR)  count++;
-        if (dumpBC)  count++;
+        if (options.dumpAST) count++;
+        if (options.dumpIR)  count++;
+        if (options.dumpBC)  count++;
 
         int emitted = 0;
-        if (dumpAST) {
-            System.out.print(dumpAST(source));
+        if (options.dumpAST) {
+            CommandProvider.dump_ast(shellContext, source);
+            if (++emitted < count)System.out.print(DUMP_SEPARATOR);
+        }
+        if (options.dumpIR) {
+            CommandProvider.dump(shellContext, source);
+            if (++emitted < count)System.out.print(DUMP_SEPARATOR);
+        }
+        if (options.dumpBC) {
+            CommandProvider.dump_bc(shellContext, source);
             if (++emitted < count) System.out.print(DUMP_SEPARATOR);
         }
-        if (dumpIR) {
-            System.out.print(IRPrinter.dumpProgramIR(elctx, source));
-            if (++emitted < count) System.out.print(DUMP_SEPARATOR);
-        }
-        if (dumpBC) {
-            System.out.print(IRPrinter.dumpProgramBC(source));
-            if (++emitted < count) System.out.print(DUMP_SEPARATOR);
-        }
-    }
-
-    private static String dumpAST(String script) {
-        Parser parser = new Parser(script);
-        ELProgram program = parser.parse();
-        SymbolTableBuilder.build(program);
-        return ASTDumper.dump(program);
     }
 
     private ScriptEngine createScriptEngine(String[] args) {

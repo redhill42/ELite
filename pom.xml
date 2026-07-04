@@ -7,7 +7,7 @@
   <version>1.0.1-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <url>http://hongun.github.com/ELite</url>
+  <url>http://github.com/ELite</url>
   <description>The ELite Programming Language</description>
 
   <developers>
@@ -19,9 +19,9 @@
   </developers>
 
   <scm>
-    <connection>scm:git:git://github.com/hongun/ELite.git</connection>
-    <developerConnection>scm:git:git@github.com:hongun/ELite.git</developerConnection>
-    <url>https://github.com/hongun/ELite</url>
+    <connection>scm:git:git://github.com/redhill42/ELite.git</connection>
+    <developerConnection>scm:git:git@github.com:redhill42/ELite.git</developerConnection>
+    <url>https://github.com/redhill42/ELite</url>
   </scm>
 
   <properties>
@@ -70,11 +70,11 @@
               <relocations>
                 <relocation>
                   <pattern>net.sf.cglib</pattern>
-                  <shadedPattern>org.elite.cglib</shadedPattern>
+                  <shadedPattern>org.elite.net.sf.cglib</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>org.objectweb.asm</pattern>
-                  <shadedPattern>org.elite.asm</shadedPattern>
+                  <shadedPattern>org.elite.org.objectweb.asm</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
@@ -176,18 +176,10 @@
       <artifactId>jline</artifactId>
       <version>3.26.3</version>
     </dependency>
+    <dependency>
+      <groupId>com.beust</groupId>
+      <artifactId>jcommander</artifactId>
+      <version>1.82</version>
+    </dependency>
   </dependencies>
-
-  <distributionManagement>
-    <repository>
-      <id>nexus-release</id>
-      <name>Nexus Release Repository</name>
-      <url>http://nexus.icloudway.com/content/repositories/releases/</url>
-    </repository>
-    <snapshotRepository>
-      <id>nexus-snapshot</id>
-      <name>Nexus Snapshot Repository</name>
-      <url>http://nexus.icloudway.com/content/repositories/snapshots/</url>
-    </snapshotRepository>
-  </distributionManagement>
 </project>
