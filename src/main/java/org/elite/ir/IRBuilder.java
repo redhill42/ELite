@@ -672,16 +672,14 @@ public class IRBuilder extends ELNode.Visitor {
 
     private boolean buildStepBuiltin(ELNode begin, ELNode end, ELNode body,
                                      int step, int cmpop) {
-        if (body instanceof ELNode.LAMBDA b) {
-            if (b.vars.length > 1 || b.varargs)
-                return false;
-        } else {
-            return false; // FIXME: support closure invocation
-        }
-
         // Initialize temporary variables.
-        Var indSlot = new Var(b.vars.length == 1 ? b.vars[0] : null);
+        Var indSlot = new Var();
         Var endSlot = new Var();
+        Var bodySlot = new Var();
+
+        build(body);
+        bodySlot.store();
+        current.emitPop();
 
         // FIXME: induction variable may be captured, should put in evaluation context.
         build(begin);
@@ -709,7 +707,24 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Generate loop body.
         startBlock(bodyB);
-        build(b.body);
+        if (body instanceof ELNode.LAMBDA b) {
+            bodySlot.load();
+            if (b.vars.length != 0) {
+                indSlot.load();
+                for (int i = 1; i < b.vars.length; i++)
+                    current.emitPushNull();
+            }
+            if (b.symbol != null) {
+                int funcIdx = putConstant(b.symbol.func);
+                current.emitInvokeDirect(funcIdx, b.vars.length);
+            } else {
+                current.emitInvokeDyn(b.vars.length);
+            }
+        } else if (!tryBuildOptimizedGlobalCall(body, indSlot)) {
+            bodySlot.load();
+            indSlot.load();
+            current.emitInvokeDyn(1);
+        }
         current.emitPop();
 
         // Increment induction variable.
@@ -726,7 +741,45 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.pop();
         release(endSlot);
         release(indSlot);
+        release(bodySlot);
         return true;
+    }
+
+    private boolean tryBuildOptimizedGlobalCall(ELNode base, Var arg) {
+        if (!(base instanceof ELNode.IDENT v))
+            return false;
+
+        if (v.symbol == null) {
+            var mc = MethodResolver.getInstance(elctx).resolveGlobalMethod(v.id);
+            if (mc == null)
+                return false;
+
+            Method method = mc.getJavaMethod();
+            if (method == null)
+                return false;
+
+            int paramCount = method.getParameterCount();
+            if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
+                paramCount--;
+            if (paramCount > 1 && method.isVarArgs())
+                paramCount--;
+            if (paramCount > 1)
+                return false;
+
+            if (paramCount == 1)
+                arg.load();
+            current.emitInvokeStatic(putConstant(method), paramCount);
+            return true;
+        } else if (v.symbol.node instanceof ELNode.LAMBDA b) {
+            if (b.vars.length > 1)
+                return false;
+            if (b.vars.length == 1)
+                arg.load();
+            current.emitInvokeDirect(putConstant(b.symbol.func), b.vars.length);
+            return true;
+        }
+
+        return false;
     }
 
     private boolean buildMathReduce(ELNode[] args, int op) {

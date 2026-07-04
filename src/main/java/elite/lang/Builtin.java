@@ -199,9 +199,13 @@ public final class Builtin
      */
     @Expando
     public static void upto(ELContext elctx, Object a, Object b, Closure p) {
+        int arity = p.arity(elctx);
         for (; __le__(elctx, a, b); a = __add__(elctx, a, 1)) {
             try {
-                p.call(elctx, a);
+                if (arity == 0)
+                    p.call(elctx);
+                else
+                    p.call(elctx, a);
             } catch (Control.Break br) {
                 break;
             } catch (Control.Continue co) {
@@ -217,9 +221,13 @@ public final class Builtin
      */
     @Expando
     public static void downto(ELContext elctx, Object a, Object b, Closure p) {
+        int arity = p.arity(elctx);
         for (; __ge__(elctx, a, b); a = __sub__(elctx, a, 1)) {
             try {
-                p.call(elctx, a);
+                if (arity == 0)
+                    p.call(elctx);
+                else
+                    p.call(elctx, a);
             } catch (Control.Break br) {
                 break;
             } catch (Control.Continue co) {
@@ -235,11 +243,15 @@ public final class Builtin
      */
     @Expando
     public static void step(ELContext elctx, Object a, Object b, Object i, Closure p) {
+        int arity = p.arity(elctx);
         switch (signum(elctx, i)) {
             case 1: // step up
                 for (; __le__(elctx, a, b); a = __add__(elctx, a, i)) {
                     try {
-                        p.call(elctx, a);
+                        if (arity == 0)
+                            p.call(elctx);
+                        else
+                            p.call(elctx, a);
                     } catch (Control.Break br) {
                         break;
                     } catch (Control.Continue co) {
@@ -251,7 +263,10 @@ public final class Builtin
             case -1: // step down
                 for (; __ge__(elctx, a, b); a = __add__(elctx, a, i)) {
                     try {
-                        p.call(elctx, a);
+                        if (arity == 0)
+                            p.call(elctx);
+                        else
+                            p.call(elctx, a);
                     } catch (Control.Break br) {
                         break;
                     } catch (Control.Continue co) {
@@ -271,10 +286,14 @@ public final class Builtin
      * 用法: n.times { block ... }
      */
     @Expando
-    public static void times(ELContext elctx, Number n, Closure p) {
-        for (int i = 0; i < n.longValue(); i++) {
+    public static void times(ELContext elctx, Object n, Closure p) {
+        int arity = p.arity(elctx);
+        for (int i = 0; __lt__(elctx, i, n); i++) {
             try {
-                p.call(elctx, i);
+                if (arity == 0)
+                    p.call(elctx);
+                else
+                    p.call(elctx, i);
             } catch (Control.Break b) {
                 break;
             } catch (Control.Continue c) {
@@ -2316,40 +2335,50 @@ public final class Builtin
         }
     }
 
+    @Expando(scope = {EXPANDO, GLOBAL})
+    public static void print_(ELContext elctx, Object obj) {
+        PrintWriter out = getPrintWriter(elctx);
+        print0(out, obj);
+    }
+
     private static void print0(PrintWriter out, Object obj) {
         if (obj == null) {
             out.print("null");
         } else if (obj instanceof Range || obj instanceof CharRange) {
             out.print(obj);
         } else if (obj instanceof Seq) {
-            boolean sep = false;
-            int count = 100;
-            out.print("[");
-            for (Seq xs = (Seq)obj; !xs.isEmpty(); xs = xs.tail()) {
-                if (count-- == 0) {
-                    // May be infinity seq, stop printing.
-                    out.print(", ...");
-                    break;
-                }
-                Object x = xs.head();
-                if (sep) out.print(", ");
-                sep = true;
-                if (x instanceof String) {
-                    StringBuilder buf = new StringBuilder();
-                    TypeCoercion.escape(buf, (String)x);
-                    out.print(buf);
-                } else if (x instanceof Character) {
-                    String esc = TypeCoercion.escape((Character)x);
-                    out.print("#'" + (esc != null ? esc : x) + "'");
-                } else {
-                    print0(out, x);
-                }
-                out.flush();
-            }
-            out.print("]");
+            printSeq(out, (Seq)obj);
         } else {
             out.print(coerceToString(obj));
         }
+    }
+
+    private static void printSeq(PrintWriter out, Seq obj) {
+        boolean sep = false;
+        int count = 100;
+        out.print("[");
+        for (Seq xs = obj; !xs.isEmpty(); xs = xs.tail()) {
+            if (count-- == 0) {
+                // May be infinity seq, stop printing.
+                out.print(", ...");
+                break;
+            }
+            Object x = xs.head();
+            if (sep) out.print(", ");
+            sep = true;
+            if (x instanceof String) {
+                StringBuilder buf = new StringBuilder();
+                TypeCoercion.escape(buf, (String)x);
+                out.print(buf);
+            } else if (x instanceof Character) {
+                String esc = TypeCoercion.escape((Character)x);
+                out.print("#'" + (esc != null ? esc : x) + "'");
+            } else {
+                print0(out, x);
+            }
+            out.flush();
+        }
+        out.print("]");
     }
 
     private static PrintWriter getPrintWriter(ELContext elctx) {
