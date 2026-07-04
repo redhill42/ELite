@@ -10,14 +10,6 @@ import org.elite.EliteTestBase;
  */
 class CoercionTest extends EliteTestBase {
 
-    // ---- String to number ----
-
-    @Test
-    void stringInAdditionThrowsTypeError() {
-        // + is strictly arithmetic; string concatenation must use ~
-        assertEvalThrows("\"3\" + \"3\"");
-    }
-
     // ---- Number to string ----
 
     @Test

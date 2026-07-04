@@ -181,6 +181,8 @@ public final class Opcode {
     public static final int NEW_MAP        = 0xA3;
     public static final int NEW_TUPLE      = 0xA4;
     public static final int NEW_RANGE      = 0xA5;
+    public static final int NEW_XML        = 0xA6;
+    public static final int DECLARE_NS     = 0x9A;
 
     // ── Type guards (0xA0-0xAF) ──
     // GUARD_TYPE typeId, deoptBlockId: check stack top type.
@@ -334,6 +336,8 @@ public final class Opcode {
             case NEW_MAP -> "NEW_MAP";
             case NEW_TUPLE -> "NEW_TUPLE";
             case NEW_RANGE -> "NEW_RANGE";
+            case NEW_XML -> "NEW_XML";
+            case DECLARE_NS -> "DECLARE_NS";
             case GUARD_TYPE -> "GUARD_TYPE";
             case INVOKE_GETTER -> "INVOKE_GETTER";
             case INVOKE_SETTER -> "INVOKE_SETTER";

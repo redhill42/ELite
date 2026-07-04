@@ -130,7 +130,7 @@ x.c = <c xmlns='http://some.other.namespace.com'>three</c>
 
 print("XML object constructed using the default xml namespace:\n" ~ x);
 
-define xmlns = null;
+xmlns = null;
 
 print("-----------------------------------------");
 
@@ -161,7 +161,7 @@ print("The order id is: ${order.@id}");
 print("The children of the order are:\n" ~ order.@@child);
 
 // get second item by numeric index
- print("The second item is:\n" ~ order.item[1]);
+print("The second item is:\n" ~ order.item[1]);
 
 // calculate the total price of the order
 define totalprice = 0;

@@ -34,6 +34,7 @@ import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 
 import javax.el.ELContext;
+import javax.xml.XMLConstants;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -929,6 +930,75 @@ public class IRBuilder extends ELNode.Visitor {
 
         // FIXME: handle multi dimensional array
         return true;
+    }
+
+    public void visit(ELNode.XML node) {
+        int namespaces = 0;
+        Slot[] tmpSlots = null;
+
+        if (node.keys != null) {
+            for (ELNode key : node.keys) {
+                if (key instanceof ELNode.STRINGVAL str &&
+                    (str.value.equals("xmlns") || str.value.startsWith("xmlns:")))
+                    namespaces++;
+            }
+        }
+
+        // Setup environment and declare namespaces.
+        if (namespaces != 0) {
+            current.emit1(ENTER_SCOPE, K_NONE, 0);
+            for (int i = 0; i < node.keys.length; i++) {
+                if (node.keys[i] instanceof ELNode.STRINGVAL str &&
+                    (str.value.equals("xmlns") || str.value.startsWith("xmlns:"))) {
+                    String prefix;
+                    if (str.value.equals("xmlns"))
+                        prefix = XMLConstants.DEFAULT_NS_PREFIX;
+                    else
+                        prefix = str.value.substring(6);
+                    if (node.values[i] instanceof ELNode.Constant) {
+                        build(node.values[i]);
+                    } else {
+                        if (tmpSlots == null)
+                            tmpSlots = new Slot[node.keys.length];
+                        tmpSlots[i] = new Slot();
+                        build(node.values[i]);
+                        tmpSlots[i].store();
+                    }
+                    current.emit1(DECLARE_NS, K_NONE, putConstant(prefix));
+                }
+            }
+        }
+
+        // Build XML tag, attributes, and children.
+        build(node.tag);
+        if (node.keys != null) {
+            assert node.keys.length == node.values.length;
+            for (int i = 0; i < node.keys.length; i++) {
+                build(node.keys[i]);
+                if (tmpSlots != null && tmpSlots[i] != null)
+                    tmpSlots[i].load();
+                else
+                    build(node.values[i]);
+            }
+        }
+        if (node.children != null) {
+            for (int i = 0; i < node.children.length; i++) {
+                build(node.children[i]);
+            }
+        }
+        current.emit2(NEW_XML, K_NONE, node.keys == null ? 0 : node.keys.length,
+                      node.children == null ? 0 : node.children.length);
+
+        if (namespaces != 0) {
+            current.emit1(LEAVE_SCOPE, K_NONE, 0);
+        }
+
+        if (tmpSlots != null) {
+            for (Slot slot : tmpSlots) {
+                if (slot != null)
+                    slot.release();
+            }
+        }
     }
 
     public void visit(ELNode.IN node) {

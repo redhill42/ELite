@@ -19,6 +19,7 @@ package org.elite.ir;
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.lang.Seq;
+import elite.xml.XmlNode;
 import org.elite.eval.*;
 import org.elite.eval.Runtime;
 import org.elite.eval.closure.LiteralClosure;
@@ -27,9 +28,13 @@ import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
 import org.elite.parser.Position;
+import org.w3c.dom.DOMException;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 import javax.el.ELContext;
 import javax.el.ValueExpression;
+import javax.xml.XMLConstants;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -142,7 +147,7 @@ public class IRInterpreter {
         try {
             return interpret();
         } catch (RuntimeException e) {
-            if (debug && !(e instanceof EvaluationException) && !(e instanceof Control)) {
+            if (debug) {
                 // Update frame position to error location
                 if (frame != null) {
                     DebugInfo di = function.debugInfo();
@@ -962,6 +967,41 @@ public class IRInterpreter {
                 break;
             }
 
+            case NEW_XML: {
+                int keyCount = pl;
+                int childCount = code[ip + 1];
+                Object tag;
+                Object[] att_names = null, att_values = null;
+                Object[] children = null;
+                if (childCount != 0) {
+                    children = new Object[childCount];
+                    for (int i = childCount - 1; i >= 0; i--) {
+                        children[i] = pop();
+                    }
+                }
+                if (keyCount != 0) {
+                    att_names = new String[keyCount];
+                    att_values = new String[keyCount];
+                    for (int i = keyCount - 1; i >= 0; i--) {
+                        att_values[i] = pop();
+                        att_names[i] = pop();
+                    }
+                }
+                tag = pop();
+
+                push(newXML(tag, att_names, att_values, children));
+                ip += 1 + oc;
+                break;
+            }
+
+            case DECLARE_NS: {
+                String prefix = (String)constantPool[pl];
+                String uri = TypeCoercion.coerceToString(pop());
+                evalContext.declarePrefix(prefix, uri);
+                ip += 1 + oc;
+                break;
+            }
+
             // ============ DynIn ============
             case DYNIN: {
                 Object elem = pop();
@@ -1296,6 +1336,65 @@ public class IRInterpreter {
                     base.getClass().getName()));
         } catch (IllegalAccessException e) {
             throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
+        }
+    }
+
+    private Object newXML(Object tag, Object[] att_names, Object[] att_values,
+                          Object[] children) {
+        try {
+            Document doc = XmlNode.getContextDocument(elctx);
+            Element elem;
+            String name = TypeCoercion.coerceToString(tag);
+            String prefix, uri;
+            int colon;
+
+            // handle element namespace
+            colon = name.indexOf(':');
+            if (colon == -1)
+                prefix = XMLConstants.DEFAULT_NS_PREFIX;
+            else
+                prefix = name.substring(0, colon);
+            uri = evalContext.getURI(prefix);
+            if (uri == null)
+                elem = doc.createElement(name);
+            else
+                elem = doc.createElementNS(uri, name);
+
+            // set element attributes
+            if (att_names != null) {
+                for (int i = 0; i < att_names.length; i++) {
+                    String key = TypeCoercion.coerceToString(att_names[i]);
+                    String value = TypeCoercion.coerceToString(att_values[i]);
+                    if (key.equals("xmlns") || key.startsWith("xmlns:")) {
+                        uri = XMLConstants.XMLNS_ATTRIBUTE_NS_URI;
+                    } else {
+                        colon = key.indexOf(':');
+                        if (colon == -1)
+                            prefix = XMLConstants.DEFAULT_NS_PREFIX;
+                        else
+                            prefix = key.substring(0, colon);
+                        uri = evalContext.getURI(prefix);
+                    }
+                    if (uri == null)
+                        elem.setAttribute(key, value);
+                    else
+                        elem.setAttributeNS(uri, key, value);
+                }
+            }
+
+            // recursively create child nodes
+            if (children != null) {
+                for (Object child : children) {
+                    org.w3c.dom.Node node = XmlNode.coerceToNode(elctx, child);
+                    if (node != null) {
+                        elem.appendChild(node);
+                    }
+                }
+            }
+
+            return XmlNode.valueOf(elem);
+        } catch (DOMException ex) {
+            throw new EvaluationException(elctx, ex);
         }
     }
 }

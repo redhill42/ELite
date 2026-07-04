@@ -9,6 +9,9 @@ stdout << "Hello, World!" << endl;
 /* 函数式风格 */
 print("Hello, World!");
 
+/* 对象风格 */
+"Hello, World!".print();
+
 /* 消息传递风格 */
 "Hello, World!" -> print;
 

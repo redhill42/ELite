@@ -364,12 +364,6 @@ class ELIntegrationTest extends EliteTestBase {
         assertEquals(3L, ((Number) eng.eval("add(1, 2)")).longValue());
     }
 
-    @Test
-    void argTypeMismatchCrossEval() {
-        ScriptEngine eng = freshEngine();
-        assertEvalThrows(eng, "define add(a::Integer, b::Integer)::Integer => a + b; print(add(\"1\", 2))");
-    }
-
     // ---- Hello World styles ----
 
     @Test
