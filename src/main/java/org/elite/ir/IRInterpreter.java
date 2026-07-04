@@ -78,7 +78,7 @@ public class IRInterpreter {
         this.elctx = context.getELContext();
         this.function = function;
         this.code = function.code();
-        this.locals = new Object[function.maxLocalCount()];
+        this.locals = new Object[function.maxLocals()];
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
         this.debug = ELProgram.DEBUG;

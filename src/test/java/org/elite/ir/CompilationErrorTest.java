@@ -47,7 +47,7 @@ class CompilationErrorTest {
         // Simulate what ELProgram.evaluate() does at O3:
         // compile IR, try bytecode, catch CompilationError, fall back to IR
         ELNode node = Parser.parseExpression("2 + 3");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
 
         // Simulate CompilationError (as if bytecode compiler cannot handle it)
         CompilationError simulated = new CompilationError("simulated gap");
@@ -63,7 +63,7 @@ class CompilationErrorTest {
     @Test
     void o3FallbackPreservesResultForComplexExpression() {
         ELNode node = Parser.parseExpression("(10 + 5) * 3 - 8");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
 
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         Object irResult = interp.execute(null);

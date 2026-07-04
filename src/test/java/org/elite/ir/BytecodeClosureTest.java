@@ -26,7 +26,7 @@ class BytecodeClosureTest {
 
     private Object bcEval(String expr) {
         ELNode node = Parser.parseExpression(expr);
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf, "compilation must succeed");
         return cf.execute(elctx, null);
@@ -37,7 +37,7 @@ class BytecodeClosureTest {
     void closureCompilesAndRuns() {
         var p = new Parser("define f(x) => \\y => x+y; f(1)(2)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compile(prog);
+        IRFunction fn = IRBuilder.compile(elctx, prog);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf, "compilation must succeed");
         Object result = cf.execute(elctx, null);
@@ -49,7 +49,7 @@ class BytecodeClosureTest {
     void simpleCallCompilesAndRuns() {
         var p = new Parser("define add(a,b) => a + b; add(1, 2)");
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compile(prog);
+        IRFunction fn = IRBuilder.compile(elctx, prog);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf, "compilation must succeed");
         Object result = cf.execute(elctx, null);

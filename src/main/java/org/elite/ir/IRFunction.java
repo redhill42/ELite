@@ -16,6 +16,12 @@
 
 package org.elite.ir;
 
+import org.elite.eval.EvaluationContext;
+import org.elite.eval.StackTrace;
+import org.elite.parser.Position;
+
+import javax.el.ELContext;
+
 /**
  * A compiled function in IR form.
  *
@@ -90,11 +96,6 @@ public class IRFunction {
         return this; // all null — no defaults to apply
     }
 
-    /** Maximum local variable index (params + define'd vars). */
-    public int maxLocalCount() {
-        return maxLocals;
-    }
-
     /** Get the code offset for a given block ID. */
     public int blockStart(int blockId) {
         return blockOffsets[blockId];
@@ -103,6 +104,19 @@ public class IRFunction {
     /** Number of basic blocks. */
     public int blockCount() {
         return blockOffsets.length;
+    }
+
+    public Object execute(ELContext elctx, Object[] args) {
+        // Evaluate expression in global context.
+        EvaluationContext env = new EvaluationContext(elctx,
+            elctx.getFunctionMapper(), elctx.getVariableMapper());
+        StackTrace.addFrame(elctx, "__toplevel__", "", Position.make(1, 1));
+
+        try {
+            return new IRInterpreter(env, this).execute(args, true);
+        } finally {
+            StackTrace.removeFrame(elctx);
+        }
     }
 
     @Override

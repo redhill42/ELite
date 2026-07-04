@@ -125,6 +125,7 @@ public final class SymbolTableBuilder {
         public void visit(ELNode.CLASSDEF e) {
             // Class definition is not supported yet.
             table.enterScope("class", e);
+            super.visit(e);
             e.accept(trampolineFixup);
             table.leaveScope();
         }

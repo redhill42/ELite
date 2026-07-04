@@ -19,6 +19,7 @@ package org.elite.ir;
 import java.lang.reflect.Method;
 import java.util.*;
 
+import org.elite.eval.ELEngine;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 
@@ -35,11 +36,10 @@ public final class IRPrinter {
     public static String dumpProgramIR(ELContext elctx, String source) {
         Parser parser = new Parser(source);
         var program = parser.parse();
-        program.importExternal(elctx);
 
         LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
         ArrayDeque<IRFunction> worklist = new ArrayDeque<>();
-        IRFunction top = IRBuilder.compile(elctx, program, false, null);
+        IRFunction top = program.compile(elctx);
         worklist.push(top);
 
         while (!worklist.isEmpty()) {
@@ -66,7 +66,7 @@ public final class IRPrinter {
 
         StringBuilder sb = new StringBuilder();
         sb.append("; bytecode\n");
-        IRFunction fn = IRBuilder.compile(program);
+        IRFunction fn = program.compile(ELEngine.createELContext());
         sb.append(dumpBytecode(fn));
         return sb.toString();
     }
@@ -85,7 +85,7 @@ public final class IRPrinter {
     public static String formatIR(IRFunction fn) {
         StringBuilder sb = new StringBuilder();
         sb.append(fn.name()).append(" params=").append(fn.paramCount())
-          .append(" locals=").append(fn.maxLocalCount())
+          .append(" locals=").append(fn.maxLocals())
           .append(" blocks=").append(fn.blockCount())
           .append(" words=").append(fn.code().length)
           .append("\n");

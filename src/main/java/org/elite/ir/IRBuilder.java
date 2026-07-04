@@ -1835,12 +1835,9 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         nested.buildTail(node.body);
-        if (!endsWithReturn(nested)) {
-            nested.current.emitReturn();
-        }
 
         IRFunction rawFn = nested.finish(
-            node.name != null ? node.name : "lambda");
+            node.name != null ? node.name : "lambda", false);
         IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
         int poolIdx = putConstant(fn);
         current.emitClosure(poolIdx);
@@ -2615,31 +2612,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // ── Finalization ──
-    static boolean endsWithReturn(IRBuilder b) {
-        if (b.current != null && !b.current.isEmpty()) {
-            InstructionView v = new InstructionView(b.current.toArray(), 0);
-            int lastOp = -1;
-            while (v.inBounds()) {
-                lastOp = v.opcode();
-                v.advance();
-            }
-            if (lastOp == RETURN || lastOp == RETURN_VOID)
-                return true;
-        }
-        int maxId = b.blockMap.keySet().stream().max(Integer::compare).orElse(-1);
-        if (maxId < 0)
-            return false;
-        int[] lb = b.blockMap.get(maxId);
-        if (lb == null || lb.length == 0)
-            return false;
-        InstructionView v = new InstructionView(lb, 0);
-        int lastOp = -1;
-        while (v.inBounds()) {
-            lastOp = v.opcode();
-            v.advance();
-        }
-        return lastOp == RETURN || lastOp == RETURN_VOID;
-    }
 
     /**
      * Record the current line for the given PC (used by debug info).
@@ -2684,11 +2656,16 @@ public class IRBuilder extends ELNode.Visitor {
         return new DebugInfo(currentFile, name, blockPos, pcLines, n / 2);
     }
 
-    IRFunction finish(String name) {
+    IRFunction finish(String name, boolean noReturn) {
+        if (!endsWithReturn()) {
+            if (noReturn)
+                current.emitReturnVoid();
+            else
+                current.emitReturn();
+        }
+
         // Seal current block and record its debug line
         if (current != null) {
-            if (current.isEmpty())
-                current.emitReturnVoid();
             int[] code = current.toArray();
             blockMap.put(currentBlockId, code);
             if (ELProgram.DEBUG && currentLine > 0) {
@@ -2715,6 +2692,30 @@ public class IRBuilder extends ELNode.Visitor {
                       constants.toArray(new Object[0]),
                       buildDebugInfo(name, count, offsets), null);
         return func;
+    }
+
+    private boolean endsWithReturn(InstructionView v) {
+        int lastOp = -1;
+        while (v.inBounds()) {
+            lastOp = v.opcode();
+            v.advance();
+        }
+        return lastOp == RETURN || lastOp == RETURN_VOID;
+    }
+
+    private boolean endsWithReturn() {
+        if (current != null && !current.isEmpty()) {
+            if (endsWithReturn(current.view()))
+                return true;
+        }
+
+        int maxId = blockMap.keySet().stream().max(Integer::compare).orElse(-1);
+        if (maxId < 0)
+            return false;
+        int[] lb = blockMap.get(maxId);
+        if (lb == null || lb.length == 0)
+            return false;
+        return endsWithReturn(new InstructionView(lb, 0));
     }
 
     // ── Convenience emits ──
@@ -2850,28 +2851,16 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Static API ──
 
-    public static IRFunction compile(ELNode node) {
-        return compile(ELEngine.createELContext(), node, true);
-    }
-
-    public static IRFunction compile(ELContext elctx, ELNode node, boolean optimize) {
+    public static IRFunction compile(ELContext elctx, ELNode node) {
         IRBytecodeCompiler.resetState();
         SymbolTable symTable = SymbolTableBuilder.build(node);
         IRFunction func = new IRFunction("<expr>", 0);
         IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
         b.build(node);
-        if (!endsWithReturn(b)) {
-            b.current.emitReturn();
-        }
-        return b.finish("<expr>");
+        return b.finish("<expr>", false);
     }
 
-    public static IRFunction compile(ELProgram program) {
-        return compile(ELEngine.createELContext(), program, false, null);
-    }
-
-    public static IRFunction compile(ELContext elctx, ELProgram program,
-                                     boolean optimize, String file) {
+    public static IRFunction compile(ELContext elctx, ELProgram program) {
         SymbolTable symTable = SymbolTableBuilder.build(program);
         List<ELNode> defs = program.getDefinitions();
         List<ELNode> exps = program.getExpressions();
@@ -2880,8 +2869,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         IRFunction func = new IRFunction("<program>", 0);
         IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
-        if (file != null)
-            b.setFile(file);
+        b.setFile(program.getFilename());
 
         // Reserve slots for all pre-allocated program-level variables.
         // After this, defineLocalVar will allocate temp vars above the max slot.
@@ -2904,14 +2892,6 @@ public class IRBuilder extends ELNode.Visitor {
             b.build(last);
         }
 
-        if (!endsWithReturn(b)) {
-            if (last == null) {
-                b.current.emitReturnVoid();
-            } else {
-                b.current.emitReturn();
-            }
-        }
-
-        return b.finish("<program>");
+        return b.finish("<program>", last == null);
     }
 }

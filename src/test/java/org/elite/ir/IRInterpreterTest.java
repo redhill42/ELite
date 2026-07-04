@@ -22,7 +22,7 @@ class IRInterpreterTest {
 
     private Object interpret(String expr) {
         ELNode node = Parser.parseExpression(expr);
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         return interp.execute(null);
     }

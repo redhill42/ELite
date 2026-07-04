@@ -273,7 +273,7 @@ class BenchmarkTest {
     /** Benchmark IR interpreter on a simple expression. */
     private static double benchIR(String label, String expr, int warmup, int iters) {
         ELNode node = Parser.parseExpression(expr);
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
 
         // Warmup
@@ -365,7 +365,7 @@ class BenchmarkTest {
     /** Benchmark using IR interpreter (O2 path). */
     private static double benchIR2(String label, String expr, int warmup, int iters,
                                     javax.el.ELContext ectx, EvaluationContext evalCtx) {
-        IRFunction fn = IRBuilder.compile(Parser.parseExpression(expr));
+        IRFunction fn = IRBuilder.compile(elctx, Parser.parseExpression(expr));
         IRInterpreter interp = new IRInterpreter(evalCtx, fn);
         for (int i = 0; i < warmup; i++) interp.execute(null);
         long start = System.nanoTime();
@@ -380,7 +380,7 @@ class BenchmarkTest {
     /** Benchmark using bytecode compiler (O3 path). */
     private static double benchBC(String label, String expr, int warmup, int iters,
                                    javax.el.ELContext ectx, EvaluationContext evalCtx) {
-        IRFunction fn = IRBuilder.compile(Parser.parseExpression(expr));
+        IRFunction fn = IRBuilder.compile(elctx, Parser.parseExpression(expr));
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         for (int i = 0; i < warmup; i++) cf.execute(ectx, null);
         long start = System.nanoTime();

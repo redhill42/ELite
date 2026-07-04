@@ -55,6 +55,10 @@ class IntList {
         data[index] = value;
     }
 
+    int[] data() {
+        return data;
+    }
+
     int size() {
         return size;
     }

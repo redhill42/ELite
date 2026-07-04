@@ -92,8 +92,7 @@ public class IRBytecodeCompiler {
             Class<?> c = LOADER.define(name, bc);
             java.lang.reflect.Method m = c.getMethod("execute",
                 javax.el.ELContext.class, Object[].class);
-            return new CompiledFunction(m, bc, name, fn.maxLocalCount(),
-                fn.defaultValues());
+            return new CompiledFunction(m, bc, name, fn.maxLocals(), fn.defaultValues());
         } catch (Exception e) {
             throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
         }

@@ -3984,7 +3984,8 @@ public class Parser extends Scanner
 
     private Object executeCompileTimeProcessor() {
         ELProgram processor = new ELProgram();
-        int line = Position.line(pos);
+        processor.setFilename(filename);
+        processor.setStartLine(Position.line(pos));
 
         // parse compile time processor
         open_scope();
@@ -3997,7 +3998,7 @@ public class Parser extends Scanner
 
         // execute compile time processor
         ELContext elctx = getParseContext().getELContext();
-        return processor.execute(elctx, filename, line);
+        return processor.execute(elctx);
     }
 
     /*-------------------------------------------------------------------------*/

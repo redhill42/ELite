@@ -39,12 +39,7 @@ import org.elite.eval.closure.FieldClosure;
 import org.elite.ir.IRBuilder;
 import org.elite.ir.IRBytecodeCompiler;
 import org.elite.ir.IRFunction;
-import org.elite.ir.IRInterpreter;
-import org.elite.ir.CompilationError;
-import org.elite.ir.SymbolTable;
-import org.elite.ir.SymbolTableBuilder;
 import org.elite.util.Utils;
-import static org.elite.resources.Resources.*;
 
 public class ELProgram implements Serializable
 {
@@ -53,6 +48,9 @@ public class ELProgram implements Serializable
     private final List<String> imps;
     private final List<ELNode> defs;
     private final List<ELNode> exps;
+
+    private String filename;
+    private int startLine = 1;
 
     /**
      * Optimization level for expression evaluation.
@@ -65,13 +63,6 @@ public class ELProgram implements Serializable
      * Read from system property {@code elite.opt.level}; defaults to 2 (IR).
      */
     public static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
-
-    /**
-     * When true, bytecode/IR failures throw instead of silently falling back.
-     * Set via system property {@code elite.strict} or programmatically.
-     * Recommended for development/testing; off by default for production resilience.
-     */
-    static boolean STRICT_BYTECODE = Boolean.getBoolean("elite.strict");
 
     /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
     public static final boolean DEBUG = Boolean.getBoolean("elite.debug");
@@ -90,6 +81,22 @@ public class ELProgram implements Serializable
         this.imps = new ArrayList<>();
         this.defs = new ArrayList<>();
         this.exps = new ArrayList<>();
+    }
+
+    public String getFilename() {
+        return filename;
+    }
+
+    public void setFilename(String filename) {
+        this.filename = filename;
+    }
+
+    public int getStartLine() {
+        return startLine;
+    }
+
+    public void setStartLine(int startLine) {
+        this.startLine = startLine;
     }
 
     public void addModule(String name, String prefix) {
@@ -125,10 +132,19 @@ public class ELProgram implements Serializable
     }
 
     public Object execute(ELContext elctx) {
-        return execute(elctx, null, 1);
+        // Execute statements using selected evaluation strategy
+        switch (OPT_LEVEL) {
+        case 0:
+            return evaluateAST(elctx);
+        case 1: case 2:
+            return compile(elctx).execute(elctx, null);
+        case 3: default:
+            return compileToByteCode(elctx).execute(elctx, null);
+        }
     }
 
-    public Object execute(ELContext elctx, String file, int line) {
+    /** Execute expressions using the AST tree-walking interpreter. */
+    private Object evaluateAST(ELContext elctx) {
         FunctionMapper fm = elctx.getFunctionMapper();
         VariableMapper vm = elctx.getVariableMapper();
 
@@ -143,64 +159,45 @@ public class ELProgram implements Serializable
             fm = fmb.build();
         }
 
+        // Import modules and classes to populate global context. The global
+        // context is used by compilation and execution.
+        importExternals(elctx);
+
         // Evaluate expressions in global context.
         EvaluationContext env = new EvaluationContext(elctx, fm, vm);
-        Frame frame = StackTrace.addFrame(elctx, "__toplevel__", file, Position.make(line, 1));
+        Frame frame = StackTrace.addFrame(elctx, "__toplevel__", filename,
+                                          Position.make(startLine, 1));
 
         try {
-            // Import modules and classes to populate global context. The global
-            // context is used by compilation and execution.
-            importExternal(elctx);
-
-            // Execute statements using selected evaluation strategy
-            switch (OPT_LEVEL) {
-            case 0:
-                return evaluateAST(frame, env);
-
-            case 1: {
-                // Conservative IR — no optimization passes.
-                IRFunction irFn = IRBuilder.compile(elctx, this, false, frame.getFileName());
-                return new IRInterpreter(env, irFn).execute(null, true);
+            // Define function and class for forward reference
+            for (ELNode node : defs) {
+                frame.setPos(node.pos);
+                node.getValue(env);
             }
 
-            case 2: {
-                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
-                return new IRInterpreter(env, irFn).execute(null, true);
+            Object result = null;
+            for (ELNode node : exps) {
+                frame.setPos(node.pos);
+                result = node.getValue(env);
             }
-
-            case 3: default: {
-                IRFunction irFn = IRBuilder.compile(elctx, this, true, frame.getFileName());
-                try {
-                    IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(irFn);
-                    return cf.execute(elctx, null);
-                } catch (CompilationError e) {
-                    if (STRICT_BYTECODE)
-                        throw new ELException(_T(IR_STRICT_BYTECODE_FAILED), e);
-                    if (DEBUG) System.err.println("[elite] bytecode fallback: " + e.getMessage());
-                    return new IRInterpreter(env, irFn).execute(null, true);
-                }
-                // VerifyError and other Errors propagate — they're compiler bugs
-            }
-            }
+            return result;
         } finally {
             StackTrace.removeFrame(elctx);
         }
     }
 
-    /** Execute expressions using the AST tree-walking interpreter. */
-    private Object evaluateAST(Frame frame, EvaluationContext env) {
-        // Define function and class for forward reference
-        for (ELNode node : defs) {
-            frame.setPos(node.pos);
-            node.getValue(env);
-        }
+    public IRFunction compile(ELContext elctx) {
+        // Import modules and classes to populate global context. The global
+        // context is used by compilation and execution.
+        importExternals(elctx);
+        return IRBuilder.compile(elctx, this);
+    }
 
-        Object result = null;
-        for (ELNode node : exps) {
-            frame.setPos(node.pos);
-            result = node.getValue(env);
-        }
-        return result;
+    public IRBytecodeCompiler.CompiledFunction compileToByteCode(ELContext elctx) {
+        // Import modules and classes to populate global context. The global
+        // context is used by compilation and execution.
+        importExternals(elctx);
+        return IRBytecodeCompiler.compile(compile(elctx));
     }
 
     // Implementation
@@ -226,7 +223,7 @@ public class ELProgram implements Serializable
         }
     }
 
-    public void importExternal(ELContext elctx) {
+    public void importExternals(ELContext elctx) {
         importModules(elctx);
         importFunctions(elctx);
         importPackages(elctx);

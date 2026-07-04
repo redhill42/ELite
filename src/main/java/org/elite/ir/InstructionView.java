@@ -37,8 +37,16 @@ import org.elite.parser.ELNode;
  */
 public class InstructionView {
     private final int[] code;
+    private final int size;
     private int offset;
     private Object[] constantPool;
+
+    InstructionView(IntList ilist) {
+        this.code = ilist.data();
+        this.size = ilist.size();
+        this.offset = 0;
+        this.constantPool = null;
+    }
 
     public InstructionView(int[] code, int offset) {
         this(code, offset, null);
@@ -46,6 +54,7 @@ public class InstructionView {
 
     public InstructionView(int[] code, int offset, Object[] constantPool) {
         this.code = code;
+        this.size = code.length;
         this.offset = offset;
         this.constantPool = constantPool;
     }
@@ -108,7 +117,7 @@ public class InstructionView {
     // ── Navigation ──
 
     public boolean inBounds() {
-        return offset < code.length;
+        return offset < size;
     }
 
     public void advance() {
@@ -133,11 +142,6 @@ public class InstructionView {
             o += IRFormat.totalWords(code[o]);
         }
         return new InstructionView(code, o, constantPool);
-    }
-
-    /** Create a fresh view at the same position. */
-    public InstructionView dup() {
-        return new InstructionView(code, offset, constantPool);
     }
 
     // ── Type helpers ──

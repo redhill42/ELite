@@ -42,7 +42,7 @@ class IRBuilderTest {
     @Test
     void simpleIntAddition() {
         ELNode node = parse("10 + 20");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         assertTrue(fn.code().length > 0);
         // Verify it evaluates correctly via IR interpreter
@@ -53,7 +53,7 @@ class IRBuilderTest {
     @Test
     void intMultiplication() {
         ELNode node = parse("7 * 8");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(56L, ((Number) interp.execute(null)).longValue());
     }
@@ -61,7 +61,7 @@ class IRBuilderTest {
     @Test
     void doubleAddition() {
         ELNode node = parse("3.14 + 2.72");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(5.86, ((Number) interp.execute(null)).doubleValue(), 0.001);
     }
@@ -72,7 +72,7 @@ class IRBuilderTest {
     void conditionalHasMultipleBlocks() {
         // Parse a conditional expression (if is a statement, but the ternary ?: is an expression)
         ELNode node = parse("true ? 1 : 2");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
 
         assertTrue(fn.blockCount() >= 3, "conditional ?: should produce >= 3 blocks");
 
@@ -111,14 +111,14 @@ class IRBuilderTest {
         // Since while is a statement (can't be parsed as expression by parseExpression),
         // we verify this indirectly: the IR builder's buildBreak() method emits JUMP
         ELNode node = parse("0");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
     }
 
     @Test
     void intComparisonProducesTypedCmp() {
         ELNode node = parse("100 == 100");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         // Comparison evaluates correctly
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         assertEquals(true, interp.execute(null));
@@ -136,7 +136,7 @@ class IRBuilderTest {
     @Test void functionCallViaGlobal() {
         ELNode node = parse("add(3, 4)");
         // Without define, add is a global reference
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         // Should compile to PUSH_CONST(3,4) + PUSH_GLOBAL("add") + INVOKE_DYN
         assertTrue(scanOp(fn, Opcode.INVOKE_DYN) || scanOp(fn, Opcode.INVOKE_DIRECT) ||
@@ -148,7 +148,7 @@ class IRBuilderTest {
 
     @Test void propertyAccessCompiles() {
         ELNode node = parse("x.y");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         // Should have LOAD_PROPERTY
         assertTrue(scanOp(fn, Opcode.LOAD_PROPERTY), "x.y should use LOAD_PROPERTY");
@@ -156,7 +156,7 @@ class IRBuilderTest {
 
     @Test void indexAccessCompiles() {
         ELNode node = parse("x[0]");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
     }
 
@@ -164,14 +164,14 @@ class IRBuilderTest {
 
     @Test void listLiteralCompiles() {
         ELNode node = parse("[1, 2, 3]");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         assertTrue(scanOp(fn, Opcode.NEW_CONS), "list literal should use NEW_CONS");
     }
 
     @Test void mapLiteralCompiles() {
         ELNode node = parse("{a: 1, b: 2}");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         assertTrue(scanOp(fn, Opcode.NEW_MAP), "map literal should use NEW_MAP");
     }
@@ -180,20 +180,20 @@ class IRBuilderTest {
 
     @Test void conditionalCompilesWithBlocks() {
         ELNode node = parse("true ? 100 : 200");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertTrue(fn.blockCount() >= 3, "?: should produce >= 3 blocks");
         assertTrue(scanOp(fn, Opcode.JUMP_IF_TRUE), "?: should have JUMP_IF_TRUE");
     }
 
     @Test void logicalAndCompilesWithJumps() {
         ELNode node = parse("true && false");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertTrue(fn.blockCount() >= 2, "&& should produce multiple blocks");
     }
 
     @Test void logicalOrCompilesWithJumps() {
         ELNode node = parse("true || false");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertTrue(fn.blockCount() >= 2, "|| should produce multiple blocks");
     }
 
@@ -201,7 +201,7 @@ class IRBuilderTest {
 
     @Test void coalesceCompilesWithNullCheck() {
         ELNode node = parse("x ?? 100");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         assertTrue(scanOp(fn, Opcode.JUMP_IF_NONNULL), "?? should have null check");
     }
@@ -210,7 +210,7 @@ class IRBuilderTest {
 
     @Test void stringConcatCompiles() {
         ELNode node = parse("\"hello\" ~ \"world\"");
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
         assertTrue(scanOp(fn, Opcode.DYNCAT), "string concat should use DYNCAT");
     }

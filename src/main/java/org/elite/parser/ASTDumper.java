@@ -146,9 +146,10 @@ public final class ASTDumper {
         }
 
         if (node.symbol != null) {
-            sb.append(" slot=").append(node.symbol.slot);
             if (node.symbol.captured)
                 sb.append(" captured");
+            else
+                sb.append(" slot=").append(node.symbol.slot);
         }
 
         // Literal values

@@ -43,7 +43,6 @@ import org.elite.eval.EvaluationException;
 import org.elite.eval.ELUtils;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.ir.CompilationError;
-import org.elite.ir.IRBuilder;
 import org.elite.ir.IRBytecodeCompiler;
 import org.elite.ir.IRFunction;
 import org.elite.parser.Parser;
@@ -82,9 +81,9 @@ class ELiteScriptEngine extends AbstractScriptEngine
         ELContext elctx = null;
         try {
             ELProgram program = parse(script);
+            program.setFilename((String)get(ScriptEngine.FILENAME));
             elctx = getELContext(ctx);
-            String filename = (String)get(ScriptEngine.FILENAME);
-            return program.execute(elctx, filename, 1);
+            return program.execute(elctx);
         } catch (ParseException ex) {
             ScriptException ex2 = new ScriptException(ex.getMessage(),
                                                       ex.getFileName(),
@@ -200,28 +199,25 @@ class ELiteScriptEngine extends AbstractScriptEngine
 
     // Compilable implementation
 
+    @Override
     public CompiledScript compile(String script) throws ScriptException {
         try {
             ELProgram program = parse(script);
+            program.setFilename((String)get(ScriptEngine.FILENAME));
 
             switch (ELProgram.OPT_LEVEL) {
             case 0:
                 return new ASTCompiledScript(this, program);
 
-            case 1: {
+            case 1, 2: {
                 ELContext elctx = getELContext(getContext());
-                IRFunction fn = IRBuilder.compile(elctx, program, false, null);
+                IRFunction fn = program.compile(elctx);
                 return new IRCompiledScript(this, fn);
             }
 
-            case 2: default: {
+            case 3: default: {
                 ELContext elctx = getELContext(getContext());
-                IRFunction fn = IRBuilder.compile(elctx, program, true, null);
-                return new IRCompiledScript(this, fn);
-            }
-            case 3: {
-                ELContext elctx = getELContext(getContext());
-                IRFunction fn = IRBuilder.compile(elctx, program, true, null);
+                IRFunction fn = program.compile(elctx);
                 try {
                     var cf = IRBytecodeCompiler.compile(fn);
                     return new BytecodeCompiledScript(this, cf);

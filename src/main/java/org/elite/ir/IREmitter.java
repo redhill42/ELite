@@ -696,6 +696,10 @@ public class IREmitter {
         return buf.size();
     }
 
+    public InstructionView view() {
+        return new InstructionView(buf);
+    }
+
     public boolean isEmpty() {
         return buf.isEmpty();
     }

@@ -33,7 +33,7 @@ class BytecodeE2ETest {
     /** Compile and execute a single expression through the bytecode path. */
     private Object bcEval(String expr) {
         ELNode node = Parser.parseExpression(expr);
-        IRFunction fn = IRBuilder.compile(node);
+        IRFunction fn = IRBuilder.compile(elctx, node);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf);
         return cf.execute(elctx, null);
@@ -47,7 +47,7 @@ class BytecodeE2ETest {
     private Object bcEvalProgram(String src) {
         var p = new Parser(src);
         var prog = p.parse();
-        IRFunction fn = IRBuilder.compile(prog);
+        IRFunction fn = IRBuilder.compile(elctx, prog);
         IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf);
         return cf.execute(elctx, null);
