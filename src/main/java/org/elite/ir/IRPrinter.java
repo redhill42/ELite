@@ -98,16 +98,18 @@ public final class IRPrinter {
             }
         }
 
-        for (int b = 0; b < fn.blockCount(); b++) {
-            int start = fn.blockStart(b);
-            int end = (b + 1 < fn.blockCount()) ? fn.blockStart(b + 1) : fn.code().length;
-            sb.append("  B").append(b).append(":\n");
-
-            InstructionView v = new InstructionView(fn.code(), start, fn.constantPool());
-            while (v.inBounds() && v.offset() < end) {
-                sb.append("    ").append(formatInst(v, fn)).append("\n");
-                v.advance();
-            }
+        DebugInfo di = fn.debugInfo();
+        InstructionView v = new InstructionView(fn.code(), 0, fn.constantPool());
+        while (v.inBounds()) {
+            int blockId = fn.blockOfPc(v.offset());
+            if (blockId != -1)
+                sb.append("  B").append(blockId).append(":\n");
+            sb.append("    ").append(formatInst(v, fn));
+            int line = di.lineForPC(v.offset());
+            if (line != 0)
+                sb.append(" ; #").append(line);
+            sb.append("\n");
+            v.advance();
         }
         return sb.toString();
     }

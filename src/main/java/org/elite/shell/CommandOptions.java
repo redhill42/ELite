@@ -22,9 +22,6 @@ class CommandOptions {
                description = "specify the encoding of script files")
     public String encoding = null;
 
-    @Parameter(names = "--debug", description = "run in debug mode")
-    public boolean debug = false;
-
     @Parameter(names = "--dump-ast", description = "dump program AST")
     public boolean dumpAST = false;
 

@@ -27,56 +27,46 @@ package org.elite.ir;
  * zero runtime overhead.
  */
 public record DebugInfo(
-    String  fileName,         // source file name (null if unknown)
-    String  functionName,     // function name for frame construction
-    int[]   blockPositions,   // per-block start position (Position encoding), parallel to blockOffsets
-    int[]   pcLineTable,      // [pc0, line0, pc1, line1, ...] sorted by PC
-    int     entryCount        // number of entries in pcLineTable (= pcLineTable.length / 2)
+    String  file,         // source file name (null if unknown)
+    int[]   pcLineTable   // [pc0, line0, pc1, line1, ...] sorted by PC
 ) {
-    /** Empty debug info — no source mapping available. */
-    public static final DebugInfo EMPTY = new DebugInfo(null, null, null, null, 0);
-
     /**
      * Look up the source line number for a given instruction pointer (PC).
      * Returns the line of the closest recorded PC ≤ {@code ip}, or 0 if
      * no mapping exists before this IP.
      */
-    public int lineForPC(int ip) {
-        if (pcLineTable == null) return 0;
-        int bestLine = 0;
-        int limit = entryCount * 2;
-        for (int i = 0; i < limit; i += 2) {
-            if (pcLineTable[i] <= ip) {
-                bestLine = pcLineTable[i + 1];
+    public int lineForPC(int pc) {
+        int len = pcLineTable.length / 2;
+        int lo = 0, hi = len - 1;
+        int i = len;
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            if (pcLineTable[mid * 2] >= pc) {
+                i = mid;
+                hi = mid - 1;
             } else {
-                break; // pcLineTable is sorted by PC
+                lo = mid + 1;
             }
         }
-        return bestLine;
-    }
-
-    /** Look up the source position (line+col) for a given block ID. */
-    public int positionForBlock(int blockId) {
-        if (blockPositions == null || blockId < 0 || blockId >= blockPositions.length)
-            return 0;
-        return blockPositions[blockId];
+        if (i < len)
+            return pcLineTable[i * 2 + 1];
+        return 0;
     }
 
     @Override
     public String toString() {
-        if (entryCount == 0) return "DebugInfo{empty}";
-        StringBuilder sb = new StringBuilder("DebugInfo{file=").append(fileName)
-            .append(", fn=").append(functionName)
-            .append(", entries=").append(entryCount);
-        if (entryCount <= 5 && pcLineTable != null) {
-            sb.append(", pcLines=[");
-            for (int i = 0; i < entryCount * 2; i += 2) {
-                if (i > 0) sb.append(", ");
-                sb.append(pcLineTable[i]).append("→L").append(pcLineTable[i + 1]);
+        StringBuilder sb = new StringBuilder("DebugInfo{file=").append(file)
+            .append(", entries=").append(pcLineTable.length/2);
+        sb.append(", pcLines=[");
+        for (int i = 0; i < pcLineTable.length; i += 2) {
+            if (i > 0) sb.append(", ");
+            sb.append(pcLineTable[i]).append("→").append(pcLineTable[i + 1]);
+            if (i > 100) {
+                sb.append(", ...");
+                break;
             }
-            sb.append("]");
         }
-        sb.append("}");
+        sb.append("]}");
         return sb.toString();
     }
 }

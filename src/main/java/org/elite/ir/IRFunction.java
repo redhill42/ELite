@@ -68,7 +68,7 @@ public class IRFunction {
         this.maxLocals = maxLocals;
         this.blockOffsets = blockOffsets;
         this.constantPool = constantPool;
-        this.debugInfo = debugInfo != null ? debugInfo : DebugInfo.EMPTY;
+        this.debugInfo = debugInfo;
         this.defaultValues = defaultValues;
     }
 
@@ -106,17 +106,19 @@ public class IRFunction {
         return blockOffsets.length;
     }
 
+    public int blockOfPc(int pc) {
+        for (int blockId = 0; blockId < blockOffsets.length; blockId++) {
+            if (pc == blockOffsets[blockId])
+                return blockId;
+        }
+        return -1;
+    }
+
     public Object execute(ELContext elctx, Object[] args) {
         // Evaluate expression in global context.
         EvaluationContext env = new EvaluationContext(elctx,
             elctx.getFunctionMapper(), elctx.getVariableMapper());
-        StackTrace.addFrame(elctx, "__toplevel__", "", Position.make(1, 1));
-
-        try {
-            return new IRInterpreter(env, this).execute(args, true);
-        } finally {
-            StackTrace.removeFrame(elctx);
-        }
+        return new IRInterpreter(env, this).execute(args, true);
     }
 
     @Override

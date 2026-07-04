@@ -88,9 +88,9 @@ public class IRBuilder extends ELNode.Visitor {
     boolean inTailPosition = true;
 
     // ── Debug info ──
-    private String currentFile;       // source file name
-    private int currentLine;          // line number of last built ELNode
-    private final List<Integer> pcLineTable = new ArrayList<>(); // [pc, line, ...]
+    private String currentFile;
+    private int currentPos = Position.NOPOS;
+    private final Map<Integer, Integer> linePcMapping = new HashMap<>();
 
     /**
      * Create a top-level builder.  The symbol table must already be built
@@ -147,34 +147,28 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        if (ELProgram.DEBUG) {
-            int line = Position.line(node.pos);
-            if (line > 0) {
-                currentLine = line;
-                // Record the first line for PC 0
-                if (pcLineTable.isEmpty()) {
-                    pcLineTable.add(0);
-                    pcLineTable.add(currentLine);
-                }
-            }
-        }
+        if (node.pos != Position.NOPOS)
+            currentPos = node.pos;
 
         if (node.scope != null) {
             SymbolTable.Scope prevScope = currentScope;
             currentScope = node.scope;
             if (!(node instanceof ELNode.LAMBDA) && node.scope.hasCaptures()) {
-            // We need to set up new evaluation context if any variables
-            // captured in this scope.
-            current.emit1(ENTER_SCOPE, K_NONE, 0);
-            node.accept(this);
-            current.emit1(LEAVE_SCOPE, K_NONE, 0);
-        } else {
-            node.accept(this);
+                // We need to set up new evaluation context if any variables
+                // captured in this scope.
+                current.emit1(ENTER_SCOPE, K_NONE, 0);
+                node.accept(this);
+                current.emit1(LEAVE_SCOPE, K_NONE, 0);
+            } else {
+                node.accept(this);
             }
             currentScope = prevScope;
         } else {
             node.accept(this);
         }
+
+        if (node.pos != Position.NOPOS)
+            recordDebugLine(runningPc + current.size());
     }
 
     void build(ELNode node) {
@@ -639,7 +633,7 @@ public class IRBuilder extends ELNode.Visitor {
                 }
                 return false;
             case "times":
-                return buildStepBuiltin(new ELNode.NUMBER(-1, 0), base, args[0], 1, Token.LT);
+                return buildStepBuiltin(new ELNode.NUMBER(0, 0), base, args[0], 1, Token.LT);
             }
         }
 
@@ -2622,9 +2616,8 @@ public class IRBuilder extends ELNode.Visitor {
             int[] code = current.toArray();
             blockMap.put(currentBlockId, code);
             runningPc += code.length;
-            if (ELProgram.DEBUG && currentLine > 0) {
+            if (currentPos != Position.NOPOS)
                 recordDebugLine(runningPc);
-            }
             current.clear();
         }
         currentBlockId = blockId;
@@ -2638,9 +2631,8 @@ public class IRBuilder extends ELNode.Visitor {
         int[] code = current.toArray();
         blockMap.put(currentBlockId, code);
         runningPc += code.length;
-        if (ELProgram.DEBUG && currentLine > 0) {
+        if (currentPos != Position.NOPOS)
             recordDebugLine(runningPc);
-        }
         current.clear();
         currentBlockId = blockId;
     }
@@ -2740,13 +2732,10 @@ public class IRBuilder extends ELNode.Visitor {
      * Record the current line for the given PC (used by debug info).
      */
     private void recordDebugLine(int pc) {
-        if (ELProgram.DEBUG && currentLine > 0 && pc >= 0) {
-            int n = pcLineTable.size();
-            // Deduplicate consecutive same-line entries
-            if (n >= 2 && pcLineTable.get(n - 1) == currentLine)
-                return;
-            pcLineTable.add(pc);
-            pcLineTable.add(currentLine);
+        if (currentPos != Position.NOPOS) {
+            int line = Position.line(currentPos);
+            linePcMapping.compute(line, (k, v) ->
+                v == null ? pc : Math.max(pc, v));
         }
     }
 
@@ -2755,28 +2744,20 @@ public class IRBuilder extends ELNode.Visitor {
      */
     private DebugInfo buildDebugInfo(String name, int blockCount,
                                      int[] offsets) {
-        if (!ELProgram.DEBUG || pcLineTable.isEmpty())
-            return DebugInfo.EMPTY;
-        // Compute block start positions: for each block, find the first
-        // pcLineTable entry whose PC is >= the block's start offset.
-        int[] blockPos = new int[blockCount];
-        for (int i = 0; i < blockCount; i++) {
-            int blockStart = offsets[i];
-            int line = 0;
-            // Get the line from the earliest PC entry at or after block start
-            for (int j = 0; j < pcLineTable.size(); j += 2) {
-                if (pcLineTable.get(j) >= blockStart) {
-                    line = pcLineTable.get(j + 1);
-                    break;
-                }
-            }
-            blockPos[i] = line > 0 ? Position.make(line, 1) : 0;
+        // We need a sorted map from pc to line.
+        SortedMap<Integer, Integer> pcLineMapping = new TreeMap<>();
+        for (Map.Entry<Integer, Integer> kv : linePcMapping.entrySet()) {
+            pcLineMapping.put(kv.getValue(), kv.getKey());
         }
-        int n = pcLineTable.size();
-        int[] pcLines = new int[n];
-        for (int i = 0; i < n; i++)
-            pcLines[i] = pcLineTable.get(i);
-        return new DebugInfo(currentFile, name, blockPos, pcLines, n / 2);
+
+        // Build the pc to line mapping table.
+        IntList pcLineTable = new IntList();
+        for (Map.Entry<Integer, Integer> kv : pcLineMapping.entrySet()) {
+            pcLineTable.add(kv.getKey());
+            pcLineTable.add(kv.getValue());
+        }
+
+        return new DebugInfo(currentFile, pcLineTable.toArray());
     }
 
     IRFunction finish(String name, boolean noReturn) {
@@ -2791,7 +2772,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (current != null) {
             int[] code = current.toArray();
             blockMap.put(currentBlockId, code);
-            if (ELProgram.DEBUG && currentLine > 0) {
+            if (currentPos != Position.NOPOS) {
                 runningPc += code.length;
                 recordDebugLine(runningPc);
             }

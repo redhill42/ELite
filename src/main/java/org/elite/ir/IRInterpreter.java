@@ -71,12 +71,8 @@ public class IRInterpreter {
     // ── Execution state ──
     private Object[] stack;
     private int sp;            // stack pointer (points to next free slot)
-    private Object[] locals;
+    private final Object[] locals;
     private int ip;  // instruction pointer (absolute offset into code[])
-
-    // ── Debug support ──
-    private final boolean debug;
-    private Frame frame; // current stack frame (debug only)
 
     public IRInterpreter(EvaluationContext context, IRFunction function) {
         this.evalContext = context;
@@ -86,7 +82,6 @@ public class IRInterpreter {
         this.locals = new Object[function.maxLocals()];
         this.constantPool = function.constantPool();
         this.blockOffsets = function.blockOffsets();
-        this.debug = ELProgram.DEBUG;
     }
 
     // ── Entry point ──
@@ -136,34 +131,19 @@ public class IRInterpreter {
         }
 
         // Debug: push a stack frame for this function call
-        if (debug && !isTopLevel) {
-            DebugInfo di = function.debugInfo();
-            String fnName = di.functionName() != null ? di.functionName() : function.name();
-            String fileName = di.fileName();
-            int blockPos = di.positionForBlock(0);
-            frame = StackTrace.addFrame(elctx, fnName, fileName, blockPos);
-        }
+        DebugInfo di = function.debugInfo();
+        Frame frame = StackTrace.addFrame(elctx, function.name(), di.file(), di.lineForPC(0));
 
         try {
             return interpret();
         } catch (RuntimeException e) {
-            if (debug) {
-                // Update frame position to error location
-                if (frame != null) {
-                    DebugInfo di = function.debugInfo();
-                    int line = di.lineForPC(ip);
-                    if (line > 0) {
-                        frame.setPos(Position.make(line, 1));
-                    }
-                }
-                throw new EvaluationException(elctx, e);
-            }
+            // Update frame position to error location
+            int line = di.lineForPC(ip);
+            if (line > 0)
+                frame.setPos(Position.make(line, 1));
             throw e;
         } finally {
-            if (frame != null) {
-                StackTrace.removeFrame(elctx);
-                frame = null;
-            }
+            StackTrace.removeFrame(elctx);
         }
     }
 

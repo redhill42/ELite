@@ -64,9 +64,6 @@ public class ELProgram implements Serializable
      */
     public static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
 
-    /** Print fallback/debug messages to stderr. Off by default (quiet mode). */
-    public static final boolean DEBUG = Boolean.getBoolean("elite.debug");
-
     /** @return the list of definition statements */
     public List<ELNode> getDefinitions() { return defs; }
     /** @return the list of expression/statement nodes */
