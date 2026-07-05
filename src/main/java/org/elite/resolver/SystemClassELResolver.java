@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.beans.FeatureDescriptor;
 import java.io.Serializable;
-import java.lang.reflect.Method;
 
 import javax.el.ELResolver;
 import javax.el.ELContext;
@@ -33,32 +32,20 @@ import javax.el.PropertyNotWritableException;
 
 public class SystemClassELResolver extends ELResolver
 {
-    private Map<String,JavaPackage> packages;
-    private static List<String> systemPackages;
-    private static PackageCollector collector;
+    private final Map<String,JavaPackage> packages;
+    private static final List<String> systemPackages;
 
     // Collect packages from system class loader
     static {
-        List<String> names = new ArrayList<String>();
+        List<String> names = new ArrayList<>();
         for (Package pkg : Package.getPackages()) {
             names.add(pkg.getName());
         }
         systemPackages = names;
     }
 
-    /**
-     * Set a hook to collect packages from another source, such as
-     * OSGi bundle exported packages or servlet class loader.
-     */
-    public static void setPackageCollector(PackageCollector collector) {
-        SystemClassELResolver.collector = collector;
-    }
-
     public SystemClassELResolver() {
-        List<String> names = new ArrayList<String>(systemPackages);
-        if (collector != null) {
-            names.addAll(collector.findPackages());
-        }
+        List<String> names = new ArrayList<>(systemPackages);
 
         // add packages from thread context class loader
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
@@ -67,7 +54,7 @@ public class SystemClassELResolver extends ELResolver
         }
         names.addAll(new TCLPackages(cl).findPackages());
 
-        Map<String,JavaPackage> map = new HashMap<String,JavaPackage>();
+        Map<String,JavaPackage> map = new HashMap<>();
         for (String name : names) {
             while (name != null) {
                 if (!map.containsKey(name)) {
@@ -89,7 +76,7 @@ public class SystemClassELResolver extends ELResolver
         } else if (base == null) {
             clsname = property.toString();
         } else if (base instanceof JavaPackage) {
-            clsname = ((JavaPackage)base).getName()+ "." + property.toString();
+            clsname = ((JavaPackage)base).getName()+ "." + property;
         } else if (base instanceof Class && "class".equals(property)) {
             context.setPropertyResolved(true);
             return base;
@@ -104,7 +91,7 @@ public class SystemClassELResolver extends ELResolver
         }
 
         try {
-            Class c = ClassResolver.getInstance(context).resolveClass(clsname);
+            Class<?> c = ClassResolver.getInstance(context).resolveClass(clsname);
             context.setPropertyResolved(true);
             return c;
         } catch (ClassNotFoundException ex) {
@@ -122,7 +109,7 @@ public class SystemClassELResolver extends ELResolver
         } else if (base == null) {
             clsname = property.toString();
         } else if (base instanceof JavaPackage) {
-            clsname = ((JavaPackage)base).getName() + "." + property.toString();
+            clsname = ((JavaPackage)base).getName() + "." + property;
         } else if (base instanceof Class && "class".equals(property)) {
             context.setPropertyResolved(true);
             return Class.class;
@@ -203,11 +190,11 @@ public class SystemClassELResolver extends ELResolver
     
     private static class TCLPackages extends ClassLoader implements PackageCollector{
         TCLPackages(ClassLoader cl) {
-            super(getActualClassLoader(cl));
+            super(cl);
         }
 
         public List<String> findPackages() {
-            Set<String> pkgs = new HashSet<String>();
+            Set<String> pkgs = new HashSet<>();
             for (Package pkg : super.getPackages()) {
                 String name = pkg.getName();
                 while (name != null) {
@@ -216,23 +203,7 @@ public class SystemClassELResolver extends ELResolver
                     name = (p==-1) ? null : name.substring(0,p);
                 }
             }
-            return new ArrayList<String>(pkgs);
-        }
-    }
-
-    private static final String CLOUDWAY_LOADER = "com.cloudway.internal.web.container.ServletClassLoader";
-    private static final String CLOUDWAY_JSP_LOADER = "getJspClassLoader";
-
-    private static ClassLoader getActualClassLoader(ClassLoader cl) {
-        try {
-            if (cl.getClass().getName().equals(CLOUDWAY_LOADER)) {
-                Method method = cl.getClass().getMethod(CLOUDWAY_JSP_LOADER);
-                return (ClassLoader)method.invoke(cl);
-            } else {
-                return cl;
-            }
-        } catch (Throwable ex) {
-            return cl;
+            return new ArrayList<>(pkgs);
         }
     }
 }

@@ -78,30 +78,8 @@ class ELiteScriptEngine extends AbstractScriptEngine
     public Object eval(String script, ScriptContext ctx)
         throws ScriptException
     {
-        ELContext elctx = null;
-        try {
-            ELProgram program = parse(script);
-            program.setFilename((String)get(ScriptEngine.FILENAME));
-            elctx = getELContext(ctx);
-            return program.execute(elctx);
-        } catch (ParseException ex) {
-            ScriptException ex2 = new ScriptException(ex.getMessage(),
-                                                      ex.getFileName(),
-                                                      ex.getLineNumber(),
-                                                      ex.getColumnNumber());
-            ex2.initCause(ex);
-            ex2.setStackTrace(ex.getStackTrace());
-            throw ex2;
-        } catch (EvaluationException ex) {
-            ScriptException ex2 = new ScriptException(ex.getMessage());
-            ex2.initCause(ex.getCause());
-            ex2.setStackTrace(ex.getStackTrace());
-            throw ex2;
-        } catch (ELException ex) {
-            throw new ScriptException(ex);
-        } catch (RuntimeException ex) {
-            throw new ScriptException(new EvaluationException(elctx, ex));
-        }
+        CompiledScript cs = compile(script);
+        return cs.eval();
     }
 
     public Object eval(Reader reader, ScriptContext context)
