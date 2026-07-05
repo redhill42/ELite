@@ -57,6 +57,7 @@ public class Parser extends Scanner
 {
     private ResourceResolver resolver = null;
     private ParseContext env = new ParseContext();
+    private ConstantFolder constantFolder;
 
     private static final String SCRIPT_PATH = "META-INF/script/elite/";
     private static final String SCRIPT_EXT = ".xel";
@@ -3818,6 +3819,15 @@ public class Parser extends Scanner
     }
 
     /**
+     * Apply constant folding to an expression and add it to the program.
+     */
+    private void addToProgram(ELProgram prog, ELNode exp) {
+        if (constantFolder == null)
+            constantFolder = new ConstantFolder();
+        prog.addExpression(constantFolder.transform(exp));
+    }
+
+    /**
      * Parse the EL program.
      */
     void parseProgram(ELProgram prog) {
@@ -3839,10 +3849,10 @@ public class Parser extends Scanner
                         ELNode exp = ((Expression)obj).getNode(p);
                         if (exp instanceof ELNode.COMPOUND) {
                             for (ELNode e : ((ELNode.COMPOUND)exp).exps) {
-                                prog.addExpression(e);
+                                addToProgram(prog, e);
                             }
                         } else {
-                            prog.addExpression(exp);
+                            addToProgram(prog, exp);
                         }
                     }
                 } else {
@@ -3905,7 +3915,7 @@ public class Parser extends Scanner
                         slots = to_sa(lst);
                     }
                     ELNode.CLASS c = new ELNode.CLASS(p, name, slots);
-                    prog.addExpression(new ELNode.DEFINE(p, id, null, null, c));
+                    addToProgram(prog, new ELNode.DEFINE(p, id, null, null, c));
                 }
             }
             expect(SEMI);
@@ -3927,12 +3937,12 @@ public class Parser extends Scanner
         case ATSIGN:
             for (ELNode.DEFINE e : parseDefinitions(parseMetaData())) {
                 checkVar(e, true);
-                prog.addExpression(e);
+                addToProgram(prog, e);
             }
             break;
 
         case CLASSDEF:
-            prog.addExpression(parseClassDefinition(scan(), null));
+            addToProgram(prog, parseClassDefinition(scan(), null));
             break;
 
         case UNDEF: {
@@ -3940,25 +3950,25 @@ public class Parser extends Scanner
             if (token == PREFIX || token == INFIX || token == KEYWORD) {
                 String id = operator.name;
                 discard_symbol(id);
-                prog.addExpression(new ELNode.UNDEF(p, id));
+                addToProgram(prog, new ELNode.UNDEF(p, id));
                 scan();
             } else {
                 String id = scanQName();
                 expect(IDENT);
                 discard_symbol(id);
-                prog.addExpression(new ELNode.UNDEF(p, id));
+                addToProgram(prog, new ELNode.UNDEF(p, id));
             }
             expect(SEMI);
             break;
         }
 
         case VOID:
-            prog.addExpression(parseVoidExpression());
+            addToProgram(prog, parseVoidExpression());
             expect(SEMI);
             break;
 
         case LBRACE: // lambda or map
-            prog.addExpression(parseExpressionStatement());
+            addToProgram(prog, parseExpressionStatement());
             expect(SEMI);
             break;
 
@@ -3966,9 +3976,9 @@ public class Parser extends Scanner
             ELNode stmt = parseStatement();
             if (stmt instanceof ELNode.COMPOUND) {
                 if (((ELNode.COMPOUND)stmt).exps.length != 0)
-                    prog.addExpression(stmt);
+                    addToProgram(prog, stmt);
             } else {
-                prog.addExpression(stmt);
+                addToProgram(prog, stmt);
             }
             break;
         }

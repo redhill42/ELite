@@ -3070,7 +3070,7 @@ public abstract class ELNode implements Serializable
                 return a;
             }
 
-            return new StringBuilder().append(x).append(y).toString();
+            return String.valueOf(x) + y;
         }
 
         public Class getType(EvaluationContext context) {
@@ -3108,7 +3108,7 @@ public abstract class ELNode implements Serializable
         }
 
         protected Number eval(ELContext elctx, BigDecimal x, BigDecimal y) {
-            MathContext mc = GlobalScope.getMathContext(elctx);
+            MathContext mc = elctx == null ? null : GlobalScope.getMathContext(elctx);
             return (mc == null) ? x.add(y) : x.add(y, mc);
         }
 
@@ -3177,8 +3177,8 @@ public abstract class ELNode implements Serializable
         }
 
         protected Number eval(ELContext elctx, BigDecimal x, BigDecimal y) {
-            MathContext mc = GlobalScope.getMathContext(elctx);
-            return (mc == null) ? x.subtract(y) : x.subtract(y);
+            MathContext mc = elctx == null ? null : GlobalScope.getMathContext(elctx);
+            return (mc == null) ? x.subtract(y) : x.subtract(y, mc);
         }
 
         protected Number eval(ELContext elctx, BigInteger x, BigInteger y) {
@@ -3233,7 +3233,7 @@ public abstract class ELNode implements Serializable
         }
 
         protected Number eval(ELContext elctx, BigDecimal x, BigDecimal y) {
-            MathContext mc = GlobalScope.getMathContext(elctx);
+            MathContext mc = elctx == null ? null : GlobalScope.getMathContext(elctx);
             return (mc == null) ? x.multiply(y) : x.multiply(y, mc);
         }
 
@@ -3294,7 +3294,7 @@ public abstract class ELNode implements Serializable
         }
 
         protected Number eval(ELContext elctx, BigDecimal x, BigDecimal y) {
-            MathContext mc = GlobalScope.getMathContext(elctx);
+            MathContext mc = elctx == null ? null : GlobalScope.getMathContext(elctx);
             if (mc == null) {
                 mc = new MathContext((int)Math.min(x.precision() +
                                                    (long)Math.ceil(10.0*y.precision()/3.0),
@@ -3402,7 +3402,7 @@ public abstract class ELNode implements Serializable
         }
 
         protected Number eval(ELContext elctx, BigDecimal x, BigDecimal y) {
-            MathContext mc = GlobalScope.getMathContext(elctx);
+            MathContext mc = elctx == null ? null : GlobalScope.getMathContext(elctx);
             return (mc == null) ? x.remainder(y) : x.remainder(y, mc);
         }
 
@@ -3505,7 +3505,7 @@ public abstract class ELNode implements Serializable
                     return Math.pow(x.doubleValue(), n);
                 }
             } else if (x instanceof BigDecimal) {
-                MathContext mc = (MathContext)elctx.getContext(MathContext.class);
+                MathContext mc = elctx == null ? null : (MathContext)elctx.getContext(MathContext.class);
                 return (mc == null) ? ((BigDecimal)x).pow(n) : ((BigDecimal)x).pow(n, mc);
             } else if (x instanceof Decimal) {
                 return Decimal.valueOf(((Decimal)x).toBigDecimal().pow(n));
