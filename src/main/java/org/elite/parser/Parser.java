@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Modifier;
@@ -48,7 +47,6 @@ import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 import org.elite.util.SimpleCache;
 import static org.elite.parser.Token.*;
-import static org.elite.parser.ParseContext.ScopeState.*;
 import static org.elite.resources.Resources.*;
 
 /**
@@ -84,11 +82,7 @@ public class Parser extends Scanner
     }
 
     void open_scope() {
-        env.push(ENTER_NESTED);
-    }
-
-    void open_scope(ParseContext.ScopeState state) {
-        env.push(state);
+        env.push();
     }
 
     void close_scope() {
@@ -409,7 +403,9 @@ public class Parser extends Scanner
             Grammar g = new GrammarParser(this).parse();
             return new ELNode.CONST(p, new ParserCombinator(g));
         }
-        
+
+        case UNKNOWN:
+            throw parseError(_T(EL_ILLEGAL_CHARACTER, (char)ch));
         case EOI:
             throw incomplete(_T(EL_MISSING_TERM));
         default:
@@ -1399,7 +1395,7 @@ public class Parser extends Scanner
         }
         expect(ARROW);
 
-        open_scope(ENTER_CLOSURE);
+        open_scope();
         add_pattern_vars(pats);
         if (token == LBRACE) {
             body = parseCompoundExpression(scan());
@@ -1453,7 +1449,7 @@ public class Parser extends Scanner
             }
         }
 
-        open_scope(ENTER_CLOSURE);
+        open_scope();
         add_pattern_vars(pats);
         ELNode body = parseCompoundExpression(p);
         close_scope();
@@ -1520,7 +1516,7 @@ public class Parser extends Scanner
             }
         }
 
-        open_scope(ENTER_CLOSURE);
+        open_scope();
         add_pattern_vars(pats);
         ELNode body = parseCompoundExpression(p);
         expect(RBRACE);
@@ -1772,7 +1768,7 @@ public class Parser extends Scanner
                 }
                 body = parseMatchPatterns(pos, args);
             } else {
-                open_scope(ENTER_CLOSURE);
+                open_scope();
                 body = parseCompoundExpression(pos);
                 close_scope();
             }
@@ -2071,15 +2067,11 @@ public class Parser extends Scanner
             break;
 
         case BREAK:
-            if (!env.insideLoops())
-                throw parseError("break outside loop");
             e = new ELNode.BREAK(scan());
             expect(SEMI);
             break;
 
         case CONTINUE:
-            if (!env.insideLoops())
-                throw parseError("continue outside loop");
             e = new ELNode.CONTINUE(scan());
             expect(SEMI);
             break;
@@ -2824,7 +2816,7 @@ public class Parser extends Scanner
         expect(RPAREN);
 
         // parse body
-        open_scope(ENTER_CLOSURE);
+        open_scope();
         add_pattern_vars(pats);
         if (token == LBRACE) {
             body = parseCompoundExpression(scan());
@@ -3028,7 +3020,7 @@ public class Parser extends Scanner
 
         if (!foreach) {
             restore(mark);
-            open_scope(ENTER_LOOP);
+            open_scope();
 
             if (token != SEMI) {
                 if (local) {
@@ -3067,7 +3059,7 @@ public class Parser extends Scanner
         } else {
             ELNode.DEFINE var_def, idx_def = null;
 
-            open_scope(ENTER_LOOP);
+            open_scope();
             add_pattern_vars((ELNode.Pattern)var_pat);
             if (idx_pat != null)
                 add_pattern_vars((ELNode.Pattern)idx_pat);
@@ -3123,7 +3115,7 @@ public class Parser extends Scanner
         expect(LPAREN);
         ELNode cond = parseSyntaxExpression();
         expect(RPAREN);
-        open_scope(ENTER_LOOP);
+        open_scope();
         ELNode body = parseStatement();
         close_scope();
         return new ELNode.WHILE(p, cond, body);
@@ -3136,7 +3128,7 @@ public class Parser extends Scanner
         expect(LPAREN);
         ELNode cond = parseSyntaxExpression();
         expect(RPAREN);
-        open_scope(ENTER_LOOP);
+        open_scope();
         ELNode body = parseStatement();
         close_scope();
         return new ELNode.WHILE(p, inverseCondition(cond), body);
@@ -3146,7 +3138,7 @@ public class Parser extends Scanner
      * Parse a repeat (do-while style) expression.
      */
     private ELNode parseRepeatExpression(int p) {
-        open_scope(ENTER_LOOP);
+        open_scope();
         ELNode body = parseStatement();
         close_scope();
         int tok = token;
@@ -3321,7 +3313,7 @@ public class Parser extends Scanner
                 expect(ARROW);
 
                 int p3 = pos;
-                open_scope(ENTER_CLOSURE);
+                open_scope();
                 add_pattern_vars(pats);
                 stmts.clear();
                 while (token != BAR && token != RBRACE)

@@ -139,6 +139,11 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
+    private ParseException reportError(int pos, String message) {
+        return new ParseException(currentFile, Position.line(pos), Position.column(pos),
+                                  message);
+    }
+
     // ============ MAIN DISPATCH ============
 
     private void buildNode(ELNode node) {
@@ -264,20 +269,16 @@ public class IRBuilder extends ELNode.Visitor {
             if (ident.symbol != null) {
                 if (inTailPosition && ident.symbol.func == this.func) {
                     // TCO: build args (never in tail position), emit INVOKE_TAIL
-                    int argc = buildCallArgs((ELNode.LAMBDA)ident.symbol.node,
+                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.node,
                                               node.args, node.keys);
-                    if (argc == -1)
-                        argc = build(node.args);
                     current.emitInvokeTail(argc);
                     return;
                 }
 
                 if (ident.symbol.func != null) {
                     int funcIdx = putConstant(ident.symbol.func);
-                    int argc = buildCallArgs((ELNode.LAMBDA)ident.symbol.node,
+                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.node,
                                              node.args, node.keys);
-                    if (argc == -1)
-                        argc = build(node.args);
                     current.emitInvokeDirect(funcIdx, argc);
                     return;
                 }
@@ -337,9 +338,7 @@ public class IRBuilder extends ELNode.Visitor {
 
             // Inline lambda call.
             int funcIdx = putConstant(lam.symbol.func);
-            int argc = buildCallArgs(lam, node.args, node.keys);
-            if (argc == -1)
-                argc = build(node.args);
+            int argc = buildCallArgs(node.pos, lam, node.args, node.keys);
             current.emitInvokeDirect(funcIdx, argc);
             return;
         }
@@ -363,7 +362,7 @@ public class IRBuilder extends ELNode.Visitor {
      * Build arguments for a direct call, handling default and named parameters.
      * Returns the total number of arguments built (including defaults).
      */
-    private int buildCallArgs(ELNode.LAMBDA lambda, ELNode[] args, String[] keys) {
+    private int buildCallArgs(int pos, ELNode.LAMBDA lambda, ELNode[] args, String[] keys) {
         int argc = args.length;
         int nvars = lambda.vars.length;
         ELNode[] xargs = null;
@@ -380,8 +379,7 @@ public class IRBuilder extends ELNode.Visitor {
             // pad with default values
             xargs = new ELNode[nvars];
         } else if (lambda.varargs ? (argc < nvars-1) : (argc != nvars)) {
-            System.err.println(_T(EL_FN_BAD_ARG_COUNT, lambda.name, nvars, argc));
-            return -1;
+            throw reportError(pos, _T(EL_FN_BAD_ARG_COUNT, lambda.name, nvars, argc));
         }
 
         // Rearrange named arguments
@@ -391,10 +389,8 @@ public class IRBuilder extends ELNode.Visitor {
                 if (keys[i] != null) {
                     int j = indexOfVar(keys[i], lambda.vars, lambda.varargs);
                     if (j == -1) {
-                        if (!lambda.varargs || k >= argc) {
-                            System.err.println(_T(EL_UNKNOWN_ARG_NAME, keys[i]));
-                            return -1;
-                        }
+                        if (!lambda.varargs || k >= argc)
+                            throw reportError(pos, _T(EL_UNKNOWN_ARG_NAME, keys[i]));
                         if (xargs == null)
                             xargs = new ELNode[argc];
                         xargs[k++] = args[i];
@@ -424,27 +420,19 @@ public class IRBuilder extends ELNode.Visitor {
             argc = xargs.length;
             for (; j < argc; j++) {
                 if (args[j] == null) {
-                    if (lambda.vars[j].expr == null) {
-                        System.err.println(_T(EL_MISSING_ARG_VALUE, lambda.vars[j].id));
-                        return -1;
-                    }
+                    if (lambda.vars[j].expr == null)
+                        throw reportError(pos, _T(EL_MISSING_ARG_VALUE, lambda.vars[j].id));
                     args[j] = lambda.vars[j].expr;
                 }
             }
         }
 
-        // Build fixed argument list.
-        int fixed = lambda.varargs ? nvars - 1 : nvars;
-        for (int i = 0; i < fixed; i++)
-            build(args[i]);
+        // Build argument list, include varargs that then build to tuple.
+        build(args);
 
         // Build tuple for var arg list.
-        if (lambda.varargs) {
-            assert argc >= fixed;
-            for (int i = fixed; i < argc; i++)
-                build(args[i]);
-            current.emitNewTuple(argc - fixed);
-        }
+        if (lambda.varargs)
+            current.emitNewTuple(argc - (nvars - 1));
 
         return nvars;
     }
@@ -679,9 +667,8 @@ public class IRBuilder extends ELNode.Visitor {
         bodySlot.store();
         current.emitPop();
 
-        // FIXME: induction variable may be captured, should put in evaluation context.
         build(begin);
-        indSlot.define();
+        indSlot.store();
         current.emitPop();
         build(end);
         endSlot.store();
@@ -707,11 +694,12 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(bodyB);
         if (body instanceof ELNode.LAMBDA b) {
             bodySlot.load();
-            if (b.vars.length != 0) {
+            if (b.vars.length > 1)
+                throw reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT,
+                                              b.name == null ? "<lambda>" : b.name,
+                                              b.vars.length, 1));
+            if (b.vars.length == 1)
                 indSlot.load();
-                for (int i = 1; i < b.vars.length; i++)
-                    current.emitPushNull();
-            }
             if (b.symbol != null) {
                 int funcIdx = putConstant(b.symbol.func);
                 current.emitInvokeDirect(funcIdx, b.vars.length);
@@ -762,15 +750,16 @@ public class IRBuilder extends ELNode.Visitor {
             if (paramCount > 1 && method.isVarArgs())
                 paramCount--;
             if (paramCount > 1)
-                return false;
-
+                throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT, v.id, paramCount, 1));
             if (paramCount == 1)
                 arg.load();
             current.emitInvokeStatic(putConstant(method), paramCount);
             return true;
         } else if (v.symbol.node instanceof ELNode.LAMBDA b) {
             if (b.vars.length > 1)
-                return false;
+                throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT,
+                                              b.name == null ? "<lambda>" : b.name,
+                                              b.vars.length, 1));
             if (b.vars.length == 1)
                 arg.load();
             current.emitInvokeDirect(putConstant(b.symbol.func), b.vars.length);
@@ -781,16 +770,19 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private boolean buildMathReduce(ELNode[] args, int op) {
-        if (args.length == 0) {
-            buildConst(0);
-        } else {
-            build(args[0]);
-            for (int i = 1; i < args.length; i++) {
-                build(args[i]);
-                emitDynBinOp(op);
+        if (args.length == 1 && args[0] instanceof ELNode.TUPLE t) {
+            if (t.elems.length == 0) {
+                buildConst(0);
+            } else {
+                build(args[0]);
+                for (int i = 1; i < t.elems.length; i++) {
+                    build(t.elems[i]);
+                    emitDynBinOp(op);
+                }
             }
+            return true;
         }
-        return true;
+        return false;
     }
 
     // ── Literals: list, map, tuple, range ──
@@ -1089,7 +1081,7 @@ public class IRBuilder extends ELNode.Visitor {
             case Token.GT     -> current.emitDynGt();
             case Token.GE     -> current.emitDynGe();
             default -> throw new UnsupportedOperationException();
-        };
+        }
     }
 
     private void buildUnaryOp(ELNode.Unary node) {
@@ -1871,10 +1863,14 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.BREAK node) {
+        if (loopStack.isEmpty())
+            throw reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "break"));
         current.emitJump(loopStack.peek().breakBlock());
     }
 
     public void visit(ELNode.CONTINUE node) {
+        if (loopStack.isEmpty())
+            throw reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "continue"));
         current.emitJump(loopStack.peek().continueBlock());
     }
 
@@ -1958,11 +1954,48 @@ public class IRBuilder extends ELNode.Visitor {
 
         nested.buildTail(node.body);
 
-        IRFunction rawFn = nested.finish(
-            node.name != null ? node.name : "lambda", false);
-        IRFunction fn = rawFn.withDefaults(extractDefaults(node.vars));
-        int poolIdx = putConstant(fn);
-        current.emitClosure(poolIdx);
+        IRFunction fn = nested.finish(false);
+        fn = fn.withDefaults(getDefaultValues(node.vars));
+        current.emitClosure(putConstant(fn));
+    }
+
+
+    /**
+     * Extract default parameter values from lambda definitions.
+     */
+    private Object[] getDefaultValues(ELNode.DEFINE[] vars) {
+        Object[] defs = null;
+        for (int i = 0; i < vars.length; i++) {
+            if (vars[i].expr != null) {
+                if (defs == null)
+                    defs = new Object[vars.length];
+                defs[i] = getConstantValue(vars[i].expr);
+            }
+        }
+        return defs;
+    }
+
+    /**
+     * Extract a constant value from an ELNode, or null if non-constant.
+     */
+    private Object getConstantValue(ELNode node) {
+        if (node instanceof ELNode.NUMBER n)
+            return n.value;
+        if (node instanceof ELNode.STRINGVAL s)
+            return s.value;
+        if (node instanceof ELNode.CHARVAL c)
+            return c.value;
+        if (node instanceof ELNode.BOOLEANVAL b)
+            return b.value;
+        if (node instanceof ELNode.SYMBOL s)
+            return s.value;
+        if (node instanceof ELNode.REGEXP re)
+            return re.value;
+        if (node instanceof ELNode.NULL)
+            return null;
+        if (node.op == Token.NULL)
+            return null;
+        throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
     }
 
     // ── Pattern matching ──
@@ -2748,8 +2781,7 @@ public class IRBuilder extends ELNode.Visitor {
     /**
      * Build DebugInfo from collected data.
      */
-    private DebugInfo buildDebugInfo(String name, int blockCount,
-                                     int[] offsets) {
+    private DebugInfo buildDebugInfo() {
         // We need a sorted map from pc to line.
         SortedMap<Integer, Integer> pcLineMapping = new TreeMap<>();
         for (Map.Entry<Integer, Integer> kv : linePcMapping.entrySet()) {
@@ -2766,7 +2798,7 @@ public class IRBuilder extends ELNode.Visitor {
         return new DebugInfo(currentFile, pcLineTable.toArray());
     }
 
-    IRFunction finish(String name, boolean noReturn) {
+    IRFunction finish(boolean noReturn) {
         if (!endsWithReturn()) {
             if (noReturn)
                 current.emitReturnVoid();
@@ -2800,7 +2832,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         func.populate(merged.toArray(), maxLocals, offsets,
                       constants.toArray(new Object[0]),
-                      buildDebugInfo(name, count, offsets), null);
+                      buildDebugInfo(), null);
         return func;
     }
 
@@ -2908,57 +2940,6 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitInvokeStatic(methodIdx, argc);
     }
 
-    /**
-     * Extract default parameter values from lambda definitions.
-     */
-    private static Object[] extractDefaults(ELNode.DEFINE[] vars) {
-        boolean hasDefault = false;
-        for (ELNode.DEFINE v : vars)
-            if (v.expr != null) {
-                hasDefault = true;
-                break;
-            }
-        if (!hasDefault)
-            return null;
-
-        Object[] defs = new Object[vars.length];
-        for (int i = 0; i < vars.length; i++) {
-            defs[i] = vars[i].expr != null ? literalValue(vars[i].expr) : null;
-        }
-        return defs;
-    }
-
-    /**
-     * Extract a literal value from an ELNode, or null if non-literal.
-     */
-    private static Object literalValue(ELNode node) {
-        if (node instanceof ELNode.NUMBER n)
-            return n.value;
-        if (node instanceof ELNode.STRINGVAL s)
-            return s.value;
-        if (node instanceof ELNode.CHARVAL c)
-            return c.value;
-        if (node instanceof ELNode.BOOLEANVAL b)
-            return b.value;
-        if (node instanceof ELNode.SYMBOL s)
-            return s.value;
-        if (node.op == Token.NULL)
-            return null;
-        // Negative number: (- literal)
-        if (node.op == Token.NEG && node instanceof ELNode.Unary u &&
-            u.right instanceof ELNode.NUMBER n) {
-            Number v = n.value;
-            if (v instanceof Integer)
-                return -v.intValue();
-            if (v instanceof Long)
-                return -v.longValue();
-            if (v instanceof Double)
-                return -v.doubleValue();
-            return v;
-        }
-        return null; // complex expression
-    }
-
     // ── Static API ──
 
     public static IRFunction compile(ELContext elctx, ELNode node) {
@@ -2967,7 +2948,7 @@ public class IRBuilder extends ELNode.Visitor {
         IRFunction func = new IRFunction("<expr>", 0);
         IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
         b.build(node);
-        return b.finish("<expr>", false);
+        return b.finish(false);
     }
 
     public static IRFunction compile(ELContext elctx, ELProgram program) {
@@ -3002,6 +2983,6 @@ public class IRBuilder extends ELNode.Visitor {
             b.build(last);
         }
 
-        return b.finish("<program>", last == null);
+        return b.finish(last == null);
     }
 }

@@ -20,9 +20,9 @@ import javax.el.ELException;
 
 public class ParseException extends ELException
 {
-    private String file;
-    private int line;
-    private int column;
+    private final String file;
+    private final int line;
+    private final int column;
 
     public ParseException(String file, int line, int column, String message) {
         super(message);
@@ -45,7 +45,7 @@ public class ParseException extends ELException
 
     public String getMessage() {
         if (file != null) {
-            return file + ":" + line + ": " + super.getMessage();
+            return file + ":" + line + ":" + column + ": " + super.getMessage();
         } else {
             return "line " + line + ": " + super.getMessage();
         }

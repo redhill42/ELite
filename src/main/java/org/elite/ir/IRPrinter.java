@@ -104,10 +104,14 @@ public final class IRPrinter {
             int blockId = fn.blockOfPc(v.offset());
             if (blockId != -1)
                 sb.append("  B").append(blockId).append(":\n");
+            int startIdx = sb.length();
             sb.append("    ").append(formatInst(v, fn));
             int line = di.lineForPC(v.offset());
-            if (line != 0)
+            if (line != 0) {
+                if (sb.length() - startIdx < 35)
+                    sb.append(" ".repeat(35 - (sb.length() - startIdx)));
                 sb.append(" ; #").append(line);
+            }
             sb.append("\n");
             v.advance();
         }
@@ -123,7 +127,8 @@ public final class IRPrinter {
             else if (val instanceof Class<?> cls)
                 sb.append(" '").append(cls.getName()).append("'");
             else if (val instanceof Method m)
-                sb.append(" '").append(m.getName()).append("'");
+                sb.append(" '").append(m.getDeclaringClass().getSimpleName())
+                    .append('.').append(m.getName()).append("'");
             else
                 sb.append(" '").append(val).append("'");
         }
@@ -206,7 +211,8 @@ public final class IRPrinter {
         if (c instanceof Number || c instanceof Boolean) return c.toString();
         if (c instanceof IRFunction fn) return "<IRFunction " + fn.name() + ">";
         if (c instanceof Class<?> cls) return "<Class " + cls.getName() + ">";
-        if (c instanceof Method m) return "<Method " + m.getName() + ">";
+        if (c instanceof Method m) return "<Method " + m.getDeclaringClass().getSimpleName() +
+                                          "." + m.getName() + ">";
         if (c instanceof ELNode n) return "<" + n.getClass().getSimpleName() + ">";
         return c.getClass().getSimpleName();
     }

@@ -205,10 +205,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
             }
             }
         } catch (ParseException ex) {
-            ScriptException ex2 = new ScriptException(ex.getMessage(),
-                                                      ex.getFileName(),
-                                                      ex.getLineNumber(),
-                                                      ex.getColumnNumber());
+            ScriptException ex2 = new ScriptException(ex.getMessage());
             ex2.initCause(ex);
             ex2.setStackTrace(ex.getStackTrace());
             throw ex2;

@@ -21,27 +21,13 @@ import java.util.LinkedHashMap;
 
 public class ParseContext
 {
-    public enum ScopeState {
-        ENTER_NESTED,
-        ENTER_LOOP,
-        ENTER_CLOSURE,
-    };
-
     /**
      * A variable environment.
      */
     private static class Context extends LinkedHashMap<String, ELNode.DEFINE> {
         Context next;
-        boolean loop;
-
-        Context(Context next, ScopeState s) {
+        Context(Context next) {
             this.next = next;
-            if (s == ScopeState.ENTER_LOOP)
-                this.loop = true;
-            else if (s == ScopeState.ENTER_NESTED && next != null)
-                this.loop = next.loop;
-            else
-                this.loop = false;
         }
     }
 
@@ -53,8 +39,8 @@ public class ParseContext
     /**
      * Push a new context at the top of stack.
      */
-    public void push(ScopeState state) {
-        top = new Context(top, state);
+    public void push() {
+        top = new Context(top);
     }
 
     /**
@@ -64,10 +50,6 @@ public class ParseContext
         Context ret = top;
         top = top.next;
         return ret;
-    }
-
-    public boolean insideLoops() {
-        return top.loop;
     }
 
     /**

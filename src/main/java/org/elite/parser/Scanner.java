@@ -103,6 +103,8 @@ public class Scanner implements Cloneable
             } else {
                 tok = "#'" + tok + "'";
             }
+        } else if (token == UNKNOWN) {
+            return String.valueOf((char)ch);
         } else {
             tok = opNames[token];
         }
