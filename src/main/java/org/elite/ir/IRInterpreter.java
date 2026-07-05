@@ -723,9 +723,13 @@ public class IRInterpreter {
             }
 
             // ============ Return ============
-            case RETURN:
-                return pop();
+            case RETURN: {
+                Object result = pop();
+                assert sp == 0;
+                return result;
+            }
             case RETURN_VOID:
+                assert sp == 0;
                 return null;
             case THROW: {
                 Object cause = pop();

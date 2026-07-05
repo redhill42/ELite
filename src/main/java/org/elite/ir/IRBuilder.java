@@ -332,6 +332,9 @@ public class IRBuilder extends ELNode.Visitor {
         build(base);
 
         if (base instanceof ELNode.LAMBDA lam && lam.symbol != null && lam.symbol.func != null) {
+            // Inlined lambda no longer used.
+            current.emitPop();
+
             // Inline lambda call.
             int funcIdx = putConstant(lam.symbol.func);
             int argc = buildCallArgs(lam, node.args, node.keys);
@@ -1752,6 +1755,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         buildConst(0L);
         idxSlot.store();
+        current.emitPop();
 
         int bodyB = allocBlockId();
         int headerB = range.end != null ? allocBlockId() : bodyB;
@@ -1948,6 +1952,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (var.symbol != null && var.symbol.captured) {
                 nested.current.emitPushVar(var.symbol.slot);
                 nested.current.emitDefineGlobal(nested.putConstant(var.id));
+                nested.current.emitPop();
             }
         }
 
@@ -2295,7 +2300,6 @@ public class IRBuilder extends ELNode.Visitor {
             Slot tmpSlot = null;
             for (int i = 0; i < map.keys.length; i++) {
                 assert map.keys[i] instanceof ELNode.STRINGVAL;
-                argSlot.load();
                 buildConst(((ELNode.STRINGVAL)map.keys[i]).value);
                 emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
                                  Object.class, Object.class);
@@ -2306,6 +2310,8 @@ public class IRBuilder extends ELNode.Visitor {
                 }
                 if (compileMatchPattern(tmpSlot, map.values[i], failBlock))
                     current.emitJumpIfFalse(failBlock);
+                if (i != map.keys.length - 1)
+                    argSlot.load();
             }
             release(tmpSlot);
             return false;
