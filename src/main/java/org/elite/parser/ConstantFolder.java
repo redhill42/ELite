@@ -473,4 +473,13 @@ class ConstantFolder extends TreeTransformer {
         else
             result = new ELNode.CASE(e.pos, e.patterns, guards, bodies);
     }
+
+    public void visit(ELNode.LET e) {
+        // e.left is a pattern, so don't transform.
+        ELNode right = transform(e.right);
+        if (right == e.right)
+            result = e;
+        else
+            result = new ELNode.LET(e.pos, e.left, right);
+    }
 }

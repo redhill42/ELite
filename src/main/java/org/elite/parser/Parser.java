@@ -337,9 +337,6 @@ public class Parser extends Scanner
         case CASE:
             return parseMatchExpression(scan());
 
-        case CATCH:
-            return parseCatchExpression(scan());
-
         case LPAREN: {
             int p = scan();
             if (token == RPAREN) {
@@ -2035,7 +2032,21 @@ public class Parser extends Scanner
                 if (pattern != null && scan(ASSIGN)) {
                     ELNode exp = parseExpressionStatement();
                     add_pattern_vars(pattern);
-                    return new ELNode.LET(p, (ELNode)pattern, exp);
+                    if (pattern instanceof ELNode.DEFINE def &&
+                        def.type == null && def.expr == null) {
+                        // A simple let x = 1 can be optimized to define x = 1
+                        // without pattern matching. This is also makes let
+                        // becomes a synonym of define, if user prefer.
+                        if ("_".equals(def.id)) {
+                            // This is a noop, but exp still need to evaluate
+                            // if it has side effect.
+                            return exp;
+                        } else {
+                            return new ELNode.DEFINE(p, def.id, null, null, exp);
+                        }
+                    } else {
+                        return new ELNode.LET(p, (ELNode)pattern, exp);
+                    }
                 } else {
                     restore(mark);
                     return parseLetExpression(p, false);
@@ -2845,12 +2856,25 @@ public class Parser extends Scanner
             return body;
         } else {
             // parallel binding:
-            //  translate
-            //    let (x=a,y=b) body
-            //  into
-            //    (\x,y=>body)(a,b)
             ELNode.LAMBDA lambda = translateLambda(p, name, type, pats, false, body);
-            return new ELNode.APPLY(p, lambda, to_a(exps), null);
+
+            if (name == null) {
+                //  translate
+                //    let (x=a,y=b) body
+                //  into
+                //    (\x,y=>body)(a,b)
+                return new ELNode.APPLY(p, lambda, to_a(exps), null);
+            } else {
+                // A named lambda need a local scope, translate
+                //   let fib(n=12, a=1, b=1) { n<=2 ? b : fib(n-1, b, a+b) }
+                // into
+                //   define fib(n,a,b) => n<=2 ? b : fib(n-1, b, a+b)
+                //   fib(12, 1, 1)
+                return new ELNode.COMPOUND(p, new ELNode[]{
+                    new ELNode.DEFINE(p, name, type, null, lambda),
+                    new ELNode.APPLY(p, new ELNode.IDENT(p, name), to_a(exps), null)
+                });
+            }
         }
     }
 
@@ -3736,20 +3760,6 @@ public class Parser extends Scanner
         }
 
         return new ELNode.TRY(p, body, types, handlers, finalizer);
-    }
-
-    /**
-     * Parse a catch(exit) { ... exit(value) } expression.
-     */
-    private ELNode parseCatchExpression(int p) {
-        expect(LPAREN);
-        String var = idValue;
-        expect(IDENT);
-        expect(RPAREN);
-        expect(LBRACE);
-        ELNode body = parseCompoundExpression(pos);
-        expect(RBRACE);
-        return new ELNode.CATCH(p, var, body);
     }
 
     /**

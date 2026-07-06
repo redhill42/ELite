@@ -29,6 +29,7 @@ import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.ClassDefinition;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.MethodClosure;
+import org.elite.eval.seq.Cons;
 import org.elite.parser.*;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
@@ -63,7 +64,7 @@ public class IRBuilder extends ELNode.Visitor {
     private final IRFunction func;
 
     // Tracking current scope.
-    SymbolTable.Scope currentScope;
+    private SymbolTable.Scope currentScope;
 
     // Tracking temporary slot allocation.
     private int maxLocals;
@@ -71,30 +72,31 @@ public class IRBuilder extends ELNode.Visitor {
     private final Deque<Integer> freeSlots = new ArrayDeque<>();
 
     // ── Block management (stored by ID, output in ID order) ──
-    final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
-    IREmitter current;
-    int currentBlockId = 0;
-    int nextBlockId = 1;  // 0 is the initial block
+    private final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
+    private IREmitter current;
+    private int currentBlockId = 0;
+    private int nextBlockId = 1;  // 0 is the initial block
 
     // ── Constant pool (maybe shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
-    List<Object> constants = new ArrayList<>();
+    private List<Object> constants = new ArrayList<>();
 
     // ── Loop stack ──
     private record LoopTargets(int continueBlock, int breakBlock) {}
     private final Deque<LoopTargets> loopStack = new ArrayDeque<>();
 
     // ── Tail-call optimization ──
-    boolean inTailPosition = true;
+    private boolean inTailPosition = true;
 
     // ── Debug info ──
     private String currentFile;
     private int currentPos = Position.NOPOS;
     private final Map<Integer, Integer> linePcMapping = new HashMap<>();
+    private int runningPc;
 
     /**
      * Create a top-level builder.  The symbol table must already be built
-     * (Phase 1) so that AST nodes carry slot/captured annotations.
+     * so that AST nodes carry slot/captured annotations.
      */
     IRBuilder(ELContext elctx, IRFunction func, SymbolTable.Scope scope) {
         this.elctx = elctx;
@@ -190,10 +192,9 @@ public class IRBuilder extends ELNode.Visitor {
         buildNode(node);
     }
 
-    private int build(ELNode[] nodes) {
+    private void build(ELNode[] nodes) {
         for (ELNode node : nodes)
             build(node);
-        return nodes.length;
     }
 
     // ── Literals ──
@@ -244,32 +245,27 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.ACCESS node) {
-        // Neither getter nor field — fall back to ELResolver
-        // (could be a method reference, static member, or nested class)
-        build(node.right);   // base object
-        build(node.index);   // key
+        build(node.right);
+        build(node.index);
         current.emitLoadProperty();
     }
 
-    // ── Identifiers ──
     public void visit(ELNode.IDENT node) {
         if (node.symbol == null || node.symbol.captured) {
-            int nameIdx = putConstant(node.id);
-            current.emitPushGlobal(nameIdx);
+            current.emitPushGlobal(putConstant(node.id));
         } else {
             current.emitPushVar(node.symbol.slot);
         }
     }
 
-    // ── Apply ──
     public void visit(ELNode.APPLY node) {
         ELNode base = node.right;
 
         if (base instanceof ELNode.IDENT ident) {
             if (ident.symbol != null) {
                 if (inTailPosition && ident.symbol.func == this.func) {
-                    // TCO: build args (never in tail position), emit INVOKE_TAIL
-                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.node,
+                    // TCO: build args and emit INVOKE_TAIL
+                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.def.expr,
                                               node.args, node.keys);
                     current.emitInvokeTail(argc);
                     return;
@@ -277,13 +273,13 @@ public class IRBuilder extends ELNode.Visitor {
 
                 if (ident.symbol.func != null) {
                     int funcIdx = putConstant(ident.symbol.func);
-                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.node,
+                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.def.expr,
                                              node.args, node.keys);
                     current.emitInvokeDirect(funcIdx, argc);
                     return;
                 }
 
-                if (ident.symbol.node instanceof ELNode.CLASSDEF) {
+                if (ident.symbol.def.expr instanceof ELNode.CLASSDEF) {
                     // The target is a CLASSDEF, so the defined object must be
                     // a ClassDefinition, just invoke the "invoke" method
                     // on target.
@@ -453,8 +449,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (base instanceof ELNode.IDENT var) {
             if (var.symbol == null)
                 return var.id;
-            else if (var.symbol.node instanceof ELNode.DEFINE def &&
-                     def.expr instanceof ELNode.CLASS c)
+            else if (var.symbol.def.expr instanceof ELNode.CLASS c)
                 return c.name;
         } else if (base instanceof ELNode.ACCESS) {
             StringBuilder sb = new StringBuilder();
@@ -755,7 +750,7 @@ public class IRBuilder extends ELNode.Visitor {
                 arg.load();
             current.emitInvokeStatic(putConstant(method), paramCount);
             return true;
-        } else if (v.symbol.node instanceof ELNode.LAMBDA b) {
+        } else if (v.symbol.def.expr instanceof ELNode.LAMBDA b) {
             if (b.vars.length > 1)
                 throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT,
                                               b.name == null ? "<lambda>" : b.name,
@@ -991,8 +986,8 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.IN node) {
-        build(node.right);  // container
-        build(node.left);   // element
+        build(node.right);
+        build(node.left);
         current.emitDynIn();
         if (node.negative)
             current.emitNot();
@@ -1111,41 +1106,6 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitIdNe();
     }
 
-    public void visit(ELNode.INC node) {
-        buildIncDec(node.right, true, node.is_preincrement);
-    }
-
-    public void visit(ELNode.DEC node) {
-        buildIncDec(node.right, false, node.is_preincrement);
-    }
-
-    /**
-     * Expand ++x / x++ / --x / x-- for local variables.
-     */
-    private void buildIncDec(ELNode target, boolean isInc, boolean isPre) {
-        // Evaluate right value.
-        build(target);
-        if (!isPre)
-            current.emitDup();
-
-        // Increment or decrement the value.
-        buildConst(1);
-        emitDynBinOp(isInc ? Token.ADD : Token.SUB);
-
-        // Assign to right value itself.
-        if (target instanceof ELNode.IDENT ident)
-            buildStoreVariable(ident);
-        else if (target instanceof ELNode.ACCESS access)
-            buildStoreProperty(access);
-        else // could not happen, parser doesn't allow increment/decrement on other expression
-            throw new UnsupportedOperationException("Invalid increment/decrement");
-
-        // If preincrement, stack top is the return value, otherwise pop and
-        // keep duped value on top.
-        if (!isPre)
-            current.emitPop();
-    }
-
     public void visit(ELNode.PREFIX node) {
         int nameIdx = putConstant(node.name);
         build(node.right);
@@ -1211,18 +1171,17 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJumpIfTrue(thenB);
         current.emitJump(elseB);
 
-        sealAndStart(thenB);
+        startBlock(thenB);
         buildTail(node.left);
         current.emitJump(mergeB);
 
-        sealAndStart(elseB);
+        startBlock(elseB);
         buildTail(node.right);
         current.emitJump(mergeB);
 
-        sealAndStart(mergeB);
+        startBlock(mergeB);
     }
 
-    // ── Coalesce ──
     public void visit(ELNode.COALESCE node) {
         if (node.left.op == Token.NULL) {
             build(node.right);
@@ -1245,8 +1204,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private boolean nullable(ELNode node) {
-        while (node instanceof ELNode.EXPR)
-            node = ((ELNode.EXPR)node).right;
         return !(node instanceof ELNode.Constant ||
                  node instanceof ELNode.Composite ||
                  node instanceof ELNode.CONS ||
@@ -1310,6 +1267,41 @@ public class IRBuilder extends ELNode.Visitor {
             // should not happen, parser disabled other assignop syntax
             throw new AssertionError();
         }
+    }
+
+    public void visit(ELNode.INC node) {
+        buildIncDec(node.right, true, node.is_preincrement);
+    }
+
+    public void visit(ELNode.DEC node) {
+        buildIncDec(node.right, false, node.is_preincrement);
+    }
+
+    /**
+     * Expand ++x / x++ / --x / x-- for local variables.
+     */
+    private void buildIncDec(ELNode target, boolean isInc, boolean isPre) {
+        // Evaluate right value.
+        build(target);
+        if (!isPre)
+            current.emitDup();
+
+        // Increment or decrement the value.
+        buildConst(1);
+        emitDynBinOp(isInc ? Token.ADD : Token.SUB);
+
+        // Assign to right value itself.
+        if (target instanceof ELNode.IDENT ident)
+            buildStoreVariable(ident);
+        else if (target instanceof ELNode.ACCESS access)
+            buildStoreProperty(access);
+        else // could not happen, parser doesn't allow increment/decrement on other expression
+            throw new UnsupportedOperationException("Invalid increment/decrement");
+
+        // If preincrement, stack top is the return value, otherwise pop and
+        // keep duped value on top.
+        if (!isPre)
+            current.emitPop();
     }
 
     private void buildStoreVariable(ELNode.IDENT ident) {
@@ -1434,35 +1426,26 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.DEFINE node) {
-        if (node.expr != null) {
-            // All DEFINE nodes should carry a symbol annotation from the Phase 1
-            // pre-pass.  If one is missing (e.g. dynamically generated node),
-            // fall through to buildTrampoline.
-            if (node.symbol == null) {
-                buildTrampoline(node);
-                return;
-            }
+        // All DEFINE nodes should carry a symbol annotation. Missing expr or symbol can
+        // happen only on pattern or lambda parameters which are handled by pattern or
+        // lambda compilation.  For normal definition they should always present.
+        assert node.expr != null && node.symbol != null;
 
-            // CLASS nodes (from import): push the raw Class constant
-            if (node.expr instanceof ELNode.CLASS clsNode) {
-                Class<?> cls = resolveClassAtCompileTime(clsNode.name);
-                if (cls != null) {
-                    buildConst(cls);
-                } else {
-                    buildTrampoline(node);
-                    return;
-                }
-            } else {
-                build(node.expr);
-            }
+        // CLASS nodes (from import): push the raw Class constant
+        if (node.expr instanceof ELNode.CLASS c) {
+            Class<?> cls = resolveClassAtCompileTime(c.name);
+            if (cls == null)
+                throw reportError(c.pos, "class not found: " + c.name);
+            buildConst(cls);
+        } else {
+            build(node.expr);
+        }
 
-            if (node.symbol.captured) {
-                int nameIdx = putConstant(node.id);
-                current.emitDefineGlobal(nameIdx);
-            } else {
-                // Always store locally for fast access within this function.
-                current.emitStoreVar(node.symbol.slot);
-            }
+        // Define global or local variable according to it's captured flag.
+        if (node.symbol.captured) {
+            current.emitDefineGlobal(putConstant(node.id));
+        } else {
+            current.emitStoreVar(node.symbol.slot);
         }
     }
 
@@ -1470,12 +1453,6 @@ public class IRBuilder extends ELNode.Visitor {
         build(node.right);
     }
 
-    /**
-     * Compile string interpolation (Composite) without trampoline.
-     * Equivalent to AST: StringBuilder → append(coerceToString(elem)) →
-     * toString().
-     * Uses DYNCAT chain to concatenate elements with type coercion.
-     */
     public void visit(ELNode.Composite node) {
         if (node.elems.length == 0) {
             buildConst("");
@@ -1933,8 +1910,11 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.symbol != null)
             func = node.symbol.func;
         else {
+            // For anonymous lambda, use a pseudo Symbol to store IRFunction skeleton
+            // so call-site can emit direct call.
             func = new IRFunction("<lambda>", node.vars.length);
-            node.symbol = new SymbolTable.Symbol(node.scope, "");
+            ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, node);
+            node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
             node.symbol.func = func;
         }
 
@@ -1975,30 +1955,44 @@ public class IRBuilder extends ELNode.Visitor {
             if (vars[i].expr != null) {
                 if (defs == null)
                     defs = new Object[vars.length];
-                defs[i] = getConstantValue(vars[i].expr);
+                defs[i] = const_value(vars[i].expr);
             }
         }
         return defs;
     }
 
-    /**
-     * Extract a constant value from an ELNode, or null if non-constant.
-     */
-    private Object getConstantValue(ELNode node) {
-        if (node instanceof ELNode.NUMBER n)
-            return n.value;
-        if (node instanceof ELNode.STRINGVAL s)
-            return s.value;
-        if (node instanceof ELNode.CHARVAL c)
-            return c.value;
-        if (node instanceof ELNode.BOOLEANVAL b)
-            return b.value;
-        if (node instanceof ELNode.SYMBOL s)
-            return s.value;
-        if (node instanceof ELNode.REGEXP re)
-            return re.value;
+    private Object const_value(ELNode node) {
+        if (node instanceof ELNode.NUMBER x)
+            return x.value;
+        if (node instanceof ELNode.STRINGVAL x)
+            return x.value;
+        if (node instanceof ELNode.CHARVAL x)
+            return x.value;
+        if (node instanceof ELNode.BOOLEANVAL x)
+            return x.value;
+        if (node instanceof ELNode.SYMBOL x)
+            return x.value;
+        if (node instanceof ELNode.REGEXP x)
+            return x.value;
+        if (node instanceof ELNode.NIL)
+            return Cons.nil();
         if (node instanceof ELNode.NULL)
             return null;
+
+        if (node instanceof ELNode.TUPLE x) {
+            Object[] a = new Object[x.elems.length];
+            for (int i = 0; i < a.length; i++)
+                a[i] = const_value(x.elems[i]);
+            return a;
+        }
+
+        if (node instanceof ELNode.CONS x && !x.delay) {
+            Object h = const_value(x.head);
+            Object t = const_value(x.tail);
+            if (t instanceof Seq)
+                return new Cons(h, (Seq)t);
+        }
+
         throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
     }
 
@@ -2006,8 +2000,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     /**
      * Compile a MATCH expression as a series of if-else chains.
-     * Unsupported patterns (NEW for now) cause the entire MATCH
-     * to fall back to trampoline.
      */
     public void visit(ELNode.MATCH node) {
         // Evaluate all args, store in temp locals except it's already a local var.
@@ -2025,13 +2017,13 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
-        int exitBlock = allocBlockId();
-        int[] nextCase = new int[node.alts.length + 1]; // +1 for default
-
         // Allocate blocks for each case entry point
+        int[] nextCase = new int[node.alts.length + 1]; // +1 for default
         for (int ci = 0; ci < node.alts.length; ci++)
             nextCase[ci] = allocBlockId();
         nextCase[node.alts.length] = allocBlockId(); // default/error block
+
+        int exitBlock = allocBlockId();
 
         // Jump to first case
         current.emitJump(nextCase[0]);
@@ -2040,7 +2032,7 @@ public class IRBuilder extends ELNode.Visitor {
             ELNode.CASE c = node.alts[ci];
             int failBlock = nextCase[ci + 1];
 
-            sealAndStart(nextCase[ci]);
+            startBlock(nextCase[ci]);
 
             // Each case gets its own control scope for variable bindings.
             // On failure, leaveControlScope discards bindings.
@@ -2101,7 +2093,7 @@ public class IRBuilder extends ELNode.Visitor {
             }
 
             // On failure: discard case bindings, go to next case
-            sealAndStart(failBlock);
+            startBlock(failBlock);
 
             // Leave the case scope
             if (c.scope.hasCaptures())
@@ -2114,7 +2106,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Default block
-        sealAndStart(nextCase[node.alts.length]);
+        startBlock(nextCase[node.alts.length]);
         if (node.deflt != null) {
             buildTail(node.deflt);
         } else {
@@ -2123,7 +2115,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
         current.emitJump(exitBlock);
 
-        sealAndStart(exitBlock);
+        startBlock(exitBlock);
         for (Slot slot : argSlots)
             slot.release();
     }
@@ -2165,7 +2157,10 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.IDENT var) {
-            current.emitPushVar(var.symbol.slot);
+            if (var.symbol.captured)
+                current.emitPushGlobal(putConstant(var.id));
+            else
+                current.emitPushVar(var.symbol.slot);
             emitDynBinOp(Token.EQ);
             return true;
         }
@@ -2193,12 +2188,12 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emitJumpIfFalse(tryRight); // matched -> skip right
             current.emitJump(done);
 
-            sealAndStart(tryRight);
+            startBlock(tryRight);
             argSlot.load();
             if (compileMatchPattern(argSlot, or.right, failBlock))
                 current.emitJumpIfFalse(failBlock);
             current.emitJump(done);
-            sealAndStart(done);
+            startBlock(done);
             return false;
         }
 
@@ -2360,7 +2355,7 @@ public class IRBuilder extends ELNode.Visitor {
             int argc = args.length;
 
             if (base.symbol != null &&
-                base.symbol.node instanceof ELNode.CLASSDEF cdef) {
+                base.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
                 Slot cdefSlot = new Slot(base);
                 Slot targetSlot = new Slot();
                 Slot tmpSlot = null;
@@ -2425,7 +2420,7 @@ public class IRBuilder extends ELNode.Visitor {
                 String className;
                 String[] slots = null;
 
-                if (base.symbol != null && base.symbol.node instanceof ELNode.CLASS c) {
+                if (base.symbol != null && base.symbol.def.expr instanceof ELNode.CLASS c) {
                     className = c.name;
                     slots = c.slots;
                 } else {
@@ -2470,7 +2465,6 @@ public class IRBuilder extends ELNode.Visitor {
                     if (compileMatchPattern(tmpSlot, args[i], failBlock))
                         current.emitJumpIfFalse(failBlock);
                 }
-
                 release(tmpSlot);
             }
 
@@ -2508,13 +2502,13 @@ public class IRBuilder extends ELNode.Visitor {
             if (argc == 0 || data.keys != null)
                 return false;
 
-            if (base.symbol != null && base.symbol.node instanceof ELNode.CLASSDEF cdef) {
+            if (base.symbol != null && base.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
                 return cdef.vars == null || cdef.vars.length != argc;
             } else {
                 String className;
                 String[] slots = null;
 
-                if (base.symbol != null && base.symbol.node instanceof ELNode.CLASS c) {
+                if (base.symbol != null && base.symbol.def.expr instanceof ELNode.CLASS c) {
                     className = c.name;
                     slots = c.slots;
                 } else {
@@ -2573,8 +2567,8 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPop();
         }
 
-        int exitBlock = allocBlockId();
         int failBlock = allocBlockId();
+        int exitBlock = allocBlockId();
 
         argSlot.load();
         if (compileMatchPattern(argSlot, node.left, failBlock))
@@ -2587,7 +2581,6 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJump(exitBlock);
 
         startBlock(exitBlock);
-        current.emitPop();
         argSlot.load();
         argSlot.release();
     }
@@ -2605,7 +2598,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (node.base instanceof ELNode.IDENT var && var.symbol != null) {
-            if (var.symbol.node instanceof ELNode.CLASSDEF) {
+            if (var.symbol.def.expr instanceof ELNode.CLASSDEF) {
                 // Load the ClassDefinition.
                 build(node.base);
 
@@ -2617,8 +2610,7 @@ public class IRBuilder extends ELNode.Visitor {
                 return;
             }
 
-            if (var.symbol.node instanceof ELNode.DEFINE def &&
-                def.expr instanceof ELNode.CLASS c && c.slots == null) {
+            if (var.symbol.def.expr instanceof ELNode.CLASS c && c.slots == null) {
                 className = c.name;
             }
         }
@@ -2658,23 +2650,10 @@ public class IRBuilder extends ELNode.Visitor {
         return nextBlockId++;
     }
 
-    private void startBlock(int blockId) {
-        if (current != null && !current.isEmpty()) {
-            int[] code = current.toArray();
-            blockMap.put(currentBlockId, code);
-            runningPc += code.length;
-            if (currentPos != Position.NOPOS)
-                recordDebugLine(runningPc);
-            current.clear();
-        }
-        currentBlockId = blockId;
-        current = new IREmitter();
-    }
-
     /**
      * Seal current block into blockMap and start a new block with the given ID.
      */
-    private void sealAndStart(int blockId) {
+    private void startBlock(int blockId) {
         int[] code = current.toArray();
         blockMap.put(currentBlockId, code);
         runningPc += code.length;
@@ -2683,9 +2662,6 @@ public class IRBuilder extends ELNode.Visitor {
         current.clear();
         currentBlockId = blockId;
     }
-
-    // Running PC counter for debug info
-    private int runningPc;
 
     // ── Local management ──
 

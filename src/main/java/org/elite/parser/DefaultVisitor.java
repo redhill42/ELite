@@ -183,10 +183,6 @@ public class DefaultVisitor extends ELNode.Visitor
         scan(e.finalizer);
     }
 
-    public void visit(ELNode.CATCH e) {
-        scan(e.body);
-    }
-
     public void visit(ELNode.SYNCHRONIZED e) {
         scan(e.exp);
         scan(e.body);

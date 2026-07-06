@@ -642,15 +642,6 @@ public class TreeTransformer extends ELNode.Visitor
             result = new ELNode.TRY(e.pos, body, e.types, handlers, finalizer);
     }
 
-    public void visit(ELNode.CATCH e) {
-        String var = transform(e.var);
-        ELNode body = transform(e.body);
-        if (var == e.var && body == e.body)
-            result = e;
-        else
-            result = new ELNode.CATCH(e.pos, var, body);
-    }
-
     public void visit(ELNode.SYNCHRONIZED e) {
         ELNode exp = transform(e.exp);
         ELNode body = transform(e.body);

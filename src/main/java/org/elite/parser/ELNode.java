@@ -89,7 +89,6 @@ public abstract class ELNode implements Serializable
 
     // Operator precedence
     public static final int
-        LOW_PREC        = 0,
         ASSIGN_PREC     = 10,
         ASSIGNOP_PREC   = 20,
         COND_PREC       = 30,
@@ -4824,69 +4823,6 @@ public abstract class ELNode implements Serializable
     }
 
     /**
-     * The catch expression.
-     */
-    public static class CATCH extends ELNode {
-        public final String var;
-        public final ELNode body;
-
-        public CATCH(int pos, String var, ELNode body) {
-            super(Token.CATCH, pos);
-            this.var = var;
-            this.body = body;
-        }
-
-        public Object getValue(EvaluationContext context) {
-            Object cp = new Object();
-            try {
-                EvaluationContext env = setup(context, cp);
-                return body.pos(context.getFrame()).getValue(env);
-            } catch (Control.Escape esc) {
-                if (cp == esc.getCatchPoint()) {
-                    return esc.getResult();
-                } else {
-                    throw esc;
-                }
-            }
-        }
-
-        boolean invokeTail(EvaluationContext context, TailCall call, Closure[] args) {
-            Object cp = new Object();
-            try {
-                EvaluationContext env = setup(context, cp);
-                return body.pos(context.getFrame()).invokeTail(env, call, args);
-            } catch (Control.Escape esc) {
-                if (cp == esc.getCatchPoint()) {
-                    call.result = esc.getResult();
-                    return false;
-                } else {
-                    throw esc;
-                }
-            }
-        }
-
-        private EvaluationContext setup(EvaluationContext context, final Object cp) {
-            final Closure escape = new AbstractClosure() {
-                public Object invoke(ELContext context, Closure[] args) {
-                    Object result = (args.length > 0) ? args[0].getValue(context) : null;
-                    throw new Control.Escape(result, cp);
-                }};
-
-            EvaluationContext env = context.pushContext();
-            env.setVariable(var, escape);
-            return env;
-        }
-        
-        public Class getType(EvaluationContext context) {
-            return body.pos(context.getFrame()).getType(context);
-        }
-
-        public void accept(Visitor v) {
-            v.visit(this);
-        }
-    }
-
-    /**
      * Synchronized statement.
      */
     public static class SYNCHRONIZED extends ELNode {
@@ -6231,7 +6167,6 @@ public abstract class ELNode implements Serializable
         public void visit(RETURN e)     { visitNode(e); }
         public void visit(THROW e)      { visitNode(e); }
         public void visit(TRY e)        { visitNode(e); }
-        public void visit(CATCH e)      { visitNode(e); }
         public void visit(SYNCHRONIZED e) { visitNode(e); }
         public void visit(ASSERT e)     { visitNode(e); }
         public void visit(CONST e)      { visitNode(e); }

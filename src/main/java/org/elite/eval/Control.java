@@ -53,28 +53,4 @@ public class Control extends RuntimeException
             return result;
         }
     }
-
-    public static class Escape extends Control {
-        private Object result;
-        private Object cpoint;
-
-        public Escape(Object result) {
-            super("called outside catch block.");
-            this.result = result;
-        }
-
-        public Escape(Object result, Object cpoint) {
-            super("called outside catch block.");
-            this.result = result;
-            this.cpoint = cpoint;
-        }
-
-        public Object getResult() {
-            return this.result;
-        }
-
-        public Object getCatchPoint() {
-            return this.cpoint;
-        }
-    }
 }

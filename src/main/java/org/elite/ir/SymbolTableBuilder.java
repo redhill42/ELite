@@ -76,11 +76,11 @@ public final class SymbolTableBuilder {
 
             var sym = table.lookupLocal(e.id);
             if (sym != null) {
-                table.addRedefinition(e.id, e.pos, sym.node.pos);
+                table.addRedefinition(e.id, e.pos, sym.def.pos);
                 return;
             }
 
-            sym = table.define(e.id);
+            sym = table.define(e);
             e.symbol = sym;
 
             // The special xmlns need global scope.
@@ -90,37 +90,27 @@ public final class SymbolTableBuilder {
             if (e.expr instanceof ELNode.LAMBDA lam) {
                 // Create a IRFunction skeleton.
                 sym.func = new IRFunction(e.id, lam.vars.length);
-                sym.node = e.expr;
-                lam.symbol = e.symbol;
+                lam.symbol = sym;
             } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
-                sym.node = e.expr;
                 cdef.symbol = sym;
-            } else {
-                sym.node = e;
             }
 
             scan(e.expr);
         }
 
         public void visit(ELNode.LAMBDA e) {
-            // For named lambda, a.k.a named let, add a definition.
-            if (e.name != null && e.symbol == null) {
-                var sym = table.define(e.name);
-                e.symbol = sym;
-                sym.func = new IRFunction(e.name, e.vars.length);
-                sym.node = e;
-            }
-
             ELNode.LAMBDA previousFn = currentFn;
             currentFn = e;
             table.enterScope(e.name != null ? "fn:" + e.name : "lambda", e);
+
             for (ELNode.DEFINE param : e.vars) {
                 if ("_".equals(param.id)) {
                     table.skipSlot();
                 } else {
-                    param.symbol = table.define(param.id);
+                    param.symbol = table.define(param);
                 }
             }
+
             // Lambda has its own evaluation context, no need to create redundant
             // context for compound scope.
             if (e.body instanceof ELNode.COMPOUND stmts) {
@@ -128,6 +118,7 @@ public final class SymbolTableBuilder {
             } else {
                 scan(e.body);
             }
+
             table.leaveScope();
             currentFn = previousFn;
         }
@@ -153,7 +144,7 @@ public final class SymbolTableBuilder {
                 e.symbol = sym;
 
                 // Mark this variable is captured by enclosing lambda.
-                if (currentFn != null && sym.node != currentFn &&
+                if (currentFn != null && sym.def.expr != currentFn &&
                     sym.scope.enclosingScope() != currentFn.scope) {
                     sym.captured = true;
                 }
@@ -210,13 +201,6 @@ public final class SymbolTableBuilder {
             }
         }
 
-        public void visit(ELNode.CATCH e) {
-            table.enterScope("catch", e);
-            e.symbol = table.define(e.var);
-            scan(e.body);
-            table.leaveScope();
-        }
-
         public void visit(ELNode.COMPOUND e) {
             if (e.scope == null) {
                 table.enterScope("compound", e);
@@ -260,7 +244,7 @@ public final class SymbolTableBuilder {
             if (pat instanceof ELNode.DEFINE def) {
                 if (!"_".equals(def.id)) {
                     if (bind) {
-                        def.symbol = table.define(def.id);
+                        def.symbol = table.define(def);
                     } else {
                         var sym = table.lookupLocal(def.id);
                         assert sym != null;
@@ -298,12 +282,17 @@ public final class SymbolTableBuilder {
             }
         }
 
+        public void visit(ELNode.LET e) {
+            collectPatternBindings(e.left, true);
+            scan(e.right);
+        }
+
         private void finish() {
             // Resolve forward referenced functions.
             for (Undefined undef : undefined) {
                 SymbolTable.Symbol sym = undef.scope.lookup(undef.var.id);
-                if (sym != null && (sym.node instanceof ELNode.LAMBDA ||
-                                    sym.node instanceof ELNode.CLASSDEF)) {
+                if (sym != null && (sym.def.expr instanceof ELNode.LAMBDA ||
+                                    sym.def.expr instanceof ELNode.CLASSDEF)) {
                     undef.var.symbol = sym;
                     if (sym.scope.enclosingScope() != undef.scope.enclosingScope())
                         sym.captured = true;

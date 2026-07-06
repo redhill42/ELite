@@ -10,14 +10,16 @@ public class SymbolTable {
     public static class Symbol {
         public final Scope scope;       // the scope of this symbol defined
         public final String name;       // symbol name from source
+        public final ELNode.DEFINE def; // the node that provide symbol definition info
+
         public int slot = -1;           // IR locals[] index
         public boolean captured;        // captured by an inner closure?
         public IRFunction func;         // known function: the compiled IRFunction
-        public ELNode node = null;      // the node that provide symbol definition info
 
-        Symbol(Scope scope, String name) {
+        Symbol(Scope scope, ELNode.DEFINE def) {
             this.scope = scope;
-            this.name = name;
+            this.name = def.id;
+            this.def = def;
         }
 
         public boolean isFunction() {
@@ -121,9 +123,9 @@ public class SymbolTable {
         return current;
     }
 
-    Symbol define(String name) {
+    Symbol define(ELNode.DEFINE def) {
         assert current != null;
-        Symbol sym = new Symbol(current, name);
+        Symbol sym = new Symbol(current, def);
 
         if (current.isTopLevel()) {
             // Always put top level defined variable in global context.
@@ -134,7 +136,7 @@ public class SymbolTable {
             current.maxSlots++;
         }
 
-        current.put(name, sym);
+        current.put(def.id, sym);
         return sym;
     }
 
