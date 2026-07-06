@@ -1191,6 +1191,18 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Conditional (if/else / ?:) ──
     public void visit(ELNode.COND node) {
+        // Optimize constant condition.
+        if (node.cond instanceof ELNode.BOOLEANVAL b) {
+            if (b.value) {
+                // always true
+                build(node.left);
+            } else {
+                // always false
+                build(node.right);
+            }
+            return;
+        }
+
         int thenB = allocBlockId();
         int elseB = allocBlockId();
         int mergeB = allocBlockId();
@@ -1474,16 +1486,28 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.COMPOUND node) {
-        if (node.exps.length == 0)
+        if (node.exps.length == 0) {
             current.emitPushNull();
-        for (int i = 0; i < node.exps.length - 1; i++) {
-            build(node.exps[i]);
-            current.emitPop();
+            return;
         }
+
+        for (int i = 0; i < node.exps.length - 1; i++) {
+            if (!(node.exps[i] instanceof ELNode.Constant)) {
+                build(node.exps[i]);
+                current.emitPop();
+            }
+        }
+
         buildTail(node.exps[node.exps.length - 1]);
     }
 
     public void visit(ELNode.WHILE node) {
+        if (node.cond instanceof ELNode.BOOLEANVAL b && !b.value) {
+            // Skip whole loop if condition is false.
+            current.emitPushNull();
+            return;
+        }
+
         int header = allocBlockId();
         int body = allocBlockId();
         int exit = allocBlockId();
@@ -1509,6 +1533,12 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.REPEAT node) {
+        if (node.cond instanceof ELNode.BOOLEANVAL b && !b.value) {
+            // Repeat while false just loop once.
+            build(node.body);
+            return;
+        }
+
         int body = allocBlockId();
         int cont = allocBlockId();   // condition-check block
         int exit = allocBlockId();
@@ -1968,8 +1998,6 @@ public class IRBuilder extends ELNode.Visitor {
         if (node instanceof ELNode.REGEXP re)
             return re.value;
         if (node instanceof ELNode.NULL)
-            return null;
-        if (node.op == Token.NULL)
             return null;
         throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
     }
