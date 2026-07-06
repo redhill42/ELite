@@ -21,7 +21,6 @@ import javax.el.FunctionMapper;
 import javax.el.VariableMapper;
 import javax.el.ValueExpression;
 import javax.el.MethodNotFoundException;
-import javax.management.ValueExp;
 
 import elite.xml.Namespace;
 import elite.lang.Closure;

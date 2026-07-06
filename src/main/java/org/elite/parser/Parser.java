@@ -104,13 +104,6 @@ public class Parser extends Scanner
         return var;
     }
 
-    void discard_symbol(String id) {
-        ELNode.DEFINE var = env.remove(id);
-        if (var != null) {
-            restoreOperator(var.operator);
-        }
-    }
-
     /**
      * Expect lvalue in an assignment expression.
      */
@@ -2061,22 +2054,6 @@ public class Parser extends Scanner
             e = parseSynchronizedExpression(scan());
             break;
 
-        case UNDEF:
-            p = scan();
-            if (token == PREFIX || token == INFIX || token == KEYWORD) {
-                String id = operator.name;
-                discard_symbol(id);
-                e = new ELNode.UNDEF(p, id);
-                scan();
-            } else {
-                String id = scanQName();
-                expect(IDENT);
-                discard_symbol(id);
-                e = new ELNode.UNDEF(p, id);
-            }
-            expect(SEMI);
-            break;
-
         case BREAK:
             e = new ELNode.BREAK(scan());
             expect(SEMI);
@@ -3954,23 +3931,6 @@ public class Parser extends Scanner
         case CLASSDEF:
             addToProgram(prog, parseClassDefinition(scan(), null));
             break;
-
-        case UNDEF: {
-            int p = scan();
-            if (token == PREFIX || token == INFIX || token == KEYWORD) {
-                String id = operator.name;
-                discard_symbol(id);
-                addToProgram(prog, new ELNode.UNDEF(p, id));
-                scan();
-            } else {
-                String id = scanQName();
-                expect(IDENT);
-                discard_symbol(id);
-                addToProgram(prog, new ELNode.UNDEF(p, id));
-            }
-            expect(SEMI);
-            break;
-        }
 
         case VOID:
             addToProgram(prog, parseVoidExpression());

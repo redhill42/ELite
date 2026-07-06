@@ -74,8 +74,18 @@ public final class SymbolTableBuilder {
             if ("_".equals(e.id))
                 return;
 
-            var sym = table.define(e.id);
+            var sym = table.lookupLocal(e.id);
+            if (sym != null) {
+                table.addRedefinition(e.id, e.pos, sym.node.pos);
+                return;
+            }
+
+            sym = table.define(e.id);
             e.symbol = sym;
+
+            // The special xmlns need global scope.
+            if (e.id.equals("xmlns"))
+                sym.captured = true;
 
             if (e.expr instanceof ELNode.LAMBDA lam) {
                 // Create a IRFunction skeleton.
@@ -124,6 +134,13 @@ public final class SymbolTableBuilder {
 
         public void visit(ELNode.CLASSDEF e) {
             // Class definition is not supported yet.
+            table.enterScope("class", e);
+            super.visit(e);
+            e.accept(trampolineFixup);
+            table.leaveScope();
+        }
+
+        public void visit(ELNode.NEWOBJ e) {
             table.enterScope("class", e);
             super.visit(e);
             e.accept(trampolineFixup);

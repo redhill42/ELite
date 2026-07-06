@@ -153,7 +153,6 @@ public class Scanner implements Cloneable
         xelKeywords.put("import", IMPORT);
         xelKeywords.put("grammar", GRAMMAR);
         xelKeywords.put("define", DEFINE);
-        xelKeywords.put("undef", UNDEF);
         xelKeywords.put("public", PUBLIC);
         xelKeywords.put("protected", PROTECTED);
         xelKeywords.put("private", PRIVATE);

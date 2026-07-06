@@ -141,14 +141,6 @@ public class TreeTransformer extends ELNode.Visitor
             result = new ELNode.CLASSDEF(e.pos, e.file, id, base, ifaces, vars, cvars, ivars);
     }
 
-    public void visit(ELNode.UNDEF e) {
-        String id = transform(e.id);
-        if (id == e.id)
-            result = e;
-        else
-            result = new ELNode.UNDEF(e.pos, id);
-    }
-
     public void visit(ELNode.IDENT e) {
         String id = transform(e.id);
         if (id == e.id)

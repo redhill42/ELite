@@ -52,8 +52,6 @@ public class DefaultVisitor extends ELNode.Visitor
         scan(e.ivars);
     }
     
-    public void visit(ELNode.UNDEF e) {}
-
     public void visit(ELNode.IDENT e) {}
 
     public void visit(ELNode.ACCESS e) {

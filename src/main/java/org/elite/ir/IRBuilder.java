@@ -2636,6 +2636,10 @@ public class IRBuilder extends ELNode.Visitor {
         buildTrampoline(node);
     }
 
+    public void visit(ELNode.CONST node) {
+        buildConst(node.value);
+    }
+
     // ── Trampoline ──
 
     public void visitNode(ELNode node) {
@@ -2957,6 +2961,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     public static IRFunction compile(ELContext elctx, ELProgram program) {
         SymbolTable symTable = SymbolTableBuilder.build(program);
+        reportSymbolTableError(program, symTable);
+
         List<ELNode> defs = program.getDefinitions();
         List<ELNode> exps = program.getExpressions();
 
@@ -2988,5 +2994,23 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         return b.finish(last == null);
+    }
+
+    private static void reportSymbolTableError(ELProgram prog, SymbolTable symTable) {
+        if (symTable.getRedefinitions().isEmpty())
+            return;
+
+        StringBuilder sb = new StringBuilder();
+        String file = prog.getFilename();
+        for (SymbolTable.Redefinition redef : symTable.getRedefinitions()) {
+            sb.append("\n");
+            if (file != null)
+                sb.append(file).append(':');
+            sb.append(Position.line(redef.pos())).append(':')
+                .append(Position.column(redef.pos())).append(": ");
+            sb.append(_T(EL_REDEFINED_IDENTIFIER, redef.id(),
+                         Position.line(redef.previousPos())));
+        }
+        throw new ParseException(file, 1, 1, sb.toString());
     }
 }

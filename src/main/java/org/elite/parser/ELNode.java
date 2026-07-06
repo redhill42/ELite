@@ -1022,31 +1022,6 @@ public abstract class ELNode implements Serializable
     }
 
     /**
-     * Undef statement.
-     */
-    public static class UNDEF extends ELNode {
-        public final String id;
-
-        public UNDEF(int pos, String id) {
-            super(Token.UNDEF, pos);
-            this.id = id;
-        }
-
-        public Object getValue(EvaluationContext context) {
-            context.setVariable(id, null);
-            return null;
-        }
-
-        public Class getType(EvaluationContext context) {
-            return null;
-        }
-
-        public void accept(Visitor v) {
-            v.visit(this);
-        }
-    }
-    
-    /**
      * Identifier expression.
      */
     public static class IDENT extends ELNode implements Pattern {
@@ -6201,7 +6176,6 @@ public abstract class ELNode implements Serializable
         public void visit(LAMBDA e)     { visitNode(e); }
         public void visit(DEFINE e)     { visitNode(e); }
         public void visit(CLASSDEF e)   { visitNode(e); }
-        public void visit(UNDEF e)      { visitNode(e); }
         public void visit(IDENT e)      { visitNode(e); }
         public void visit(ACCESS e)     { visitNode(e); }
         public void visit(APPLY e)      { visitNode(e); }

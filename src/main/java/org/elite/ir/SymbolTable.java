@@ -95,9 +95,12 @@ public class SymbolTable {
         }
     }
 
-    private Scope current = null;
+    public record Redefinition(String id, int pos, int previousPos) {}
 
-    public void enterScope(String label, ELNode node) {
+    private Scope current = null;
+    private final List<Redefinition> redefinitions = new ArrayList<>();
+
+    void enterScope(String label, ELNode node) {
         boolean fresh = node instanceof ELNode.LAMBDA;
         int depth = current == null ? 0 : current.depth + 1;
         int startSlot = fresh || current == null ? 0 : current.nextSlot;
@@ -106,7 +109,7 @@ public class SymbolTable {
             node.scope = current;
     }
 
-    public void leaveScope() {
+    void leaveScope() {
         assert current != null;
         Scope parent = current.parent;
         if (parent != null && !current.fresh)
@@ -118,7 +121,7 @@ public class SymbolTable {
         return current;
     }
 
-    public Symbol define(String name) {
+    Symbol define(String name) {
         assert current != null;
         Symbol sym = new Symbol(current, name);
 
@@ -135,21 +138,25 @@ public class SymbolTable {
         return sym;
     }
 
-    public void skipSlot() {
+    void skipSlot() {
         // Skip slot for wildcard function parameter
         current.nextSlot++;
         current.maxSlots++;
     }
 
-    public Symbol lookup(String name) {
+    Symbol lookup(String name) {
         return current.lookup(name);
     }
 
-    public Symbol lookupLocal(String name) {
+    Symbol lookupLocal(String name) {
         return current.get(name);
     }
 
-    public Symbol lookupOuter(String name) {
-        return current.lookupOuter(name);
+    void addRedefinition(String id, int pos, int previousPos) {
+        redefinitions.add(new Redefinition(id, pos, previousPos));
+    }
+
+    public List<Redefinition> getRedefinitions() {
+        return redefinitions;
     }
 }
