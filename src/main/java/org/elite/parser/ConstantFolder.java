@@ -16,6 +16,8 @@
 
 package org.elite.parser;
 
+import java.math.BigInteger;
+
 /**
  * AST constant folding pass. Recursively evaluates sub-expressions
  * whose operands are all compile-time constants, replacing them with
@@ -96,6 +98,14 @@ class ConstantFolder extends TreeTransformer {
         throw new IllegalArgumentException("unsupported binary: " + e.getClass().getSimpleName());
     }
 
+    private static boolean isIntegerType(Object value) {
+        return value instanceof Byte ||
+               value instanceof Short ||
+               value instanceof Integer ||
+               value instanceof Long ||
+               value instanceof BigInteger;
+    }
+
     // ---- Binary arithmetic ----
 
     private ELNode foldBinaryArithmetic(ELNode.Binary e, ELNode left, ELNode right) {
@@ -105,7 +115,7 @@ class ConstantFolder extends TreeTransformer {
                 return e;  // don't fold null operands
             try {
                 return makeConst(e.pos, e.evaluate(null, lv, rv));
-            } catch (ArithmeticException ex) {
+            } catch (Exception ex) {
                 // division by zero etc. — leave unfolded
             }
         }
@@ -117,11 +127,87 @@ class ConstantFolder extends TreeTransformer {
     public void visit(ELNode.ADD e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.SUB e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.MUL e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
-    
-    // Don't fold DIV because it depends on runtime isRationalEnabled check.
-
     public void visit(ELNode.REM e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
-    
+
+    public void visit(ELNode.DIV e) {
+        ELNode left = transform(e.left);
+        ELNode right = transform(e.right);
+
+        ELNode r = foldDiv(e, left, right);
+        if (r != null)
+            result = r;
+        else if (left == e.left && right == e.right)
+            result = e;
+        else if (e instanceof ELNode.IDIV)
+            result = new ELNode.IDIV(e.pos, left, right);
+        else
+            result = new ELNode.DIV(e.pos, left, right);
+    }
+
+    private ELNode foldDiv(ELNode.DIV node, ELNode left, ELNode right) {
+        if (!isConstant(left) || !isConstant(right))
+            return null;
+
+        Object lv = nodeValue(left), rv = nodeValue(right);
+
+        // Can't fold because integer division may produce rational.
+        if (!(node instanceof ELNode.IDIV) && isIntegerType(lv) && isIntegerType(rv))
+            return null;
+
+        try {
+            return new ELNode.NUMBER(node.pos, (Number)node.evaluate(null, lv, rv));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    public void visit(ELNode.POW e) {
+        ELNode left = transform(e.left);
+        ELNode right = transform(e.right);
+
+        ELNode r = foldPow(e, left, right);
+        if (r != null)
+            result = r;
+        else if (left == e.left && right == e.right)
+            result = e;
+        else
+            result = new ELNode.POW(e.pos, left, right);
+    }
+
+    private ELNode foldPow(ELNode.POW node, ELNode left, ELNode right) {
+        if (!isConstant(left) || !isConstant(right))
+            return null;
+
+        Object lv = nodeValue(left), rv = nodeValue(right);
+        if (!(lv instanceof Number x) || !(rv instanceof Number y))
+            return null;
+
+        if (y instanceof Long) {
+            long n = y.longValue();
+            if ((int)n == n) {
+                return foldPow(node, x, (int)n);
+            } else {
+                return new ELNode.NUMBER(node.pos, Math.pow(x.doubleValue(), n));
+            }
+        } else if (y instanceof Integer || y instanceof Short || y instanceof Byte) {
+            return foldPow(node, x, y.intValue());
+        } else {
+            return new ELNode.NUMBER(node.pos, Math.pow(x.doubleValue(), y.doubleValue()));
+        }
+    }
+
+    private ELNode foldPow(ELNode.POW node, Number x, int n) {
+        // Can't fold because negative power may produce rational.
+        if (n < 0 && isIntegerType(x))
+            return null;
+
+        // For any other case, we can safely delegate to ELNode.POW to evaluate the result.
+        try {
+            return new ELNode.NUMBER(node.pos, (Number)node.evaluate(null, x, n));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
 
     // ---- Bitwise ----
 
@@ -140,7 +226,11 @@ class ConstantFolder extends TreeTransformer {
     private ELNode foldBinaryComparison(ELNode.Binary e, ELNode left, ELNode right) {
         if (isConstant(left) && isConstant(right)) {
             Object lv = nodeValue(left), rv = nodeValue(right);
-            return new ELNode.BOOLEANVAL(e.pos, (Boolean)e.evaluate(null, lv, rv));
+            try {
+                return new ELNode.BOOLEANVAL(e.pos, (Boolean)e.evaluate(null, lv, rv));
+            } catch (Exception ex) {
+                return e;
+            }
         }
         if (left != e.left || right != e.right)
             return newInstance(e, left, right);
@@ -235,8 +325,12 @@ class ConstantFolder extends TreeTransformer {
         if (isConstant(right)) {
             Object rv = nodeValue(right);
             if (rv != null) {
-                result = makeConst(e.pos, e.evaluate(null, rv));
-                return;
+                try {
+                    result = makeConst(e.pos, e.evaluate(null, rv));
+                    return;
+                } catch (Exception ex) {
+                    // fallthrough
+                }
             }
         }
         
@@ -252,8 +346,12 @@ class ConstantFolder extends TreeTransformer {
         if (isConstant(right)) {
             Object rv = nodeValue(right);
             if (rv != null) {
-                result = makeConst(e.pos, e.evaluate(null, rv));
-                return;
+                try {
+                    result = makeConst(e.pos, e.evaluate(null, rv));
+                    return;
+                } catch (Exception ex) {
+                    // fallthrough
+                }
             }
         }
         
@@ -269,8 +367,12 @@ class ConstantFolder extends TreeTransformer {
         if (isConstant(right)) {
             Object rv = nodeValue(right);
             if (rv instanceof Number) {
-                result = makeConst(e.pos, e.evaluate(null, rv));
-                return;
+                try {
+                    result = makeConst(e.pos, e.evaluate(null, rv));
+                    return;
+                } catch (Exception ex) {
+                    // fallthrough
+                }
             }
         }
         
@@ -283,12 +385,9 @@ class ConstantFolder extends TreeTransformer {
 
     public void visit(ELNode.NOT e) {
         ELNode right = transform(e.right);
-        if (isConstant(right)) {
-            Object rv = nodeValue(right);
-            if (rv instanceof Boolean) {
-                result = new ELNode.BOOLEANVAL(e.pos, !(Boolean)rv);
-                return;
-            }
+        if (isConstant(right) && nodeValue(right) instanceof Boolean b) {
+            result = new ELNode.BOOLEANVAL(e.pos, !b);
+            return;
         }
 
         if (right instanceof ELNode.IN n) {
@@ -333,6 +432,7 @@ class ConstantFolder extends TreeTransformer {
         ELNode cond  = transform(e.cond);
         ELNode left  = transform(e.left);
         ELNode right = transform(e.right);
+
         if (isConstant(left) && isConstant(right) && isConstant(cond)) {
             if (nodeValue(cond) instanceof Boolean c) {
                 result = c ? left : right;
@@ -351,6 +451,7 @@ class ConstantFolder extends TreeTransformer {
     public void visit(ELNode.COALESCE e) {
         ELNode left = transform(e.left);
         ELNode right = transform(e.right);
+
         if (isConstant(left) && nodeValue(left) != null) {
             result = left;  // non-null constant → skip right
         } else if (isConstant(right) && nodeValue(right) == null) {
