@@ -186,21 +186,21 @@ public class TreeTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.ASSIGN e) {
-        if (e instanceof ELNode.ASSIGNOP op) {
-            op.binary.left = transform(e.left);
-            op.binary.right = transform(e.right);
-            if (op.binary.left == e.left && op.binary.right == e.right)
-                result = e;
-            else
-                result = new ELNode.ASSIGNOP(e.pos, op.binary);
-        } else {
-            ELNode left = transform(e.left);
-            ELNode right = transform(e.right);
-            if (left == e.left && right == e.right)
-                result = e;
-            else
-                result = new ELNode.ASSIGN(e.pos, left, right);
-        }
+        ELNode left = transform(e.left);
+        ELNode right = transform(e.right);
+        if (left == e.left && right == e.right)
+            result = e;
+        else
+            result = new ELNode.ASSIGN(e.pos, left, right);
+    }
+
+    public void visit(ELNode.ASSIGNOP e) {
+        e.binary.left = transform(e.left);
+        e.binary.right = transform(e.right);
+        if (e.binary.left == e.left && e.binary.right == e.right)
+            result = e;
+        else
+            result = new ELNode.ASSIGNOP(e.pos, e.binary);
     }
 
     public void visit(ELNode.PREFIX e) {

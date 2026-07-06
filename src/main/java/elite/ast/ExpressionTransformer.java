@@ -90,6 +90,13 @@ final class ExpressionTransformer extends ELNode.Visitor
                                       transform(e.right));
     }
 
+    public void visit(ELNode.ASSIGNOP e) {
+        // FIXME: need an ASSIGNOP ExpressionType
+        result = new BinaryExpression(ExpressionType.ASSIGN,
+                                      transform(e.left),
+                                      transform(e.right));
+    }
+
     public void visit(ELNode.COND e) {
         result = new ConditionalExpression(transform(e.cond),
                                            transform(e.left),

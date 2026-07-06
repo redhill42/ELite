@@ -263,7 +263,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Apply ──
     public void visit(ELNode.APPLY node) {
-        ELNode base = deparen(node.right);
+        ELNode base = node.right;
 
         if (base instanceof ELNode.IDENT ident) {
             if (ident.symbol != null) {
@@ -1123,9 +1123,6 @@ public class IRBuilder extends ELNode.Visitor {
      * Expand ++x / x++ / --x / x-- for local variables.
      */
     private void buildIncDec(ELNode target, boolean isInc, boolean isPre) {
-        // Handle parentheses expression.
-        target = deparen(target);
-
         // Evaluate right value.
         build(target);
         if (!isPre)
@@ -1248,39 +1245,27 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.ASSIGN node) {
-        if (node instanceof ELNode.ASSIGNOP) {
-            buildAssignOp((ELNode.ASSIGNOP)node);
-        } else {
-            if (!buildAssign(node.left, node.right))
-                buildTrampoline(node);
-        }
-    }
-
-    // ── Assign/Define ──
-    private boolean buildAssign(ELNode left, ELNode right) {
-        left = deparen(left);
-
-        if (left instanceof ELNode.IDENT ident) {
-            build(right);
+        if (node.left instanceof ELNode.IDENT ident) {
+            build(node.right);
             buildStoreVariable(ident);
-            return true;
+            return;
         }
 
-        if (left instanceof ELNode.ACCESS access) {
-            build(right);
+        if (node.left instanceof ELNode.ACCESS access) {
+            build(node.right);
             buildStoreProperty(access);
-            return true;
+            return;
         }
 
-        if (left instanceof ELNode.TUPLE lhs) {
-            if (right instanceof  ELNode.TUPLE rhs &&
+        if (node.left instanceof ELNode.TUPLE lhs) {
+            if (node.right instanceof ELNode.TUPLE rhs &&
                 isAssignableTuple(lhs, rhs)) {
                 buildTupleAssign(lhs, rhs);
             } else {
                 int failBlock = allocBlockId();
                 int doneBlock = allocBlockId();
 
-                build(right);
+                build(node.right);
                 buildDynamicTupleAssign(lhs, failBlock);
                 current.emitJump(doneBlock);
                 startBlock(failBlock);
@@ -1289,14 +1274,14 @@ public class IRBuilder extends ELNode.Visitor {
                 current.emitJump(doneBlock);
                 startBlock(doneBlock);
             }
-            return true;
+            return;
         }
 
-        return false;
+        // should not happen, parser disabled other assign syntax
+        throw new AssertionError();
     }
 
-    // ── Compound assignment (+=, -=, etc.) ──
-    private void buildAssignOp(ELNode.ASSIGNOP node) {
+    public void visit(ELNode.ASSIGNOP node) {
         // Invoke dynamic assignment operator
         buildConst(node.binary.op);
         build(node.left);
@@ -1305,22 +1290,14 @@ public class IRBuilder extends ELNode.Visitor {
                          Object.class, Object.class);
 
         // Now perform assignment.
-        ELNode left = deparen(node.left);
-        if (left instanceof ELNode.IDENT ident) {
+        if (node.left instanceof ELNode.IDENT ident) {
             buildStoreVariable(ident);
-        } else if (left instanceof ELNode.ACCESS access) {
+        } else if (node.left instanceof ELNode.ACCESS access) {
             buildStoreProperty(access);
         } else {
-            assert false; // should not happen, parser disable other assignop syntax
-            current.emitPop();
-            buildTrampoline(node);
+            // should not happen, parser disabled other assignop syntax
+            throw new AssertionError();
         }
-    }
-
-    private ELNode deparen(ELNode node) {
-        while (node instanceof ELNode.EXPR exp)
-            node = exp.right;
-        return node;
     }
 
     private void buildStoreVariable(ELNode.IDENT ident) {
@@ -1344,7 +1321,7 @@ public class IRBuilder extends ELNode.Visitor {
             return false;
 
         for (int i = 0; i < lhs.elems.length; i++) {
-            ELNode elem = deparen(lhs.elems[i]);
+            ELNode elem = lhs.elems[i];
             if (elem instanceof ELNode.IDENT)
                 continue;
             if (elem instanceof ELNode.ACCESS)
@@ -1390,7 +1367,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildAssignFlattenTuple(ELNode[] elems, List<Slot> tmpSlots) {
         for (ELNode elem : elems) {
-            elem = deparen(elem);
             if (elem instanceof ELNode.TUPLE tt) {
                 buildAssignFlattenTuple(tt.elems, tmpSlots);
             } else if (elem instanceof ELNode.IDENT ident) {

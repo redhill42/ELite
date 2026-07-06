@@ -1981,7 +1981,7 @@ public abstract class ELNode implements Serializable
             return value;
         }
 
-        public Class getType(EvaluationContext context) {
+        public Class<?> getType(EvaluationContext context) {
             return left.getType(context);
         }
 
@@ -1990,11 +1990,11 @@ public abstract class ELNode implements Serializable
         }
     }
 
-    public static class ASSIGNOP extends ASSIGN {
+    public static class ASSIGNOP extends Binary {
         public final Binary binary; // the shadow node to perform actual operation
 
         public ASSIGNOP(int pos, Binary binary) {
-            super(pos, binary.left, binary.right);
+            super(Token.ASSIGNOP, pos, binary.left, binary.right);
             this.binary = binary;
         }
 
@@ -2008,6 +2008,14 @@ public abstract class ELNode implements Serializable
             binary.right = right;
 
             return binary.assignop(context);
+        }
+
+        public Class<?> getType(EvaluationContext context) {
+            return left.getType(context);
+        }
+
+        public void accept(Visitor v) {
+            v.visit(this);
         }
     }
 
@@ -3893,7 +3901,7 @@ public abstract class ELNode implements Serializable
         public final ELNode[] exps;
 
         public COMPOUND(int pos, ELNode[] exps) {
-            super(Token.EXPR, pos);
+            super(Token.COMPOUND, pos);
             this.exps = exps;
         }
 
@@ -6200,6 +6208,7 @@ public abstract class ELNode implements Serializable
         public void visit(PREFIX e)     { visitNode(e); }
         public void visit(INFIX e)      { visitNode(e); }
         public void visit(ASSIGN e)     { visitNode(e); }
+        public void visit(ASSIGNOP e)   { visitNode(e); }
         public void visit(COND e)       { visitNode(e); }
         public void visit(COALESCE e)   { visitNode(e); }
         public void visit(OR e)         { visitNode(e); }

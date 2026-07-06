@@ -114,21 +114,29 @@ public class Parser extends Scanner
     /**
      * Expect lvalue in an assignment expression.
      */
-    private void expect_lvalue(ELNode e) {
+    private void expect_lvalue(ELNode e, boolean no_tuple) {
+        ELNode e2 = e;
         while (e instanceof ELNode.EXPR) {
             e = ((ELNode.EXPR)e).right;
         }
 
         switch (e.op) {
-        case IDENT: case ACCESS: case ASSIGN:
-            break; // Ok
+        case IDENT: case ACCESS:
+            return; // Ok
+        case ASSIGN:
+            // allow x = y = z, but not (x = y) = z
+            if (e != e2)
+                break;
+            return;
         case TUPLE:
+            if (no_tuple)
+                break;
             for (ELNode a : ((ELNode.TUPLE)e).elems)
-                expect_lvalue(a);
-            break;
-        default:
-            throw parseError(e.pos, _T(EL_READONLY_EXPRESSION));
+                expect_lvalue(a, false);
+            return;
         }
+
+        throw parseError(e.pos, _T(EL_READONLY_EXPRESSION));
     }
 
     /**
@@ -312,14 +320,14 @@ public class Parser extends Scanner
         case INC: {
             int p = scan();
             ELNode e = parseTerm();
-            expect_lvalue(e);
+            expect_lvalue(e, true);
             return new ELNode.INC(p, e, true);
         }
 
         case DEC: {
             int p = scan();
             ELNode e = parseTerm();
-            expect_lvalue(e);
+            expect_lvalue(e, true);
             return new ELNode.DEC(p, e, true);
         }
 
@@ -554,9 +562,11 @@ public class Parser extends Scanner
             return new ELNode.APPLY(scan(), parseTerm(), new ELNode[]{e}, null);
 
           case INC:
-            return new ELNode.INC(scan(), e, false);
+              expect_lvalue(e, true);
+              return new ELNode.INC(scan(), e, false);
           case DEC:
-            return new ELNode.DEC(scan(), e, false);
+              expect_lvalue(e, true);
+              return new ELNode.DEC(scan(), e, false);
 
           case INSTANCEOF:
             if (idValue.equals("is")) {
@@ -591,7 +601,7 @@ public class Parser extends Scanner
           }
 
           case ASSIGN: {
-              expect_lvalue(e);
+              expect_lvalue(e, false);
               int p = scan();
               ELNode right = parseTerm();
               checkTupleAssign(e, right);
@@ -599,7 +609,7 @@ public class Parser extends Scanner
           }
 
           case ASSIGNOP: {
-              expect_lvalue(e);
+              expect_lvalue(e, true);
               int op = operator.token2;
               int p = scan();
               ELNode e2 = parseTerm();
