@@ -129,19 +129,6 @@ public class ELProgram implements Serializable
     }
 
     public Object execute(ELContext elctx) {
-        // Execute statements using selected evaluation strategy
-        switch (OPT_LEVEL) {
-        case 0:
-            return evaluateAST(elctx);
-        case 1: case 2:
-            return compile(elctx).execute(elctx, null);
-        case 3: default:
-            return compileToByteCode(elctx).execute(elctx, null);
-        }
-    }
-
-    /** Execute expressions using the AST tree-walking interpreter. */
-    private Object evaluateAST(ELContext elctx) {
         FunctionMapper fm = elctx.getFunctionMapper();
         VariableMapper vm = elctx.getVariableMapper();
 

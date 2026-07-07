@@ -111,8 +111,12 @@ public class IRClosure extends Closure {
 
     @Override
     public Object invoke(ELContext elctx, Closure[] args) {
-        Object[] callArgs = ELEngine.getArgValues(elctx, args);
-        return new IRInterpreter(getContext(elctx), function).execute(callArgs);
+        return call(elctx, ELEngine.getArgValues(elctx, args));
+    }
+
+    @Override
+    public Object call(ELContext elctx, Object[] args) {
+        return new IRInterpreter(getContext(elctx), function).execute(args);
     }
 
     /**

@@ -107,13 +107,6 @@ public class IRFunction {
         return -1;
     }
 
-    public Object execute(ELContext elctx, Object[] args) {
-        // Evaluate expression in global context.
-        EvaluationContext env = new EvaluationContext(elctx,
-            elctx.getFunctionMapper(), elctx.getVariableMapper());
-        return new IRInterpreter(env, this).execute(args, true);
-    }
-
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

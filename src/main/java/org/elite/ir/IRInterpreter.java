@@ -883,8 +883,10 @@ public class IRInterpreter {
         ELContext elctx = evalContext.getELContext();
 
         ValueExpression expr = evalContext.resolveVariable(id);
-        if (expr != null)
-            return (expr instanceof Closure) ? expr : expr.getValue(elctx);
+        if (expr != null) {
+            return (expr instanceof LiteralClosure lc) ? lc.getValue(null) :
+                   (expr instanceof Closure) ? expr : expr.getValue(elctx);
+        }
 
         MethodClosure method = MethodResolver.getInstance(elctx)
             .resolveGlobalMethod(evalContext.getFunctionMapper(), id);
@@ -895,14 +897,30 @@ public class IRInterpreter {
         return elctx.getELResolver().getValue(elctx, null, id);
     }
 
-    private Object invokeTarget(String id, Object[] args) {
+    private Object invokeTarget(String id, Object... args) {
         ELContext elctx = evalContext.getELContext();
         Object target = resolveTarget(id);
         if (target == null)
             throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
 
         try {
-            return ELEngine.invokeTarget(elctx, target, ELEngine.getCallArgs(args));
+            return ELEngine.callTarget(elctx, target, args);
+        } catch (RuntimeException ex) {
+            throw new EvaluationException(elctx, ex);
+        }
+    }
+
+    private Object invokeDyn(int argCount) {
+        // Stack layout: target below, args on top
+        // Stack: ... target arg0 arg1 ... argN
+        Object[] args = new Object[argCount];
+        for (int i = argCount - 1; i >= 0; i--)
+            args[i] = pop();
+        Object target = pop();
+
+        ELContext elctx = evalContext.getELContext();
+        try {
+            return ELEngine.callTarget(elctx, target, args);
         } catch (RuntimeException ex) {
             throw new EvaluationException(elctx, ex);
         }
@@ -917,18 +935,7 @@ public class IRInterpreter {
                 return result;
         }
 
-        Object target = resolveTarget(name);
-        if (target == null) {
-            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
-        }
-
-        try {
-            Closure[] args = new Closure[1];
-            args[0] = new LiteralClosure(rhs);
-            return ELEngine.invokeTarget(elctx, target, args);
-        } catch (RuntimeException ex) {
-            throw new EvaluationException(elctx, ex);
-        }
+        return invokeTarget(name, rhs);
     }
 
     private Object invokeOperator(String name, Object lhs, Object rhs) {
@@ -939,34 +946,7 @@ public class IRInterpreter {
         if (result != NO_RESULT)
             return result;
 
-        // invoke target procedure
-        Object target = resolveTarget(name);
-        if (target == null) {
-            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
-        }
-
-        try {
-            Closure[] args = new Closure[2];
-            args[0] = new LiteralClosure(lhs);
-            args[1] = new LiteralClosure(rhs);
-            return ELEngine.invokeTarget(elctx, target, args);
-        } catch (RuntimeException ex) {
-            throw new EvaluationException(elctx, ex);
-        }
-    }
-
-    private Object invokeDyn(int argCount) {
-        // Stack layout: target below, args on top
-        // Stack: ... target arg0 arg1 ... argN
-        Object[] args = new Object[argCount];
-        for (int i = argCount - 1; i >= 0; i--)
-            args[i] = pop();
-        Object target = pop();
-
-        // Use ELEngine's invoke mechanism with Closure[] conversion
-        javax.el.ELContext elctx = evalContext.getELContext();
-        elite.lang.Closure[] closures = ELEngine.getCallArgs(args);
-        return ELEngine.invokeTarget(elctx, target, closures);
+        return invokeTarget(name, lhs, rhs);
     }
 
     private Object loadField(Object base, String fieldName) {

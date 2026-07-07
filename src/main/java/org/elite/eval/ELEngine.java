@@ -519,6 +519,14 @@ public final class ELEngine
             elctx, _T(EL_METHOD_NOT_FOUND, target.getClass().getName(), "__call__"));
     }
 
+    public static Object callTarget(ELContext elctx, Object target, Object... args) {
+        if (target instanceof Closure c) {
+            return c.call(elctx, args);
+        } else {
+            return invokeTarget(elctx, target, getCallArgs(args));
+        }
+    }
+
     private static Object invokeClass(ELContext elctx, Class target, Closure[] args) {
         if (args.length == 1 && isStandardType(target)) {
             // coerce argument to target class
