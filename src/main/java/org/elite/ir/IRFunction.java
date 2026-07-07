@@ -17,8 +17,6 @@
 package org.elite.ir;
 
 import org.elite.eval.EvaluationContext;
-import org.elite.eval.StackTrace;
-import org.elite.parser.Position;
 
 import javax.el.ELContext;
 
@@ -81,11 +79,6 @@ public class IRFunction {
     public int[] blockOffsets()    { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
     public DebugInfo debugInfo()   { return debugInfo; }
-
-    /** Check if parameter at index {@code paramIdx} has an explicit type annotation. */
-    public boolean isExplicitParamType(int paramIdx) {
-        return false; // FIXME
-    }
 
     /** Default parameter values (null = no default). */
     public Object[] defaultValues() { return defaultValues; }

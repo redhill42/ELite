@@ -449,14 +449,6 @@ public class IREmitter {
     }
 
     /**
-     * Tail-recursive call: pops argCount args, stores to locals, jumps to
-     * entry.
-     */
-    public IREmitter emitInvokeTail(int argCount) {
-        return emit1(INVOKE_TAIL, K_NONE, argCount);
-    }
-
-    /**
      * Direct call to a known IRFunction (pool index of the IRFunction).
      */
     public IREmitter emitInvokeDirect(int funcPoolIdx, int argCount) {

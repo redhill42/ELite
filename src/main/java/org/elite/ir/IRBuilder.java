@@ -264,10 +264,16 @@ public class IRBuilder extends ELNode.Visitor {
         if (base instanceof ELNode.IDENT ident) {
             if (ident.symbol != null) {
                 if (inTailPosition && ident.symbol.func == this.func) {
-                    // TCO: build args and emit INVOKE_TAIL
+                    // TCO: build args and save to local slots.
                     int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.def.expr,
-                                              node.args, node.keys);
-                    current.emitInvokeTail(argc);
+                                             node.args, node.keys);
+                    for (int i = argc; --i >= 0; ) {
+                        current.emitStoreVar(i);
+                        current.emitPop();
+                    }
+
+                    // Jump to first block.
+                    current.emitJump(0);
                     return;
                 }
 

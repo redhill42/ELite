@@ -235,18 +235,7 @@ public class IRBytecodeCompiler {
             }
             case JUMP_IF_NULL -> mv.visitJumpInsn(198, blockLabels[v.jumpTarget()]); // IFNULL
             case JUMP_IF_NONNULL -> mv.visitJumpInsn(199, blockLabels[v.jumpTarget()]); // IFNONNULL
-            case INVOKE_TAIL -> {
-                // Pop args, store to locals, jump to entry block
-                int argc = pl;
-                for (int i = argc - 1; i >= 0; i--) {
-                    mv.visitVarInsn(A_ALOAD, S_LOCALS);  // locals array
-                    mv.visitInsn(A_SWAP);          // val, array → array, val
-                    emitIntConst(i);
-                    mv.visitInsn(A_SWAP);
-                    mv.visitInsn(A_AASTORE);       // locals[i] = val
-                }
-                mv.visitJumpInsn(A_GOTO, blockLabels[0]); // jump to entry
-            }
+
             case NOT -> {
                 unboxBoolean();
                 // Negate: ICONST_1 XOR

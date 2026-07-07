@@ -62,11 +62,7 @@ public class IRInterpreter {
 
     // ── Instance state ──
     private EvaluationContext evalContext;
-    private final ELContext elctx;
     private final IRFunction function;
-    private final int[] code;
-    private final Object[] constantPool;
-    private final int[] blockOffsets;
 
     // ── Execution state ──
     private Object[] stack;
@@ -76,12 +72,8 @@ public class IRInterpreter {
 
     public IRInterpreter(EvaluationContext context, IRFunction function) {
         this.evalContext = context;
-        this.elctx = context.getELContext();
         this.function = function;
-        this.code = function.code();
         this.locals = new Object[function.maxLocals()];
-        this.constantPool = function.constantPool();
-        this.blockOffsets = function.blockOffsets();
     }
 
     // ── Entry point ──
@@ -91,6 +83,8 @@ public class IRInterpreter {
     }
 
     public Object execute(Object[] args, boolean isTopLevel) {
+        ELContext elctx = evalContext.getELContext();
+
         this.stack = new Object[DEFAULT_STACK_SIZE];
         this.sp = 0;
 
@@ -118,6 +112,7 @@ public class IRInterpreter {
         }
 
         // Start at first block
+        int[] blockOffsets = function.blockOffsets();
         ip = blockOffsets.length > 0 ? blockOffsets[0] : 0;
 
         // Scope management:
@@ -150,6 +145,11 @@ public class IRInterpreter {
     // ── Main interpreter loop ──
 
     private Object interpret() {
+        ELContext elctx = evalContext.getELContext();
+        final int[] code = function.code();
+        final Object[] constantPool = function.constantPool();
+        final int[] blockOffsets = function.blockOffsets();
+
         for (; ; ) {
             int header = code[ip];
             int op = IRFormat.opcode(header);
@@ -655,17 +655,6 @@ public class IRInterpreter {
             }
 
             // ============ Function calls ============
-            case INVOKE_TAIL: {
-                int argc = pl;
-                for (int i = argc - 1; i >= 0; i--) {
-                    locals[i] = pop();
-                }
-                // Reset operand stack — old intermediate values
-                // from previous iteration must not accumulate.
-                sp = 0;
-                ip = blockOffsets[0];
-                break;
-            }
             case INVOKE_DIRECT: {
                 // function pool index in payload
                 // argCount in first operand
@@ -1190,6 +1179,7 @@ public class IRInterpreter {
     private Object dynamicBinaryOp(int irOpcode) {
         // Delegate to Runtime for type-resolved arithmetic (shared with
         // bytecode path)
+        ELContext elctx = evalContext.getELContext();
         Object rhs = pop();
         Object lhs = pop();
         return switch (irOpcode) {
@@ -1217,6 +1207,7 @@ public class IRInterpreter {
     }
 
     private Object dynamicUnaryOp(int irOpcode) {
+        ELContext elctx = evalContext.getELContext();
         Object rhs = pop();
         return switch (irOpcode) {
             case DYNNEG -> Builtin.__neg__(elctx, rhs);
@@ -1282,6 +1273,7 @@ public class IRInterpreter {
 
     private void storeGlobal(String name, Object value) {
         // assign: search full chain, throw if not found
+        ELContext elctx = evalContext.getELContext();
         ValueExpression ve = evalContext.resolveVariable(name);
         if (ve == null)
             throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
@@ -1325,6 +1317,8 @@ public class IRInterpreter {
 
     private Object newXML(Object tag, Object[] att_names, Object[] att_values,
                           Object[] children) {
+        ELContext elctx = evalContext.getELContext();
+
         try {
             Document doc = XmlNode.getContextDocument(elctx);
             Element elem;

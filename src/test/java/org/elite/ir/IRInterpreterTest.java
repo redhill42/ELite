@@ -81,16 +81,6 @@ class IRInterpreterTest {
         }
     }
 
-    // ================ Tail-Call Optimization ================
-
-    @Test
-    void tcoInvokeTailOpcodeValid() {
-        IREmitter out = new IREmitter();
-        out.emitPushVar(0).emitPushVar(1).emitInvokeTail(2);
-        IRFunction fn = buildFn("t", out.toArray(), 2);
-        assertTrue(scanOp(fn, Opcode.INVOKE_TAIL));
-    }
-
     // ── helpers ──
 
     private static IRFunction buildFn(String name, int[] code, int paramCount) {
