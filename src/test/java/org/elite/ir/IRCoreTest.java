@@ -15,7 +15,7 @@ class IRCoreTest {
         // Emit: PUSH_CONST(42), PUSH_CONST(58), IADD, RETURN
         out.emitPushConst(42)
            .emitPushConst(58)
-           .emitIAdd()
+           .emitAdd()
            .emitReturn();
 
         int[] code = out.toArray();
@@ -31,11 +31,10 @@ class IRCoreTest {
         assertEquals(58, v.constPoolIndex());
         v.advance();
 
-        assertEquals(Opcode.IADD, v.opcode());
+        assertEquals(Opcode.ADD, v.opcode());
         v.advance();
 
         assertEquals(Opcode.RETURN, v.opcode());
-        assertEquals(IRFormat.T_INT, v.primTypeId());
         v.advance();
 
         assertFalse(v.inBounds());
@@ -71,7 +70,7 @@ class IRCoreTest {
         IREmitter out = new IREmitter();
         out.emitPushVar(0)
            .emitPushVar(1)
-           .emitDynAdd()
+           .emitAdd()
            .emitReturn();
 
         int[] code = out.toArray();
@@ -81,25 +80,9 @@ class IRCoreTest {
         v.advance();
         assertEquals(Opcode.PUSH_VAR, v.opcode());
         v.advance();
-        assertEquals(Opcode.DYNADD, v.opcode());
-        assertEquals(IRFormat.K_DYN, v.kind());
+        assertEquals(Opcode.ADD, v.opcode());
         v.advance();
         assertEquals(Opcode.RETURN, v.opcode());
-    }
-
-    @Test
-    void guardTypeInstruction() {
-        IREmitter out = new IREmitter();
-        out.emitGuardType(IRFormat.T_INT, 5);
-
-        int[] code = out.toArray();
-        assertEquals(2, code.length, "GUARD_TYPE is 2 words");
-
-        InstructionView v = new InstructionView(code, 0);
-        assertEquals(Opcode.GUARD_TYPE, v.opcode());
-        assertEquals(IRFormat.K_GUARDED, v.kind());
-        assertEquals(IRFormat.T_INT, v.primTypeId());
-        assertEquals(5, v.deoptBlock());
     }
 
     @Test
@@ -107,7 +90,7 @@ class IRCoreTest {
         IREmitter out = new IREmitter();
         out.emitPushConst(1)
            .emitPushConst(2)
-           .emitIAdd();
+           .emitAdd();
 
         int[] code = out.toArray();
         InstructionView v = new InstructionView(code, 0);
@@ -118,7 +101,7 @@ class IRCoreTest {
         assertEquals(2, peek1.constPoolIndex());
 
         InstructionView peek2 = v.peek(2);
-        assertEquals(Opcode.IADD, peek2.opcode());
+        assertEquals(Opcode.ADD, peek2.opcode());
 
         // Original position unchanged
         assertEquals(Opcode.PUSH_CONST, v.opcode());
@@ -132,14 +115,14 @@ class IRCoreTest {
     @Test
     void emitCopyPreservesInstruction() {
         IREmitter src = new IREmitter();
-        src.emitPushConst(100).emitPushConst(200).emitIAdd();
+        src.emitPushConst(100).emitPushConst(200).emitAdd();
 
         int[] srcCode = src.toArray();
         InstructionView v = new InstructionView(srcCode, 0);
 
         IREmitter dst = new IREmitter();
         while (v.inBounds()) {
-            dst.emitCopy(v);
+            dst.copyFrom(v);
             v.advance();
         }
 
@@ -151,7 +134,7 @@ class IRCoreTest {
     void toStringDoesNotThrow() {
         IREmitter out = new IREmitter();
         out.emitPushConst(1)
-           .emitIAdd()
+           .emitAdd()
            .emitJump(3)
            .emitReturnVoid();
 

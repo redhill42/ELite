@@ -156,45 +156,6 @@ public class IRBytecodeCompiler {
             case PUSH_FALSE -> { mv.visitInsn(A_ICONST_0); mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false); }
             case PUSH_NULL  -> mv.visitInsn(A_ACONST_NULL);
 
-            case IADD -> { emitUnboxInt(2); mv.visitInsn(A_IADD); emitBoxInt(); }
-            case ISUB -> { emitUnboxInt(2); mv.visitInsn(A_ISUB); emitBoxInt(); }
-            case IMUL -> { emitUnboxInt(2); mv.visitInsn(A_IMUL); emitBoxInt(); }
-            case IDIV -> { emitUnboxInt(2); mv.visitInsn(A_IDIV); emitBoxInt(); }
-            case IREM -> { emitUnboxInt(2); mv.visitInsn(A_IREM); emitBoxInt(); }
-            case INEG -> { emitUnboxInt(1); mv.visitInsn(A_INEG); emitBoxInt(); }
-            case IPOW -> emitCall2("intPow");
-            case LADD -> { emitUnboxLong(2); mv.visitInsn(A_LADD); emitBoxLong(); }
-            case LSUB -> { emitUnboxLong(2); mv.visitInsn(A_LSUB); emitBoxLong(); }
-            case LMUL -> { emitUnboxLong(2); mv.visitInsn(A_LMUL); emitBoxLong(); }
-            case LDIV -> { emitUnboxLong(2); mv.visitInsn(A_LDIV); emitBoxLong(); }
-            case LREM -> { emitUnboxLong(2); mv.visitInsn(A_LREM); emitBoxLong(); }
-            case LNEG -> { emitUnboxLong(1); mv.visitInsn(A_LNEG); emitBoxLong(); }
-            case LPOW -> emitCall2("longPow");
-            case DADD -> { emitUnboxDouble(2); mv.visitInsn(A_DADD); emitBoxDouble(); }
-            case DSUB -> { emitUnboxDouble(2); mv.visitInsn(A_DSUB); emitBoxDouble(); }
-            case DMUL -> { emitUnboxDouble(2); mv.visitInsn(A_DMUL); emitBoxDouble(); }
-            case DDIV -> { emitUnboxDouble(2); mv.visitInsn(A_DDIV); emitBoxDouble(); }
-            case DNEG -> { emitUnboxDouble(1); mv.visitInsn(A_DNEG); emitBoxDouble(); }
-            case DPOW -> emitCall2("doublePow");
-
-            case IEQ -> { emitUnboxInt(2); emitICmp(A_IF_ICMPEQ); }
-            case INE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPNE); }
-            case ILT -> { emitUnboxInt(2); emitICmp(A_IF_ICMPLT); }
-            case ILE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPLE); }
-            case IGT -> { emitUnboxInt(2); emitICmp(A_IF_ICMPGT); }
-            case IGE -> { emitUnboxInt(2); emitICmp(A_IF_ICMPGE); }
-
-            case LEQ -> emitLCmp(A_IFEQ); case LNE -> emitLCmp(A_IFNE);
-            case LLT -> emitLCmp(A_IFLT); case LLE -> emitLCmp(A_IFLE);
-            case LGT -> emitLCmp(A_IFGT); case LGE -> emitLCmp(A_IFGE);
-
-            case DEQ -> { emitUnboxDouble(2); emitDCmp(A_IFEQ); }
-            case DNE -> { emitUnboxDouble(2); emitDCmp(A_IFNE); }
-            case DLT -> { emitUnboxDouble(2); emitDCmp(A_IFLT); }
-            case DLE -> { emitUnboxDouble(2); emitDCmp(A_IFLE); }
-            case DGT -> { emitUnboxDouble(2); emitDCmp(A_IFGT); }
-            case DGE -> { emitUnboxDouble(2); emitDCmp(A_IFGE); }
-
             case IDEQ -> emitIdCmp(A_IF_ACMPEQ);
             case IDNE -> emitIdCmp(A_IF_ACMPNE);
 
@@ -328,15 +289,6 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/seq/Cons",
                     "nil", "()Lorg/elite/eval/seq/Cons;");
 
-            // ─── Bitwise (via helpers) ───
-            case IAND, LAND -> emitCall2("bitAnd");
-            case IOR, LOR   -> emitCall2("bitOr");
-            case IXOR, LXOR -> emitCall2("bitXor");
-            case ISHL, LSHL -> emitCall2("bitShl");
-            case ISHR, LSHR -> emitCall2("bitShr");
-            case IUSHR, LUSHR -> emitCall2("bitUshr");
-            case IBITNOT, LBITNOT -> emitCall1Obj("bitNot");
-
             case INVOKE_GETTER -> {
                 java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.constPoolIndex()];
                 emitDirectGetter(m);
@@ -389,23 +341,11 @@ public class IRBytecodeCompiler {
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
                     "trampolineById", "(Ljavax/el/ELContext;I)Ljava/lang/Object;", false);
             }
-            case GUARD_TYPE -> {
-                int typeId = v.payload() & 0xFF;
-                int deoptBlockId = v.opCount() > 0 ? v.operand(0) : 0;
-                // Bytecode backend cannot do multi-entry deopt blocks.
-                // Use strict guard (throw on mismatch). If guard fails,
-                // ELProgram catches the exception and falls back to IR
-                // interpreter, which handles deopt correctly.
-                mv.visitInsn(A_DUP);
-                emitIntConst(typeId);
-                mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
-                    "guardTypeStrict", "(Ljava/lang/Object;I)V", false);
-            }
             case NOP -> {}
             // Dynamic ops: call static helper methods directly
-            case DYNADD, DYNSUB, DYNMUL, DYNDIV, DYNREM, DYNPOW, DYNCAT, DYNIN,
-                 DYNSHL, DYNSHR, DYNUSHR, DYNEQ, DYNNE, DYNLT, DYNLE, DYNGT, DYNGE,
-                 DYNAND, DYNOR, DYNXOR -> {
+            case ADD, SUB, MUL, DIV, REM, POW, CAT, IN,
+                 SHL, SHR, USHR, EQ, NE, LT, LE, GT, GE,
+                 BITAND, BITOR, XOR -> {
                 // Binary dynamic operators, needs ELContext for runtime call.
                 // Stack: [x, y]. Need [ctx, x, y].
                 mv.visitVarInsn(A_ASTORE, S_TMP + 1); // y -> temp
@@ -414,36 +354,36 @@ public class IRBytecodeCompiler {
                 mv.visitVarInsn(A_ALOAD, S_TMP);      // x
                 mv.visitVarInsn(A_ALOAD, S_TMP + 1);  // y
                 switch (op) {
-                case DYNADD -> emitDynBinOp("dynAdd");
-                case DYNSUB -> emitDynBinOp("dynSub");
-                case DYNMUL -> emitDynBinOp("dynMul");
-                case DYNDIV -> emitDynBinOp("dynDiv");
-                case DYNREM -> emitDynBinOp("dynRem");
-                case DYNPOW -> emitDynBinOp("dynPow");
-                case DYNCAT -> emitDynBinOp("dynCat");
-                case DYNIN -> emitDynBinOp("dynIn");
-                case DYNSHL -> emitDynBinOp("dynShl");
-                case DYNSHR -> emitDynBinOp("dynShr");
-                case DYNUSHR -> emitDynBinOp("dynUShr");
-                case DYNEQ  -> emitDynBinOp("dynEq");
-                case DYNNE -> emitDynBinOp("dynNe");
-                case DYNLT  -> emitDynBinOp("dynLt");
-                case DYNLE  -> emitDynBinOp("dynLe");
-                case DYNGT -> emitDynBinOp("dynGt");
-                case DYNGE -> emitDynBinOp("dynGe");
-                case DYNAND -> emitDynBinOp("dynBitAnd");
-                case DYNOR -> emitDynBinOp("dynBitOr");
-                case DYNXOR -> emitDynBinOp("dynXor");
+                case ADD -> emitDynBinOp("dynAdd");
+                case SUB -> emitDynBinOp("dynSub");
+                case MUL -> emitDynBinOp("dynMul");
+                case DIV -> emitDynBinOp("dynDiv");
+                case REM -> emitDynBinOp("dynRem");
+                case POW -> emitDynBinOp("dynPow");
+                case CAT -> emitDynBinOp("dynCat");
+                case IN -> emitDynBinOp("dynIn");
+                case SHL -> emitDynBinOp("dynShl");
+                case SHR -> emitDynBinOp("dynShr");
+                case USHR -> emitDynBinOp("dynUShr");
+                case EQ  -> emitDynBinOp("dynEq");
+                case NE -> emitDynBinOp("dynNe");
+                case LT  -> emitDynBinOp("dynLt");
+                case LE  -> emitDynBinOp("dynLe");
+                case GT -> emitDynBinOp("dynGt");
+                case GE -> emitDynBinOp("dynGe");
+                case BITAND -> emitDynBinOp("dynBitAnd");
+                case BITOR -> emitDynBinOp("dynBitOr");
+                case XOR -> emitDynBinOp("dynXor");
                 }
             }
-            case DYNNEG, DYNNOT -> {
+            case NEG, BITNOT -> {
                 // Unary dynamic operators.
                 // Stack [x]. Need [ctx, x].
                 mv.visitVarInsn(A_ALOAD, S_CTX);
                 mv.visitInsn(A_SWAP);
                 switch (op) {
-                case DYNNEG -> emitDynUnaryOp("dynNeg");
-                case DYNNOT -> emitDynUnaryOp("dynBitNot");
+                case NEG -> emitDynUnaryOp("dynNeg");
+                case BITNOT -> emitDynUnaryOp("dynBitNot");
                 }
             }
             default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, Opcode.name(op), op));
@@ -799,25 +739,6 @@ public class IRBytecodeCompiler {
         }
     }
 
-    /** Unbox top-of-stack Object to primitive based on type. */
-    private void compileUnbox(int typeId) {
-        switch (typeId) {
-            case IRFormat.T_INT -> {
-                mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
-                mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
-            }
-            case IRFormat.T_LONG -> {
-                mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
-                mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
-            }
-            case IRFormat.T_DOUBLE -> {
-                mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
-                mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-            }
-            // T_BOOL and Object: leave as Object reference
-        }
-    }
-
     private void unboxBoolean() {
         mv.visitTypeInsn(A_CHECKCAST, "java/lang/Boolean");
         mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
@@ -868,19 +789,6 @@ public class IRBytecodeCompiler {
         } else {
             mv.visitTypeInsn(A_CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-        }
-    }
-
-    /** Emit typed store to local var slot. */
-    private void emitTypedStore(int varIdx, int t) {
-        int slot = typedSlot(varIdx);
-        // For STORE_VAR, we need to store AND keep the value on stack (assignment returns value)
-        // So we DUP first, then store
-        switch (t) {
-            case IRFormat.T_INT, IRFormat.T_BOOL -> { mv.visitInsn(89 /* DUP */); mv.visitVarInsn(54 /* ISTORE */, slot); }
-            case IRFormat.T_LONG -> { mv.visitInsn(92 /* DUP2 */); mv.visitVarInsn(55 /* LSTORE */, slot); }
-            case IRFormat.T_DOUBLE -> { mv.visitInsn(92 /* DUP2 */); mv.visitVarInsn(57 /* DSTORE */, slot); }
-            default -> { mv.visitInsn(89 /* DUP */); mv.visitVarInsn(A_ASTORE, slot); }
         }
     }
 

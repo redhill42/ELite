@@ -36,24 +36,14 @@ public final class IRFormat {
     public static final int OPCNT_SHIFT  = 16;
     public static final int PAYLOAD_MASK = 0xFFFF;
 
-    // Kind field values
-    public static final int K_NONE    = 0;  // no type info
-    public static final int K_PRIM    = 1;  // primitive type (payload = typeId)
-    public static final int K_CLASS   = 2;  // class type (payload = pool index)
-    public static final int K_FN      = 3;  // function type (payload = pool index)
-    public static final int K_DYN     = 4;  // dynamic type
-    public static final int K_GUARDED = 5;  // optimistic type guard (payload = expected typeId)
-    public static final int K_VAR     = 6;  // type variable (payload = var index)
-    public static final int K_BOOL    = 7;  // boolean result
-
-    // Primitive type IDs for K_PRIM and K_GUARDED
-    public static final int T_INT    = 0;
-    public static final int T_LONG   = 1;
-    public static final int T_DOUBLE = 2;
-    public static final int T_FLOAT  = 3;
-    public static final int T_BOOL   = 4;
-    public static final int T_STRING = 5;
-    public static final int T_CHAR   = 6;
+    // Primitive type IDs
+    public static final int K_NONE    = 0;
+    public static final int K_INT     = 1;
+    public static final int K_LONG    = 2;
+    public static final int K_DOUBLE  = 3;
+    public static final int K_STRING  = 4;
+    public static final int K_BOOL    = 5;
+    public static final int K_DYNAMIC = 6;
 
     // ── Packing helpers ──
 
@@ -79,18 +69,4 @@ public final class IRFormat {
     public static int opCount(int header)  { return (header >>> OPCNT_SHIFT) & 0x0F; }
     public static int payload(int header)  { return header & PAYLOAD_MASK; }
     public static int totalWords(int header) { return 1 + opCount(header); }
-
-    /** Get the primitive type name from a type ID. */
-    public static String primTypeName(int typeId) {
-        return switch (typeId) {
-            case T_INT -> "int";
-            case T_LONG -> "long";
-            case T_DOUBLE -> "double";
-            case T_FLOAT -> "float";
-            case T_BOOL -> "boolean";
-            case T_STRING -> "string";
-            case T_CHAR -> "char";
-            default -> "?";
-        };
-    }
 }

@@ -157,7 +157,7 @@ public final class IRPrinter {
                 sb.append(" ").append(v.payload());
             case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET, Opcode.INVOKE_OPERATOR,
                  Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO,
-                 Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL, Opcode.INSTOF, Opcode.CLOSURE,
+                 Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
                  Opcode.DECLARE_NS
                 -> formatConstPool(sb, fn, v.payload());
             case Opcode.NEW_MAP, Opcode.NEW_TUPLE ->

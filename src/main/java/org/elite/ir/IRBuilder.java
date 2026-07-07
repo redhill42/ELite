@@ -163,9 +163,9 @@ public class IRBuilder extends ELNode.Visitor {
             if (!(node instanceof ELNode.LAMBDA) && node.scope.hasCaptures()) {
                 // We need to set up new evaluation context if any variables
                 // captured in this scope.
-                current.emit1(ENTER_SCOPE, K_NONE, 0);
+                current.emitEnterScope();
                 node.accept(this);
-                current.emit1(LEAVE_SCOPE, K_NONE, 0);
+                current.emitLeaveScope();
             } else {
                 node.accept(this);
             }
@@ -936,7 +936,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Setup environment and declare namespaces.
         if (namespaces != 0) {
-            current.emit1(ENTER_SCOPE, K_NONE, 0);
+            current.emitEnterScope();
             for (int i = 0; i < node.keys.length; i++) {
                 if (node.keys[i] instanceof ELNode.STRINGVAL str &&
                     (str.value.equals("xmlns") || str.value.startsWith("xmlns:"))) {
@@ -980,7 +980,7 @@ public class IRBuilder extends ELNode.Visitor {
                       node.children == null ? 0 : node.children.length);
 
         if (namespaces != 0) {
-            current.emit1(LEAVE_SCOPE, K_NONE, 0);
+            current.emitLeaveScope();
         }
 
         if (tmpSlots != null) {
@@ -992,26 +992,38 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.IN node) {
-        build(node.right);
         build(node.left);
-        current.emitDynIn();
+        build(node.right);
+        current.emitIn();
         if (node.negative)
             current.emitNot();
     }
 
     public void visit(ELNode.INSTANCEOF node) {
+        if (node.type.indexOf('.') == -1) {
+            SymbolTable.Symbol sym = currentScope.lookup(node.type);
+            if (sym != null && sym.def.expr instanceof ELNode.CLASSDEF) {
+                emitPushSymbol(sym);
+                build(node.right);
+                emitInvokeMethod(ClassDefinition.class, "isInstance", ELContext.class,
+                                 Object.class);
+                if (node.negative)
+                    current.emitNot();
+                return;
+            }
+        }
+
         build(node.right);
-        emitInstOf(node.type);
+        emitInstanceOf(node.type);
         if (node.negative)
             current.emitNot();
     }
 
-    private void emitInstOf(Class<?> cls) {
-        int clsid = putConstant(cls);
-        current.emit1(INSTOF, K_BOOL, clsid);
+    private void emitInstanceOf(Class<?> cls) {
+        current.emitInstanceOf(putConstant(cls));
     }
 
-    private void emitInstOf(String name) {
+    private void emitInstanceOf(String name) {
         int clsid;
         try {
             Class<?> cls = ClassResolver.getInstance(elctx).resolveClass(name);
@@ -1019,7 +1031,7 @@ public class IRBuilder extends ELNode.Visitor {
         } catch (ClassNotFoundException e) {
             clsid = putConstant(name);
         }
-        current.emit1(INSTOF, K_BOOL, clsid);
+        current.emitInstanceOf(clsid);
     }
 
     // ── Binary and unary arithmetic ──
@@ -1043,13 +1055,11 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.LE node)     { buildBinaryOp(node); }
     public void visit(ELNode.GT node)     { buildBinaryOp(node); }
     public void visit(ELNode.GE node)     { buildBinaryOp(node); }
-
-    public void visit(ELNode.NEG node)    {
-        build(node.right);
-        current.emitDynNeg();
-    }
+    public void visit(ELNode.IDEQ node)   { buildBinaryOp(node); }
+    public void visit(ELNode.IDNE node)   { buildBinaryOp(node); }
 
     public void visit(ELNode.POS node)    { /* nop */ }
+    public void visit(ELNode.NEG node)    { buildUnaryOp(node); }
     public void visit(ELNode.BITNOT node) { buildUnaryOp(node); }
     public void visit(ELNode.EMPTY node)  { buildUnaryOp(node); }
 
@@ -1061,26 +1071,28 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void emitDynBinOp(int op) {
         switch (op) {
-            case Token.ADD    -> current.emitDynAdd();
-            case Token.SUB    -> current.emitDynSub();
-            case Token.MUL    -> current.emitDynMul();
-            case Token.DIV    -> current.emitDynDiv();
-            case Token.IDIV   -> current.emitLDiv();
-            case Token.REM    -> current.emitDynRem();
-            case Token.POW    -> current.emitDynPow();
-            case Token.CAT    -> current.emitDynCat();
-            case Token.SHL    -> current.emitDynShl();
-            case Token.SHR    -> current.emitDynShr();
-            case Token.USHR   -> current.emitDynUShr();
-            case Token.BITAND -> current.emitDynBitAnd();
-            case Token.BITOR  -> current.emitDynBitOr();
-            case Token.XOR    -> current.emitDynXor();
-            case Token.EQ     -> current.emitDynEq();
-            case Token.NE     -> current.emitDynNe();
-            case Token.LT     -> current.emitDynLt();
-            case Token.LE     -> current.emitDynLe();
-            case Token.GT     -> current.emitDynGt();
-            case Token.GE     -> current.emitDynGe();
+            case Token.ADD    -> current.emitAdd();
+            case Token.SUB    -> current.emitSub();
+            case Token.MUL    -> current.emitMul();
+            case Token.DIV    -> current.emitDiv();
+            case Token.IDIV   -> current.emitIDiv();
+            case Token.REM    -> current.emitRem();
+            case Token.POW    -> current.emitPow();
+            case Token.CAT    -> current.emitCat();
+            case Token.SHL    -> current.emitShl();
+            case Token.SHR    -> current.emitShr();
+            case Token.USHR   -> current.emitUShr();
+            case Token.BITAND -> current.emitBitAnd();
+            case Token.BITOR  -> current.emitBitOr();
+            case Token.XOR    -> current.emitXor();
+            case Token.EQ     -> current.emitEq();
+            case Token.NE     -> current.emitNe();
+            case Token.LT     -> current.emitLt();
+            case Token.LE     -> current.emitLe();
+            case Token.GT     -> current.emitGt();
+            case Token.GE     -> current.emitGe();
+            case Token.IDEQ   -> current.emitIdEq();
+            case Token.IDNE   -> current.emitIdNe();
             default -> throw new UnsupportedOperationException();
         }
     }
@@ -1092,24 +1104,12 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void emitDynUnOp(int op) {
         switch (op) {
-        case Token.BITNOT -> current.emitDynBitNot();
-        case Token.NEG -> current.emitDynNeg();
-        case Token.POS -> { /* unary plus is a no-op: value already on stack */ }
-        case Token.EMPTY ->  current.emitDynEmpty();
+        case Token.BITNOT -> current.emitBitNot();
+        case Token.NEG    -> current.emitNeg();
+        case Token.POS    -> { /* unary plus is a no-op: value already on stack */ }
+        case Token.EMPTY  ->  current.emitEmpty();
         default -> throw new UnsupportedOperationException();
         }
-    }
-
-    public void visit(ELNode.IDEQ node) {
-        build(node.left);
-        build(node.right);
-        current.emitIdEq();
-    }
-
-    public void visit(ELNode.IDNE node) {
-        build(node.left);
-        build(node.right);
-        current.emitIdNe();
     }
 
     public void visit(ELNode.PREFIX node) {
@@ -1409,7 +1409,7 @@ public class IRBuilder extends ELNode.Visitor {
         rhsSlot.load();
         emitInvokeStatic(Array.class, "getLength", Object.class);
         buildConst(lhs.elems.length);
-        current.emitIEq();
+        current.emitEq(K_INT);
         current.emitJumpIfFalse(failBlock);
 
         for (int i = 0; i < lhs.elems.length; i++) {
@@ -1464,7 +1464,7 @@ public class IRBuilder extends ELNode.Visitor {
             buildConst("");
         } else {
             build(node.elems);
-            current.emitCat(node.elems.length);
+            current.emitJoin(node.elems.length);
         }
     }
 
@@ -1654,7 +1654,7 @@ public class IRBuilder extends ELNode.Visitor {
             startBlock(headerB);
             idxSlot.load();
             buildConst(count);
-            current.emitLLt();
+            current.emitLt(K_INT);
             current.emitJumpIfTrue(bodyB);
             current.emitJump(exitB);
         }
@@ -1671,14 +1671,14 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(contB);
         idxSlot.load();
         buildConst(1L);
-        current.emitLAdd();
+        current.emitAdd(K_LONG);
         idxSlot.store();
         current.emitPop();
 
         if (varSlot != null) {
             varSlot.load();
             buildConst(step);
-            current.emitLAdd();
+            current.emitAdd(K_LONG);
             varSlot.store();
             current.emitPop();
         }
@@ -1706,7 +1706,7 @@ public class IRBuilder extends ELNode.Visitor {
             build(range.next);
             build(range.begin);
             varSlot.define();
-            current.emitLSub();
+            current.emitSub(K_LONG);
             stepSlot.store(); // step = next - begin
             current.emitPop();
         } else {
@@ -1720,16 +1720,16 @@ public class IRBuilder extends ELNode.Visitor {
             build(range.end);
             if (range.exclude) {
                 buildConst(1L);
-                current.emitLSub();
+                current.emitSub(K_LONG);
             }
             varSlot.load();
-            current.emitLSub();
+            current.emitSub(K_LONG);
             if (stepSlot != null) {
                 stepSlot.load();
-                current.emitLDiv();
+                current.emitDiv(K_LONG);
             }
             buildConst(1L);
-            current.emitLAdd();
+            current.emitAdd(K_LONG);
             countSlot.store(); // count = (end - begin) / step + 1
             current.emitPop();
         }
@@ -1751,7 +1751,7 @@ public class IRBuilder extends ELNode.Visitor {
             startBlock(headerB);
             idxSlot.load();
             countSlot.load();
-            current.emitLLt();
+            current.emitLt(K_LONG);
             current.emitJumpIfTrue(bodyB);
             current.emitJump(exitB);
         }
@@ -1768,7 +1768,7 @@ public class IRBuilder extends ELNode.Visitor {
         startBlock(contB);
         idxSlot.load();
         buildConst(1L);
-        current.emitLAdd();
+        current.emitAdd(K_LONG);
         idxSlot.store();
         current.emitPop();
 
@@ -1832,7 +1832,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.index != null) {
             idxSlot.load();
             buildConst(1L);
-            current.emitIAdd();
+            current.emitAdd(K_INT);
             idxSlot.store();
             current.emitPop();
         }
@@ -2045,7 +2045,7 @@ public class IRBuilder extends ELNode.Visitor {
             SymbolTable.Scope prevScope = currentScope;
             currentScope = c.scope;
             if (c.scope.hasCaptures())
-                current.emit1(ENTER_SCOPE, K_NONE, 0);
+                current.emitEnterScope();
 
             // Compile patterns for each column
             boolean alwaysFail = false;
@@ -2103,7 +2103,7 @@ public class IRBuilder extends ELNode.Visitor {
 
             // Leave the case scope
             if (c.scope.hasCaptures())
-                current.emit1(LEAVE_SCOPE, K_NONE, 0);
+                current.emitLeaveScope();
             currentScope = prevScope;
 
             // Falls through to next case entry (unless this was the last case)
@@ -2133,7 +2133,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (pat instanceof ELNode.DEFINE def) {
             // Type check if annotated
             if (def.type != null) {
-                emitInstOf(def.type);
+                emitInstanceOf(def.type);
                 current.emitJumpIfFalse(failBlock);
             }
 
@@ -2239,14 +2239,14 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (pat instanceof ELNode.CLASS cls) {
-            emitInstOf(cls.name);
+            emitInstanceOf(cls.name);
             return true;
         }
 
         if (pat instanceof ELNode.REGEXP re) {
-            emitInstOf(String.class);
+            emitInstanceOf(String.class);
             current.emitJumpIfFalse(failBlock);
-            emitPushConst(K_NONE, re.value); // the pattern
+            buildConst(re.value); // the pattern
             argSlot.load();                  // the string to match
             emitInvokeMethod(java.util.regex.Pattern.class, "matcher", CharSequence.class);
             emitInvokeMethod(java.util.regex.Matcher.class, "matches");
@@ -2269,7 +2269,7 @@ public class IRBuilder extends ELNode.Visitor {
             argSlot.load();
             emitInvokeStatic(Array.class, "getLength", Object.class);
             buildConst(t.elems.length);
-            current.emitIEq();
+            current.emitEq(K_INT);
             current.emitJumpIfFalse(failBlock);
 
             for (int i = 0; i < t.elems.length; i++) {
@@ -2294,7 +2294,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (!isSimplePattern(cons.head) || !isSimplePattern(cons.tail))
                 tmpSlot = new Slot();
 
-            emitInstOf(List.class);
+            emitInstanceOf(List.class);
             current.emitJumpIfFalse(failBlock);
             argSlot.load();
             emitInvokeStatic(TypeCoercion.class, "coerceToSeq", Object.class);
@@ -2366,7 +2366,7 @@ public class IRBuilder extends ELNode.Visitor {
                 Slot targetSlot = new Slot();
                 Slot tmpSlot = null;
 
-                emitInstOf(ClosureObject.class);
+                emitInstanceOf(ClosureObject.class);
                 current.emitJumpIfFalse(failBlock);
 
                 cdefSlot.load();
@@ -2435,12 +2435,12 @@ public class IRBuilder extends ELNode.Visitor {
 
                 Class<?> cls = resolveClassAtCompileTime(className);
                 if (cls == null) {
-                    emitInstOf(className);
+                    emitInstanceOf(className);
                     return true;
                 }
 
                 if (argc == 0) {
-                    emitInstOf(cls);
+                    emitInstanceOf(cls);
                     return true;
                 }
 
@@ -2455,7 +2455,7 @@ public class IRBuilder extends ELNode.Visitor {
                     assert slots != null && slots.length == argc; // already checked
                 }
 
-                emitInstOf(cls);
+                emitInstanceOf(cls);
                 current.emitJumpIfFalse(failBlock);
 
                 Slot tmpSlot = null;
@@ -2647,7 +2647,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildTrampoline(ELNode node) {
         int poolIdx = putConstant(node);
-        current.emit2(TRAMPOLINE, K_DYN, poolIdx, 0);
+        current.emit2(TRAMPOLINE, K_NONE, poolIdx, 0);
     }
 
     // ── Block management ──
@@ -2859,14 +2859,9 @@ public class IRBuilder extends ELNode.Visitor {
         });
     }
 
-    private void emitPushConst(int typeId, Object value) {
+    private void buildConst(Object value) {
         int idx = putConstant(value);
-        int kind = (typeId >= 0) ? K_PRIM : K_NONE;
-        int payload = idx & 0xFFFF;
-        if (idx < 0x10000)
-            current.emit1(PUSH_CONST, kind, payload);
-        else
-            current.emit2(PUSH_CONST, kind, idx >>> 16, idx & 0xFFFF);
+        current.emitPushConst(idx);
     }
 
     private void buildConst(Boolean value) {
@@ -2876,27 +2871,12 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPushFalse();
     }
 
-    private void buildConst(int value) {
-        emitPushConst(T_INT, value);
-    }
-
-    private void buildConst(long value) {
-        emitPushConst(T_LONG, value);
-    }
-
-    private void buildConst(double value) {
-        emitPushConst(T_DOUBLE, value);
-    }
-
-    private void buildConst(String value) {
-        emitPushConst(T_STRING, value);
-    }
-
-    private void buildConst(Object value) {
-        if (value == null)
-            current.emitPushNull();
-        else
-            emitPushConst(K_NONE, value);
+    private void emitPushSymbol(SymbolTable.Symbol sym) {
+        if (sym.captured) {
+            current.emitPushGlobal(putConstant(sym.name));
+        } else {
+            current.emitPushVar(sym.slot);
+        }
     }
 
     private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {

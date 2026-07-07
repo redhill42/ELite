@@ -96,10 +96,6 @@ public class InstructionView {
      *  is always in the 16-bit payload. For K_NONE, 1-word uses payload,
      *  2+-word uses the first operand. */
     public int constPoolIndex() {
-        int kind = IRFormat.kind(code[offset]);
-        if (kind == IRFormat.K_FN || kind == IRFormat.K_DYN) {
-            return IRFormat.payload(code[offset]);
-        }
         return IRFormat.opCount(code[offset]) == 0
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
@@ -146,49 +142,9 @@ public class InstructionView {
 
     // ── Type helpers ──
 
-    /** Get the primitive type ID when kind is K_PRIM or K_GUARDED. */
-    public int primTypeId() {
-        int k = kind();
-        if (k == IRFormat.K_PRIM || k == IRFormat.K_GUARDED) {
-            return payload();
-        }
-        return -1;
-    }
-
     /** Get the deoptimization target block ID from a GUARD_TYPE instruction. */
     public int deoptBlock() {
         return operand(0);
-    }
-
-    // ── Pretty printing ──
-
-    @Override
-    public String toString() {
-        int op = opcode();
-        String s = Opcode.name(op);
-        int k = kind();
-        if (k == IRFormat.K_PRIM || k == IRFormat.K_GUARDED) {
-            s += "(" + IRFormat.primTypeName(payload()) + ")";
-        } else if (k == IRFormat.K_BOOL) {
-            s += "(bool)";
-        }
-        if (Opcode.isJump(op)) {
-            s += " -> B" + jumpTarget();
-        }
-        if (op == Opcode.PUSH_CONST || op == Opcode.PUSH_VAR) {
-            int idx = op == Opcode.PUSH_CONST ? constPoolIndex() : varIndex();
-            s += " " + formatPoolRef(idx);
-        }
-        if (op == Opcode.PUSH_GLOBAL || op == Opcode.DEFINE_GLOBAL
-            || op == Opcode.INVOKE_DYN_METHOD) {
-            int idx = constPoolIndex();
-            s += " " + formatPoolRef(idx);
-        }
-        if (op == Opcode.TRAMPOLINE) {
-            int idx = constPoolIndex();
-            s += " " + formatTrampolineNode(idx);
-        }
-        return s;
     }
 
     /** Format a constant pool reference, resolving the value if pool is set. */

@@ -71,8 +71,7 @@ public class IREmitter {
     /**
      * Emit a 3-word instruction (op count = 2).
      */
-    public IREmitter emit3(int opcode, int kind, int payload, int op1,
-                           int op2) {
+    public IREmitter emit3(int opcode, int kind, int payload, int op1, int op2) {
         buf.add(pack3h(opcode, kind, payload));
         buf.add(op1);
         buf.add(op2);
@@ -82,7 +81,7 @@ public class IREmitter {
     /**
      * Copy a raw instruction word sequence from a view.
      */
-    public IREmitter emitCopy(InstructionView view) {
+    public IREmitter copyFrom(InstructionView view) {
         int w = view.totalWords();
         for (int i = 0; i < w; i++) {
             buf.add(view.code()[view.offset() + i]);
@@ -91,6 +90,10 @@ public class IREmitter {
     }
 
     // ── Stack ops ──
+
+    public IREmitter emitNop() {
+        return emit1(NOP, K_NONE, 0);
+    }
 
     public IREmitter emitPushConst(int poolIndex) {
         if (fits16(poolIndex)) {
@@ -102,7 +105,7 @@ public class IREmitter {
     }
 
     public IREmitter emitPushVar(int varIndex) {
-        return emit1(PUSH_VAR, K_PRIM, varIndex & 0xFFFF);
+        return emit1(PUSH_VAR, K_NONE, varIndex & 0xFFFF);
     }
 
     public IREmitter emitPushGlobal(int nameIndex) {
@@ -114,267 +117,178 @@ public class IREmitter {
         }
     }
 
-    public IREmitter emitPop() {
-        return emit1(POP, K_NONE, 0);
+    public IREmitter emitPushTrue() {
+        return emit1(PUSH_TRUE, K_NONE, 0);
     }
 
-    public IREmitter emitDup() {
-        return emit1(DUP, K_NONE, 0);
+    public IREmitter emitPushFalse() {
+        return emit1(PUSH_FALSE, K_NONE, 0);
+    }
+
+    public IREmitter emitPushNull() {
+        return emit1(PUSH_NULL, K_NONE, 0);
+    }
+
+    public IREmitter emitPop() {
+        return emit1(POP, K_NONE, 0);
     }
 
     public IREmitter emitPopN(int count) {
         return emit1(POP_N, K_NONE, count);
     }
 
+    public IREmitter emitDup() {
+        return emit1(DUP, K_NONE, 0);
+    }
+
     // ── Typed arithmetic (with inline primitive type in kind field) ──
 
-    public IREmitter emitIAdd() {
-        return emit1(IADD, K_PRIM, T_INT);
+    public IREmitter emitAdd() {
+        return emit1(ADD, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitISub() {
-        return emit1(ISUB, K_PRIM, T_INT);
+    public IREmitter emitAdd(int kind) {
+        return emit1(ADD, kind, 0);
     }
 
-    public IREmitter emitIMul() {
-        return emit1(IMUL, K_PRIM, T_INT);
+    public IREmitter emitSub() {
+        return emit1(SUB, K_DYNAMIC, 0);
+    }
+
+    public IREmitter emitSub(int kind) {
+        return emit1(SUB, kind, 0);
+    }
+
+    public IREmitter emitMul() {
+        return emit1(MUL, K_DYNAMIC, 0);
+    }
+
+    public IREmitter emitMul(int kind) {
+        return emit1(MUL, kind, 0);
+    }
+
+    public IREmitter emitDiv() {
+        return emit1(DIV, K_DYNAMIC, 0);
+    }
+
+    public IREmitter emitDiv(int kind) {
+        return emit1(DIV, kind, 0);
     }
 
     public IREmitter emitIDiv() {
-        return emit1(IDIV, K_PRIM, T_INT);
+        return emit1(IDIV, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitIRem() {
-        return emit1(IREM, K_PRIM, T_INT);
+    public IREmitter emitRem() {
+        return emit1(REM, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitINeg() {
-        return emit1(INEG, K_PRIM, T_INT);
+    public IREmitter emitPow() {
+        return emit1(POW, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitLAdd() {
-        return emit1(LADD, K_PRIM, T_LONG);
+    public IREmitter emitNeg() {
+        return emit1(NEG, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitLSub() {
-        return emit1(LSUB, K_PRIM, T_LONG);
+    public IREmitter emitCat() {
+        return emit1(CAT, K_NONE, 0);
     }
 
-    public IREmitter emitLMul() {
-        return emit1(LMUL, K_PRIM, T_LONG);
+    public IREmitter emitJoin(int count) {
+        return emit1(JOIN, K_NONE, count);
     }
 
-    public IREmitter emitLDiv() {
-        return emit1(LDIV, K_PRIM, T_LONG);
+    public IREmitter emitBitAnd() {
+        return emit1(BITAND, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitLNeg() {
-        return emit1(LNEG, K_PRIM, T_LONG);
+    public IREmitter emitBitOr() {
+        return emit1(BITOR, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDAdd() {
-        return emit1(DADD, K_PRIM, T_DOUBLE);
+    public IREmitter emitBitNot() {
+        return emit1(BITNOT, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDSub() {
-        return emit1(DSUB, K_PRIM, T_DOUBLE);
+    public IREmitter emitXor() {
+        return emit1(XOR, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDMul() {
-        return emit1(DMUL, K_PRIM, T_DOUBLE);
+    public IREmitter emitShl() {
+        return emit1(SHL, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDDiv() {
-        return emit1(DDIV, K_PRIM, T_DOUBLE);
+    public IREmitter emitShr() {
+        return emit1(SHR, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDNeg() {
-        return emit1(DNEG, K_PRIM, T_DOUBLE);
+    public IREmitter emitUShr() {
+        return emit1(USHR, K_DYNAMIC, 0);
     }
 
-    // ── Dynamic arithmetic ──
-
-    public IREmitter emitDynAdd() {
-        return emit1(DYNADD, K_DYN, 0);
+    public IREmitter emitEq() {
+        return emit1(EQ, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynSub() {
-        return emit1(DYNSUB, K_DYN, 0);
+    public IREmitter emitEq(int kind) {
+        return emit1(EQ, kind, 0);
     }
 
-    public IREmitter emitDynMul() {
-        return emit1(DYNMUL, K_DYN, 0);
+    public IREmitter emitNe() {
+        return emit1(NE, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynDiv() {
-        return emit1(DYNDIV, K_DYN, 0);
+    public IREmitter emitNe(int kind) {
+        return emit1(NE, kind, 0);
     }
 
-    public IREmitter emitDynRem() {
-        return emit1(DYNREM, K_DYN, 0);
+    public IREmitter emitLt() {
+        return emit1(LT, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynNeg() {
-        return emit1(DYNNEG, K_DYN, 0);
+    public IREmitter emitLt(int kind) {
+        return emit1(LT, kind, 0);
     }
 
-    public IREmitter emitDynEmpty() {
-        return emit1(DYNEMPTY, K_DYN, 0);
+    public IREmitter emitLe() {
+        return emit1(LE, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynPow() {
-        return emit1(DYNPOW, K_DYN, 0);
+    public IREmitter emitGt() {
+        return emit1(GT, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynBitAnd() {
-        return emit1(DYNAND, K_DYN, 0);
+    public IREmitter emitGe() {
+        return emit1(GE, K_DYNAMIC, 0);
     }
-
-    public IREmitter emitDynBitOr() {
-        return emit1(DYNOR, K_DYN, 0);
-    }
-
-    public IREmitter emitDynXor() {
-        return emit1(DYNXOR, K_DYN, 0);
-    }
-
-    public IREmitter emitDynBitNot() {
-        return emit1(DYNNOT, K_DYN, 0);
-    }
-
-    public IREmitter emitDynShl() {
-        return emit1(DYNSHL, K_DYN, 0);
-    }
-
-    public IREmitter emitDynShr() {
-        return emit1(DYNSHR, K_DYN, 0);
-    }
-
-    public IREmitter emitDynUShr() {
-        return emit1(DYNUSHR, K_DYN, 0);
-    }
-
-    // ── Typed comparisons ──
-
-    public IREmitter emitIEq() {
-        return emit1(IEQ, K_BOOL, 0);
-    }
-
-    public IREmitter emitINe() {
-        return emit1(INE, K_BOOL, 0);
-    }
-
-    public IREmitter emitILt() {
-        return emit1(ILT, K_BOOL, 0);
-    }
-
-    public IREmitter emitILe() {
-        return emit1(ILE, K_BOOL, 0);
-    }
-
-    public IREmitter emitIGt() {
-        return emit1(IGT, K_BOOL, 0);
-    }
-
-    public IREmitter emitIGe() {
-        return emit1(IGE, K_BOOL, 0);
-    }
-
-    public IREmitter emitLEq() {
-        return emit1(LEQ, K_BOOL, 0);
-    }
-
-    public IREmitter emitLNe() {
-        return emit1(LNE, K_BOOL, 0);
-    }
-
-    public IREmitter emitLLt() {
-        return emit1(LLT, K_BOOL, 0);
-    }
-
-    public IREmitter emitLLe() {
-        return emit1(LLE, K_BOOL, 0);
-    }
-
-    public IREmitter emitDEq() {
-        return emit1(DEQ, K_BOOL, 0);
-    }
-
-    public IREmitter emitDNe() {
-        return emit1(DNE, K_BOOL, 0);
-    }
-
-    public IREmitter emitDLt() {
-        return emit1(DLT, K_BOOL, 0);
-    }
-
-    public IREmitter emitDLe() {
-        return emit1(DLE, K_BOOL, 0);
-    }
-
-    public IREmitter emitDGt() {
-        return emit1(DGT, K_BOOL, 0);
-    }
-
-    public IREmitter emitDGe() {
-        return emit1(DGE, K_BOOL, 0);
-    }
-
-    public IREmitter emitLGt() {
-        return emit1(LGT, K_BOOL, 0);
-    }
-
-    public IREmitter emitLGe() {
-        return emit1(LGE, K_BOOL, 0);
-    }
-
-    // ── Dynamic comparisons ──
-
 
     public IREmitter emitIdEq() {
-        return emit1(IDEQ, K_DYN, 0);
+        return emit1(IDEQ, K_NONE, 0);
     }
 
     public IREmitter emitIdNe() {
-        return emit1(IDNE, K_DYN, 0);
+        return emit1(IDNE, K_NONE, 0);
     }
 
-    public IREmitter emitDynEq() {
-        return emit1(DYNEQ, K_DYN, 0);
+    public IREmitter emitIn() {
+        return emit1(IN, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynNe() {
-        return emit1(DYNNE, K_DYN, 0);
+    public IREmitter emitInstanceOf(int classIdx) {
+        if (fits16(classIdx))
+            return emit1(INSTANCEOF, K_NONE, classIdx);
+        else
+            return emit2(INSTANCEOF, K_NONE, classIdx >>> 16,
+                         classIdx & 0xFFFF);
     }
 
-    public IREmitter emitDynLt() {
-        return emit1(DYNLT, K_DYN, 0);
+    public IREmitter emitEmpty() {
+        return emit1(EMPTY, K_DYNAMIC, 0);
     }
 
-    public IREmitter emitDynLe() {
-        return emit1(DYNLE, K_DYN, 0);
-    }
-
-    public IREmitter emitDynGt() {
-        return emit1(DYNGT, K_DYN, 0);
-    }
-
-    public IREmitter emitDynGe() {
-        return emit1(DYNGE, K_DYN, 0);
-    }
-
-    // ── Boolean constants ──
-
-    public IREmitter emitPushTrue() {
-        return emit1(PUSH_TRUE, K_PRIM, T_BOOL);
-    }
-
-    public IREmitter emitPushFalse() {
-        return emit1(PUSH_FALSE, K_PRIM, T_BOOL);
-    }
-
-    public IREmitter emitPushNull() {
-        return emit1(PUSH_NULL, K_NONE, 0);
+    public IREmitter emitNot() {
+        return emit1(NOT, K_NONE, 0);
     }
 
     // ── Control flow ──
@@ -423,19 +337,22 @@ public class IREmitter {
         }
     }
 
-    // ── Function ──
-
     public IREmitter emitReturn() {
-        return emit1(RETURN, K_PRIM, 0);
+        return emit1(RETURN, K_NONE, 0);
     }
 
     public IREmitter emitReturnVoid() {
         return emit1(RETURN_VOID, K_NONE, 0);
     }
 
-    /**
-     * Pop value from stack and throw (wrapping as UserException if needed).
-     */
+    public IREmitter emitTry(int handlerCount) {
+        return emit1(TRY, K_NONE, handlerCount);
+    }
+
+    public IREmitter emitSynchronized() {
+        return emit1(SYNCHRONIZED, K_NONE, 0);
+    }
+
     public IREmitter emitThrow() {
         return emit1(THROW, K_NONE, 0);
     }
@@ -444,8 +361,46 @@ public class IREmitter {
         return emit1(ASSERT, K_NONE, 0);
     }
 
-    public IREmitter emitInvokeDyn(int argCount) {
-        return emit2(INVOKE_DYN, K_DYN, argCount, 0);
+    public IREmitter emitEnterScope() {
+        return emit1(ENTER_SCOPE, K_NONE, 0);
+    }
+
+    public IREmitter emitLeaveScope() {
+        return emit1(LEAVE_SCOPE, K_NONE, 0);
+    }
+
+    /**
+     * Pop value, store to global variable (name in constant pool).
+     */
+    public IREmitter emitDefineGlobal(int namePoolIndex) {
+        if (fits16(namePoolIndex))
+            return emit1(DEFINE_GLOBAL, K_NONE, namePoolIndex);
+        else
+            return emit2(DEFINE_GLOBAL, K_NONE, namePoolIndex >>> 16,
+                         namePoolIndex & 0xFFFF);
+    }
+
+    /**
+     * Store to global with full chain search — throws if variable not defined.
+     */
+    public IREmitter emitStoreGlobal(int namePoolIndex) {
+        if (fits16(namePoolIndex))
+            return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);
+        else
+            return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16,
+                         namePoolIndex & 0xFFFF);
+    }
+
+    public IREmitter emitStoreVar(int varIndex) {
+        return emit2(STORE_VAR, K_NONE, varIndex & 0xFFFF, 0);
+    }
+
+    public IREmitter emitClosure(int funcPoolIdx) {
+        if (fits16(funcPoolIdx))
+            return emit1(CLOSURE, K_NONE, funcPoolIdx);
+        else
+            return emit2(CLOSURE, K_NONE, funcPoolIdx >>> 16,
+                         funcPoolIdx & 0xFFFF);
     }
 
     /**
@@ -459,17 +414,6 @@ public class IREmitter {
                     funcPoolIdx & 0xFFFF, argCount);
     }
 
-    /**
-     * Resolve and invoke a target with name.
-     */
-    public IREmitter emitInvokeTarget(int funcPoolIdx, int argCount) {
-        if (fits16(funcPoolIdx))
-            return emit2(INVOKE_TARGET, K_NONE, funcPoolIdx, argCount);
-        else
-            return emit3(INVOKE_TARGET, K_NONE, funcPoolIdx >>> 16,
-                    funcPoolIdx & 0xFFFF, argCount);
-    }
-
     public IREmitter emitInvokeOperator(int namePoolIdx, int argCount) {
         if (fits16(namePoolIdx))
             return emit2(INVOKE_OPERATOR, K_NONE, namePoolIdx, argCount);
@@ -478,10 +422,52 @@ public class IREmitter {
                 namePoolIdx & 0xFFFF, argCount);
     }
 
-    // ── Memory ──
+    public IREmitter emitInvokeTarget(int nameIdx, int argCount) {
+        if (fits16(nameIdx))
+            return emit2(INVOKE_TARGET, K_NONE, nameIdx, argCount);
+        else
+            return emit3(INVOKE_TARGET, K_NONE, nameIdx >>> 16,
+                         nameIdx & 0xFFFF, argCount);
+    }
 
-    public IREmitter emitStoreVar(int varIndex) {
-        return emit2(STORE_VAR, K_NONE, varIndex & 0xFFFF, 0);
+    public IREmitter emitInvokeDyn(int argCount) {
+        return emit1(INVOKE_DYN, K_NONE, argCount);
+    }
+
+    public IREmitter emitInvokeMethod(int methodPoolIdx, int argCount) {
+        if (fits16(methodPoolIdx))
+            return emit2(INVOKE_METHOD, K_NONE, methodPoolIdx, argCount);
+        else
+            return emit3(INVOKE_METHOD, K_NONE, methodPoolIdx >>> 16,
+                         methodPoolIdx & 0xFFFF, argCount);
+    }
+
+    public IREmitter emitInvokeStatic(int methodPoolIdx, int argCount) {
+        if (fits16(methodPoolIdx))
+            return emit2(INVOKE_STATIC, K_NONE, methodPoolIdx, argCount);
+        else
+            return emit3(INVOKE_STATIC, K_NONE, methodPoolIdx >>> 16,
+                         methodPoolIdx & 0xFFFF, argCount);
+    }
+
+    public IREmitter emitInvokeExpando(int methodPoolIdx, int argCount) {
+        if (fits16(methodPoolIdx))
+            return emit2(INVOKE_EXPANDO, K_NONE, methodPoolIdx, argCount);
+        else
+            return emit3(INVOKE_EXPANDO, K_NONE, methodPoolIdx >>> 16,
+                         methodPoolIdx & 0xFFFF, argCount);
+    }
+
+    public IREmitter emitInvokeDynMethod(int argCount) {
+        return emit1(INVOKE_DYN_METHOD, K_NONE, argCount);
+    }
+
+    public IREmitter emitLoadProperty() {
+        return emit1(LOAD_PROPERTY, K_NONE, 0);
+    }
+
+    public IREmitter emitStoreProperty() {
+        return emit1(STORE_PROPERTY, K_NONE, 0);
     }
 
     public IREmitter emitNewCons() {
@@ -496,189 +482,17 @@ public class IREmitter {
         return emit1(NIL, K_NONE, 0);
     }
 
-    /**
-     * Pop `count*2` values (key,val pairs) off the stack and create a map.
-     */
     public IREmitter emitNewMap(int count) {
         return emit1(NEW_MAP, K_NONE, count);
     }
 
-    /**
-     * Pop begin, end off the stack and create a Range.
-     */
     public IREmitter emitNewRange() {
         return emit1(NEW_RANGE, K_NONE, 0);
     }
 
-    /**
-     * Pop `count` values off the stack and create a tuple.
-     */
     public IREmitter emitNewTuple(int count) {
         return emit1(NEW_TUPLE, K_NONE, count);
     }
-
-    /**
-     * Pop key, base → push base[key].
-     */
-    public IREmitter emitLoadProperty() {
-        return emit1(LOAD_PROPERTY, K_DYN, 0);
-    }
-
-    /**
-     * Pop value, key, base → base[key]=value, push value.
-     */
-    public IREmitter emitStoreProperty() {
-        return emit1(STORE_PROPERTY, K_DYN, 0);
-    }
-
-    /**
-     * Direct field load: pops base, pushes field value. Field name in
-     * constant pool.
-     */
-    public IREmitter emitLoadField(int fieldNameIdx) {
-        if (fits16(fieldNameIdx))
-            return emit1(LOAD_FIELD, K_NONE, fieldNameIdx);
-        else
-            return emit2(LOAD_FIELD, K_NONE, fieldNameIdx >>> 16,
-                    fieldNameIdx & 0xFFFF);
-    }
-
-    /**
-     * Direct field store: pops value then base, pushes value. Field name in
-     * pool.
-     */
-    public IREmitter emitStoreField(int fieldNameIdx) {
-        if (fits16(fieldNameIdx))
-            return emit1(STORE_FIELD, K_NONE, fieldNameIdx);
-        else
-            return emit2(STORE_FIELD, K_NONE, fieldNameIdx >>> 16,
-                    fieldNameIdx & 0xFFFF);
-    }
-
-    /**
-     * Direct method call: pops argc args + base, calls Method.invoke, pushes
-     * result.
-     */
-    public IREmitter emitInvokeMethod(int methodPoolIdx, int argCount) {
-        if (fits16(methodPoolIdx))
-            return emit2(INVOKE_METHOD, K_FN, methodPoolIdx, argCount);
-        else
-            return emit3(INVOKE_METHOD, K_FN, methodPoolIdx >>> 16,
-                    methodPoolIdx & 0xFFFF, argCount);
-    }
-
-    public IREmitter emitInvokeStatic(int methodPoolIdx, int argCount) {
-        if (fits16(methodPoolIdx))
-            return emit2(INVOKE_STATIC, K_FN, methodPoolIdx, argCount);
-        else
-            return emit3(INVOKE_STATIC, K_FN, methodPoolIdx >>> 16,
-                methodPoolIdx & 0xFFFF, argCount);
-    }
-
-    public IREmitter emitInvokeExpando(int methodPoolIdx, int argCount) {
-        if (fits16(methodPoolIdx))
-            return emit2(INVOKE_EXPANDO, K_FN, methodPoolIdx, argCount);
-        else
-            return emit3(INVOKE_EXPANDO, K_FN, methodPoolIdx >>> 16,
-                methodPoolIdx & 0xFFFF, argCount);
-    }
-
-    /**
-     * Dynamic method call by name: pops argc args + base, resolves key on base,
-     * calls MethodClosure.invoke(elctx, base, args). Handles ELContext
-     * injection.
-     */
-    public IREmitter emitInvokeDynMethod(int argCount) {
-        return emit1(INVOKE_DYN_METHOD, K_NONE, argCount);
-    }
-
-    /**
-     * Create closure: pops captureCount values + IRFunction, pushes
-     * ClosureObject.
-     */
-    public IREmitter emitClosure(int funcPoolIdx) {
-        if (fits16(funcPoolIdx))
-            return emit1(CLOSURE, K_FN, funcPoolIdx);
-        else
-            return emit2(CLOSURE, K_FN, funcPoolIdx >>> 16,
-                    funcPoolIdx & 0xFFFF);
-    }
-
-    /** Pop closures from stack and execute try/catch/finally. */
-    public IREmitter emitTry(int handlerCount) {
-        return emit1(TRY, K_DYN, handlerCount);
-    }
-
-    /** Pop lock and body closure, execute synchronized(lock) { body(); }. */
-    public IREmitter emitSynchronized() {
-        return emit1(SYNCHRONIZED, K_DYN, 0);
-    }
-
-    /**
-     * Pop value, store to global variable (name in constant pool).
-     */
-    public IREmitter emitDefineGlobal(int namePoolIndex) {
-        if (fits16(namePoolIndex))
-            return emit1(DEFINE_GLOBAL, K_NONE, namePoolIndex);
-        else
-            return emit2(DEFINE_GLOBAL, K_NONE, namePoolIndex >>> 16,
-                    namePoolIndex & 0xFFFF);
-    }
-
-    /**
-     * Store to global with full chain search — throws if variable not defined.
-     */
-    public IREmitter emitStoreGlobal(int namePoolIndex) {
-        if (fits16(namePoolIndex))
-            return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);
-        else
-            return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16,
-                    namePoolIndex & 0xFFFF);
-    }
-
-    /**
-     * Pop container, element → push boolean (element in container).
-     */
-    public IREmitter emitDynIn() {
-        return emit1(DYNIN, K_BOOL, 0);
-    }
-
-    // ── Type guards ──
-
-    /**
-     * Emit a type guard: check stack top type, deopt or throw on mismatch.
-     *
-     * @param primTypeId   T_INT, T_LONG, T_DOUBLE, etc.
-     * @param deoptBlockId fallback block, or Opcode.STRICT_GUARD to throw
-     *                     error.
-     */
-    public IREmitter emitGuardType(int primTypeId, int deoptBlockId) {
-        return emit2(GUARD_TYPE, K_GUARDED, primTypeId, deoptBlockId);
-    }
-
-    // ── Concatenation ──
-
-    public IREmitter emitCat(int count) {
-        return emit1(CAT, K_NONE, count);
-    }
-
-    public IREmitter emitDynCat() {
-        return emit1(DYNCAT, K_DYN, 0);
-    }
-
-    // ── Unary ──
-
-    public IREmitter emitNot() {
-        return emit1(NOT, K_BOOL, 0);
-    }
-
-    // ── NOP ──
-
-    public IREmitter emitNop() {
-        return emit1(NOP, K_NONE, 0);
-    }
-
-    // ── Finalization ──
 
     public int[] toArray() {
         return buf.toArray();
