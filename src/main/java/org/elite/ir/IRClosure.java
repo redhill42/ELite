@@ -164,7 +164,10 @@ public class IRClosure extends Closure {
     }
 
     public String toString() {
-        return "#<ir-closure:" + function.name() + ">";
+        if (function.name() == null || function.name().equals("<lambda>"))
+            return "#<procedure>";
+        else
+            return "#<procedure:" + function.name() + ">";
     }
 
     public String dump() {

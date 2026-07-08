@@ -217,7 +217,8 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.REGEXP node) {
-        buildConst(node.value);
+        buildConst(node.value.toString());
+        emitInvokeStatic(java.util.regex.Pattern.class, "compile", String.class);
     }
 
     public void visit(ELNode.STRINGVAL node) {
@@ -241,7 +242,8 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.SYMBOL node) {
-        buildConst(node.value);
+        buildConst(node.value.getName());
+        emitInvokeStatic(elite.lang.Symbol.class, "valueOf", String.class);
     }
 
     public void visit(ELNode.ACCESS node) {

@@ -16,7 +16,11 @@
 
 package org.elite.parser;
 
+import org.elite.eval.TypeCoercion;
+
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * AST constant folding pass. Recursively evaluates sub-expressions
@@ -36,6 +40,7 @@ class ConstantFolder extends TreeTransformer {
     private static boolean isConstant(ELNode node) {
         return node instanceof ELNode.NUMBER
             || node instanceof ELNode.STRINGVAL
+            || node instanceof ELNode.LITERAL
             || node instanceof ELNode.BOOLEANVAL
             || node instanceof ELNode.NULL;
     }
@@ -45,11 +50,13 @@ class ConstantFolder extends TreeTransformer {
      */
     private static Object nodeValue(ELNode node) {
         if (node instanceof ELNode.NUMBER)
-            return ((ELNode.NUMBER) node).value;
+            return ((ELNode.NUMBER)node).value;
         if (node instanceof ELNode.STRINGVAL)
-            return ((ELNode.STRINGVAL) node).value;
+            return ((ELNode.STRINGVAL)node).value;
+        if (node instanceof ELNode.LITERAL)
+            return ((ELNode.LITERAL)node).value;
         if (node instanceof ELNode.BOOLEANVAL)
-            return ((ELNode.BOOLEANVAL) node).value;
+            return ((ELNode.BOOLEANVAL)node).value;
         if (node instanceof ELNode.NULL)
             return null;
         throw new IllegalArgumentException("not a constant: " + node.getClass().getSimpleName());
@@ -315,6 +322,43 @@ class ConstantFolder extends TreeTransformer {
             result = e;
         } else {
             result = new ELNode.CAT(e.pos, left, right);
+        }
+    }
+
+    public void visit(ELNode.Composite e) {
+        ELNode[] elems = new ELNode[e.elems.length];
+        boolean changed = false;
+        boolean hasConst = false;
+
+        for (int i = 0; i < elems.length; i++) {
+            elems[i] = transform(e.elems[i]);
+            if (elems[i] != e.elems[i])
+                changed = true;
+            if (isConstant(elems[i]))
+                hasConst = true;
+        }
+
+        if (hasConst && elems.length > 1) {
+            StringBuilder sb = new StringBuilder();
+            List<ELNode> components = new ArrayList<>();
+            for (ELNode elem : elems) {
+                if (isConstant(elem)) {
+                    sb.append(TypeCoercion.coerceToString(nodeValue(elem)));
+                } else {
+                    if (!sb.isEmpty()) {
+                        components.add(new ELNode.STRINGVAL(e.pos, sb.toString()));
+                        sb.setLength(0);
+                    }
+                    components.add(elem);
+                }
+            }
+            if (!sb.isEmpty())
+                components.add(new ELNode.STRINGVAL(e.pos, sb.toString()));
+            result = new ELNode.Composite(e.pos, components.toArray(new ELNode[0]));
+        } else if (!changed) {
+            result = e;
+        } else {
+            result = new ELNode.Composite(e.pos, elems);
         }
     }
 
