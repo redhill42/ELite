@@ -541,15 +541,6 @@ public class TreeTransformer extends ELNode.Visitor
             result = new ELNode.WHILE(e.pos, cond, body);
     }
 
-    public void visit(ELNode.REPEAT e) {
-        ELNode cond = transform(e.cond);
-        ELNode body = transform(e.body);
-        if (cond == e.cond && body == e.body)
-            result = e;
-        else
-            result = new ELNode.REPEAT(e.pos, cond, body);
-    }
-
     public void visit(ELNode.FOR e) {
         ELNode[] init = transform(e.init);
         ELNode cond = transform(e.cond);

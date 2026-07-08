@@ -146,9 +146,7 @@ public final class Token
     public static final int ELSE            = 1 + IF;
     public static final int FOR             = 1 + ELSE;
     public static final int WHILE           = 1 + FOR;
-    public static final int UNTIL           = 1 + WHILE;
-    public static final int REPEAT          = 1 + UNTIL;
-    public static final int SWITCH          = 1 + REPEAT;
+    public static final int SWITCH          = 1 + WHILE;
     public static final int MATCH           = 1 + SWITCH;
     public static final int CASE            = 1 + MATCH;
     public static final int DEFAULT         = 1 + CASE;
@@ -176,7 +174,7 @@ public final class Token
         "abstract", "synchronized", "true", "false", "null", "void",
         ":", "::", "?", "(", ")", "[", "]", "{", "}", "|", "&", "@", "#", "=>", "...", ",", ";",
         "require", "import", "module", "grammar", "define", "class", "extends", "implements",
-        "let", "do", "compound", "if", "else", "for", "while", "until", "repeat", "switch", "case", "case",
+        "let", "do", "compound", "if", "else", "for", "while", "switch", "case", "case",
         "default", "break", "continue", "return", "throw", "try", "catch", "finally", "assert", "LALR"
     };
 

@@ -188,13 +188,6 @@ public final class SymbolTableBuilder {
             table.leaveScope();
         }
 
-        public void visit(ELNode.REPEAT e) {
-            table.enterScope("repeat", e.body);
-            scan(e.body);
-            table.leaveScope();
-            scan(e.cond);
-        }
-
         public void visit(ELNode.FOR e) {
             if (e.local) {
                 table.enterScope("for", e);

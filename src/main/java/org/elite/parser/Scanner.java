@@ -167,8 +167,6 @@ public class Scanner implements Cloneable
         xelKeywords.put("else", ELSE);
         xelKeywords.put("for", FOR);
         xelKeywords.put("while", WHILE);
-        xelKeywords.put("until", UNTIL);
-        xelKeywords.put("repeat", REPEAT);
         xelKeywords.put("switch", SWITCH);
         xelKeywords.put("case", CASE);
         xelKeywords.put("default", DEFAULT);

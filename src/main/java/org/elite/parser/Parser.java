@@ -1993,7 +1993,7 @@ public class Parser extends Scanner
 
         switch (token) {
         case SEMI:
-            e = new ELNode.COMPOUND(scan(), EMPTY_EXPS);
+            e = new ELNode.NULL(scan());
             break;
 
         case LBRACE:
@@ -2007,14 +2007,6 @@ public class Parser extends Scanner
 
         case WHILE:
             e = parseWhileExpression(scan());
-            break;
-
-        case UNTIL:
-            e = parseUntilExpression(scan());
-            break;
-
-        case REPEAT:
-            e = parseRepeatExpression(scan());
             break;
 
         case FOR:
@@ -3134,56 +3126,6 @@ public class Parser extends Scanner
     }
 
     /**
-     * Parse a while loop expression.
-     */
-    private ELNode parseUntilExpression(int p) {
-        expect(LPAREN);
-        ELNode cond = parseSyntaxExpression();
-        expect(RPAREN);
-        open_scope();
-        ELNode body = parseStatement();
-        close_scope();
-        return new ELNode.WHILE(p, inverseCondition(cond), body);
-    }
-
-    /**
-     * Parse a repeat (do-while style) expression.
-     */
-    private ELNode parseRepeatExpression(int p) {
-        open_scope();
-        ELNode body = parseStatement();
-        close_scope();
-        int tok = token;
-        if (scan(WHILE) || scan(UNTIL)) {
-            expect(LPAREN);
-            ELNode cond = parseSyntaxExpression();
-            expect(RPAREN);
-            if (tok == UNTIL)
-                cond = inverseCondition(cond);
-            return new ELNode.REPEAT(p, cond, body);
-        } else {
-            throw parseError(p, _T(EL_TOKEN_EXPECTED, "'while' or 'until'", token_value()));
-        }
-    }
-
-    private static ELNode inverseCondition(ELNode cond) {
-        if (cond instanceof ELNode.Binary bin) {
-            return switch (bin.op) {
-            case EQ -> new ELNode.NE(bin.pos, bin.left, bin.right);
-            case NE -> new ELNode.EQ(bin.pos, bin.left, bin.right);
-            case IDEQ -> new ELNode.IDNE(bin.pos, bin.left, bin.right);
-            case IDNE -> new ELNode.IDEQ(bin.pos, bin.left, bin.right);
-            case LT -> new ELNode.GE(bin.pos, bin.left, bin.right);
-            case LE -> new ELNode.GT(bin.pos, bin.left, bin.right);
-            case GT -> new ELNode.LE(bin.pos, bin.left, bin.right);
-            case GE -> new ELNode.LT(bin.pos, bin.left, bin.right);
-            default -> new ELNode.NOT(cond.pos, cond);
-            };
-        }
-        return new ELNode.NOT(cond.pos, cond);
-    }
-
-    /**
      * Parse a switch expression.
      */
     private ELNode parseSwitchExpression(int p) {
@@ -3792,7 +3734,7 @@ public class Parser extends Scanner
         if (assertionEnabled) {
             return new ELNode.ASSERT(p, exp, msg);
         } else {
-            return new ELNode.COMPOUND(p, EMPTY_EXPS);
+            return new ELNode.NULL(p);
         }
     }
 

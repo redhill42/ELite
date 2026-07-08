@@ -1171,6 +1171,36 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
+        if (node.left instanceof ELNode.BREAK || node.left instanceof ELNode.CONTINUE) {
+            if (loopStack.isEmpty())
+                throw reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "break"));
+
+            // Optimize for if (...) break
+            //   cond
+            //   jump_if_true target
+            int target = node.left instanceof ELNode.BREAK ? loopStack.peek().breakBlock
+                                                           : loopStack.peek().continueBlock;
+            build(node.cond);
+            current.emitJumpIfTrue(target);
+            build(node.right);
+            return;
+        }
+
+        if (node.right instanceof ELNode.BREAK || node.right instanceof ELNode.CONTINUE) {
+            if (loopStack.isEmpty())
+                throw reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "break"));
+
+            // Optimize for if (...) { ... } else break
+            //   cond
+            //   jump_if_false target
+            int target = node.right instanceof ELNode.BREAK ? loopStack.peek().breakBlock
+                                                            : loopStack.peek().continueBlock;
+            build(node.cond);
+            current.emitJumpIfFalse(target);
+            build(node.left);
+            return;
+        }
+
         int thenB = allocBlockId();
         int elseB = allocBlockId();
         int mergeB = allocBlockId();
@@ -1493,17 +1523,24 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        int header = allocBlockId();
-        int body = allocBlockId();
-        int exit = allocBlockId();
+        int header, body, exit;
+        if (node.cond instanceof ELNode.BOOLEANVAL b && b.value) {
+            header = body = allocBlockId();
+        } else {
+            header = allocBlockId();
+            body = allocBlockId();
+        }
+        exit = allocBlockId();
 
         loopStack.push(new LoopTargets(header, exit));
         current.emitJump(header);
 
-        startBlock(header);
-        build(node.cond);
-        current.emitJumpIfTrue(body);
-        current.emitJump(exit);
+        if (header != body) {
+            startBlock(header);
+            build(node.cond);
+            current.emitJumpIfTrue(body);
+            current.emitJump(exit);
+        }
 
         startBlock(body);
         build(node.body);
@@ -1517,47 +1554,31 @@ public class IRBuilder extends ELNode.Visitor {
         loopStack.pop();
     }
 
-    public void visit(ELNode.REPEAT node) {
+    public void visit(ELNode.FOR node) {
         if (node.cond instanceof ELNode.BOOLEANVAL b && !b.value) {
-            // Repeat while false just loop once.
-            build(node.body);
+            // Skip whole loop if condition is false.
+            current.emitPushNull();
             return;
         }
 
-        int body = allocBlockId();
-        int cont = allocBlockId();   // condition-check block
+        int header, body;
+        if (node.cond instanceof ELNode.BOOLEANVAL b && b.value) {
+            header = body = allocBlockId();
+        } else {
+            header = allocBlockId();
+            body = allocBlockId();
+        }
+
+        // Find continue in decedent node.
+        boolean[] needCont = new boolean[]{false};
+        node.body.accept(new DefaultVisitor() {
+            public void visit(ELNode.CONTINUE e) { needCont[0] = true; }
+            public void visit(ELNode.LAMBDA e)   { /* skip */ }
+            public void visit(ELNode.CLASSDEF e) { /* skip */ }
+        });
+
+        int cont = needCont[0] ? allocBlockId() : -1;
         int exit = allocBlockId();
-
-        // continue → condition check (matching C/Java do-while semantics)
-        // break → exit
-        loopStack.push(new LoopTargets(cont, exit));
-
-        // Explicit jump to body from the current block so nested loops
-        // have a proper terminator (same pattern as WHILE).
-        current.emitJump(body);
-
-        startBlock(body);
-        build(node.body);
-        current.emitPop();           // discard body result
-        current.emitJump(cont);      // → check condition
-
-        startBlock(cont);
-        build(node.cond);            // evaluate condition
-        current.emitJumpIfTrue(body);
-        current.emitJump(exit);
-
-        startBlock(exit);
-        current.emitPushNull();
-
-        loopStack.pop();
-    }
-
-    public void visit(ELNode.FOR node) {
-        int body = allocBlockId();
-        int header = node.cond != null ? allocBlockId() : body;
-        int cont = allocBlockId();
-        int exit = allocBlockId();
-
         loopStack.push(new LoopTargets(cont, exit));
 
         if (node.init != null) {
@@ -1568,7 +1589,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
         current.emitJump(header);
 
-        if (node.cond != null) {
+        if (header != body) {
             startBlock(header);
             build(node.cond);
             current.emitJumpIfTrue(body);
@@ -1576,13 +1597,15 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         startBlock(body);
-        if (node.body != null && !(node.body instanceof ELNode.NULL)) {
+        if (!(node.body instanceof ELNode.NULL)) {
             build(node.body);
             current.emitPop();
         }
-        current.emitJump(cont);
 
-        startBlock(cont);
+        if (cont != -1) {
+            current.emitJump(cont);
+            startBlock(cont);
+        }
         if (node.step != null) {
             for (ELNode e : node.step) {
                 build(e);

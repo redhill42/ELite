@@ -57,13 +57,6 @@ class ControlFlowTest extends EliteTestBase {
         assertEquals(55L, evalL("countdown(10)"));
     }
 
-    // ---- do/while loop ----
-
-    @Test
-    void doWhileLoop() {
-        exec("define firstPositive() { define x = 0; repeat { x = x + 1 } while (x <= 0); x }");
-        assertEquals(1L, evalL("firstPositive()"));
-    }
 
     // ---- return from function ----
 
