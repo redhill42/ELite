@@ -18,6 +18,7 @@ package org.elite.parser;
 
 import org.elite.eval.TypeCoercion;
 
+import javax.el.ELContext;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,12 @@ import java.util.List;
  * them eagerly via the existing {@code evaluate(null, ...)} methods.
  */
 class ConstantFolder extends TreeTransformer {
+
+    private final ELContext elctx;
+
+    ConstantFolder(ELContext elctx) {
+        this.elctx = elctx;
+    }
 
     /**
      * Returns true if the node is a compile-time constant.
@@ -121,7 +128,7 @@ class ConstantFolder extends TreeTransformer {
             if (lv == null || rv == null)
                 return e;  // don't fold null operands
             try {
-                return makeConst(e.pos, e.evaluate(null, lv, rv));
+                return makeConst(e.pos, e.evaluate(elctx, lv, rv));
             } catch (Exception ex) {
                 // division by zero etc. — leave unfolded
             }
@@ -134,87 +141,9 @@ class ConstantFolder extends TreeTransformer {
     public void visit(ELNode.ADD e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.SUB e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.MUL e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
+    public void visit(ELNode.DIV e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.REM e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
-
-    public void visit(ELNode.DIV e) {
-        ELNode left = transform(e.left);
-        ELNode right = transform(e.right);
-
-        ELNode r = foldDiv(e, left, right);
-        if (r != null)
-            result = r;
-        else if (left == e.left && right == e.right)
-            result = e;
-        else if (e instanceof ELNode.IDIV)
-            result = new ELNode.IDIV(e.pos, left, right);
-        else
-            result = new ELNode.DIV(e.pos, left, right);
-    }
-
-    private ELNode foldDiv(ELNode.DIV node, ELNode left, ELNode right) {
-        if (!isConstant(left) || !isConstant(right))
-            return null;
-
-        Object lv = nodeValue(left), rv = nodeValue(right);
-
-        // Can't fold because integer division may produce rational.
-        if (!(node instanceof ELNode.IDIV) && isIntegerType(lv) && isIntegerType(rv))
-            return null;
-
-        try {
-            return new ELNode.NUMBER(node.pos, (Number)node.evaluate(null, lv, rv));
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    public void visit(ELNode.POW e) {
-        ELNode left = transform(e.left);
-        ELNode right = transform(e.right);
-
-        ELNode r = foldPow(e, left, right);
-        if (r != null)
-            result = r;
-        else if (left == e.left && right == e.right)
-            result = e;
-        else
-            result = new ELNode.POW(e.pos, left, right);
-    }
-
-    private ELNode foldPow(ELNode.POW node, ELNode left, ELNode right) {
-        if (!isConstant(left) || !isConstant(right))
-            return null;
-
-        Object lv = nodeValue(left), rv = nodeValue(right);
-        if (!(lv instanceof Number x) || !(rv instanceof Number y))
-            return null;
-
-        if (y instanceof Long) {
-            long n = y.longValue();
-            if ((int)n == n) {
-                return foldPow(node, x, (int)n);
-            } else {
-                return new ELNode.NUMBER(node.pos, Math.pow(x.doubleValue(), n));
-            }
-        } else if (y instanceof Integer || y instanceof Short || y instanceof Byte) {
-            return foldPow(node, x, y.intValue());
-        } else {
-            return new ELNode.NUMBER(node.pos, Math.pow(x.doubleValue(), y.doubleValue()));
-        }
-    }
-
-    private ELNode foldPow(ELNode.POW node, Number x, int n) {
-        // Can't fold because negative power may produce rational.
-        if (n < 0 && isIntegerType(x))
-            return null;
-
-        // For any other case, we can safely delegate to ELNode.POW to evaluate the result.
-        try {
-            return new ELNode.NUMBER(node.pos, (Number)node.evaluate(null, x, n));
-        } catch (Exception ex) {
-            return null;
-        }
-    }
+    public void visit(ELNode.POW e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
 
     // ---- Bitwise ----
 
@@ -234,7 +163,7 @@ class ConstantFolder extends TreeTransformer {
         if (isConstant(left) && isConstant(right)) {
             Object lv = nodeValue(left), rv = nodeValue(right);
             try {
-                return new ELNode.BOOLEANVAL(e.pos, (Boolean)e.evaluate(null, lv, rv));
+                return new ELNode.BOOLEANVAL(e.pos, (Boolean)e.evaluate(elctx, lv, rv));
             } catch (Exception ex) {
                 return e;
             }
@@ -370,7 +299,7 @@ class ConstantFolder extends TreeTransformer {
             Object rv = nodeValue(right);
             if (rv != null) {
                 try {
-                    result = makeConst(e.pos, e.evaluate(null, rv));
+                    result = makeConst(e.pos, e.evaluate(elctx, rv));
                     return;
                 } catch (Exception ex) {
                     // fallthrough
@@ -391,7 +320,7 @@ class ConstantFolder extends TreeTransformer {
             Object rv = nodeValue(right);
             if (rv != null) {
                 try {
-                    result = makeConst(e.pos, e.evaluate(null, rv));
+                    result = makeConst(e.pos, e.evaluate(elctx, rv));
                     return;
                 } catch (Exception ex) {
                     // fallthrough
@@ -412,7 +341,7 @@ class ConstantFolder extends TreeTransformer {
             Object rv = nodeValue(right);
             if (rv instanceof Number) {
                 try {
-                    result = makeConst(e.pos, e.evaluate(null, rv));
+                    result = makeConst(e.pos, e.evaluate(elctx, rv));
                     return;
                 } catch (Exception ex) {
                     // fallthrough

@@ -54,7 +54,7 @@ import static org.elite.resources.Resources.*;
  */
 public class Parser extends Scanner
 {
-    private ELContext elctx;
+    private final ELContext elctx;
     private ResourceResolver resolver = null;
     private ParseContext env = new ParseContext();
     private ConstantFolder constantFolder;
@@ -90,7 +90,7 @@ public class Parser extends Scanner
     void close_scope() {
         Map<String,ELNode.DEFINE> vars = env.pop();
         for (ELNode.DEFINE var : vars.values()) {
-            restoreOperator(var.operator);
+            restoreOperator(var.id, var.operator);
         }
     }
 
@@ -196,7 +196,7 @@ public class Parser extends Scanner
             if (op != null) {
                 if (op.token == PREFIX) {
                     return new ELNode.PREFIX(scan(), op.name, op.token2, parseTerm());
-                } else if (op.token == DO) { // 'do' is a psuedo keyword
+                } else if (op.token == DO) { // 'do' is a pseudo keyword
                     mark(); scan();
                     if (token == LBRACE) {
                         scan();
@@ -349,7 +349,7 @@ public class Parser extends Scanner
             case CAT: case ADD: case SUB: case MUL: case DIV: case REM: case POW:
             case BITNOT: case BITOR: case BITAND: case XOR: case SHL: case SHR: case USHR:
             case COALESCE: case LT: case LE: case GT: case GE: case EQ: case NE:
-            case IDEQ: case IDNE: case NOT: case AND: case OR: case EMPTY:
+            case IDEQ: case IDNE: case NOT: case AND: case OR: case EMPTY: case IN:
             case PREFIX: case INFIX:
                 String id = (idValue != null) ? idValue : operator.name;
                 mark(); scan();
@@ -1044,12 +1044,6 @@ public class Parser extends Scanner
     private ELNode parseListExpression(int p, ELNode e1, ELNode e2) {
         if (e2 == null) {
             switch (token) {
-            case IDENT:
-                if (idValue.equals("where")) {
-                    scan();
-                    return parseListComprehension(e1);
-                }
-                break;
             case BAR:
                 scan();
                 return parseListComprehension(e1);
@@ -3006,7 +3000,7 @@ public class Parser extends Scanner
         ELNode body;
 
         expect(LPAREN);
-        boolean local = scan(DEFINE);
+        boolean local = scan(LET);
 
         // for ([idx,]var in range) body
         Scanner mark = save();
@@ -3763,7 +3757,7 @@ public class Parser extends Scanner
      */
     private void addToProgram(ELProgram prog, ELNode exp) {
         if (constantFolder == null)
-            constantFolder = new ConstantFolder();
+            constantFolder = new ConstantFolder(elctx);
         prog.addExpression(constantFolder.transform(exp));
     }
 

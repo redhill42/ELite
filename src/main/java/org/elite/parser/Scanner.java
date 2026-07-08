@@ -207,10 +207,10 @@ public class Scanner implements Cloneable
         lexer.removeOperator(id);
     }
     
-    protected void restoreOperator(Operator op) {
+    protected void restoreOperator(String id, Operator op) {
         if (op != null) {
             if (op == NULL_OPERATOR) {
-                removeOperator(op.name);
+                removeOperator(id);
             } else {
                 addOperator(op.name, op.token, op.token2);
             }

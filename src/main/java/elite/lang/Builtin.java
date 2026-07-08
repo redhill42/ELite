@@ -2518,6 +2518,7 @@ public final class Builtin
         return __NEG__.getValue(elctx, x);
     }
 
+    @Expando(name="<-", scope=GLOBAL)
     public static Object __in__(ELContext elctx, Object x, Object y) {
         return __IN__.eval(elctx, x, y);
     }

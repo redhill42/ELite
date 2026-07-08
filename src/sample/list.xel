@@ -84,7 +84,7 @@ define puzzle(lb,hb) {
      */
     define cond1(x,y) {
         define S = x+y;
-        empty [(m,n) where m in [lb..S/2], n = S-m, unique(m,n)];
+        empty [(m,n) | m in [lb..S/2], n = S-m, unique(m,n)];
     }
 
     /**
@@ -92,7 +92,7 @@ define puzzle(lb,hb) {
      */
     define unique(m,n) {
         define P = m*n;
-        empty [v where v in [lb..sqrt(P)], v != m, P%v == 0];
+        empty [v | v in [lb..sqrt(P)], v != m, P%v == 0];
     }
 
     /**
@@ -103,12 +103,12 @@ define puzzle(lb,hb) {
      */
     define cond2(x,y) {
         define P = x*y;
-        empty [(m2,n2) where m2 in [lb..sqrt(P)],
-                             m2 != x,
-                             P % m2 == 0,
-                             n2 = int(P/m2),
-                             n2 < hb,
-                             cond1(m2,n2)]
+        empty [(m2,n2) | m2 in [lb..sqrt(P)],
+                         m2 != x,
+                         P % m2 == 0,
+                         n2 = int(P/m2),
+                         n2 < hb,
+                         cond1(m2,n2)]
     }
 
     /**
@@ -118,20 +118,13 @@ define puzzle(lb,hb) {
      */
     define cond3(x,y) {
         define S = x+y;
-        empty [(m3,n3) where m3 in [lb..S/2],
-                             m3 != x,
-                             n3 = S - m3,
-                             cond2(m3,n3)];
+        empty [(m3,n3) | m3 in [lb..S/2], m3 != x, n3 = S - m3, cond2(m3,n3)];
     }
 
     /**
      * 主程序，生成可能的组合情况，再用三个条件分别测试。
      */
-    [(x,y) where x in [lb..hb],
-                 y in [x..hb],
-                 cond1(x,y),
-                 cond2(x,y),
-                 cond3(x,y)]
+    [(x,y) | x in [lb..hb], y in [x..hb], cond1(x,y), cond2(x,y), cond3(x,y)]
 }
 
 // 输出S先生和P先生问题在[2..99]之间的唯一解

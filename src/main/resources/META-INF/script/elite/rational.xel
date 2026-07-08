@@ -15,4 +15,5 @@
  */
 
 // enable rational literal, e.g, 1/2
+@compile_time { global.putContext(Rational, true) }
 global.putContext(Rational, true);
