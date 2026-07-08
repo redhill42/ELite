@@ -178,8 +178,7 @@ public class IRInterpreter {
             }
 
             case PUSH_GLOBAL: {
-                int nameIdx = oc == 0 ? pl : code[ip + 1];
-                String name = (String)constantPool[nameIdx];
+                String name = (String)constantPool[poolIndex(code, ip)];
                 push(resolveGlobal(name));
                 ip += 1 + oc;
                 break;
@@ -287,16 +286,14 @@ public class IRInterpreter {
             }
 
             case IDEQ: {
-                Object r = pop();
-                Object l = pop();
+                Object r = pop(), l = pop();
                 push(l == r);
                 ip += 1;
                 break;
             }
 
             case IDNE: {
-                Object r = pop();
-                Object l = pop();
+                Object r = pop(), l = pop();
                 push(l != r);
                 ip += 1;
                 break;
@@ -312,7 +309,7 @@ public class IRInterpreter {
 
             case INSTANCEOF: {
                 Object obj = pop();
-                Object cls = constantPool[pl];
+                Object cls = constantPool[poolIndex(code, ip)];
                 if (cls instanceof Class<?>)
                     push(((Class<?>)cls).isInstance(obj));
                 else
@@ -505,8 +502,7 @@ public class IRInterpreter {
                 break;
 
             case DEFINE_GLOBAL: {
-                int nameIdx = oc == 0 ? pl : code[ip + 1];
-                String name = (String)constantPool[nameIdx];
+                String name = (String)constantPool[poolIndex(code, ip)];
                 Object val = pop();
                 evalContext.setVariable(name, new LiteralClosure(val));
                 push(val);  // definition returns the value
@@ -515,8 +511,7 @@ public class IRInterpreter {
             }
 
             case STORE_GLOBAL: {
-                int nameIdx = oc == 0 ? pl : code[ip + 1];
-                String name = (String)constantPool[nameIdx];
+                String name = (String)constantPool[poolIndex(code, ip)];
                 Object val = pop();
                 ValueExpression ve = evalContext.resolveVariable(name);
                 if (ve == null)
@@ -537,8 +532,7 @@ public class IRInterpreter {
             }
 
             case CLOSURE: {
-                int funcIdx = pl;
-                IRFunction fn = (IRFunction)constantPool[funcIdx];
+                IRFunction fn = (IRFunction)constantPool[poolIndex(code, ip)];
                 push(new IRClosure(evalContext, fn));
                 ip += 1 + oc;
                 break;
@@ -547,9 +541,8 @@ public class IRInterpreter {
             case INVOKE_DIRECT: {
                 // function pool index in payload
                 // argCount in first operand
-                int funcIdx = pl;
-                int argc = oc == 0 ? 0 : code[ip + 1];
-                IRFunction targetFn = (IRFunction)constantPool[funcIdx];
+                int argc = pl;
+                IRFunction targetFn = (IRFunction)constantPool[code[ip + 1]];
 
                 // Pop arguments
                 Object[] args = new Object[argc];
@@ -565,9 +558,8 @@ public class IRInterpreter {
             case INVOKE_TARGET: {
                 // target name pool index in payload
                 // argCount in first operand
-                int nameIdx = pl;
-                int argc = oc == 0 ? 0 : code[ip + 1];
-                String id = (String)constantPool[nameIdx];
+                int argc = pl;
+                String id = (String)constantPool[code[ip + 1]];
 
                 // Pop arguments
                 Object[] args = new Object[argc];
@@ -580,9 +572,8 @@ public class IRInterpreter {
             }
 
             case INVOKE_OPERATOR: {
-                int nameIdx = pl;
-                int argc = oc == 0 ? 0 : code[ip + 1];
-                String name = (String)constantPool[nameIdx];
+                int argc = pl;
+                String name = (String)constantPool[code[ip + 1]];
                 if (argc == 1) {
                     Object rhs = pop();
                     push(invokeOperator(name, rhs));
@@ -596,7 +587,7 @@ public class IRInterpreter {
             }
 
             case INVOKE_DYN: {
-                int argc = pl;  // argCount is always in payload
+                int argc = pl;
                 Object result = invokeDyn(argc);
                 push(result);
                 ip += 1 + oc;
@@ -604,8 +595,8 @@ public class IRInterpreter {
             }
 
             case INVOKE_METHOD: {
-                Method m = (Method)constantPool[pl];
-                int argc = oc > 0 ? code[ip + 1] : 0;
+                int argc = pl;
+                Method m = (Method)constantPool[code[ip + 1]];
                 Closure[] args = new Closure[argc];
                 for (int i = argc - 1; i >= 0; i--) {
                     Object arg = pop();
@@ -618,8 +609,8 @@ public class IRInterpreter {
             }
 
             case INVOKE_STATIC: {
-                Method m = (Method)constantPool[pl];
-                int argc = oc > 0 ? code[ip + 1] : 0;
+                int argc = pl;
+                Method m = (Method)constantPool[code[ip + 1]];
                 Closure[] args = new Closure[argc];
                 for (int i = argc - 1; i >= 0; i--) {
                     Object arg = pop();
@@ -631,8 +622,8 @@ public class IRInterpreter {
             }
 
             case INVOKE_EXPANDO: {
-                Method m = (Method)constantPool[pl];
-                int argc = oc > 0 ? code[ip + 1] : 0;
+                int argc = pl;
+                Method m = (Method)constantPool[code[ip + 1]];
                 Closure[] args = new Closure[argc + 1]; // +1 for expando base
                 for (int i = argc; i >= 1; i--) {
                     Object arg = pop();
@@ -675,7 +666,7 @@ public class IRInterpreter {
             }
 
             case INVOKE_GETTER: {
-                Method m = (Method)constantPool[pl];
+                Method m = (Method)constantPool[poolIndex(code, ip)];
                 Object base = pop();
                 try {
                     push(m.invoke(base));
@@ -687,7 +678,7 @@ public class IRInterpreter {
             }
 
             case INVOKE_SETTER: {
-                Method m = (Method)constantPool[pl];
+                Method m = (Method)constantPool[poolIndex(code, ip + 1)];
                 Object value = pop();
                 Object base = pop();
                 try {
@@ -702,7 +693,7 @@ public class IRInterpreter {
 
             case LOAD_FIELD: {
                 Object base = pop();
-                String fieldName = (String)constantPool[pl];
+                String fieldName = (String)constantPool[poolIndex(code, ip + 1)];
                 push(loadField(base, fieldName));
                 ip += 1 + oc;
                 break;
@@ -711,7 +702,7 @@ public class IRInterpreter {
             case STORE_FIELD: {
                 Object value = pop();
                 Object base = pop();
-                String fieldName = (String)constantPool[pl];
+                String fieldName = (String)constantPool[poolIndex(code, ip + 1)];
                 push(storeField(base, fieldName, value));
                 ip += 1 + oc;
                 break;
@@ -801,7 +792,7 @@ public class IRInterpreter {
             }
 
             case DECLARE_NS: {
-                String prefix = (String)constantPool[pl];
+                String prefix = (String)constantPool[poolIndex(code, ip)];
                 String uri = TypeCoercion.coerceToString(pop());
                 evalContext.declarePrefix(prefix, uri);
                 ip += 1 + oc;
@@ -809,11 +800,7 @@ public class IRInterpreter {
             }
 
             case TRAMPOLINE: {
-                int poolIdx = pl;
-                Object obj = constantPool[poolIdx];
-                // TryDescriptor wraps pre-compiled IR blocks; evaluate
-                // the original TRY node
-                ELNode node = (ELNode)obj;
+                ELNode node = (ELNode)constantPool[code[ip + 1]];
                 Object result = node.getValue(evalContext);
                 push(result);
                 ip += 1 + oc;
@@ -825,7 +812,7 @@ public class IRInterpreter {
                 // This handles all the instructions we haven't
                 // implemented yet
                 throw new UnsupportedOperationException(
-                        "Unknown IR " +  "opcode: " + Opcode.name(op) +
+                        "Unknown IR opcode: " + Opcode.name(op) +
                         " (" + op + ") at " + "ip=" + ip);
             }
         }
@@ -852,6 +839,12 @@ public class IRInterpreter {
         Object[] newStack = new Object[newSize];
         System.arraycopy(stack, 0, newStack, 0, stack.length);
         stack = newStack;
+    }
+
+    // ── Constant pool helper ──
+
+    private int poolIndex(int[] code, int pc) {
+        return IRFormat.opCount(code[pc]) == 0 ? IRFormat.payload(code[pc]) : code[pc + 1];
     }
 
     // ── Dynamic invocation ──

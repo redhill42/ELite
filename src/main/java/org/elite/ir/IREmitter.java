@@ -99,8 +99,7 @@ public class IREmitter {
         if (fits16(poolIndex)) {
             return emit1(PUSH_CONST, K_NONE, poolIndex);
         } else {
-            return emit2(PUSH_CONST, K_NONE, poolIndex >>> 16,
-                    poolIndex & 0xFFFF);
+            return emit2(PUSH_CONST, K_NONE, 0, poolIndex);
         }
     }
 
@@ -112,8 +111,7 @@ public class IREmitter {
         if (fits16(nameIndex)) {
             return emit1(PUSH_GLOBAL, K_NONE, nameIndex);
         } else {
-            return emit2(PUSH_GLOBAL, K_NONE, nameIndex >>> 16,
-                    nameIndex & 0xFFFF);
+            return emit2(PUSH_GLOBAL, K_NONE, 0, nameIndex);
         }
     }
 
@@ -279,8 +277,7 @@ public class IREmitter {
         if (fits16(classIdx))
             return emit1(INSTANCEOF, K_NONE, classIdx);
         else
-            return emit2(INSTANCEOF, K_NONE, classIdx >>> 16,
-                         classIdx & 0xFFFF);
+            return emit2(INSTANCEOF, K_NONE, 0, classIdx);
     }
 
     public IREmitter emitEmpty() {
@@ -297,7 +294,7 @@ public class IREmitter {
         if (fits16(blockId)) {
             return emit1(JUMP, K_NONE, blockId);
         } else {
-            return emit2(JUMP, K_NONE, blockId >>> 16, blockId & 0xFFFF);
+            return emit2(JUMP, K_NONE, 0, blockId);
         }
     }
 
@@ -305,8 +302,7 @@ public class IREmitter {
         if (fits16(blockId)) {
             return emit1(JUMP_IF_TRUE, K_NONE, blockId);
         } else {
-            return emit2(JUMP_IF_TRUE, K_NONE, blockId >>> 16,
-                    blockId & 0xFFFF);
+            return emit2(JUMP_IF_TRUE, K_NONE, 0, blockId);
         }
     }
 
@@ -314,8 +310,7 @@ public class IREmitter {
         if (fits16(blockId)) {
             return emit1(JUMP_IF_FALSE, K_NONE, blockId);
         } else {
-            return emit2(JUMP_IF_FALSE, K_NONE, blockId >>> 16,
-                    blockId & 0xFFFF);
+            return emit2(JUMP_IF_FALSE, K_NONE, 0, blockId);
         }
     }
 
@@ -323,8 +318,7 @@ public class IREmitter {
         if (fits16(blockId)) {
             return emit1(JUMP_IF_NULL, K_NONE, blockId);
         } else {
-            return emit2(JUMP_IF_NULL, K_NONE, blockId >>> 16,
-                    blockId & 0xFFFF);
+            return emit2(JUMP_IF_NULL, K_NONE, 0, blockId);
         }
     }
 
@@ -332,8 +326,7 @@ public class IREmitter {
         if (fits16(blockId)) {
             return emit1(JUMP_IF_NONNULL, K_NONE, blockId);
         } else {
-            return emit2(JUMP_IF_NONNULL, K_NONE, blockId >>> 16,
-                    blockId & 0xFFFF);
+            return emit2(JUMP_IF_NONNULL, K_NONE, 0, blockId);
         }
     }
 
@@ -376,8 +369,7 @@ public class IREmitter {
         if (fits16(namePoolIndex))
             return emit1(DEFINE_GLOBAL, K_NONE, namePoolIndex);
         else
-            return emit2(DEFINE_GLOBAL, K_NONE, namePoolIndex >>> 16,
-                         namePoolIndex & 0xFFFF);
+            return emit2(DEFINE_GLOBAL, K_NONE, 0, namePoolIndex);
     }
 
     /**
@@ -387,8 +379,7 @@ public class IREmitter {
         if (fits16(namePoolIndex))
             return emit1(STORE_GLOBAL, K_NONE, namePoolIndex);
         else
-            return emit2(STORE_GLOBAL, K_NONE, namePoolIndex >>> 16,
-                         namePoolIndex & 0xFFFF);
+            return emit2(STORE_GLOBAL, K_NONE, 0, namePoolIndex);
     }
 
     public IREmitter emitStoreVar(int varIndex) {
@@ -399,35 +390,22 @@ public class IREmitter {
         if (fits16(funcPoolIdx))
             return emit1(CLOSURE, K_NONE, funcPoolIdx);
         else
-            return emit2(CLOSURE, K_NONE, funcPoolIdx >>> 16,
-                         funcPoolIdx & 0xFFFF);
+            return emit2(CLOSURE, K_NONE, 0, funcPoolIdx);
     }
 
     /**
      * Direct call to a known IRFunction (pool index of the IRFunction).
      */
     public IREmitter emitInvokeDirect(int funcPoolIdx, int argCount) {
-        if (fits16(funcPoolIdx))
-            return emit2(INVOKE_DIRECT, K_NONE, funcPoolIdx, argCount);
-        else
-            return emit3(INVOKE_DIRECT, K_NONE, funcPoolIdx >>> 16,
-                    funcPoolIdx & 0xFFFF, argCount);
+        return emit2(INVOKE_DIRECT, K_NONE, argCount, funcPoolIdx);
     }
 
     public IREmitter emitInvokeOperator(int namePoolIdx, int argCount) {
-        if (fits16(namePoolIdx))
-            return emit2(INVOKE_OPERATOR, K_NONE, namePoolIdx, argCount);
-        else
-            return emit3(INVOKE_OPERATOR, K_NONE, namePoolIdx >>> 16,
-                namePoolIdx & 0xFFFF, argCount);
+        return emit2(INVOKE_OPERATOR, K_NONE, argCount, namePoolIdx);
     }
 
     public IREmitter emitInvokeTarget(int nameIdx, int argCount) {
-        if (fits16(nameIdx))
-            return emit2(INVOKE_TARGET, K_NONE, nameIdx, argCount);
-        else
-            return emit3(INVOKE_TARGET, K_NONE, nameIdx >>> 16,
-                         nameIdx & 0xFFFF, argCount);
+        return emit2(INVOKE_TARGET, K_NONE, argCount, nameIdx);
     }
 
     public IREmitter emitInvokeDyn(int argCount) {
@@ -435,27 +413,15 @@ public class IREmitter {
     }
 
     public IREmitter emitInvokeMethod(int methodPoolIdx, int argCount) {
-        if (fits16(methodPoolIdx))
-            return emit2(INVOKE_METHOD, K_NONE, methodPoolIdx, argCount);
-        else
-            return emit3(INVOKE_METHOD, K_NONE, methodPoolIdx >>> 16,
-                         methodPoolIdx & 0xFFFF, argCount);
+        return emit2(INVOKE_METHOD, K_NONE, argCount, methodPoolIdx);
     }
 
     public IREmitter emitInvokeStatic(int methodPoolIdx, int argCount) {
-        if (fits16(methodPoolIdx))
-            return emit2(INVOKE_STATIC, K_NONE, methodPoolIdx, argCount);
-        else
-            return emit3(INVOKE_STATIC, K_NONE, methodPoolIdx >>> 16,
-                         methodPoolIdx & 0xFFFF, argCount);
+        return emit2(INVOKE_STATIC, K_NONE, argCount, methodPoolIdx);
     }
 
     public IREmitter emitInvokeExpando(int methodPoolIdx, int argCount) {
-        if (fits16(methodPoolIdx))
-            return emit2(INVOKE_EXPANDO, K_NONE, methodPoolIdx, argCount);
-        else
-            return emit3(INVOKE_EXPANDO, K_NONE, methodPoolIdx >>> 16,
-                         methodPoolIdx & 0xFFFF, argCount);
+        return emit2(INVOKE_EXPANDO, K_NONE, argCount, methodPoolIdx);
     }
 
     public IREmitter emitInvokeDynMethod(int argCount) {
@@ -492,6 +458,17 @@ public class IREmitter {
 
     public IREmitter emitNewTuple(int count) {
         return emit1(NEW_TUPLE, K_NONE, count);
+    }
+
+    public IREmitter emitNewXML(int keyCount, int childCount) {
+        return emit2(NEW_XML, K_NONE, keyCount, childCount);
+    }
+
+    public IREmitter emitDeclareNS(int nameIdx) {
+        if (fits16(nameIdx))
+            return emit1(DECLARE_NS, K_NONE, nameIdx);
+        else
+            return emit2(DECLARE_NS, K_NONE, 0, nameIdx);
     }
 
     public int[] toArray() {

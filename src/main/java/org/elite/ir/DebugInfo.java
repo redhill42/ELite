@@ -32,7 +32,7 @@ public record DebugInfo(
 ) {
     /**
      * Look up the source line number for a given instruction pointer (PC).
-     * Returns the line of the closest recorded PC ≤ {@code ip}, or 0 if
+     * Returns the line of the closest recorded PC >= {@code ip}, or 0 if
      * no mapping exists before this IP.
      */
     public int lineForPC(int pc) {
@@ -51,22 +51,5 @@ public record DebugInfo(
         if (i < len)
             return pcLineTable[i * 2 + 1];
         return 0;
-    }
-
-    @Override
-    public String toString() {
-        StringBuilder sb = new StringBuilder("DebugInfo{file=").append(file)
-            .append(", entries=").append(pcLineTable.length/2);
-        sb.append(", pcLines=[");
-        for (int i = 0; i < pcLineTable.length; i += 2) {
-            if (i > 0) sb.append(", ");
-            sb.append(pcLineTable[i]).append("→").append(pcLineTable[i + 1]);
-            if (i > 100) {
-                sb.append(", ...");
-                break;
-            }
-        }
-        sb.append("]}");
-        return sb.toString();
     }
 }

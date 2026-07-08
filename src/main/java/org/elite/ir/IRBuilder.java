@@ -954,7 +954,7 @@ public class IRBuilder extends ELNode.Visitor {
                         build(node.values[i]);
                         tmpSlots[i].store();
                     }
-                    current.emit1(DECLARE_NS, K_NONE, putConstant(prefix));
+                    current.emitDeclareNS(putConstant(prefix));
                 }
             }
         }
@@ -976,8 +976,8 @@ public class IRBuilder extends ELNode.Visitor {
                 build(node.children[i]);
             }
         }
-        current.emit2(NEW_XML, K_NONE, node.keys == null ? 0 : node.keys.length,
-                      node.children == null ? 0 : node.children.length);
+        current.emitNewXML(node.keys == null ? 0 : node.keys.length,
+                           node.children == null ? 0 : node.children.length);
 
         if (namespaces != 0) {
             current.emitLeaveScope();
@@ -2647,7 +2647,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildTrampoline(ELNode node) {
         int poolIdx = putConstant(node);
-        current.emit2(TRAMPOLINE, K_NONE, poolIdx, 0);
+        current.emit2(TRAMPOLINE, K_NONE, 0, poolIdx);
     }
 
     // ── Block management ──

@@ -16,10 +16,6 @@
 
 package org.elite.ir;
 
-import org.elite.eval.EvaluationContext;
-
-import javax.el.ELContext;
-
 /**
  * A compiled function in IR form.
  *
@@ -34,6 +30,7 @@ public class IRFunction {
 
     private final String name;
     private final int paramCount;
+
     /** Single contiguous code array for all blocks. */
     private int[] code;
     /** Number of local variable slots */
@@ -42,7 +39,6 @@ public class IRFunction {
     private int[] blockOffsets;
     /** Constant pool: literals indexed by PUSH_CONST payload. */
     private Object[] constantPool;
-
     /** Source-level debug info (PC→line mapping, file/function metadata). */
     private DebugInfo debugInfo;
 
@@ -83,10 +79,10 @@ public class IRFunction {
     /** Default parameter values (null = no default). */
     public Object[] defaultValues() { return defaultValues; }
 
-    /** Return a copy of this function with the given default parameter values. */
+    /** Return this function with the given default parameter values. */
     public IRFunction withDefaults(Object[] defs) {
         defaultValues = defs;
-        return this; // all null — no defaults to apply
+        return this;
     }
 
     /** Get the code offset for a given block ID. */

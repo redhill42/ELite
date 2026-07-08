@@ -31,8 +31,7 @@ import java.util.Arrays;
  * A closure: an IRFunction bundled with captured variable values.
  * Extends {@link elite.lang.Closure} so that {@code .curry()},
  * {@code .call()}, and other Closure methods are discoverable by
- * {@link MethodResolver} when a closure
- * is accessed from AST-evaluated (trampolined) code.
+ * {@link MethodResolver}.
  */
 public class IRClosure extends Closure {
     final IRFunction function;

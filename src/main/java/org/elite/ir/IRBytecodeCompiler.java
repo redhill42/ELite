@@ -208,8 +208,8 @@ public class IRBytecodeCompiler {
             }
             // ─── Function calls ───
             case INVOKE_DIRECT -> {
-                int funcIdx = pl;
-                int argc = oc == 0 ? 0 : v.operand(0);
+                int argc = pl;
+                int funcIdx = v.operand(0);
                 IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
                 // Self-recursive in typed mode → direct typed call
                 // General case: register funcId, call invokeDirect at runtime

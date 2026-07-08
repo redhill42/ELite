@@ -20,7 +20,7 @@ import org.elite.parser.ELNode;
 
 /**
  * Read-only cursor over a packed int[] instruction stream.
- *
+ * <p>
  * Provides fast, allocation-free decoding of IR instructions for both
  * the interpreter loop and optimization passes.
  *
@@ -29,7 +29,7 @@ import org.elite.parser.ELNode;
  * InstructionView v = new InstructionView(code, 0);
  * while (v.inBounds()) {
  *     switch (v.opcode()) {
- *         case Opcode.IADD: ... v.advance(); break;
+ *         case Opcode.ADD: ... v.advance(); break;
  *         ...
  *     }
  * }
@@ -91,23 +91,15 @@ public class InstructionView {
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
 
-    /** Get the pool index from an instruction.
-     *  For K_FN and K_DYN kinds (function refs, trampolines), the pool index
-     *  is always in the 16-bit payload. For K_NONE, 1-word uses payload,
-     *  2+-word uses the first operand. */
+    /** Get the pool index from an instruction. */
     public int constPoolIndex() {
         return IRFormat.opCount(code[offset]) == 0
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
 
-    /** Get the full 32-bit index split across payload (hi16) and operand(0) (lo16). */
-    public int splitIndex() {
-        return (IRFormat.payload(code[offset]) << 16) | (code[offset + 1] & 0xFFFF);
-    }
-
     /** Get the variable index from a PUSH_VAR instruction. */
     public int varIndex() {
-        return IRFormat.payload(code[offset]) & 0xFF;
+        return IRFormat.payload(code[offset]) & 0xFFFF;
     }
 
     // ── Navigation ──
@@ -138,59 +130,5 @@ public class InstructionView {
             o += IRFormat.totalWords(code[o]);
         }
         return new InstructionView(code, o, constantPool);
-    }
-
-    // ── Type helpers ──
-
-    /** Get the deoptimization target block ID from a GUARD_TYPE instruction. */
-    public int deoptBlock() {
-        return operand(0);
-    }
-
-    /** Format a constant pool reference, resolving the value if pool is set. */
-    private String formatPoolRef(int idx) {
-        if (constantPool != null && idx >= 0 && idx < constantPool.length) {
-            Object val = constantPool[idx];
-            if (val instanceof String s)
-                return "#" + idx + " '" + abbreviate(s, 40) + "'";
-            return "#" + idx + " " + abbreviate(String.valueOf(val), 40);
-        }
-        return "#" + idx;
-    }
-
-    /** Format a TRAMPOLINE pool entry showing the AST node type. */
-    private String formatTrampolineNode(int idx) {
-        String ref = formatPoolRef(idx);
-        if (constantPool != null && idx >= 0 && idx < constantPool.length) {
-            Object val = constantPool[idx];
-            if (val instanceof ELNode node) {
-                return ref + " [" + nodeName(node) + "]";
-            }
-        }
-        return ref;
-    }
-
-    /** Return a human-readable name for an ELNode. */
-    private static String nodeName(ELNode node) {
-        if (node == null) return "null";
-        String cn = node.getClass().getSimpleName();
-        // Extract meaningful identifiers if present
-        if (node instanceof ELNode.DEFINE d) {
-            return cn + " " + d.id;
-        }
-        if (node instanceof ELNode.IDENT id) {
-            return cn + " " + id.id;
-        }
-        if (node instanceof ELNode.APPLY a
-            && a.right instanceof ELNode.ACCESS ac
-            && ac.index instanceof ELNode.IDENT idx) {
-            return cn + " <" + idx.id + ">";
-        }
-        return cn + "(" + node.op + ")";
-    }
-
-    private static String abbreviate(String s, int max) {
-        if (s.length() <= max) return s;
-        return s.substring(0, max - 3) + "...";
     }
 }
