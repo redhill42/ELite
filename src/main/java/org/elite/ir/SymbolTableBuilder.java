@@ -45,9 +45,9 @@ public final class SymbolTableBuilder {
      */
     static class BuilderVisitor extends DefaultVisitor {
         final SymbolTable table;
-        ELNode.LAMBDA currentFn;
+        SymbolTable.Scope enclosingScope;
 
-        record Undefined(ELNode.IDENT var, SymbolTable.Scope scope) {}
+        record Undefined(ELNode.IDENT var, SymbolTable.Scope scope, boolean call) {}
         List<Undefined> undefined = new ArrayList<>();
 
         // FIXME: mark all variables captured in trampolined.
@@ -67,7 +67,7 @@ public final class SymbolTableBuilder {
 
         BuilderVisitor(SymbolTable table) {
             this.table = table;
-            this.currentFn = null;
+            this.enclosingScope = null;
         }
 
         public void visit(ELNode.DEFINE e) {
@@ -87,10 +87,10 @@ public final class SymbolTableBuilder {
             if (e.id.equals("xmlns"))
                 sym.captured = true;
 
-            if (e.expr instanceof ELNode.LAMBDA lam) {
+            if (e.expr instanceof ELNode.LAMBDA fn) {
                 // Create a IRFunction skeleton.
-                sym.func = new IRFunction(e.id, lam.vars.length);
-                lam.symbol = sym;
+                sym.func = new IRFunction(e.id, fn.vars.length);
+                fn.symbol = sym;
             } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
                 cdef.symbol = sym;
             }
@@ -99,9 +99,9 @@ public final class SymbolTableBuilder {
         }
 
         public void visit(ELNode.LAMBDA e) {
-            ELNode.LAMBDA previousFn = currentFn;
-            currentFn = e;
-            table.enterScope(e.name != null ? "fn:" + e.name : "lambda", e);
+            SymbolTable.Scope previous = enclosingScope;
+            table.enterScope(e.name != null ? "fn:" + e.name : "lambda", e, true);
+            enclosingScope = table.currentScope();
 
             for (ELNode.DEFINE param : e.vars) {
                 if ("_".equals(param.id)) {
@@ -120,7 +120,7 @@ public final class SymbolTableBuilder {
             }
 
             table.leaveScope();
-            currentFn = previousFn;
+            enclosingScope = previous;
         }
 
         public void visit(ELNode.CLASSDEF e) {
@@ -144,14 +144,41 @@ public final class SymbolTableBuilder {
                 e.symbol = sym;
 
                 // Mark this variable is captured by enclosing lambda.
-                if (currentFn != null && sym.def.expr != currentFn &&
-                    sym.scope.enclosingScope() != currentFn.scope) {
+                if (!inScope(sym)) {
                     sym.captured = true;
                 }
             } else {
                 // Add to undefined table for later resolution.
-                undefined.add(new Undefined(e, table.currentScope()));
+                undefined.add(new Undefined(e, table.currentScope(), false));
             }
+        }
+
+        public void visit(ELNode.APPLY e) {
+            if (e.right instanceof ELNode.IDENT var) {
+                // Handling function call. Lambda no need to capture because we will
+                // generate direct call.
+                SymbolTable.Symbol sym = table.lookup(var.id);
+                if (sym != null) {
+                    var.symbol = sym;
+
+                    // Mark this symbol captured if this is not a direct function call.
+                    if (!(sym.def.expr instanceof ELNode.LAMBDA) && !inScope(sym)) {
+                        sym.captured = true;
+                    }
+                } else {
+                    // Add to undefined table for later resolution.
+                    undefined.add(new Undefined(var, table.currentScope(), true));
+                }
+
+                scan(e.args);
+            } else {
+                scan(e.right);
+                scan(e.args);
+            }
+        }
+
+        private boolean inScope(SymbolTable.Symbol sym) {
+            return enclosingScope == null || sym.scope.enclosingScope() == enclosingScope;
         }
 
         public void visit(ELNode.WHILE e) {
@@ -276,7 +303,8 @@ public final class SymbolTableBuilder {
                 if (sym != null)
                     data.base.symbol = sym;
                 else
-                    undefined.add(new Undefined((ELNode.IDENT)data.base, table.currentScope()));
+                    undefined.add(new Undefined((ELNode.IDENT)data.base,
+                                                table.currentScope(), false));
                 for (ELNode v : data.args)
                     collectPatternBindings(v, bind);
             }
@@ -288,13 +316,14 @@ public final class SymbolTableBuilder {
         }
 
         private void finish() {
-            // Resolve forward referenced functions.
+            // Resolve forward referenced functions and class definitions.
             for (Undefined undef : undefined) {
                 SymbolTable.Symbol sym = undef.scope.lookup(undef.var.id);
                 if (sym != null && (sym.def.expr instanceof ELNode.LAMBDA ||
                                     sym.def.expr instanceof ELNode.CLASSDEF)) {
                     undef.var.symbol = sym;
-                    if (sym.scope.enclosingScope() != undef.scope.enclosingScope())
+                    if (!(undef.call && sym.def.expr instanceof ELNode.LAMBDA) &&
+                        sym.scope.enclosingScope() != undef.scope.enclosingScope())
                         sym.captured = true;
                 }
             }

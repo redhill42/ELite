@@ -103,7 +103,10 @@ public class SymbolTable {
     private final List<Redefinition> redefinitions = new ArrayList<>();
 
     void enterScope(String label, ELNode node) {
-        boolean fresh = node instanceof ELNode.LAMBDA;
+        enterScope(label, node, false);
+    }
+
+    void enterScope(String label, ELNode node, boolean fresh) {
         int depth = current == null ? 0 : current.depth + 1;
         int startSlot = fresh || current == null ? 0 : current.nextSlot;
         current = new Scope(current, label, depth, fresh, startSlot);
