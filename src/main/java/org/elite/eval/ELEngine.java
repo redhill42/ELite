@@ -159,7 +159,7 @@ public final class ELEngine
      * @param expectedType 表达式要求的结果类型
      */
     public static Object evaluateExpression(ELContext elctx, String expression, Class<?> expectedType) {
-        ELNode node = Parser.parse(expression);
+        ELNode node = Parser.parse(elctx, expression);
 
         StackTrace.addFrame(elctx, "__eval__", null, 0);
         try {

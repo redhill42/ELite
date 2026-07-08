@@ -32,7 +32,7 @@ class IRBuilderTest {
 
     private ELNode parse(String expr) {
         try {
-            return Parser.parseExpression(expr);
+            return Parser.parseExpression(elctx, expr);
         } catch (Exception e) {
             throw new RuntimeException("parse failed: " + expr, e);
         }

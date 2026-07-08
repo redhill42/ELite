@@ -25,7 +25,7 @@ class BytecodeClosureTest {
     }
 
     private Object bcEval(String expr) {
-        ELNode node = Parser.parseExpression(expr);
+        ELNode node = Parser.parseExpression(elctx, expr);
         IRFunction fn = IRBuilder.compile(elctx, node);
         IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf, "compilation must succeed");
@@ -35,7 +35,7 @@ class BytecodeClosureTest {
     @Test
     @Disabled("O3 bytecode: closure evalContext not wired in CompiledFunction.execute()")
     void closureCompilesAndRuns() {
-        var p = new Parser("define f(x) => \\y => x+y; f(1)(2)");
+        var p = new Parser(elctx, "define f(x) => \\y => x+y; f(1)(2)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
         IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
@@ -47,7 +47,7 @@ class BytecodeClosureTest {
 
     @Test
     void simpleCallCompilesAndRuns() {
-        var p = new Parser("define add(a,b) => a + b; add(1, 2)");
+        var p = new Parser(elctx, "define add(a,b) => a + b; add(1, 2)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
         IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);

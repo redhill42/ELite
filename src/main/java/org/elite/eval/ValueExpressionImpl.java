@@ -178,7 +178,7 @@ public class ValueExpressionImpl extends ValueExpression
         throws IOException, ClassNotFoundException
     {
         expression = in.readUTF();
-        node = Parser.parse(expression);
+        node = Parser.parse(ELEngine.createELContext(), expression);
         String type = in.readUTF();
         expectedType = (type.length() == 0) ? null : Utils.findClass(type);
         fnMapper = (FunctionMapper)in.readObject();

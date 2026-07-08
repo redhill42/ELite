@@ -33,7 +33,7 @@ public class ExpressionFactoryImpl extends ExpressionFactory
                                                  String expression,
                                                  Class<?> expectedType)
     {
-        ELNode node = Parser.parse(expression);
+        ELNode node = Parser.parse(context, expression);
 
         FunctionMapper fm = context.getFunctionMapper();
         if (fm != null) {
@@ -73,7 +73,7 @@ public class ExpressionFactoryImpl extends ExpressionFactory
             expectedParamTypes = new Class<?>[0];
         }
 
-        ELNode node = Parser.parse(expression);
+        ELNode node = Parser.parse(context, expression);
 
         if (node instanceof ELNode.LITERAL) {
             if (expectedParamTypes.length != 0) { // FIXME

@@ -147,8 +147,8 @@ public abstract class Expression
      * @param text the expression string
      * @return the abstract syntax tree.
      */
-    public static Expression parse(String text) {
-        return valueOf(Parser.parseExpression(text));
+    public static Expression parse(ELContext elctx, String text) {
+        return valueOf(Parser.parseExpression(elctx, text));
     }
 
     /**

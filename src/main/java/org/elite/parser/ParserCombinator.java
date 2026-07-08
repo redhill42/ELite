@@ -16,37 +16,36 @@
 
 package org.elite.parser;
 
-import java.io.File;
-import java.io.Reader;
-import java.io.InputStreamReader;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.Serializable;
+import java.io.*;
+
 import elite.ast.Expression;
+
+import javax.el.ELContext;
 
 public final class ParserCombinator implements Serializable
 {
-    private Grammar grammar;
+    private final Grammar grammar;
 
+    @Serial
     private static final long serialVersionUID = 6681093034146902331L;
 
     ParserCombinator(Grammar grammar) {
         this.grammar = grammar;
     }
 
-    public Object parse(String text) {
-        Object result = grammar.parse(text);
+    public Object parse(ELContext elctx, String text) {
+        Object result = grammar.parse(elctx, text);
         if (result instanceof ELNode)
             result = Expression.valueOf((ELNode)result);
         return result;
     }
 
-    public Object parse(File file) throws IOException {
-        return parse(readText(file, null));
+    public Object parse(ELContext elctx, File file) throws IOException {
+        return parse(elctx, readText(file, null));
     }
 
-    public Object parse(File file, String charset) throws IOException {
-        return parse(readText(file, charset));
+    public Object parse(ELContext elctx, File file, String charset) throws IOException {
+        return parse(elctx, readText(file, charset));
     }
 
     private String readText(File file, String charset)

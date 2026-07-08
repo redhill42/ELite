@@ -39,7 +39,6 @@ import elite.ast.Expression;
 import javax.el.ELContext;
 import javax.el.ELException;
 
-import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.ELProgram;
 import org.elite.eval.closure.ClassDefinition;
@@ -55,6 +54,7 @@ import static org.elite.resources.Resources.*;
  */
 public class Parser extends Scanner
 {
+    private ELContext elctx;
     private ResourceResolver resolver = null;
     private ParseContext env = new ParseContext();
     private ConstantFolder constantFolder;
@@ -62,8 +62,9 @@ public class Parser extends Scanner
     private static final String SCRIPT_PATH = "META-INF/script/elite/";
     private static final String SCRIPT_EXT = ".xel";
 
-    public Parser(String text) {
+    public Parser(ELContext elctx, String text) {
         super(text);
+        this.elctx = elctx;
     }
 
     public void setResourceResolver(ResourceResolver resolver) {
@@ -1004,7 +1005,7 @@ public class Parser extends Scanner
             return new ELNode.STRINGVAL(p, str);
         }
 
-        Parser parser = new Parser(str);
+        Parser parser = new Parser(elctx, str);
         parser.setFileName(filename);
         parser.setLineNumber(Position.line(p));
         parser.importSyntaxRules(this);
@@ -3935,7 +3936,6 @@ public class Parser extends Scanner
 
     private EvaluationContext getParseContext() {
         if (parse_context == null) {
-            ELContext elctx = ELEngine.createELContext();
             ClassResolver.getInstance(elctx).addImport("elite.ast.*");
             MethodResolver.getInstance(elctx).addGlobalMethods(Expression.class);
             parse_context = new EvaluationContext(elctx);
@@ -3999,7 +3999,7 @@ public class Parser extends Scanner
     private void parseScript(ELProgram prog, String path) {
         try {
             String script = readScript(path);
-            Parser parser = new Parser(script);
+            Parser parser = new Parser(elctx, script);
             parser.setFileName(path);
             parser.setResourceResolver(resolver);
             parser.allowComment(true);
@@ -4150,10 +4150,10 @@ public class Parser extends Scanner
     /**
      * Parse an expression.
      */
-    public static ELNode parseExpression(String expression)
+    public static ELNode parseExpression(ELContext elctx, String expression)
         throws ELException
     {
-        Parser parser = new Parser(expression);
+        Parser parser = new Parser(elctx, expression);
         parser.allowComment(false);
         parser.nextchar();
         parser.scan();
@@ -4165,21 +4165,21 @@ public class Parser extends Scanner
     /**
      * Parse an expression string.
      */
-    public static ELNode parse(String expression)
+    public static ELNode parse(ELContext elctx, String expression)
         throws ELException
     {
-        return parse(expression, false);
+        return parse(elctx, expression, false);
     }
 
     /**
      * Parse an expression string.
      */
-    public static ELNode parse(String expression, boolean allowKeywords)
+    public static ELNode parse(ELContext elctx, String expression, boolean allowKeywords)
         throws ELException
     {
         ELNode e = cache.get(expression);
         if (e == null) {
-            Parser parser = new Parser(expression);
+            Parser parser = new Parser(elctx, expression);
             parser.allowComment(false);
             parser.allowKeywords(allowKeywords);
             e = parser.parseExpressionString(false);

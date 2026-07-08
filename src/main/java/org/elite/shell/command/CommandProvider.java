@@ -83,7 +83,9 @@ public final class CommandProvider {
             script = shellContext.getLastScript();
         if (script.isBlank())
             return;
-        Parser parser = new Parser(script);
+        ScriptEngine engine = shellContext.getEngine();
+        ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
+        Parser parser = new Parser(elctx, script);
         ELProgram program = parser.parse();
         SymbolTableBuilder.build(program);
         System.out.println(program.dump());
@@ -96,7 +98,7 @@ public final class CommandProvider {
             return;
         ScriptEngine engine = shellContext.getEngine();
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
-        ELProgram program = new Parser(script).parse();
+        ELProgram program = new Parser(elctx, script).parse();
         System.out.println(program.compile(elctx).dump());
     }
 
@@ -108,7 +110,7 @@ public final class CommandProvider {
             return;
         ScriptEngine engine = shellContext.getEngine();
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
-        ELProgram program = new Parser(script).parse();
+        ELProgram program = new Parser(elctx, script).parse();
         System.out.println(program.compileToByteCode(elctx).dump());
     }
 

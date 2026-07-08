@@ -336,11 +336,11 @@ class Grammar implements Serializable
     /**
      * Parse a standalone input text.
      */
-    public Object parse(String input) {
+    public Object parse(ELContext elctx, String input) {
         Parser parser;
         Object result;
 
-        parser = new Parser(input);
+        parser = new Parser(elctx, input);
         yy_init_stack();
         yy_init_occs(parser);
         yy_save();

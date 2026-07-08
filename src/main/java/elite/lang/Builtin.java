@@ -2297,7 +2297,7 @@ public final class Builtin
      * 使用给定环境对以字符串表示的表达式求值.
      */
     public static Object eval(String exp, EvaluationContext env) {
-        return Parser.parseExpression(exp).getValue(env);
+        return Parser.parseExpression(env.getELContext(), exp).getValue(env);
     }
 
     /**

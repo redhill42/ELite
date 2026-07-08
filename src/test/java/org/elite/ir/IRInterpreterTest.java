@@ -21,14 +21,14 @@ class IRInterpreterTest {
     }
 
     private Object interpret(String expr) {
-        ELNode node = Parser.parseExpression(expr);
+        ELNode node = Parser.parseExpression(elctx, expr);
         IRFunction fn = IRBuilder.compile(elctx, node);
         IRInterpreter interp = new IRInterpreter(new EvaluationContext(elctx), fn);
         return interp.execute(null);
     }
 
     private Object eval(String expr) {
-        ELNode node = Parser.parseExpression(expr);
+        ELNode node = Parser.parseExpression(elctx, expr);
         return node.getValue(new EvaluationContext(elctx));
     }
 

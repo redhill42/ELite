@@ -14,7 +14,7 @@ class BytecodeCompilerTest {
     private static final ELContext elctx = ELEngine.createELContext();
 
     private Object bcEval(String expr) {
-        ELNode node = Parser.parseExpression(expr);
+        ELNode node = Parser.parseExpression(elctx, expr);
         IRFunction fn = IRBuilder.compile(elctx, node);
         IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         return cf.execute(elctx, null);
@@ -55,7 +55,7 @@ class BytecodeCompilerTest {
 
     // ─── Function calls ───
     @Test void simpleCall() {
-        Parser p = new Parser("define add(x,y) => x + y; add(3, 4)");
+        Parser p = new Parser(elctx, "define add(x,y) => x + y; add(3, 4)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
         IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
@@ -63,7 +63,7 @@ class BytecodeCompilerTest {
     }
 
     @Test void callWithSingleArg() {
-        Parser p = new Parser("define sq(x) => x * x; sq(5)");
+        Parser p = new Parser(elctx, "define sq(x) => x * x; sq(5)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
         IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
