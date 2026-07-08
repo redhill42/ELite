@@ -26,11 +26,11 @@ public class ELUtils
 {
     private ELUtils() {}
 
-    public static final Class[]   NO_ARGS   = new Class[0];
-    public static final Object[]  NO_VALUES = new Object[0];
-    public static final Closure[] NO_PARAMS = new Closure[0];
-    public static final Object    NO_RESULT = new Object();
-    
+    public static final Class<?>[] NO_ARGS   = new Class[0];
+    public static final Object[]   NO_VALUES = new Object[0];
+    public static final Closure[]  NO_PARAMS = new Closure[0];
+    public static final Object     NO_RESULT = new Object();
+
     static final boolean facesContextPresent = classPresent("javax.faces.context.FacesContext");
 
     public static Locale getCurrentLocale() {
@@ -54,7 +54,7 @@ public class ELUtils
     }
 
     public static String getQuotedString(String str) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         buf.append('"');
         for (int i = 0; i < str.length(); i++) {
             char c = str.charAt(i);
@@ -96,8 +96,7 @@ public class ELUtils
     }
 
     public static boolean looksLikeFloat(Object v) {
-        if (v instanceof CharSequence) {
-            CharSequence s = (CharSequence)v;
+        if (v instanceof CharSequence s) {
             int len = s.length();
             for (int i = 0; i < len; i++) {
                 char c = s.charAt(i);
@@ -127,7 +126,7 @@ public class ELUtils
     public static String getMethodDescriptor(Method method) {
         StringBuilder buf = new StringBuilder();
         buf.append('(');
-        for (Class type : method.getParameterTypes()) {
+        for (Class<?> type : method.getParameterTypes()) {
             getClassDescriptor(buf, type);
         }
         buf.append(')');
@@ -135,14 +134,14 @@ public class ELUtils
         return buf.toString();
     }
 
-    public static String getClassDescriptor(Class c) {
+    public static String getClassDescriptor(Class<?> c) {
         StringBuilder buf = new StringBuilder();
         getClassDescriptor(buf, c);
         return buf.toString();
     }
 
-    public static void getClassDescriptor(StringBuilder buf, Class c) {
-        Class d = c;
+    public static void getClassDescriptor(StringBuilder buf, Class<?> c) {
+        Class<?> d = c;
         while (true) {
             if (d.isPrimitive()) {
                 char car;

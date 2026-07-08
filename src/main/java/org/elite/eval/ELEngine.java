@@ -15,7 +15,6 @@
  */
 package org.elite.eval;
 
-import javax.el.ExpressionFactory;
 import javax.el.ELContext;
 import javax.el.ELResolver;
 import javax.el.CompositeELResolver;
@@ -23,8 +22,6 @@ import javax.el.ResourceBundleELResolver;
 import javax.el.ValueExpression;
 import javax.el.MethodInfo;
 import javax.el.VariableMapper;
-import javax.el.ELContextListener;
-import javax.el.ELContextEvent;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Array;
@@ -35,7 +32,6 @@ import java.util.List;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.HashSet;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.math.BigInteger;
 import java.math.BigDecimal;
 import elite.lang.Rational;
@@ -70,52 +66,13 @@ public final class ELEngine
 {
     private ELEngine() {}
 
-    static final ExpressionFactoryImpl factory = new ExpressionFactoryImpl();
-
-    // The global ELContextListener registration
-    private static final List<ELContextListener> listeners
-        = new CopyOnWriteArrayList<ELContextListener>();
-
-    /**
-     * 获得实现了ExpressionFactory接口的实例, 该实例是一个全局唯一的单件实例.
-     * 利用ExpressionFactory接口可以创建EL表达式或对表达式求值.
-     */
-    public static ExpressionFactory getExpressionFactory() {
-        return factory;
-    }
-
-    /**
-     * 注册一个ELContextListener, 当新的ELContext创建时将会得到通知.
-     *
-     * @param listener ELContext侦听器
-     */
-    public static void addELContextListener(ELContextListener listener) {
-        if (listener == null)
-            throw new NullPointerException();
-        if (!listeners.contains(listener))
-            listeners.add(listener);
-    }
-
-    /**
-     * 注销先前登记的ELContextListener.
-     *
-     * @param listener ELContext侦听器
-     */
-    public static void removeELContextListener(ELContextListener listener) {
-        if (listener == null)
-            throw new NullPointerException();
-        listeners.remove(listener);
-    }
-
     /**
      * 根据给定的配置创建EL求值上下文.
      *
      * @param resolver 预先配置好的EL对象解析器
      */
     public static ELContext createELContext(ELResolver resolver) {
-        ELContext elctx = new ELContextImpl(resolver);
-        init(elctx);
-        return elctx;
+        return new ELContextImpl(resolver);
     }
 
     /**
@@ -125,9 +82,7 @@ public final class ELEngine
      * @param varMapper 变量绑定
      */
     public static ELContext createELContext(ELResolver resolver, VariableMapper varMapper) {
-        ELContext elctx = new ELContextImpl(resolver, varMapper);
-        init(elctx);
-        return elctx;
+        return new ELContextImpl(resolver, varMapper);
     }
 
     /**
@@ -154,15 +109,6 @@ public final class ELEngine
         return createELContext(composite, varMapper);
     }
 
-    private static void init(ELContext elctx) {
-        if (!listeners.isEmpty()) {
-            ELContextEvent event = new ELContextEvent(elctx);
-            for (ELContextListener listener : listeners) {
-                listener.contextCreated(event);
-            }
-        }
-    }
-
     /**
      * 向一个组合EL对象解析器中增加默认的解析器, 这些解析器是为了正确运行ELite程序
      * 所必须的. 当不采用缺省EL求值上下文的配置时, 可以调用此方法使解析器配置和缺省
@@ -181,8 +127,8 @@ public final class ELEngine
         }
     }
 
-    private static ThreadLocal<ELContext> currentELContext =
-        new InheritableThreadLocal<ELContext>() {
+    private static final ThreadLocal<ELContext> currentELContext =
+        new InheritableThreadLocal<>() {
             protected ELContext childValue(ELContext parent) {
                 while (parent instanceof DelegatingELContext) {
                     parent = ((DelegatingELContext)parent).getDelegate();
@@ -268,7 +214,7 @@ public final class ELEngine
         // find method that have the given name and argument count
         for (Method method : methods) {
             if (name.equals(method.getName()) && !method.isVarArgs()) {
-                Class[] types = method.getParameterTypes();
+                Class<?>[] types = method.getParameterTypes();
                 int nargs = types.length;
                 if (nargs > 0 && types[0] == ELContext.class) {
                     nargs--; // chop first argument if it it's an ELContext
@@ -296,13 +242,13 @@ public final class ELEngine
                 continue;
             }
 
-            Class[] types = method.getParameterTypes();
+            Class<?>[] types = method.getParameterTypes();
             int nargs = types.length;
             int dist = -1;
 
             // chop first argument if it's an ELContext
             if (nargs > 0 && types[0] == ELContext.class) {
-                Class[] temp = new Class[nargs-1];
+                Class<?>[] temp = new Class[nargs-1];
                 System.arraycopy(types, 1, temp, 0, nargs-1);
                 types = temp;
                 nargs--;
@@ -318,7 +264,7 @@ public final class ELEngine
 
                     // match for var-args; the var-args may be passed as an array or individual args
                     if (dist != -1) {
-                        Class vargtype = types[nargs-1];
+                        Class<?> vargtype = types[nargs-1];
                         Closure varg = args[nargs-1];
                         int d = distanceof(elctx, varg, vargtype);
                         if (d == -1)
@@ -334,7 +280,7 @@ public final class ELEngine
 
                 // match for var-args
                 if (dist != -1 && nfixed < argc) {
-                    Class vargtype = types[nargs-1].getComponentType();
+                    Class<?> vargtype = types[nargs-1].getComponentType();
                     for (int i = nfixed; i < argc; i++) {
                         int d = distanceof(elctx, args[i], vargtype);
                         if (d == -1) {
@@ -376,7 +322,7 @@ public final class ELEngine
      * @return 方法调用的返回值
      */
     public static Object invokeMethod(ELContext elctx, Object base, Method method, Closure[] args) {
-        Class[]  types  = method.getParameterTypes();
+        Class<?>[] types  = method.getParameterTypes();
         int      nargs  = types.length;
         Object[] values = new Object[nargs];
         int      iarg   = 0;
@@ -407,7 +353,7 @@ public final class ELEngine
             if (vargc < 0) vargc = 0;
 
             assert types[nargs].isArray();
-            Class argtype = types[nargs].getComponentType();
+            Class<?> argtype = types[nargs].getComponentType();
 
             if (delayed(argtype)) {
                 if (ivarg == 0) {
@@ -419,9 +365,8 @@ public final class ELEngine
                 }
             } else if (vargc == 1 && !canCoerceToSeq(argtype)) {
                 Object last = args[ivarg].getValue(elctx);
-                if (last instanceof List) {
+                if (last instanceof List<?> arglist) {
                     // if the last argument is a list then convert it to array
-                    List arglist = (List)last;
                     int count = arglist.size();
                     Object vargs = Array.newInstance(argtype, count);
                     for (int i = 0; i < count; i++) {
@@ -482,8 +427,7 @@ public final class ELEngine
             if (proc != null) {
                 return proc.getMethodInfo(elctx);
             }
-        } else if (target instanceof Class) {
-            Class cls = (Class)target;
+        } else if (target instanceof Class<?> cls) {
             return new MethodInfo(cls.getSimpleName(), cls, new Class[] { Object.class });
         } else {
             MethodClosure method = MethodResolver.getInstance(elctx)
@@ -527,7 +471,7 @@ public final class ELEngine
         }
     }
 
-    private static Object invokeClass(ELContext elctx, Class target, Closure[] args) {
+    private static Object invokeClass(ELContext elctx, Class<?> target, Closure[] args) {
         if (args.length == 1 && isStandardType(target)) {
             // coerce argument to target class
             Object result = args[0].getValue(elctx);
@@ -545,16 +489,16 @@ public final class ELEngine
         return newInstance(elctx, target, args);
     }
 
-    private static Set<Class> STANDARD_TYPES = new HashSet<Class>();
+    private static final Set<Class<?>> STANDARD_TYPES = new HashSet<>();
     static {
-        STANDARD_TYPES.addAll(Arrays.<Class>asList(
+        STANDARD_TYPES.addAll(Arrays.<Class<?>>asList(
             Boolean.class, Byte.class, Character.class, Short.class,
             Integer.class, Long.class, Float.class, Double.class, BigInteger.class,
             BigDecimal.class, Rational.class, Decimal.class, String.class
         ));
     }
 
-    private static boolean isStandardType(Class type) {
+    private static boolean isStandardType(Class<?> type) {
         return type.isPrimitive() || STANDARD_TYPES.contains(type);
     }
 
@@ -644,7 +588,7 @@ public final class ELEngine
     /**
      * 仅将类名称解析成Java类对象.
      */
-    public static Class resolveJavaClass(ELContext elctx, String name) {
+    public static Class<?> resolveJavaClass(ELContext elctx, String name) {
         try {
             return ClassResolver.getInstance(elctx).resolveClass(name);
         } catch (ClassNotFoundException ex) {
@@ -660,7 +604,7 @@ public final class ELEngine
         int shortest_dist = 0;
 
         for (Constructor<?> cons : cls.getConstructors()) {
-            Class[] types = cons.getParameterTypes();
+            Class<?>[] types = cons.getParameterTypes();
             if (types.length == args.length) {
                 int d = distanceof(elctx, types, args, args.length);
                 if (d == 0) {
@@ -700,7 +644,7 @@ public final class ELEngine
                     elctx, _T(EL_METHOD_NOT_FOUND, cls.getName(), cls.getSimpleName()));
             }
 
-            Class[] types = cons.getParameterTypes();
+            Class<?>[] types = cons.getParameterTypes();
             Object[] values = new Object[args.length];
             for (int i = 0; i < types.length; i++) {
                 values[i] = coerce(elctx, args[i].getValue(elctx), types[i]);
@@ -722,7 +666,7 @@ public final class ELEngine
 
     // Implementation -----------------------------------
 
-    private static int distanceof(ELContext elctx, Closure arg, Class type) {
+    private static int distanceof(ELContext elctx, Closure arg, Class<?> type) {
         if (delayed(type)) {
             return 0;
         }
@@ -735,7 +679,7 @@ public final class ELEngine
         return TypeCoercion.distanceof(value.getClass(), type);
     }
 
-    private static int distanceof(ELContext elctx, Class[] types, Closure[] args, int nargs) {
+    private static int distanceof(ELContext elctx, Class<?>[] types, Closure[] args, int nargs) {
         int dist = 0;
         for (int i = 0; i < nargs; i++) {
             int d = distanceof(elctx, args[i], types[i]);

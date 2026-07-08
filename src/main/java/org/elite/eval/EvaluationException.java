@@ -21,7 +21,7 @@ import javax.el.ELContext;
 
 public class EvaluationException extends ELException
 {
-    private Frame frame;
+    private final Frame frame;
 
     public EvaluationException(ELContext elctx, String message) {
         super(message);

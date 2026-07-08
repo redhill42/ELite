@@ -16,6 +16,7 @@
 
 package org.elite.eval;
 
+import java.io.Serial;
 import java.util.RandomAccess;
 import java.util.Iterator;
 import java.util.ListIterator;
@@ -27,7 +28,7 @@ import elite.lang.Seq;
 import org.elite.eval.seq.AbstractSeq;
 import org.elite.eval.seq.EmptySeq;
 
-public class Ranges
+public final class Ranges
 {
     public static Seq createRange(long begin, long end, long step) {
         if (step == 1) {
@@ -136,6 +137,8 @@ public class Ranges
 
     public static class Singleton extends AbstractRange {
         private final long n;
+
+        @Serial
         private static final long serialVersionUID = 2865107437677054850L;
 
         public Singleton(long n) {
@@ -168,8 +171,10 @@ public class Ranges
     }
 
     public static class Ascending extends AbstractRange {
-        private static final long serialVersionUID = -6020526239222455654L;
         private final long begin, end;
+
+        @Serial
+        private static final long serialVersionUID = -6020526239222455654L;
 
         public Ascending(long begin, long end) {
             this.begin = begin;
@@ -208,8 +213,10 @@ public class Ranges
     }
 
     public static class Descending extends AbstractRange {
-        private static final long serialVersionUID = -5305644628530230136L;
         private final long begin, end;
+
+        @Serial
+        private static final long serialVersionUID = -5305644628530230136L;
 
         public Descending(long begin, long end) {
             this.begin = begin;
@@ -248,8 +255,10 @@ public class Ranges
     }
 
     public static class StepUp extends AbstractRange {
-        private static final long serialVersionUID = -575647382944213405L;
         private final long begin, end, step;
+
+        @Serial
+        private static final long serialVersionUID = -575647382944213405L;
 
         public StepUp(long begin, long end, long step) {
             this.begin = begin;
@@ -290,8 +299,10 @@ public class Ranges
     }
 
     public static class StepDown extends AbstractRange {
-        private static final long serialVersionUID = -6482548072796361895L;
         private final long begin, end, step;
+
+        @Serial
+        private static final long serialVersionUID = -6482548072796361895L;
 
         public StepDown(long begin, long end, long step) {
             this.begin = begin;
@@ -334,6 +345,8 @@ public class Ranges
 
     public static class UnboundedStepUp extends AbstractRange {
         private final long begin, step;
+
+        @Serial
         private static final long serialVersionUID = -3185000032254546767L;
 
         public UnboundedStepUp(long begin, long step) {
@@ -435,6 +448,8 @@ public class Ranges
 
     public static class UnboundedStepDown extends AbstractRange {
         private final long begin, step;
+
+        @Serial
         private static final long serialVersionUID = -5903447967490555464L;
 
         public UnboundedStepDown(long begin, long step) {

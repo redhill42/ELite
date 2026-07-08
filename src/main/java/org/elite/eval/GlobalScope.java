@@ -16,6 +16,7 @@
 
 package org.elite.eval;
 
+import java.io.Serial;
 import java.math.MathContext;
 import java.io.Serializable;
 import javax.el.ELContext;
@@ -34,11 +35,12 @@ public class GlobalScope implements PropertyDelegate, Serializable
 
     // API integration
 
-    public Object getContext(ELContext elctx, Class key) {
+    public Object getContext(ELContext elctx, Class<?> key) {
         return elctx.getContext(key);
     }
 
-    public void putContext(ELContext elctx, Class key, Object value) {
+    @SuppressWarnings("unused")
+    public void putContext(ELContext elctx, Class<?> key, Object value) {
         elctx.putContext(key, value);
     }
 
@@ -46,6 +48,7 @@ public class GlobalScope implements PropertyDelegate, Serializable
         return (MathContext)elctx.getContext(MathContext.class);
     }
 
+    @SuppressWarnings("unused")
     public static void setMathContext(ELContext elctx, MathContext mc) {
         elctx.putContext(MathContext.class, mc);
     }
@@ -54,6 +57,7 @@ public class GlobalScope implements PropertyDelegate, Serializable
         return Boolean.TRUE.equals(elctx.getContext(Rational.class));
     }
 
+    @SuppressWarnings("unused")
     public static void setRationalEnabled(ELContext elctx, boolean value) {
         elctx.putContext(Rational.class, value);
     }
@@ -118,6 +122,7 @@ public class GlobalScope implements PropertyDelegate, Serializable
         return false;
     }
 
+    @Serial
     private Object readResolve() {
         return SINGLETON;
     }

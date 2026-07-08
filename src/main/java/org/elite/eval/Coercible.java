@@ -27,7 +27,7 @@ public interface Coercible
      *
      * @param type type to coerce to
      * @return coerced object or null if cannot coerce
-     * @throws ELException if failed to coerce
+     * @throws javax.el.ELException if failed to coerce
      */
-    public Object coerce(Class type);
+    public Object coerce(Class<?> type);
 }

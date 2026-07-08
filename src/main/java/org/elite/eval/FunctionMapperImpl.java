@@ -18,6 +18,7 @@ package org.elite.eval;
 
 import javax.el.FunctionMapper;
 import javax.el.ELException;
+import java.io.Serial;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.HashMap;
@@ -31,9 +32,10 @@ import static org.elite.resources.Resources.*;
 public class FunctionMapperImpl extends FunctionMapper
     implements java.io.Serializable
 {
+    @Serial
     private static final long serialVersionUID = 4287860736854130693L;
 
-    private Map<String,Method> map = new HashMap<String, Method>();
+    private Map<String,Method> map = new HashMap<>();
 
     public FunctionMapperImpl() {}
 
@@ -49,7 +51,7 @@ public class FunctionMapperImpl extends FunctionMapper
     }
 
     public void addFunction(String prefix, String localName,
-                            Class clazz, String methodName, Class[] args)
+                            Class<?> clazz, String methodName, Class<?>[] args)
     {
         try {
             Method method = clazz.getMethod(methodName, args);
@@ -72,6 +74,7 @@ public class FunctionMapperImpl extends FunctionMapper
         return map;
     }
 
+    @Serial
     private void writeObject(ObjectOutputStream out)
         throws IOException
     {
@@ -79,31 +82,32 @@ public class FunctionMapperImpl extends FunctionMapper
         for (Map.Entry<String,Method> e : map.entrySet()) {
             String varName = e.getKey();
             Method method = e.getValue();
-            Class[] paramTypes = method.getParameterTypes();
+            Class<?>[] paramTypes = method.getParameterTypes();
 
             out.writeUTF(varName);
             out.writeUTF(method.getDeclaringClass().getName());
             out.writeUTF(method.getName());
             out.writeInt(paramTypes.length);
-            for (Class type : paramTypes) {
+            for (Class<?> type : paramTypes) {
                 out.writeUTF(type.getName());
             }
         }
     }
 
+    @Serial
     private void readObject(ObjectInputStream in)
         throws IOException, ClassNotFoundException
     {
-        map = new HashMap<String, Method>();
+        map = new HashMap<>();
         int size = in.readInt();
         for (int i = 0; i < size; i++) {
             String varName;
             Method method;
 
             varName = in.readUTF();
-            Class clazz = Utils.findClass(in.readUTF());
+            Class<?> clazz = Utils.findClass(in.readUTF());
             String methodName = in.readUTF();
-            Class[] paramTypes = new Class[in.readInt()];
+            Class<?>[] paramTypes = new Class[in.readInt()];
             for (int j = 0; j < paramTypes.length; j++) {
                 paramTypes[j] = Utils.findClass(in.readUTF());
             }

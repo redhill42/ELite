@@ -28,7 +28,7 @@ public class ELContextImpl extends ELContext
     private ELResolver resolver;
     private FunctionMapper fnMapper;
     private VariableMapper varMapper;
-    private Thread thread;
+    private final Thread thread;
 
     public ELContextImpl(ELResolver resolver, VariableMapper vm) {
         this.resolver = resolver;

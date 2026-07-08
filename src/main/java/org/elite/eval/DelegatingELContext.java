@@ -24,8 +24,8 @@ import javax.el.VariableMapper;
 
 public class DelegatingELContext extends ELContext
 {
-    private ELContext delegate;
-    private Thread thread;
+    private final ELContext delegate;
+    private final Thread thread;
 
     DelegatingELContext(ELContext delegate) {
         this.delegate = delegate;

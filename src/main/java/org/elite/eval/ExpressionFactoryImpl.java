@@ -29,16 +29,6 @@ import org.elite.parser.Parser;
 
 public class ExpressionFactoryImpl extends ExpressionFactory
 {
-    /**
-     * @deprecated replaced by {@link ELEngine#getExpressionFactory()}
-     */
-    @Deprecated
-    public static ExpressionFactoryImpl getInstance() {
-        return ELEngine.factory;
-    }
-
-    ExpressionFactoryImpl() {}
-
     public ValueExpression createValueExpression(ELContext context,
                                                  String expression,
                                                  Class<?> expectedType)

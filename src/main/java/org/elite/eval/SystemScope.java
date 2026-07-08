@@ -16,6 +16,7 @@
 
 package org.elite.eval;
 
+import java.io.Serial;
 import java.io.Serializable;
 import javax.el.ELContext;
 import javax.el.PropertyNotFoundException;
@@ -60,6 +61,7 @@ public class SystemScope implements PropertyDelegate, Serializable
         return true;
     }
 
+    @Serial
     private Object readResolve() {
         return SINGLETON;
     }

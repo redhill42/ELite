@@ -23,11 +23,6 @@ class ELEngineTest extends EliteTestBase {
         assertNotNull(ctx.getELResolver());
     }
 
-    @Test
-    void getExpressionFactory() {
-        assertNotNull(ELEngine.getExpressionFactory());
-    }
-
     // ---- Arithmetic ----
 
     @Test

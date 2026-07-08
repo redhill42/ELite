@@ -22,9 +22,9 @@ import elite.lang.Closure;
 
 public interface MethodResolvable
 {
-    public MethodInfo getMethodInfo(ELContext ctx, String name)
+    MethodInfo getMethodInfo(ELContext ctx, String name)
         throws MethodNotFoundException;
 
-    public Object invoke(ELContext ctx, String name, Closure[] args)
+    Object invoke(ELContext ctx, String name, Closure[] args)
         throws MethodNotFoundException;
 }

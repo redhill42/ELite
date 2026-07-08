@@ -38,10 +38,10 @@ public interface PropertyResolvable
      *      <code>ELContext</code> was set to <code>true</code>, then
      *      the result of the variable or property resolution; otherwise
      *      undefined.
-     * @throws PropertyNotFoundException if the given property is handled
+     * @throws javax.el.PropertyNotFoundException if the given property is handled
      *      by this <code>PropertyResolver</code> but the specified
      *      variable or property does not exist or is not readable.
-     * @throws ELException if an exception was thrown while performing
+     * @throws javax.el.ELException if an exception was thrown while performing
      *      the property or variable resolution. The thrown exception
      *      must be included as the cause property of this exception, if
      *      available.
@@ -65,10 +65,10 @@ public interface PropertyResolvable
      *      <code>ELContext</code> was set to <code>true</code>, then
      *      the result of the variable or property resolution; otherwise
      *      undefined.
-     * @throws PropertyNotFoundException if the given property is handled
+     * @throws javax.el.PropertyNotFoundException if the given property is handled
      *      by this <code>PropertyResolver</code> but the specified
      *      variable or property does not exist or is not readable.
-     * @throws ELException if an exception was thrown while performing
+     * @throws javax.el.ELException if an exception was thrown while performing
      *      the property or variable resolution. The thrown exception
      *      must be included as the cause property of this exception, if
      *      available.
@@ -86,10 +86,10 @@ public interface PropertyResolvable
      *
      * @param context The context of this evaluation.
      * @param property The property or variable to be resolved.
-     * @throws PropertyNotFoundException if the given property is handled
+     * @throws javax.el.PropertyNotFoundException if the given property is handled
      *      by this <code>PropertyResolver</code> but the specified
      *      variable or property does not exist or is not readable.
-     * @throws ELException if an exception was thrown while performing
+     * @throws javax.el.ELException if an exception was thrown while performing
      *      the property or variable resolution. The thrown exception
      *      must be included as the cause property of this exception, if
      *      available.
@@ -112,10 +112,10 @@ public interface PropertyResolvable
      *      <code>ELContext</code> was set to <code>true</code>, then
      *      the result of the variable or property resolution; otherwise
      *      undefined.
-     * @throws PropertyNotFoundException if the given property is handled
+     * @throws javax.el.PropertyNotFoundException if the given property is handled
      *      by this <code>PropertyResolver</code> but the specified
      *      variable or property does not exist or is not readable.
-     * @throws ELException if an exception was thrown while performing
+     * @throws javax.el.ELException if an exception was thrown while performing
      *      the property or variable resolution. The thrown exception
      *      must be included as the cause property of this exception, if
      *      available.

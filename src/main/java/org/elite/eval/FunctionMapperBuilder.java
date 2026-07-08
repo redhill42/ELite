@@ -21,7 +21,7 @@ import javax.el.FunctionMapper;
 
 class FunctionMapperBuilder extends FunctionMapper
 {
-    private FunctionMapper source;
+    private final FunctionMapper source;
     private FunctionMapperImpl target;
 
     FunctionMapperBuilder(FunctionMapper source) {
