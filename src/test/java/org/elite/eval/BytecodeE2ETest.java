@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import javax.el.ELContext;
 
+import org.elite.ir.IRCompiledFunction;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class BytecodeE2ETest {
     private Object bcEval(String expr) {
         ELNode node = Parser.parseExpression(expr);
         IRFunction fn = IRBuilder.compile(elctx, node);
-        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf);
         return cf.execute(elctx, null);
     }
@@ -48,7 +49,7 @@ class BytecodeE2ETest {
         var p = new Parser(src);
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
-        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertNotNull(cf);
         return cf.execute(elctx, null);
     }

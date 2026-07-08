@@ -22,7 +22,7 @@ import java.util.Arrays;
  * A mutable, resizable list of primitive {@code int} values.
  * Avoids boxing overhead of {@code ArrayList<Integer>} for IR building.
  */
-class IntList {
+final class IntList {
     private int[] data;
     private int size;
 

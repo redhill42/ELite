@@ -30,6 +30,8 @@ import javax.el.VariableMapper;
 import javax.el.ELException;
 
 import elite.lang.Closure;
+import org.elite.ir.IRCompiledFunction;
+import org.elite.parser.ASTDumper;
 import org.elite.parser.ELNode;
 import org.elite.parser.Position;
 import org.elite.resolver.ClassResolver;
@@ -177,11 +179,15 @@ public class ELProgram implements Serializable
         return IRBuilder.compile(elctx, this);
     }
 
-    public IRBytecodeCompiler.CompiledFunction compileToByteCode(ELContext elctx) {
+    public IRCompiledFunction compileToByteCode(ELContext elctx) {
         // Import modules and classes to populate global context. The global
         // context is used by compilation and execution.
         importExternals(elctx);
         return IRBytecodeCompiler.compile(compile(elctx));
+    }
+
+    public String dump() {
+        return ASTDumper.dump(this);
     }
 
     // Implementation

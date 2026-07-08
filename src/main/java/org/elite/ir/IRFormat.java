@@ -27,7 +27,7 @@ package org.elite.ir;
  *
  * Additional operand words follow the header (op cnt words).
  */
-public final class IRFormat {
+final class IRFormat {
     private IRFormat() {}
 
     // Bit shifts

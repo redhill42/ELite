@@ -136,6 +136,10 @@ public class EvalClosure extends AnnotatedClosure
         }
     }
 
+    public String dump() {
+        return node.dump();
+    }
+
     private void writeObject(ObjectOutputStream out)
         throws IOException
     {

@@ -16,7 +16,7 @@ class BytecodeCompilerTest {
     private Object bcEval(String expr) {
         ELNode node = Parser.parseExpression(expr);
         IRFunction fn = IRBuilder.compile(elctx, node);
-        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         return cf.execute(elctx, null);
     }
 
@@ -58,7 +58,7 @@ class BytecodeCompilerTest {
         Parser p = new Parser("define add(x,y) => x + y; add(3, 4)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
-        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertEquals(7L, ((Number)cf.execute(elctx, null)).longValue());
     }
 
@@ -66,7 +66,7 @@ class BytecodeCompilerTest {
         Parser p = new Parser("define sq(x) => x * x; sq(5)");
         var prog = p.parse();
         IRFunction fn = IRBuilder.compile(elctx, prog);
-        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         assertEquals(25L, ((Number)cf.execute(elctx, null)).longValue());
     }
 

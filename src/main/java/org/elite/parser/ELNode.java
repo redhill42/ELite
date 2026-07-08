@@ -440,12 +440,8 @@ public abstract class ELNode implements Serializable
         throw new EvaluationException(elctx, msg, cause);
     }
 
-    public void dump() {
-        System.out.println(ASTDumper.dump(this));
-    }
-
-    public void dump(java.io.PrintWriter out) {
-        out.println(ASTDumper.dump(this));
+    public String dump() {
+        return ASTDumper.dump(this);
     }
 
     // -----------------------------------------------------------------------

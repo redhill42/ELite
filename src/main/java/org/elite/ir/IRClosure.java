@@ -166,4 +166,8 @@ public class IRClosure extends Closure {
     public String toString() {
         return "#<ir-closure:" + function.name() + ">";
     }
+
+    public String dump() {
+        return function.dump();
+    }
 }

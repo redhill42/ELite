@@ -37,7 +37,7 @@ import static org.elite.ir.Opcode.*;
  * int[] code = out.toArray();
  * }</pre>
  */
-public class IREmitter {
+final class IREmitter {
     private final IntList buf = new IntList();
 
     // ── Short operand helpers ──

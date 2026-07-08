@@ -17,7 +17,7 @@
 package org.elite.script;
 
 import org.elite.eval.EvaluationException;
-import org.elite.ir.IRBytecodeCompiler;
+import org.elite.ir.IRCompiledFunction;
 
 import javax.el.ELException;
 import javax.script.CompiledScript;
@@ -27,10 +27,10 @@ import javax.script.ScriptException;
 
 class BytecodeCompiledScript extends CompiledScript {
     private final ELiteScriptEngine engine;
-    private final IRBytecodeCompiler.CompiledFunction function;
+    private final IRCompiledFunction function;
 
     BytecodeCompiledScript(ELiteScriptEngine engine,
-                           IRBytecodeCompiler.CompiledFunction function) {
+                           IRCompiledFunction function) {
         this.engine = engine;
         this.function = function;
     }

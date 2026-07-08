@@ -30,9 +30,7 @@ import javax.script.ScriptException;
 
 import org.elite.eval.ELProgram;
 import org.elite.eval.VariableMapperImpl;
-import org.elite.ir.IRPrinter;
 import org.elite.ir.SymbolTableBuilder;
-import org.elite.parser.ASTDumper;
 import org.elite.parser.Parser;
 import org.elite.resolver.MethodResolver;
 import org.elite.shell.ShellContext;
@@ -88,7 +86,7 @@ public final class CommandProvider {
         Parser parser = new Parser(script);
         ELProgram program = parser.parse();
         SymbolTableBuilder.build(program);
-        System.out.println(ASTDumper.dump(program));
+        System.out.println(program.dump());
     }
 
     public static void dump(ShellContext shellContext, String script) {
@@ -98,7 +96,8 @@ public final class CommandProvider {
             return;
         ScriptEngine engine = shellContext.getEngine();
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
-        System.out.println(IRPrinter.dumpProgramIR(elctx, script));
+        ELProgram program = new Parser(script).parse();
+        System.out.println(program.compile(elctx).dump());
     }
 
     @Command("dump-bc")
@@ -107,7 +106,10 @@ public final class CommandProvider {
             script = shellContext.getLastScript();
         if (script.isBlank())
             return;
-        System.out.println(IRPrinter.dumpProgramBC(script));
+        ScriptEngine engine = shellContext.getEngine();
+        ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
+        ELProgram program = new Parser(script).parse();
+        System.out.println(program.compileToByteCode(elctx).dump());
     }
 
     public static void ls(ShellContext shellContext, String args) {

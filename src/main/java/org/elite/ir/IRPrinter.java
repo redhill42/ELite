@@ -19,28 +19,19 @@ package org.elite.ir;
 import java.lang.reflect.Method;
 import java.util.*;
 
-import org.elite.eval.ELEngine;
 import org.elite.parser.ELNode;
-import org.elite.parser.Parser;
-
-import javax.el.ELContext;
 
 /**
  * Debugging utility: parses an ELite program and dumps the compiled IR.
  */
-public final class IRPrinter {
+final class IRPrinter {
 
     private IRPrinter() {}
 
-    /** Dump full program IR (definitions + expressions + combined). */
-    public static String dumpProgramIR(ELContext elctx, String source) {
-        Parser parser = new Parser(source);
-        var program = parser.parse();
-
+    static String dumpIR(IRFunction function) {
         LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
         ArrayDeque<IRFunction> worklist = new ArrayDeque<>();
-        IRFunction top = program.compile(elctx);
-        worklist.push(top);
+        worklist.push(function);
 
         while (!worklist.isEmpty()) {
             IRFunction fn = worklist.pop();
@@ -59,30 +50,7 @@ public final class IRPrinter {
         return sb.toString();
     }
 
-    /** Dump JVM bytecode for a full program. */
-    public static String dumpProgramBC(String source) {
-        Parser parser = new Parser(source);
-        var program = parser.parse();
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("; bytecode\n");
-        IRFunction fn = program.compile(ELEngine.createELContext());
-        sb.append(dumpBytecode(fn));
-        return sb.toString();
-    }
-
-    /** Dump JVM bytecode for an IRFunction (requires bytecode compiler). */
-    public static String dumpBytecode(IRFunction fn) {
-        try {
-            IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
-            return cf.bytecodeAsString();
-        } catch (CompilationError e) {
-            // Cannot compiler to byte code, silently return empty string
-            return "";
-        }
-    }
-
-    public static String formatIR(IRFunction fn) {
+    static String formatIR(IRFunction fn) {
         StringBuilder sb = new StringBuilder();
         sb.append(fn.name()).append(" params=").append(fn.paramCount())
           .append(" locals=").append(fn.maxLocals())
@@ -118,73 +86,85 @@ public final class IRPrinter {
         return sb.toString();
     }
 
-    private static void formatConstPool(StringBuilder sb, IRFunction fn, int idx) {
-        sb.append(" #").append(idx);
-        if (idx < fn.constantPool().length) {
-            Object val = fn.constantPool()[idx];
-            if (val instanceof IRFunction irf)
-                sb.append(" '").append(irf.name()).append("'");
-            else if (val instanceof Class<?> cls)
-                sb.append(" '").append(cls.getName()).append("'");
-            else if (val instanceof Method m)
-                sb.append(" '").append(m.getDeclaringClass().getSimpleName())
-                    .append('.').append(m.getName()).append("'");
-            else
-                sb.append(" '").append(val).append("'");
-        }
-    }
-
     private static String formatInst(InstructionView v, IRFunction fn) {
         int op = v.opcode();
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("%-14s", Opcode.name(op)));
 
         switch (op) {
-            case Opcode.PUSH_CONST -> {
-                int idx = v.constPoolIndex();
-                sb.append(" #").append(idx);
-                if (idx < fn.constantPool().length) {
-                    sb.append(" ").append(formatConst(fn.constantPool()[idx]));
-                }
-            }
-            case Opcode.PUSH_VAR -> sb.append(" v").append(v.varIndex());
-            case Opcode.STORE_VAR -> sb.append(" v").append(v.payload() & 0xFFFF);
-            case Opcode.PUSH_GLOBAL -> formatConstPool(sb, fn, v.constPoolIndex());
-            case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
-                 Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
-                sb.append(" B").append(v.jumpTarget());
-            case Opcode.INVOKE_DYN ->
-                sb.append(" ").append(v.payload());
-            case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET, Opcode.INVOKE_OPERATOR,
-                 Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO,
-                 Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
-                 Opcode.DECLARE_NS
-                -> formatConstPool(sb, fn, v.payload());
-            case Opcode.NEW_MAP, Opcode.NEW_TUPLE ->
-                sb.append(" ").append(v.payload());
-            case Opcode.NEW_XML ->
-                sb.append(" ").append(v.payload()).append(", ").append(v.operand(0));
-            case Opcode.TRAMPOLINE -> {
-                int idx = v.constPoolIndex();
-                sb.append(" #").append(idx);
-                if (idx < fn.constantPool().length) {
-                    sb.append(" ").append(formatTrampolineNode(fn.constantPool()[idx]));
-                }
-            }
+        case Opcode.PUSH_VAR,
+             Opcode.STORE_VAR ->
+            sb.append(" v").append(v.varIndex());
+
+        case Opcode.PUSH_CONST,
+             Opcode.DEFINE_GLOBAL,
+             Opcode.STORE_GLOBAL,
+             Opcode.PUSH_GLOBAL,
+             Opcode.INSTANCEOF,
+             Opcode.CLOSURE,
+             Opcode.DECLARE_NS,
+             Opcode.TRAMPOLINE ->
+            formatConstPool(sb, fn, v.payload());
+
+        case Opcode.JUMP,
+             Opcode.JUMP_IF_TRUE,
+             Opcode.JUMP_IF_FALSE,
+             Opcode.JUMP_IF_NULL,
+             Opcode.JUMP_IF_NONNULL ->
+            sb.append(" B").append(v.jumpTarget());
+
+        case Opcode.INVOKE_DYN ->
+            sb.append(" ").append(v.payload());
+        case Opcode.INVOKE_DIRECT,
+             Opcode.INVOKE_TARGET,
+             Opcode.INVOKE_OPERATOR,
+             Opcode.INVOKE_METHOD,
+             Opcode.INVOKE_STATIC,
+             Opcode.INVOKE_EXPANDO ->
+            formatConstPool(sb, fn, v.methodIndex());
+
+        case Opcode.NEW_MAP,
+             Opcode.NEW_TUPLE ->
+            sb.append(" ").append(v.payload());
+
+        case Opcode.NEW_XML ->
+            sb.append(" ").append(v.payload()).append(", ").append(v.operand(0));
         }
+
         return sb.toString();
     }
 
-    /** Format a trampoline pool entry showing the AST node type and key info. */
-    private static String formatTrampolineNode(Object c) {
-        if (c instanceof ELNode n) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("<").append(n.getClass().getSimpleName());
-            appendNodeDetails(sb, n);
-            sb.append(">");
-            return sb.toString();
+    private static void formatConstPool(StringBuilder sb, IRFunction fn, int idx) {
+        sb.append(" #").append(idx);
+        if (idx < fn.constantPool().length) {
+            Object val = fn.constantPool()[idx];
+            sb.append(" ").append(formatConst(val));
         }
-        return formatConst(c);
+    }
+
+    private static String formatConst(Object c) {
+        if (c instanceof String s)
+            return "\"" + s + "\"";
+        if (c instanceof Number || c instanceof Boolean)
+            return c.toString();
+        if (c instanceof IRFunction fn)
+            return "<" + fn.name() + ">";
+        if (c instanceof Class<?> cls)
+            return "<" + cls.getName() + ">";
+        if (c instanceof Method m)
+            return "<" + m.getDeclaringClass().getSimpleName() + "." + m.getName() + ">";
+        if (c instanceof ELNode n)
+            return "<" + formatNode(n) + ">";
+        return c.getClass().getSimpleName();
+    }
+
+    /** Format a trampoline pool entry showing the AST node type and key info. */
+    private static String formatNode(ELNode n) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<").append(n.getClass().getSimpleName());
+        appendNodeDetails(sb, n);
+        sb.append(">");
+        return sb.toString();
     }
 
     /** Append meaningful details for trampolined ELNode types. */
@@ -202,18 +182,6 @@ public final class IRPrinter {
         } else if (n instanceof ELNode.ACCESS ac) {
             if (ac.index instanceof ELNode.IDENT idx)
                 sb.append(" .").append(idx.id);
-        } else if (n instanceof ELNode.COND)
-            sb.append(" ?:");
-    }
-
-    private static String formatConst(Object c) {
-        if (c instanceof String s) return "\"" + s + "\"";
-        if (c instanceof Number || c instanceof Boolean) return c.toString();
-        if (c instanceof IRFunction fn) return "<IRFunction " + fn.name() + ">";
-        if (c instanceof Class<?> cls) return "<Class " + cls.getName() + ">";
-        if (c instanceof Method m) return "<Method " + m.getDeclaringClass().getSimpleName() +
-                                          "." + m.getName() + ">";
-        if (c instanceof ELNode n) return "<" + n.getClass().getSimpleName() + ">";
-        return c.getClass().getSimpleName();
+        }
     }
 }

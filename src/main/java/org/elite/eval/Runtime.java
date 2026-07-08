@@ -27,7 +27,6 @@ import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.ir.IRClosure;
-import org.elite.ir.IRFormat;
 import org.elite.ir.IRFunction;
 import org.elite.parser.ELNode;
 import org.elite.parser.Token;

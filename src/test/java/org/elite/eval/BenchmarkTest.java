@@ -7,12 +7,9 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
+import org.elite.ir.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.elite.ir.IRBuilder;
-import org.elite.ir.IRFunction;
-import org.elite.ir.IRInterpreter;
-import org.elite.ir.IRBytecodeCompiler;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 
@@ -381,7 +378,7 @@ class BenchmarkTest {
     private static double benchBC(String label, String expr, int warmup, int iters,
                                    javax.el.ELContext ectx, EvaluationContext evalCtx) {
         IRFunction fn = IRBuilder.compile(elctx, Parser.parseExpression(expr));
-        IRBytecodeCompiler.CompiledFunction cf = IRBytecodeCompiler.compile(fn);
+        IRCompiledFunction cf = IRBytecodeCompiler.compile(fn);
         for (int i = 0; i < warmup; i++) cf.execute(ectx, null);
         long start = System.nanoTime();
         for (int i = 0; i < iters; i++) cf.execute(ectx, null);

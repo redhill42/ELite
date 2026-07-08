@@ -16,8 +16,6 @@
 
 package org.elite.ir;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -83,7 +81,7 @@ public class IRBytecodeCompiler {
         }
     }
 
-    public static CompiledFunction compile(IRFunction fn) {
+    public static IRCompiledFunction compile(IRFunction fn) {
         String name = "ELiteCompiled$" + CLASS_COUNTER.incrementAndGet();
         // Register IRFunction constant pool so CLOSURE bytecode can look up via funcIdx
         Runtime.setFuncPool(fn.constantPool());
@@ -92,7 +90,7 @@ public class IRBytecodeCompiler {
             Class<?> c = LOADER.define(name, bc);
             java.lang.reflect.Method m = c.getMethod("execute",
                 javax.el.ELContext.class, Object[].class);
-            return new CompiledFunction(m, bc, name, fn.maxLocals(), fn.defaultValues());
+            return new IRCompiledFunction(m, bc, name, fn.maxLocals(), fn.defaultValues());
         } catch (Exception e) {
             throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
         }
@@ -438,7 +436,7 @@ public class IRBytecodeCompiler {
             mv.visitMethodInsn(A_INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
         }
     }
-    private final Map<IRFunction, CompiledFunction> calleeCache = new HashMap<>();
+    private final Map<IRFunction, IRCompiledFunction> calleeCache = new HashMap<>();
     private final Map<IRFunction, Integer> funcIdMap = new HashMap<>();
     private int nextFuncId = 1;
 
@@ -450,7 +448,7 @@ public class IRBytecodeCompiler {
         });
     }
 
-    private CompiledFunction compileOrGet(IRFunction target, int[] argTypes) {
+    private IRCompiledFunction compileOrGet(IRFunction target, int[] argTypes) {
         return calleeCache.computeIfAbsent(target, fn -> {
             return compile(target);
         });
@@ -483,7 +481,7 @@ public class IRBytecodeCompiler {
     }
 
     /** Pack args from stack into Object[] and call helper. */
-    private void emitPackArgsAndCall(int argc, boolean direct, CompiledFunction cf) {
+    private void emitPackArgsAndCall(int argc, boolean direct, IRCompiledFunction cf) {
         // Pop argc args from stack, pack into Object[], call helper
         if (argc == 0) {
             mv.visitInsn(A_ICONST_0);
@@ -543,7 +541,7 @@ public class IRBytecodeCompiler {
     // registerFunction removed — use compileOrGet + calleeCache instead
 
     // Cache of compiled functions for fast direct calls
-    private static final ThreadLocal<java.util.Map<IRFunction, CompiledFunction>> compiledCache =
+    private static final ThreadLocal<java.util.Map<IRFunction, IRCompiledFunction>> compiledCache =
         ThreadLocal.withInitial(java.util.HashMap::new);
 
     /** Direct call: use compiled version if available, specialize on first call. */
@@ -551,7 +549,7 @@ public class IRBytecodeCompiler {
         IRFunction fn = funcRegistry().get(funcId);
         if (fn == null) throw new RuntimeException(_T(IR_FUNCTION_NOT_REGISTERED, funcId));
         // Check cache first
-        CompiledFunction cf = compiledCache.get().get(fn);
+        IRCompiledFunction cf = compiledCache.get().get(fn);
         if (cf == null) {
             cf = compile(fn);  // generic Object[] version
             compiledCache.get().put(fn, cf);
@@ -847,167 +845,5 @@ public class IRBytecodeCompiler {
         if (d == 0.0) mv.visitInsn(A_DCONST_0);
         else if (d == 1.0) mv.visitInsn(A_DCONST_1);
         else mv.visitLdcInsn(d);
-    }
-
-    public static class CompiledFunction {
-        private final java.lang.reflect.Method method;
-        private final byte[] bytecode;
-        private final String className;
-        private final int maxLocals;
-        private final Object[] defaultValues;
-
-        CompiledFunction(java.lang.reflect.Method m, byte[] bc, String className,
-                         int maxLocals, Object[] defaultValues) {
-            this.method = m; this.className = className; this.bytecode = bc;
-            this.maxLocals = maxLocals;
-            this.defaultValues = defaultValues;
-        }
-
-        public Object execute(javax.el.ELContext elctx, Object[] locals) {
-            // Save actual arg count BEFORE expanding the array
-            int provided = locals != null ? locals.length : 0;
-            if (locals == null) locals = new Object[maxLocals];
-            else if (locals.length < maxLocals) {
-                Object[] expanded = new Object[maxLocals];
-                System.arraycopy(locals, 0, expanded, 0, locals.length);
-                locals = expanded;
-            }
-            // Apply default parameter values for missing args.
-            // Uses the original args length (saved before array expansion)
-            // to distinguish "not provided" from "explicitly passed null".
-            if (defaultValues != null) {
-                for (int i = provided; i < defaultValues.length && i < locals.length; i++) {
-                    if (defaultValues[i] != null) locals[i] = defaultValues[i];
-                }
-            }
-            try {
-                return method.invoke(null, elctx, locals);
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                Throwable cause = e.getCause();
-                if (cause instanceof RuntimeException re) throw re;
-                if (cause instanceof Error err) throw err;
-                throw new RuntimeException(cause);
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        /** Internal name for invokestatic bytecode. */
-        public String internalName() { return className.replace('.', '/'); }
-
-        /** Return a human-readable disassembly of the generated bytecode. */
-        public String bytecodeAsString() {
-            if (bytecode == null) return "[no bytecode]";
-            StringWriter sw = new StringWriter();
-            PrintWriter pw = new PrintWriter(sw);
-            new ClassReader(bytecode).accept(new BytecodePrinter(pw), 0);
-            return sw.toString();
-        }
-    }
-
-    /** Simple ASM ClassVisitor that prints method bytecode. */
-    private static class BytecodePrinter extends ClassVisitor {
-        private final PrintWriter pw;
-        BytecodePrinter(PrintWriter pw) { super(589824); this.pw = pw; }
-
-        @Override
-        public void visit(int version, int access, String name, String sig,
-                          String superName, String[] interfaces) {
-            pw.println(name + ":");
-        }
-
-        @Override
-        public MethodVisitor visitMethod(int access, String name, String desc,
-                                          String sig, String[] exceptions) {
-            if (name.equals("<init>")) return null;
-            pw.println("  " + name + desc + ":");
-            return new MethodPrinter(pw);
-        }
-    }
-
-    private static class MethodPrinter extends MethodVisitor {
-        private final PrintWriter pw;
-        MethodPrinter(PrintWriter pw) { super(589824); this.pw = pw; }
-
-        @Override
-        public void visitInsn(int opcode) {
-            pw.printf("    %s\n", opcodeName(opcode));
-        }
-
-        @Override
-        public void visitIntInsn(int opcode, int operand) {
-            pw.printf("    %s %d\n", opcodeName(opcode), operand);
-        }
-
-        @Override
-        public void visitVarInsn(int opcode, int varIndex) {
-            pw.printf("    %s %d\n", opcodeName(opcode), varIndex);
-        }
-
-        @Override
-        public void visitTypeInsn(int opcode, String type) {
-            pw.printf("    %s %s\n", opcodeName(opcode), type);
-        }
-
-        @Override
-        public void visitFieldInsn(int opcode, String owner, String name, String desc) {
-            pw.printf("    %s %s.%s %s\n", opcodeName(opcode), owner, name, desc);
-        }
-
-        @Override
-        public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
-            pw.printf("    %s %s.%s%s\n", opcodeName(opcode), owner, name, desc);
-        }
-
-        @Override
-        public void visitJumpInsn(int opcode, Label label) {
-            pw.printf("    %s L%d\n", opcodeName(opcode), System.identityHashCode(label) & 0xFFFF);
-        }
-
-        @Override
-        public void visitLdcInsn(Object cst) {
-            pw.printf("    ldc %s\n", cst);
-        }
-
-        @Override
-        public void visitLabel(Label label) {
-            pw.printf("  L%d:\n", System.identityHashCode(label) & 0xFFFF);
-        }
-
-        private static String opcodeName(int op) {
-            return switch (op) {
-                case 0 -> "nop"; case 1 -> "aconst_null"; case 2 -> "iconst_m1";
-                case 3 -> "iconst_0"; case 4 -> "iconst_1"; case 5 -> "iconst_2";
-                case 6 -> "iconst_3"; case 7 -> "iconst_4"; case 8 -> "iconst_5";
-                case 9 -> "lconst_0"; case 10 -> "lconst_1";
-                case 14 -> "dconst_0"; case 15 -> "dconst_1";
-                case 16 -> "bipush"; case 17 -> "sipush";
-                case 18 -> "ldc"; case 21 -> "iload"; case 25 -> "aload";
-                case 46 -> "iaload"; case 50 -> "aaload";
-                case 75 -> "astore_0"; case 76 -> "astore_1";
-                case 77 -> "astore_2"; case 78 -> "astore_3"; case 58 -> "astore";
-                case 79 -> "iastore"; case 83 -> "aastore";
-                case 87 -> "pop"; case 89 -> "dup"; case 90 -> "dup_x1"; case 95 -> "swap";
-                case 96 -> "iadd"; case 100 -> "isub"; case 104 -> "imul";
-                case 108 -> "idiv"; case 112 -> "irem"; case 116 -> "ineg";
-                case 97 -> "ladd"; case 101 -> "lsub"; case 105 -> "lmul";
-                case 109 -> "ldiv"; case 113 -> "lrem"; case 117 -> "lneg";
-                case 99 -> "dadd"; case 103 -> "dsub"; case 107 -> "dmul";
-                case 111 -> "ddiv"; case 119 -> "dneg";
-                case 148 -> "lcmp"; case 152 -> "dcmpg";
-                case 153 -> "ifeq"; case 154 -> "ifne"; case 155 -> "iflt";
-                case 156 -> "ifge"; case 157 -> "ifgt"; case 158 -> "ifle";
-                case 159 -> "if_icmpeq"; case 160 -> "if_icmpne";
-                case 161 -> "if_icmplt"; case 162 -> "if_icmpge";
-                case 163 -> "if_icmpgt"; case 164 -> "if_icmple";
-                case 167 -> "goto"; case 176 -> "areturn"; case 177 -> "return";
-                case 178 -> "getstatic"; case 179 -> "putstatic";
-                case 182 -> "invokevirtual"; case 183 -> "invokespecial";
-                case 184 -> "invokestatic"; case 185 -> "invokeinterface";
-                case 187 -> "new"; case 189 -> "anewarray";
-                case 192 -> "checkcast"; case 198 -> "ifnull"; case 199 -> "ifnonnull";
-                default -> "op_" + op;
-            };
-        }
     }
 }

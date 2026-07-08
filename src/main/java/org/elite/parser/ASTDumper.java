@@ -29,16 +29,6 @@ public final class ASTDumper {
 
     private ASTDumper() {}
 
-    /** Dump a parsed expression list as a tree string. */
-    public static String dump(List<ELNode> expressions) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < expressions.size(); i++) {
-            if (i > 0) sb.append('\n');
-            dumpNode(expressions.get(i), sb, "", true, true);
-        }
-        return sb.toString();
-    }
-
     /** Dump a single ELNode tree. */
     public static String dump(ELNode node) {
         StringBuilder sb = new StringBuilder();
@@ -187,31 +177,24 @@ public final class ASTDumper {
         while (cls != ELNode.class && cls != Object.class) {
             for (Field f : cls.getDeclaredFields()) {
                 int mod = f.getModifiers();
-                if (Modifier.isStatic(mod)) continue;
-                if (f.getName().equals("op")) continue;
-                if (f.getName().equals("id")) continue;
-                if (f.getName().equals("type")) continue;
-                if (f.getName().equals("value")) continue; // shown inline
-                if (f.getName().equals("inferredType")) continue;
-                if (f.getName().equals("file")) continue;
-                if (f.getName().equals("pos")) continue;
-                if (f.getName().equals("name")) continue; // shown inline
-                if (f.getName().equals("dvals")) continue; // internal
-                if (f.getName().equals("varargs")) continue; // boolean
-                if (f.getName().equals("negative")) continue; // boolean
-                if (f.getName().equals("exclude")) continue; // boolean
-                if (f.getName().equals("readonly")) continue; // boolean
-                if (f.getName().equals("immediate")) continue; // boolean
-                if (f.getName().equals("delay")) continue; // boolean
-                if (f.getName().equals("rt")) continue; // Class<?>
-                if (f.getName().startsWith("this$")) continue; // inner class ref
-                if (f.getName().startsWith("__")) continue; // internal
-                if (java.lang.reflect.Modifier.isTransient(mod)) continue;
+                if (Modifier.isStatic(mod) || Modifier.isTransient(mod))
+                    continue;
+
+                switch (f.getName()) {
+                case "op", "id", "type", "value", "file", "pos", "name", "dvals", "varargs",
+                     "negative", "exclude", "readonly", "immediate", "delay", "rt" -> {
+                    continue;
+                }
+                }
+
+                if (f.getName().startsWith("this$") || f.getName().startsWith("__"))
+                    continue; // inner class ref
 
                 f.setAccessible(true);
                 try {
                     Object val = f.get(node);
-                    if (val == null) continue;
+                    if (val == null)
+                        continue;
 
                     Child c = new Child();
                     c.label = f.getName();

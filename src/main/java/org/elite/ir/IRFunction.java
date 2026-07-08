@@ -103,6 +103,10 @@ public class IRFunction {
         return -1;
     }
 
+    public String dump() {
+        return IRPrinter.dumpIR(this);
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

@@ -127,10 +127,10 @@ public abstract class Expression
      * Dump the expression tree for debugging.
      * @param elctx the evaluation context
      */
-    public void dump(ELContext elctx) {
+    public String dump(ELContext elctx) {
         EvaluationContext env = new EvaluationContext(elctx);
         Frame frame = StackTrace.getFrame(env.getELContext());
-        getNode(frame.getPos()).dump();
+        return getNode(frame.getPos()).dump();
     }
 
     /**

@@ -151,6 +151,7 @@ public final class Opcode {
             case NE             -> "NE";
             case LT             -> "LT";
             case GT             -> "GT";
+            case GE             -> "GE";
             case IDEQ           -> "IDEQ";
             case IDNE           -> "IDNE";
             case IN             -> "IN";

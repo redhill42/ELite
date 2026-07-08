@@ -16,8 +16,6 @@
 
 package org.elite.ir;
 
-import org.elite.parser.ELNode;
-
 /**
  * Read-only cursor over a packed int[] instruction stream.
  * <p>
@@ -35,7 +33,7 @@ import org.elite.parser.ELNode;
  * }
  * }</pre>
  */
-public class InstructionView {
+final class InstructionView {
     private final int[] code;
     private final int size;
     private int offset;
@@ -85,10 +83,9 @@ public class InstructionView {
         return code[offset + 1 + i];
     }
 
-    /** Get the jump target block ID from a jump instruction. */
-    public int jumpTarget() {
-        return IRFormat.opCount(code[offset]) == 0
-            ? IRFormat.payload(code[offset]) : code[offset + 1];
+    /** Get the variable index from a PUSH_VAR instruction. */
+    public int varIndex() {
+        return IRFormat.payload(code[offset]) & 0xFFFF;
     }
 
     /** Get the pool index from an instruction. */
@@ -97,9 +94,14 @@ public class InstructionView {
             ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
 
-    /** Get the variable index from a PUSH_VAR instruction. */
-    public int varIndex() {
-        return IRFormat.payload(code[offset]) & 0xFFFF;
+    public int methodIndex() {
+        return code[offset + 1];
+    }
+
+    /** Get the jump target block ID from a jump instruction. */
+    public int jumpTarget() {
+        return IRFormat.opCount(code[offset]) == 0
+               ? IRFormat.payload(code[offset]) : code[offset + 1];
     }
 
     // ── Navigation ──
