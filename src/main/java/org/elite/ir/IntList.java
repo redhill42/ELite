@@ -55,6 +55,10 @@ final class IntList {
         data[index] = value;
     }
 
+    void reset(int offset) {
+        size = offset;
+    }
+
     int[] data() {
         return data;
     }

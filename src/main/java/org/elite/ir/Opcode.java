@@ -87,22 +87,23 @@ public final class Opcode {
     public static final int DEFINE_GLOBAL     = 0x70;
     public static final int STORE_GLOBAL      = 0x71;
     public static final int STORE_VAR         = 0x72;
-    public static final int CLOSURE           = 0x73;
+    public static final int STORE_VAR_POP     = 0x73;
+    public static final int CLOSURE           = 0x74;
 
-    public static final int INVOKE_DIRECT     = 0x74;
-    public static final int INVOKE_OPERATOR   = 0x75;
-    public static final int INVOKE_TARGET     = 0x76;
-    public static final int INVOKE_DYN        = 0x77;
-    public static final int INVOKE_METHOD     = 0x78;
-    public static final int INVOKE_STATIC     = 0x79;
-    public static final int INVOKE_EXPANDO    = 0x7A;
+    public static final int INVOKE_DIRECT     = 0x75;
+    public static final int INVOKE_OPERATOR   = 0x76;
+    public static final int INVOKE_TARGET     = 0x77;
+    public static final int INVOKE_DYN        = 0x78;
+    public static final int INVOKE_METHOD     = 0x79;
+    public static final int INVOKE_STATIC     = 0x7A;
+    public static final int INVOKE_EXPANDO    = 0x7B;
 
-    public static final int LOAD_PROPERTY     = 0x7B;
-    public static final int STORE_PROPERTY    = 0x7C;
-    public static final int INVOKE_GETTER     = 0x7D;
-    public static final int INVOKE_SETTER     = 0x7E;
-    public static final int LOAD_FIELD        = 0x7F;
-    public static final int STORE_FIELD       = 0x80;
+    public static final int LOAD_PROPERTY     = 0x7C;
+    public static final int STORE_PROPERTY    = 0x7D;
+    public static final int INVOKE_GETTER     = 0x7E;
+    public static final int INVOKE_SETTER     = 0x7F;
+    public static final int LOAD_FIELD        = 0x80;
+    public static final int STORE_FIELD       = 0x81;
 
     // ── Data structure ──
     public static final int NEW_CONS          = 0xA0;
@@ -151,6 +152,7 @@ public final class Opcode {
             case EQ             -> "EQ";
             case NE             -> "NE";
             case LT             -> "LT";
+            case LE             -> "LE";
             case GT             -> "GT";
             case GE             -> "GE";
             case IDEQ           -> "IDEQ";
@@ -177,6 +179,7 @@ public final class Opcode {
             case DEFINE_GLOBAL  -> "DEFINE_GLOBAL";
             case STORE_GLOBAL   -> "STORE_GLOBAL";
             case STORE_VAR      -> "STORE_VAR";
+            case STORE_VAR_POP  -> "STORE_VAR_POP";
             case CLOSURE        -> "CLOSURE";
 
             case INVOKE_DIRECT  -> "INVOKE_DIRECT";

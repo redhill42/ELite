@@ -73,8 +73,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Block management (stored by ID, output in ID order) ──
     private final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
-    private IREmitter current;
-    private int currentBlockId = 0;
+    private final IREmitter current;
+    private int currentBlockId;
     private int nextBlockId = 1;  // 0 is the initial block
 
     // ── Constant pool (maybe shared with parent builder) ──
@@ -1510,6 +1510,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Define global or local variable according to it's captured flag.
         if (node.symbol.captured) {
             current.emitDefineGlobal(putConstant(node.id));
+            current.emitPushNull();
         } else {
             current.emitStoreVar(node.symbol.slot);
         }
@@ -1864,12 +1865,15 @@ public class IRBuilder extends ELNode.Visitor {
         Slot iterSlot = new Slot();
 
         build(node.range);
-        if (node.range instanceof ELNode.CONS || node.range instanceof ELNode.RANGE)
+        if (node.range instanceof ELNode.CONS) {
             emitInvokeMethod(Iterable.class, "iterator");
-        else
+            iterSlot.store();
+            current.emitPop();
+        } else {
             emitInvokeStatic(Runtime.class, "getIterator", Object.class);
-        iterSlot.store();
-        current.emitJumpIfNull(exit);
+            iterSlot.store();
+            current.emitJumpIfNull(exit);
+        }
         current.emitJump(header);
 
         startBlock(header);
@@ -1996,13 +2000,13 @@ public class IRBuilder extends ELNode.Visitor {
             if (var.symbol != null && var.symbol.captured) {
                 nested.current.emitPushVar(var.symbol.slot);
                 nested.current.emitDefineGlobal(nested.putConstant(var.id));
-                nested.current.emitPop();
             }
         }
 
         nested.buildTail(node.body);
+        nested.current.emitReturn();
 
-        IRFunction fn = nested.finish(false);
+        IRFunction fn = nested.finish();
         fn = fn.withDefaults(getDefaultValues(node.vars));
         current.emitClosure(putConstant(fn));
     }
@@ -2213,8 +2217,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (def.symbol.captured)
                 current.emitDefineGlobal(putConstant(def.id));
             else
-                current.emitStoreVar(def.symbol.slot);
-            current.emitPop();
+                current.emitStoreVarPop(def.symbol.slot);
             return false;
         }
 
@@ -2762,10 +2765,12 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         void define() {
-            if (captured)
+            if (captured) {
                 current.emitDefineGlobal(slot);
-            else
+                current.emitPushNull();
+            } else {
                 current.emitStoreVar(slot);
+            }
         }
 
         void store() {
@@ -2843,16 +2848,9 @@ public class IRBuilder extends ELNode.Visitor {
         return new DebugInfo(currentFile, pcLineTable.toArray());
     }
 
-    IRFunction finish(boolean noReturn) {
-        if (!endsWithReturn()) {
-            if (noReturn)
-                current.emitReturnVoid();
-            else
-                current.emitReturn();
-        }
-
+    IRFunction finish() {
         // Seal current block and record its debug line
-        if (current != null) {
+        {
             int[] code = current.toArray();
             blockMap.put(currentBlockId, code);
             if (currentPos != Position.NOPOS) {
@@ -2861,18 +2859,24 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
-        int count = Math.max(nextBlockId,
-                blockMap.keySet().stream().max(Integer::compare).orElse(0) + 1);
+        int count = blockMap.keySet().stream().max(Integer::compare).orElse(0) + 1;
         int[][] ordered = new int[count][];
         for (int i = 0; i < count; i++) {
-            int[] code = blockMap.get(i);
-            ordered[i] = code != null ? code : new IREmitter().emitNop().toArray();
+            ordered[i] = blockMap.get(i);
         }
+
+        // Merge block into contiguous code.
+        BitSet jumpTargets = getJumpTargets(ordered);
         IntList merged = new IntList();
         int[] offsets = new int[count];
         for (int i = 0; i < count; i++) {
-            offsets[i] = merged.size();
-            merged.addAll(ordered[i]);
+            int[] code = ordered[i];
+            if (code != null && jumpTargets.get(i)) {
+                offsets[i] = merged.size();
+                merged.addAll(ordered[i]);
+            } else {
+                offsets[i] = -1;
+            }
         }
 
         func.populate(merged.toArray(), maxLocals, offsets,
@@ -2881,28 +2885,24 @@ public class IRBuilder extends ELNode.Visitor {
         return func;
     }
 
-    private boolean endsWithReturn(InstructionView v) {
-        int lastOp = -1;
-        while (v.inBounds()) {
-            lastOp = v.opcode();
-            v.advance();
+    private static BitSet getJumpTargets(int[][] ordered) {
+        // Scan each block to get jump targets used to detect dead block.
+        BitSet jumpTargets = new BitSet();
+        jumpTargets.set(0); // block 0 is entry point
+        for (int[] code : ordered) {
+            if (code != null) {
+                InstructionView v = new InstructionView(code, 0);
+                while (v.inBounds()) {
+                    switch (v.opcode()) {
+                    case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
+                         JUMP_IF_NULL, JUMP_IF_NONNULL:
+                        jumpTargets.set(v.jumpTarget());
+                    }
+                    v.advance();
+                }
+            }
         }
-        return lastOp == RETURN || lastOp == RETURN_VOID;
-    }
-
-    private boolean endsWithReturn() {
-        if (current != null && !current.isEmpty()) {
-            if (endsWithReturn(current.view()))
-                return true;
-        }
-
-        int maxId = blockMap.keySet().stream().max(Integer::compare).orElse(-1);
-        if (maxId < 0)
-            return false;
-        int[] lb = blockMap.get(maxId);
-        if (lb == null || lb.length == 0)
-            return false;
-        return endsWithReturn(new InstructionView(lb, 0));
+        return jumpTargets;
     }
 
     // ── Convenience emits ──
@@ -2973,7 +2973,8 @@ public class IRBuilder extends ELNode.Visitor {
         IRFunction func = new IRFunction("<expr>", 0);
         IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
         b.build(node);
-        return b.finish(false);
+        b.current.emitReturn();
+        return b.finish();
     }
 
     public static IRFunction compile(ELContext elctx, ELProgram program) {
@@ -3000,17 +3001,19 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Compile expressions
-        ELNode last = null;
         if (!exps.isEmpty()) {
             for (int i = 0; i < exps.size() - 1; i++) {
                 b.build(exps.get(i));
                 b.current.emitPop();
             }
-            last = exps.get(exps.size() - 1);
-            b.build(last);
+            b.build(exps.get(exps.size() - 1));
+            b.current.emitReturn();
+        } else {
+            b.current.emitPushNull();
+            b.current.emitReturn();
         }
 
-        return b.finish(last == null);
+        return b.finish();
     }
 
     private static void reportSymbolTableError(ELProgram prog, SymbolTable symTable) {

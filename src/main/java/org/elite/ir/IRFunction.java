@@ -109,26 +109,6 @@ public class IRFunction {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("IRFunction[").append(name).append("] params=").append(paramCount);
-        if (isDeclaration())
-            return sb.toString();
-
-        sb.append(" locals=").append(maxLocals)
-          .append(" blocks=").append(blockOffsets.length)
-          .append(" codeWords=").append(code.length)
-          .append("\n");
-
-        for (int b = 0; b < blockOffsets.length; b++) {
-            sb.append("  B").append(b).append(" (offset=").append(blockOffsets[b]).append("):\n");
-            int start = blockOffsets[b];
-            int end = (b + 1 < blockOffsets.length) ? blockOffsets[b + 1] : code.length;
-            InstructionView v = new InstructionView(code, start, constantPool);
-            while (v.inBounds() && v.offset() < end) {
-                sb.append("    ").append(v).append("\n");
-                v.advance();
-            }
-        }
-        return sb.toString();
+        return "IRFunction[" + name + "] params=" + paramCount;
     }
 }

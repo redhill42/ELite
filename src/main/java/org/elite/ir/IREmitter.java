@@ -39,6 +39,7 @@ import static org.elite.ir.Opcode.*;
  */
 final class IREmitter {
     private final IntList buf = new IntList();
+    private int last = -1;
 
     // ── Short operand helpers ──
 
@@ -51,10 +52,23 @@ final class IREmitter {
 
     // ── Core emit methods ──
 
+    private boolean isDead() {
+        if (last != -1) {
+            // Instruction after jump or return is dead.
+            int op = IRFormat.opcode(buf.get(last));
+            return op == JUMP || op == RETURN || op == RETURN_VOID || op == THROW;
+        }
+        return false;
+    }
+
     /**
      * Emit a 1-word instruction (op count = 0).
      */
     public IREmitter emit1(int opcode, int kind, int payload) {
+        if (isDead())
+            return this;
+
+        last = buf.size();
         buf.add(pack1(opcode, kind, payload));
         return this;
     }
@@ -63,18 +77,12 @@ final class IREmitter {
      * Emit a 2-word instruction (op count = 1).
      */
     public IREmitter emit2(int opcode, int kind, int payload, int op1) {
+        if (isDead())
+            return this;
+
+        last = buf.size();
         buf.add(pack2h(opcode, kind, payload));
         buf.add(op1);
-        return this;
-    }
-
-    /**
-     * Emit a 3-word instruction (op count = 2).
-     */
-    public IREmitter emit3(int opcode, int kind, int payload, int op1, int op2) {
-        buf.add(pack3h(opcode, kind, payload));
-        buf.add(op1);
-        buf.add(op2);
         return this;
     }
 
@@ -104,6 +112,13 @@ final class IREmitter {
     }
 
     public IREmitter emitPushVar(int varIndex) {
+        // Optimize for STORE_VAR_POP, PUSH_VAR to STORE_VAR
+        if (last != -1 &&
+            IRFormat.opcode(buf.get(last)) == STORE_VAR_POP &&
+            IRFormat.payload(buf.get(last)) == varIndex) {
+            buf.set(last, IRFormat.pack1(STORE_VAR, K_NONE, varIndex));
+            return this;
+        }
         return emit1(PUSH_VAR, K_NONE, varIndex & 0xFFFF);
     }
 
@@ -128,6 +143,19 @@ final class IREmitter {
     }
 
     public IREmitter emitPop() {
+        // Optimize for pop, POP after PUSH is noop
+        if (last != -1) {
+            switch (IRFormat.opcode(buf.get(last))) {
+            case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL,
+                 PUSH_VAR, PUSH_GLOBAL, CLOSURE:
+                buf.reset(last);
+                return this;
+            case STORE_VAR:
+                int varIndex = IRFormat.payload(buf.get(last));
+                buf.set(last, IRFormat.pack1(STORE_VAR_POP, K_NONE, varIndex));
+                return this;
+            }
+        }
         return emit1(POP, K_NONE, 0);
     }
 
@@ -383,7 +411,11 @@ final class IREmitter {
     }
 
     public IREmitter emitStoreVar(int varIndex) {
-        return emit2(STORE_VAR, K_NONE, varIndex & 0xFFFF, 0);
+        return emit1(STORE_VAR, K_NONE, varIndex & 0xFFFF);
+    }
+
+    public IREmitter emitStoreVarPop(int varIndex) {
+        return emit1(STORE_VAR_POP, K_NONE, varIndex & 0xFFFF);
     }
 
     public IREmitter emitClosure(int funcPoolIdx) {
@@ -485,6 +517,7 @@ final class IREmitter {
 
     public void clear() {
         buf.clear();
+        last = -1;
     }
 
     /**

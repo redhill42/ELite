@@ -58,14 +58,6 @@ final class IRPrinter {
           .append(" words=").append(fn.code().length)
           .append("\n");
 
-        Object[] pool = fn.constantPool();
-        if (pool.length > 0) {
-            for (int i = 0; i < pool.length; i++) {
-                sb.append("  #").append(i).append(" = ")
-                  .append(formatConst(pool[i])).append("\n");
-            }
-        }
-
         DebugInfo di = fn.debugInfo();
         InstructionView v = new InstructionView(fn.code(), 0, fn.constantPool());
         while (v.inBounds()) {
@@ -93,7 +85,8 @@ final class IRPrinter {
 
         switch (op) {
         case Opcode.PUSH_VAR,
-             Opcode.STORE_VAR ->
+             Opcode.STORE_VAR,
+             Opcode.STORE_VAR_POP ->
             sb.append(" v").append(v.varIndex());
 
         case Opcode.PUSH_CONST,

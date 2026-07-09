@@ -506,7 +506,6 @@ public class IRInterpreter {
                 String name = (String)constantPool[poolIndex(code, ip)];
                 Object val = pop();
                 evalContext.setVariable(name, new LiteralClosure(val));
-                push(val);  // definition returns the value
                 ip += 1 + oc;
                 break;
             }
@@ -528,6 +527,14 @@ public class IRInterpreter {
                 Object val = pop();
                 locals[idx] = val;
                 push(val);
+                ip += 1 + oc;
+                break;
+            }
+
+            case STORE_VAR_POP: {
+                int idx = pl & 0xFFFF;
+                Object val = pop();
+                locals[idx] = val;
                 ip += 1 + oc;
                 break;
             }
