@@ -330,7 +330,9 @@ public class IRBuilder extends ELNode.Visitor {
             build(acc.right);
             build(acc.index);
             build(node.args);
-            current.emitInvokeDynMethod(node.args.length);
+            current.emitNewTuple(node.args.length);
+            emitInvokeStatic(Runtime.class, "invoke", ELContext.class, Object.class,
+                             Object.class, Object[].class);
             return;
         }
 
@@ -1862,7 +1864,10 @@ public class IRBuilder extends ELNode.Visitor {
         Slot iterSlot = new Slot();
 
         build(node.range);
-        emitInvokeStatic(Runtime.class, "getIterator", Object.class);
+        if (node.range instanceof ELNode.CONS || node.range instanceof ELNode.RANGE)
+            emitInvokeMethod(Iterable.class, "iterator");
+        else
+            emitInvokeStatic(Runtime.class, "getIterator", Object.class);
         iterSlot.store();
         current.emitJumpIfNull(exit);
         current.emitJump(header);
@@ -2390,8 +2395,7 @@ public class IRBuilder extends ELNode.Visitor {
             for (int i = 0; i < map.keys.length; i++) {
                 assert map.keys[i] instanceof ELNode.STRINGVAL;
                 buildConst(((ELNode.STRINGVAL)map.keys[i]).value);
-                emitInvokeStatic(Runtime.class, "loadProperty", ELContext.class,
-                                 Object.class, Object.class);
+                current.emitLoadProperty();
                 if (!isSimplePattern(map.values[i])) {
                     if (tmpSlot == null)
                         tmpSlot = new Slot();

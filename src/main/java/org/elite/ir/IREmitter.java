@@ -424,10 +424,6 @@ final class IREmitter {
         return emit2(INVOKE_EXPANDO, K_NONE, argCount, methodPoolIdx);
     }
 
-    public IREmitter emitInvokeDynMethod(int argCount) {
-        return emit1(INVOKE_DYN_METHOD, K_NONE, argCount);
-    }
-
     public IREmitter emitLoadProperty() {
         return emit1(LOAD_PROPERTY, K_NONE, 0);
     }

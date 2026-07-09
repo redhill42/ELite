@@ -21,6 +21,7 @@ import elite.lang.Closure;
 import elite.lang.Seq;
 import elite.xml.XmlNode;
 import org.elite.eval.*;
+import org.elite.eval.Runtime;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TypedClosure;
@@ -635,22 +636,10 @@ public class IRInterpreter {
                 break;
             }
 
-            case INVOKE_DYN_METHOD: {
-                int argc = pl;
-                Object[] args = new Object[argc];
-                for (int i = argc - 1; i >= 0; i--)
-                    args[i] = pop();
-                Object key = pop();
-                Object base = pop();
-                push(ELNode.ACCESS.invoke(elctx, base, key, ELEngine.getCallArgs(args)));
-                ip += 1 + oc;
-                break;
-            }
-
             case LOAD_PROPERTY: {
                 Object key = pop();
                 Object base = pop();
-                push(ELNode.ACCESS.getValue(elctx, base, key));
+                push(Runtime.loadProperty(elctx, base, key));
                 ip += 1;
                 break;
             }
@@ -659,8 +648,7 @@ public class IRInterpreter {
                 Object key = pop();
                 Object base = pop();
                 Object value = pop();
-                ELNode.ACCESS.setValue(elctx, base, key, value);
-                push(value);
+                push(Runtime.storeProperty(elctx, base, key, value));
                 ip += 1;
                 break;
             }

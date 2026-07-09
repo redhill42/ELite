@@ -88,6 +88,7 @@ public final class Opcode {
     public static final int STORE_GLOBAL      = 0x71;
     public static final int STORE_VAR         = 0x72;
     public static final int CLOSURE           = 0x73;
+
     public static final int INVOKE_DIRECT     = 0x74;
     public static final int INVOKE_OPERATOR   = 0x75;
     public static final int INVOKE_TARGET     = 0x76;
@@ -95,13 +96,13 @@ public final class Opcode {
     public static final int INVOKE_METHOD     = 0x78;
     public static final int INVOKE_STATIC     = 0x79;
     public static final int INVOKE_EXPANDO    = 0x7A;
-    public static final int INVOKE_DYN_METHOD = 0x7B;
-    public static final int LOAD_PROPERTY     = 0x7C;
-    public static final int STORE_PROPERTY    = 0x7D;
-    public static final int INVOKE_GETTER     = 0x7E;
-    public static final int INVOKE_SETTER     = 0x7F;
-    public static final int LOAD_FIELD        = 0x80;
-    public static final int STORE_FIELD       = 0x81;
+
+    public static final int LOAD_PROPERTY     = 0x7B;
+    public static final int STORE_PROPERTY    = 0x7C;
+    public static final int INVOKE_GETTER     = 0x7D;
+    public static final int INVOKE_SETTER     = 0x7E;
+    public static final int LOAD_FIELD        = 0x7F;
+    public static final int STORE_FIELD       = 0x80;
 
     // ── Data structure ──
     public static final int NEW_CONS          = 0xA0;
@@ -177,6 +178,7 @@ public final class Opcode {
             case STORE_GLOBAL   -> "STORE_GLOBAL";
             case STORE_VAR      -> "STORE_VAR";
             case CLOSURE        -> "CLOSURE";
+
             case INVOKE_DIRECT  -> "INVOKE_DIRECT";
             case INVOKE_OPERATOR -> "INVOKE_OPERATOR";
             case INVOKE_TARGET  -> "INVOKE_TARGET";
@@ -184,7 +186,6 @@ public final class Opcode {
             case INVOKE_METHOD  -> "INVOKE_METHOD";
             case INVOKE_STATIC  -> "INVOKE_STATIC";
             case INVOKE_EXPANDO -> "INVOKE_EXPANDO";
-            case INVOKE_DYN_METHOD -> "INVOKE_DYN_METHOD";
             case LOAD_PROPERTY  -> "LOAD_PROPERTY";
             case STORE_PROPERTY -> "STORE_PROPERTY";
             case INVOKE_GETTER  -> "INVOKE_GETTER";
