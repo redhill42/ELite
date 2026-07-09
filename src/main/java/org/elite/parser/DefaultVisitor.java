@@ -79,8 +79,6 @@ public class DefaultVisitor extends ELNode.Visitor
         scan(e.right);
     }
 
-    public void visit(ELNode.PREFIX e)   { visitUnary(e);  }
-    public void visit(ELNode.INFIX e)    { visitBinary(e); }
     public void visit(ELNode.ASSIGN e)   { visitBinary(e); }
     public void visit(ELNode.ASSIGNOP e) { visitBinary(e); }
     public void visit(ELNode.COALESCE e) { visitBinary(e); }
@@ -117,6 +115,16 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.NOT e)      { visitUnary(e); }
     public void visit(ELNode.EMPTY e)    { visitUnary(e); }
     public void visit(ELNode.EXPR e)     { visitUnary(e); }
+
+    public void visit(ELNode.PREFIX e)   {
+        scan(e.oper);
+        visitUnary(e);
+    }
+
+    public void visit(ELNode.INFIX e) {
+        scan(e.oper);
+        visitUnary(e);
+    }
 
     public void visit(ELNode.COMPOUND e) {
         scan(e.exps);

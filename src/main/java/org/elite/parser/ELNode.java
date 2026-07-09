@@ -1812,12 +1812,12 @@ public abstract class ELNode implements Serializable
      * User defined prefix operator.
      */
     public static class PREFIX extends Unary {
-        public final String name;
+        public final ELNode.IDENT oper;
         public final int prec;
 
         public PREFIX(int pos, String name, int prec, ELNode right) {
             super(Token.PREFIX, pos, right);
-            this.name = name;
+            this.oper = new ELNode.IDENT(pos, name);
             this.prec = prec;
         }
 
@@ -1832,16 +1832,16 @@ public abstract class ELNode implements Serializable
 
             // invoke operator procedure
             if (rhs != null) {
-                result = invokeOperator(elctx, name, rhs);
+                result = invokeOperator(elctx, oper.id, rhs);
                 if (result != NO_RESULT) {
                     return result;
                 }
             }
 
             // invoke target procedure
-            Object target = resolveTarget(context, name);
+            Object target = resolveTarget(context, oper.id);
             if (target == null) {
-                throw runtimeError(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
+                throw runtimeError(elctx, _T(EL_UNDEFINED_IDENTIFIER, oper.id));
             }
 
             try {
@@ -1850,7 +1850,7 @@ public abstract class ELNode implements Serializable
                 releaseArgs(args);
                 return result;
             } catch (MethodNotFoundException ex) {
-                throw methodNotFound(elctx, target, name, ex);
+                throw methodNotFound(elctx, target, oper.id, ex);
             } catch (RuntimeException ex) {
                 throw runtimeError(elctx, ex);
             }
@@ -1869,12 +1869,12 @@ public abstract class ELNode implements Serializable
      * User defined infix operator.
      */
     public static class INFIX extends Binary {
-        public final String name;
+        public final ELNode.IDENT oper;
         public final int prec;
 
         public INFIX(int pos, String name, int prec, ELNode left, ELNode right) {
             super(Token.INFIX, pos, left, right);
-            this.name = name;
+            this.oper = new ELNode.IDENT(pos, name);
             this.prec = prec;
         }
 
@@ -1893,15 +1893,15 @@ public abstract class ELNode implements Serializable
             Object result;
 
             // invoke operator procedure
-            result = invokeOperator(elctx, name, lhs, rhs);
+            result = invokeOperator(elctx, oper.id, lhs, rhs);
             if (result != NO_RESULT) {
                 return result;
             }
 
             // invoke target procedure
-            Object target = resolveTarget(context, name);
+            Object target = resolveTarget(context, oper.id);
             if (target == null) {
-                throw runtimeError(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
+                throw runtimeError(elctx, _T(EL_UNDEFINED_IDENTIFIER, oper.id));
             }
 
             try {
@@ -1909,7 +1909,7 @@ public abstract class ELNode implements Serializable
                 result = ELEngine.invokeTarget(elctx, target, args);
                 return result;
             } catch (MethodNotFoundException ex) {
-                throw methodNotFound(elctx, target, name, ex);
+                throw methodNotFound(elctx, target, oper.id, ex);
             } catch (RuntimeException ex) {
                 throw runtimeError(elctx, ex);
             }

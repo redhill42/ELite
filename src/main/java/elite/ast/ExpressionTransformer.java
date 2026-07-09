@@ -77,11 +77,11 @@ final class ExpressionTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.PREFIX e) {
-        result = new PrefixExpression(e.name, e.prec, transform(e.right));
+        result = new PrefixExpression(e.oper.id, e.prec, transform(e.right));
     }
 
     public void visit(ELNode.INFIX e) {
-        result = new InfixExpression(e.name, e.prec, transform(e.left), transform(e.right));
+        result = new InfixExpression(e.oper.id, e.prec, transform(e.left), transform(e.right));
     }
 
     public void visit(ELNode.ASSIGN e) {

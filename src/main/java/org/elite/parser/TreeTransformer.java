@@ -196,22 +196,22 @@ public class TreeTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.PREFIX e) {
-        String name = transform(e.name);
+        String name = transform(e.oper.id);
         ELNode right = transform(e.right);
-        if (name == e.name && right == e.right)
+        if (name == e.oper.id && right == e.right)
             result = e;
         else
             result = new ELNode.PREFIX(e.pos, name, e.prec, right);
     }
 
     public void visit(ELNode.INFIX e) {
-        String name = transform(e.name);
+        String name = transform(e.oper.id);
         ELNode left = transform(e.left);
         ELNode right = transform(e.right);
-        if (name == e.name && left == e.left && right == e.right)
+        if (name == e.oper.id && left == e.left && right == e.right)
             result = e;
         else
-            result = new ELNode.INFIX(e.pos, e.name, e.prec, left, right);
+            result = new ELNode.INFIX(e.pos, name, e.prec, left, right);
     }
     
     public void visit(ELNode.COND e) {

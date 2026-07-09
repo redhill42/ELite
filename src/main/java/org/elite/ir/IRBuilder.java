@@ -1115,16 +1115,42 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.PREFIX node) {
-        int nameIdx = putConstant(node.name);
-        build(node.right);
-        current.emitInvokeOperator(nameIdx, 1);
+        if (node.oper.symbol != null) {
+            if (node.oper.symbol.func != null) {
+                int funcIdx = putConstant(node.oper.symbol.func);
+                build(node.right);
+                current.emitInvokeDirect(funcIdx, 1);
+            } else {
+                build(node.oper);
+                build(node.right);
+                current.emitInvokeDyn(1);
+            }
+        } else {
+            int nameIdx = putConstant(node.oper.id);
+            build(node.right);
+            current.emitInvokeOperator(nameIdx, 1);
+        }
     }
 
     public void visit(ELNode.INFIX node) {
-        int nameIdx = putConstant(node.name);
-        build(node.left);
-        build(node.right);
-        current.emitInvokeOperator(nameIdx, 2);
+        if (node.oper.symbol != null) {
+            if (node.oper.symbol.func != null) {
+                int funcIdx = putConstant(node.oper.symbol.func);
+                build(node.left);
+                build(node.right);
+                current.emitInvokeDirect(funcIdx, 2);
+            } else {
+                build(node.oper);
+                build(node.left);
+                build(node.right);
+                current.emitInvokeDyn(2);
+            }
+        } else {
+            int nameIdx = putConstant(node.oper.id);
+            build(node.left);
+            build(node.right);
+            current.emitInvokeOperator(nameIdx, 2);
+        }
     }
 
     // ── Logical AND/OR/NOT ──
