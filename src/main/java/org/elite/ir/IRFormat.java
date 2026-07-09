@@ -20,10 +20,10 @@ package org.elite.ir;
  * Bit-level encoding constants for IR instructions.
  *
  * Header word (32 bits):
- * ┌─31──24─┬─23──20─┬─19──16─┬─15───0─┐
- * │ opcode │  kind  │ op cnt │ payload │
- * │ 8 bits │ 4 bits │ 4 bits │ 16 bits │
- * └────────┴────────┴────────┴─────────┘
+ * ┌──63───────────────────────────32──┬─31──24─┬─23──20─┬─19────────────0─┐
+ * │             operand               │ opcode │  kind  │     payload     │
+ * │             32 bits               │ 8 bits │ 4 bits │     20 bits     │
+ * └───────────────────────────────────┴────────┴────────┴─────────────────┘
  *
  * Additional operand words follow the header (op cnt words).
  */
@@ -31,10 +31,10 @@ final class IRFormat {
     private IRFormat() {}
 
     // Bit shifts
-    public static final int OPCODE_SHIFT = 24;
-    public static final int KIND_SHIFT   = 20;
-    public static final int OPCNT_SHIFT  = 16;
-    public static final int PAYLOAD_MASK = 0xFFFF;
+    public static final int OPERAND_SHIFT = 32;
+    public static final int OPCODE_SHIFT  = 24;
+    public static final int KIND_SHIFT    = 20;
+    public static final int PAYLOAD_MASK  = 0xFFFFF;
 
     // Primitive type IDs
     public static final int K_NONE    = 0;
@@ -47,26 +47,18 @@ final class IRFormat {
 
     // ── Packing helpers ──
 
-    /** Pack a 1-word instruction (op cnt = 0). */
-    public static int pack1(int opcode, int kind, int payload) {
-        return (opcode << OPCODE_SHIFT) | (kind << KIND_SHIFT) | (0 << OPCNT_SHIFT) | (payload & PAYLOAD_MASK);
-    }
-
-    /** Pack a 2-word instruction (op cnt = 1). */
-    public static int pack2h(int opcode, int kind, int payload) {
-        return (opcode << OPCODE_SHIFT) | (kind << KIND_SHIFT) | (1 << OPCNT_SHIFT) | (payload & PAYLOAD_MASK);
-    }
-
-    /** Pack a 3-word instruction header (op cnt = 2). */
-    public static int pack3h(int opcode, int kind, int payload) {
-        return (opcode << OPCODE_SHIFT) | (kind << KIND_SHIFT) | (2 << OPCNT_SHIFT) | (payload & PAYLOAD_MASK);
+    /** Pack a 1-word instruction. */
+    public static long pack(int opcode, int kind, int payload, int operand) {
+        return ((long)operand << OPERAND_SHIFT) |
+               ((long)opcode << OPCODE_SHIFT) |
+               ((long)kind << KIND_SHIFT) |
+               (payload & PAYLOAD_MASK);
     }
 
     // ── Decoding helpers ──
 
-    public static int opcode(int header)   { return (header >>> OPCODE_SHIFT) & 0xFF; }
-    public static int kind(int header)     { return (header >>> KIND_SHIFT) & 0x0F; }
-    public static int opCount(int header)  { return (header >>> OPCNT_SHIFT) & 0x0F; }
-    public static int payload(int header)  { return header & PAYLOAD_MASK; }
-    public static int totalWords(int header) { return 1 + opCount(header); }
+    public static int opcode(long header)   { return (int)((header >>> OPCODE_SHIFT) & 0xFF); }
+    public static int kind(long header)     { return (int)((header >>> KIND_SHIFT) & 0x0F); }
+    public static int payload(long header)  { return (int)(header & PAYLOAD_MASK); }
+    public static int operand(long header)  { return (int)(header >> OPERAND_SHIFT); }
 }

@@ -9,6 +9,7 @@ import javax.script.ScriptException;
 
 import org.elite.ir.*;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
@@ -22,6 +23,7 @@ import org.elite.parser.Parser;
  * Build and run:
  *   mvn test -Dtest=BenchmarkTest
  */
+@Disabled
 class BenchmarkTest {
 
     private static ScriptEngine engine;

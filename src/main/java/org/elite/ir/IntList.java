@@ -31,20 +31,9 @@ final class IntList {
         this.size = 0;
     }
 
-    IntList(int initialCapacity) {
-        this.data = new int[initialCapacity];
-        this.size = 0;
-    }
-
     void add(int value) {
         ensureCapacity(size + 1);
         data[size++] = value;
-    }
-
-    void addAll(int[] values) {
-        ensureCapacity(size + values.length);
-        System.arraycopy(values, 0, data, size, values.length);
-        size += values.length;
     }
 
     int get(int index) {
@@ -53,18 +42,6 @@ final class IntList {
 
     void set(int index, int value) {
         data[index] = value;
-    }
-
-    void reset(int offset) {
-        size = offset;
-    }
-
-    int[] data() {
-        return data;
-    }
-
-    int size() {
-        return size;
     }
 
     boolean isEmpty() {

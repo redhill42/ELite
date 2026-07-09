@@ -18,17 +18,17 @@ class IRCoreTest {
            .emitAdd()
            .emitReturn();
 
-        int[] code = out.toArray();
+        long[] code = out.toArray();
         assertEquals(4, code.length, "should be 4 words: 2x PUSH_CONST(1w each) + IADD(1w) + RETURN(1w)");
 
         InstructionView v = new InstructionView(code, 0);
         assertTrue(v.inBounds());
         assertEquals(Opcode.PUSH_CONST, v.opcode());
-        assertEquals(42, v.constPoolIndex());
+        assertEquals(42, v.poolIndex());
         v.advance();
 
         assertEquals(Opcode.PUSH_CONST, v.opcode());
-        assertEquals(58, v.constPoolIndex());
+        assertEquals(58, v.poolIndex());
         v.advance();
 
         assertEquals(Opcode.ADD, v.opcode());
@@ -48,7 +48,7 @@ class IRCoreTest {
            .emitPushConst(1)
            .emitReturn();
 
-        int[] code = out.toArray();
+        long[] code = out.toArray();
 
         InstructionView v = new InstructionView(code, 0);
         assertEquals(Opcode.PUSH_TRUE, v.opcode());
@@ -59,7 +59,7 @@ class IRCoreTest {
         v.advance();
 
         assertEquals(Opcode.PUSH_CONST, v.opcode());
-        assertEquals(1, v.constPoolIndex());
+        assertEquals(1, v.poolIndex());
         v.advance();
 
         assertEquals(Opcode.RETURN, v.opcode());
@@ -73,7 +73,7 @@ class IRCoreTest {
            .emitAdd()
            .emitReturn();
 
-        int[] code = out.toArray();
+        long[] code = out.toArray();
 
         InstructionView v = new InstructionView(code, 0);
         assertEquals(Opcode.PUSH_VAR, v.opcode());
@@ -92,42 +92,24 @@ class IRCoreTest {
            .emitPushConst(2)
            .emitAdd();
 
-        int[] code = out.toArray();
+        long[] code = out.toArray();
         InstructionView v = new InstructionView(code, 0);
 
         // Peek ahead without advancing
         InstructionView peek1 = v.peek();
         assertEquals(Opcode.PUSH_CONST, peek1.opcode());
-        assertEquals(2, peek1.constPoolIndex());
+        assertEquals(2, peek1.poolIndex());
 
         InstructionView peek2 = v.peek(2);
         assertEquals(Opcode.ADD, peek2.opcode());
 
         // Original position unchanged
         assertEquals(Opcode.PUSH_CONST, v.opcode());
-        assertEquals(1, v.constPoolIndex());
+        assertEquals(1, v.poolIndex());
 
         // Advance through all
         v.advance(3);
         assertFalse(v.inBounds());
-    }
-
-    @Test
-    void emitCopyPreservesInstruction() {
-        IREmitter src = new IREmitter();
-        src.emitPushConst(100).emitPushConst(200).emitAdd();
-
-        int[] srcCode = src.toArray();
-        InstructionView v = new InstructionView(srcCode, 0);
-
-        IREmitter dst = new IREmitter();
-        while (v.inBounds()) {
-            dst.copyFrom(v);
-            v.advance();
-        }
-
-        int[] dstCode = dst.toArray();
-        assertArrayEquals(srcCode, dstCode);
     }
 
     @Test

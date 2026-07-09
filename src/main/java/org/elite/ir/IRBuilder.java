@@ -72,7 +72,7 @@ public class IRBuilder extends ELNode.Visitor {
     private final Deque<Integer> freeSlots = new ArrayDeque<>();
 
     // ── Block management (stored by ID, output in ID order) ──
-    private final Map<Integer, int[]> blockMap = new LinkedHashMap<>();
+    private final Map<Integer, long[]> blockMap = new LinkedHashMap<>();
     private final IREmitter current;
     private int currentBlockId;
     private int nextBlockId = 1;  // 0 is the initial block
@@ -2705,7 +2705,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildTrampoline(ELNode node) {
         int poolIdx = putConstant(node);
-        current.emit2(TRAMPOLINE, K_NONE, 0, poolIdx);
+        current.emit(TRAMPOLINE, K_NONE, 0, poolIdx);
     }
 
     // ── Block management ──
@@ -2718,7 +2718,7 @@ public class IRBuilder extends ELNode.Visitor {
      * Seal current block into blockMap and start a new block with the given ID.
      */
     private void startBlock(int blockId) {
-        int[] code = current.toArray();
+        long[] code = current.toArray();
         blockMap.put(currentBlockId, code);
         runningPc += code.length;
         if (currentPos != Position.NOPOS)
@@ -2851,7 +2851,7 @@ public class IRBuilder extends ELNode.Visitor {
     IRFunction finish() {
         // Seal current block and record its debug line
         {
-            int[] code = current.toArray();
+            long[] code = current.toArray();
             blockMap.put(currentBlockId, code);
             if (currentPos != Position.NOPOS) {
                 runningPc += code.length;
@@ -2860,17 +2860,17 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         int count = blockMap.keySet().stream().max(Integer::compare).orElse(0) + 1;
-        int[][] ordered = new int[count][];
+        long[][] ordered = new long[count][];
         for (int i = 0; i < count; i++) {
             ordered[i] = blockMap.get(i);
         }
 
         // Merge block into contiguous code.
         BitSet jumpTargets = getJumpTargets(ordered);
-        IntList merged = new IntList();
+        InstList merged = new InstList();
         int[] offsets = new int[count];
         for (int i = 0; i < count; i++) {
-            int[] code = ordered[i];
+            long[] code = ordered[i];
             if (code != null && jumpTargets.get(i)) {
                 offsets[i] = merged.size();
                 merged.addAll(ordered[i]);
@@ -2885,11 +2885,11 @@ public class IRBuilder extends ELNode.Visitor {
         return func;
     }
 
-    private static BitSet getJumpTargets(int[][] ordered) {
+    private static BitSet getJumpTargets(long[][] ordered) {
         // Scan each block to get jump targets used to detect dead block.
         BitSet jumpTargets = new BitSet();
         jumpTargets.set(0); // block 0 is entry point
-        for (int[] code : ordered) {
+        for (long[] code : ordered) {
             if (code != null) {
                 InstructionView v = new InstructionView(code, 0);
                 while (v.inBounds()) {

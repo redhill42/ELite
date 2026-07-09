@@ -34,74 +34,48 @@ package org.elite.ir;
  * }</pre>
  */
 final class InstructionView {
-    private final int[] code;
+    private final long[] code;
     private final int size;
     private int offset;
     private Object[] constantPool;
 
-    InstructionView(IntList ilist) {
-        this.code = ilist.data();
-        this.size = ilist.size();
-        this.offset = 0;
-        this.constantPool = null;
-    }
-
-    public InstructionView(int[] code, int offset) {
+    public InstructionView(long[] code, int offset) {
         this(code, offset, null);
     }
 
-    public InstructionView(int[] code, int offset, Object[] constantPool) {
+    public InstructionView(long[] code, int offset, Object[] constantPool) {
         this.code = code;
         this.size = code.length;
         this.offset = offset;
         this.constantPool = constantPool;
     }
 
-    /** Set the constant pool for disassembly display. */
-    public void setConstantPool(Object[] pool) {
-        this.constantPool = pool;
-    }
-
     // ── Raw access ──
 
-    public int[] code()   { return code; }
+    public long[] code()   { return code; }
     public int offset()   { return offset; }
-    public int raw(int i) { return code[offset + i]; }
 
     // ── Header decoding ──
 
-    public int header()  { return code[offset]; }
-    public int opcode()  { return IRFormat.opcode(code[offset]); }
-    public int kind()    { return IRFormat.kind(code[offset]); }
-    public int opCount() { return IRFormat.opCount(code[offset]); }
-    public int payload() { return IRFormat.payload(code[offset]); }
-    public int totalWords() { return IRFormat.totalWords(code[offset]); }
-
-    // ── Operand access ──
-
-    public int operand(int i) {
-        return code[offset + 1 + i];
-    }
+    public long header()  { return code[offset]; }
+    public int opcode()   { return IRFormat.opcode(header()); }
+    public int kind()     { return IRFormat.kind(header()); }
+    public int payload()  { return IRFormat.payload(header()); }
+    public int operand()  { return IRFormat.operand(header()); }
 
     /** Get the variable index from a PUSH_VAR instruction. */
     public int varIndex() {
-        return IRFormat.payload(code[offset]) & 0xFFFF;
+        return IRFormat.payload(code[offset]);
     }
 
     /** Get the pool index from an instruction. */
-    public int constPoolIndex() {
-        return IRFormat.opCount(code[offset]) == 0
-            ? IRFormat.payload(code[offset]) : code[offset + 1];
-    }
-
-    public int methodIndex() {
-        return code[offset + 1];
+    public int poolIndex() {
+        return IRFormat.operand(code[offset]);
     }
 
     /** Get the jump target block ID from a jump instruction. */
     public int jumpTarget() {
-        return IRFormat.opCount(code[offset]) == 0
-               ? IRFormat.payload(code[offset]) : code[offset + 1];
+        return IRFormat.payload(code[offset]);
     }
 
     // ── Navigation ──
@@ -111,26 +85,20 @@ final class InstructionView {
     }
 
     public void advance() {
-        offset += totalWords();
+        offset += 1;
     }
 
     public void advance(int instructions) {
-        for (int i = 0; i < instructions; i++) {
-            offset += totalWords();
-        }
+        offset += instructions;
     }
 
     /** Peek at the next instruction without consuming it. */
     public InstructionView peek() {
-        return new InstructionView(code, offset + totalWords(), constantPool);
+        return new InstructionView(code, offset + 1, constantPool);
     }
 
     /** Peek N instructions ahead without consuming. */
     public InstructionView peek(int n) {
-        int o = offset;
-        for (int i = 0; i < n && o < code.length; i++) {
-            o += IRFormat.totalWords(code[o]);
-        }
-        return new InstructionView(code, o, constantPool);
+        return new InstructionView(code, offset + n, constantPool);
     }
 }

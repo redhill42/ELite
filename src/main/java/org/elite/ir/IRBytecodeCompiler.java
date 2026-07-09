@@ -147,7 +147,7 @@ public class IRBytecodeCompiler {
     }
 
     private void compileInst(InstructionView v) {
-        int op = v.opcode(), oc = v.opCount(), pl = v.payload();
+        int op = v.opcode(), pl = v.payload();
         switch (op) {
             case PUSH_CONST -> emitPush(v);
             case PUSH_TRUE  -> { mv.visitInsn(A_ICONST_1); mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false); }
@@ -207,7 +207,7 @@ public class IRBytecodeCompiler {
             // ─── Function calls ───
             case INVOKE_DIRECT -> {
                 int argc = pl;
-                int funcIdx = v.operand(0);
+                int funcIdx = v.poolIndex();
                 IRFunction target = (IRFunction) fn.constantPool()[funcIdx];
                 // Self-recursive in typed mode → direct typed call
                 // General case: register funcId, call invokeDirect at runtime
@@ -241,32 +241,28 @@ public class IRBytecodeCompiler {
                     "storeProperty", "(Ljavax/el/ELContext;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             case LOAD_FIELD -> {
-                int idx = v.payload();
-                String name = (String) fn.constantPool()[idx];
+                String name = (String) fn.constantPool()[v.poolIndex()];
                 // Stack: [base]. LDC name → [base, name] — name on top (2nd param ✓)
                 mv.visitLdcInsn(name);
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
                     "loadField", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case STORE_FIELD -> {
-                int idx = v.payload();
-                String name = (String) fn.constantPool()[idx];
+                String name = (String) fn.constantPool()[v.poolIndex()];
                 // Stack: [value, base]. LDC name → [value, base, name] — name on top (3rd param ✓)
                 mv.visitLdcInsn(name);
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
                     "storeFieldBC", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case PUSH_GLOBAL -> {
-                int idx = v.payload();
-                String name = (String) fn.constantPool()[idx];
+                String name = (String) fn.constantPool()[v.poolIndex()];
                 mv.visitVarInsn(A_ALOAD, S_CTX);    // ctx
                 mv.visitLdcInsn(name);               // name
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
                     "pushGlobal", "(Ljavax/el/ELContext;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
             case STORE_GLOBAL, DEFINE_GLOBAL -> {
-                int idx = v.payload();
-                String name = (String) fn.constantPool()[idx];
+                String name = (String) fn.constantPool()[v.poolIndex()];
                 // Stack: [value]. Need [ctx, name, value].
                 mv.visitVarInsn(A_ASTORE, S_TMP);    // save value
                 mv.visitVarInsn(A_ALOAD, S_CTX);     // ctx
@@ -288,44 +284,30 @@ public class IRBytecodeCompiler {
                     "nil", "()Lorg/elite/eval/seq/Cons;");
 
             case INVOKE_GETTER -> {
-                java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.constPoolIndex()];
+                java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.poolIndex()];
                 emitDirectGetter(m);
             }
             case CLOSURE -> {
-                int funcIdx = pl;
-                int captureCount = v.opCount() > 0 ? v.operand(0) : 0;
+                int funcIdx = v.poolIndex();
                 // Push funcIdx as int (not IRFunction via LDC — ASM doesn't support it)
                 mv.visitVarInsn(A_ALOAD, S_CTX);
                 emitIntConst(funcIdx);
                 // Pack captureCount values from stack into Object[]
-                if (captureCount > 0) {
-                    int[] ts = new int[captureCount];
-                    for (int i = 0; i < captureCount; i++) ts[i] = i + S_TMP;
-                    for (int i = captureCount - 1; i >= 0; i--) mv.visitVarInsn(A_ASTORE, ts[i]);
-                    emitIntConst(captureCount);
-                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-                    for (int i = 0; i < captureCount; i++) {
-                        mv.visitInsn(A_DUP); emitIntConst(i);
-                        mv.visitVarInsn(A_ALOAD, ts[i]);
-                        mv.visitInsn(A_AASTORE);
-                    }
-                } else {
-                    mv.visitInsn(A_ICONST_0);
-                    mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
-                }
+                mv.visitInsn(A_ICONST_0);
+                mv.visitTypeInsn(A_ANEWARRAY, "java/lang/Object");
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
                     "createClosureById",
                     "(Ljavax/el/ELContext;I[Ljava/lang/Object;)Lorg/elite/ir/IRClosure;", false);
             }
 
             case INVOKE_METHOD, INVOKE_STATIC -> {
-                java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.constPoolIndex()];
-                int argc = v.opCount() > 0 ? v.operand(0) : 0;
+                java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.poolIndex()];
+                int argc = v.payload();
                 emitDirectMethod(m, argc);
             }
 
             case INVOKE_SETTER -> {
-                java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.constPoolIndex()];
+                java.lang.reflect.Method m = (java.lang.reflect.Method) fn.constantPool()[v.poolIndex()];
                 emitDirectSetter(m);
             }
 
@@ -333,7 +315,7 @@ public class IRBytecodeCompiler {
             // Both paths go through AST evaluation (trampolineById or trampolineTry).
             // After AST eval, sync globals back to locals so PUSH_VAR sees updates.
             case TRAMPOLINE -> {
-                int poolIdx = v.constPoolIndex();
+                int poolIdx = v.poolIndex();
                 mv.visitVarInsn(A_ALOAD, S_CTX);
                 mv.visitLdcInsn(poolIdx);
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",
@@ -812,7 +794,7 @@ public class IRBytecodeCompiler {
     }
 
     private void emitPush(InstructionView v) {
-        Object val = fn.constantPool()[v.constPoolIndex()];
+        Object val = fn.constantPool()[v.poolIndex()];
         if (val instanceof Integer i) {
             emitIntConst(i);
             mv.visitMethodInsn(A_INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);

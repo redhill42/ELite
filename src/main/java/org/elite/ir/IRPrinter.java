@@ -97,7 +97,7 @@ final class IRPrinter {
              Opcode.CLOSURE,
              Opcode.DECLARE_NS,
              Opcode.TRAMPOLINE ->
-            formatConstPool(sb, fn, v.payload());
+            formatConstPool(sb, fn, v.poolIndex());
 
         case Opcode.JUMP,
              Opcode.JUMP_IF_TRUE,
@@ -114,14 +114,14 @@ final class IRPrinter {
              Opcode.INVOKE_METHOD,
              Opcode.INVOKE_STATIC,
              Opcode.INVOKE_EXPANDO ->
-            formatConstPool(sb, fn, v.methodIndex());
+            formatConstPool(sb, fn, v.poolIndex());
 
         case Opcode.NEW_MAP,
              Opcode.NEW_TUPLE ->
             sb.append(" ").append(v.payload());
 
         case Opcode.NEW_XML ->
-            sb.append(" ").append(v.payload()).append(", ").append(v.operand(0));
+            sb.append(" ").append(v.payload()).append(", ").append(v.operand());
         }
 
         return sb.toString();

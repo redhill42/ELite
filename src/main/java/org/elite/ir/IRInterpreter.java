@@ -149,75 +149,63 @@ public class IRInterpreter {
 
     private Object interpret() {
         ELContext elctx = evalContext.getELContext();
-        final int[] code = function.code();
+        final long[] code = function.code();
         final Object[] constantPool = function.constantPool();
         final int[] blockOffsets = function.blockOffsets();
 
         for (; ; ) {
-            int header = code[ip];
+            long header = code[ip];
             int op = IRFormat.opcode(header);
-            int oc = IRFormat.opCount(header);
             int pl = IRFormat.payload(header);
+            int idx = IRFormat.operand(header);
 
             switch (op) {
             case NOP:
-                ip += 1;
                 break;
 
             case PUSH_CONST: {
-                int idx = oc == 0 ? pl : code[ip + 1];
                 push(constantPool[idx]);
-                ip += 1 + oc;
                 break;
             }
 
             case PUSH_VAR: {
-                int idx = pl & 0xFFFF;
-                push(locals[idx]);
-                ip += 1;
+                push(locals[pl]);
                 break;
             }
 
             case PUSH_GLOBAL: {
-                String name = (String)constantPool[poolIndex(code, ip)];
+                String name = (String)constantPool[idx];
                 push(resolveGlobal(name));
-                ip += 1 + oc;
                 break;
             }
 
             case PUSH_TRUE: {
                 push(true);
-                ip += 1;
                 break;
             }
 
             case PUSH_FALSE: {
                 push(false);
-                ip += 1;
                 break;
             }
 
             case PUSH_NULL: {
                 push(null);
-                ip += 1;
                 break;
             }
 
             case POP: {
                 pop();
-                ip += 1;
                 break;
             }
 
             case POP_N: {
                 sp -= pl;
-                ip += 1;
                 break;
             }
 
             case DUP: {
                 push(peek());
-                ip += 1;
                 break;
             }
 
@@ -268,7 +256,6 @@ public class IRInterpreter {
                 case XOR    -> Builtin.__xor__(elctx, lhs, rhs);
                 default -> { assert (false); yield null; }
                 });
-                ip += 1;
                 break;
             }
 
@@ -282,21 +269,18 @@ public class IRInterpreter {
                 case EMPTY  -> Builtin.empty(elctx, rhs);
                 default -> { assert(false); yield null; }
                 });
-                ip += 1;
                 break;
             }
 
             case IDEQ: {
                 Object r = pop(), l = pop();
                 push(l == r);
-                ip += 1;
                 break;
             }
 
             case IDNE: {
                 Object r = pop(), l = pop();
                 push(l != r);
-                ip += 1;
                 break;
             }
 
@@ -304,18 +288,16 @@ public class IRInterpreter {
                 Object coll = pop();
                 Object elem = pop();
                 push(Builtin.__in__(elctx, elem, coll));
-                ip += 1;
                 break;
             }
 
             case INSTANCEOF: {
                 Object obj = pop();
-                Object cls = constantPool[poolIndex(code, ip)];
+                Object cls = constantPool[idx];
                 if (cls instanceof Class<?>)
                     push(((Class<?>)cls).isInstance(obj));
                 else
                     push(TypedClosure.typecheck(evalContext, (String)cls, obj));
-                ip += 1;
                 break;
             }
 
@@ -325,28 +307,24 @@ public class IRInterpreter {
                 for (int i = count - 1; i >= 0; i--)
                     sb.insert(0, pop());
                 push(sb.toString());
-                ip += 1;
                 break;
             }
 
             case NOT: {
                 push(!TypeCoercion.coerceToBoolean(pop()));
-                ip += 1;
                 break;
             }
 
             case JUMP: {
-                int target = oc == 0 ? pl : code[ip + 1];
-                ip = blockOffsets[target];
-                break;
+                ip = blockOffsets[pl];
+                continue;
             }
 
             case JUMP_IF_TRUE: {
                 boolean cond = TypeCoercion.coerceToBoolean(pop());
                 if (cond) {
-                    ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
-                } else {
-                    ip += 1 + oc;
+                    ip = blockOffsets[pl];
+                    continue;
                 }
                 break;
             }
@@ -354,9 +332,8 @@ public class IRInterpreter {
             case JUMP_IF_FALSE: {
                 boolean cond = TypeCoercion.coerceToBoolean(pop());
                 if (!cond) {
-                    ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
-                } else {
-                    ip += 1 + oc;
+                    ip = blockOffsets[pl];
+                    continue;
                 }
                 break;
             }
@@ -364,9 +341,8 @@ public class IRInterpreter {
             case JUMP_IF_NULL: {
                 Object v = pop();
                 if (v == null) {
-                    ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
-                } else {
-                    ip += 1 + oc;
+                    ip = blockOffsets[pl];
+                    continue;
                 }
                 break;
             }
@@ -374,9 +350,8 @@ public class IRInterpreter {
             case JUMP_IF_NONNULL: {
                 Object v = pop();
                 if (v != null) {
-                    ip = blockOffsets[oc == 0 ? pl : code[ip + 1]];
-                } else {
-                    ip += 1 + oc;
+                    ip = blockOffsets[pl];
+                    continue;
                 }
                 break;
             }
@@ -393,7 +368,7 @@ public class IRInterpreter {
 
             case TRY: {
                 // Pop closures: top → finally, handlerN..., handler1, body → bottom
-                int handlerCount = pl & 0xFFFF;
+                int handlerCount = pl;
                 IRClosure body;
                 String[] types = null;
                 IRClosure[] handlers = null;
@@ -450,7 +425,6 @@ public class IRInterpreter {
                 }
 
                 push(result);
-                ip += 1;
                 break;
             }
 
@@ -471,7 +445,6 @@ public class IRInterpreter {
                 synchronized (lock) {
                     push(new IRInterpreter(evalContext, body.function).execute(null));
                 }
-                ip += 1;
                 break;
             }
 
@@ -488,61 +461,50 @@ public class IRInterpreter {
                     throw new EvaluationException(elctx, ex);
                 }
                 push(null);
-                ip += 1;
                 break;
             }
 
             case ENTER_SCOPE:
                 evalContext = evalContext.pushContext();
-                ip += 1;
                 break;
 
             case LEAVE_SCOPE:
                 evalContext = evalContext.popContext();
-                ip += 1;
                 break;
 
             case DEFINE_GLOBAL: {
-                String name = (String)constantPool[poolIndex(code, ip)];
+                String name = (String)constantPool[idx];
                 Object val = pop();
                 evalContext.setVariable(name, new LiteralClosure(val));
-                ip += 1 + oc;
                 break;
             }
 
             case STORE_GLOBAL: {
-                String name = (String)constantPool[poolIndex(code, ip)];
+                String name = (String)constantPool[idx];
                 Object val = pop();
                 ValueExpression ve = evalContext.resolveVariable(name);
                 if (ve == null)
                     throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
                 ve.setValue(elctx, val);
                 push(val);
-                ip += 1 + oc;
                 break;
             }
 
             case STORE_VAR: {
-                int idx = pl & 0xFFFF;
                 Object val = pop();
-                locals[idx] = val;
+                locals[pl] = val;
                 push(val);
-                ip += 1 + oc;
                 break;
             }
 
             case STORE_VAR_POP: {
-                int idx = pl & 0xFFFF;
-                Object val = pop();
-                locals[idx] = val;
-                ip += 1 + oc;
+                locals[pl] = pop();
                 break;
             }
 
             case CLOSURE: {
-                IRFunction fn = (IRFunction)constantPool[poolIndex(code, ip)];
+                IRFunction fn = (IRFunction)constantPool[idx];
                 push(new IRClosure(evalContext, fn));
-                ip += 1 + oc;
                 break;
             }
 
@@ -550,7 +512,7 @@ public class IRInterpreter {
                 // function pool index in payload
                 // argCount in first operand
                 int argc = pl;
-                IRFunction targetFn = (IRFunction)constantPool[code[ip + 1]];
+                IRFunction targetFn = (IRFunction)constantPool[idx];
 
                 // Pop arguments
                 Object[] args = new Object[argc];
@@ -559,7 +521,6 @@ public class IRInterpreter {
 
                 IRInterpreter callee = new IRInterpreter(evalContext, targetFn);
                 push(callee.execute(args));
-                ip += 1 + oc;
                 break;
             }
 
@@ -567,7 +528,7 @@ public class IRInterpreter {
                 // target name pool index in payload
                 // argCount in first operand
                 int argc = pl;
-                String id = (String)constantPool[code[ip + 1]];
+                String id = (String)constantPool[idx];
 
                 // Pop arguments
                 Object[] args = new Object[argc];
@@ -575,13 +536,12 @@ public class IRInterpreter {
                     args[i] = pop();
 
                 push(invokeTarget(id, args));
-                ip += 1 + oc;
                 break;
             }
 
             case INVOKE_OPERATOR: {
                 int argc = pl;
-                String name = (String)constantPool[code[ip + 1]];
+                String name = (String)constantPool[idx];
                 if (argc == 1) {
                     Object rhs = pop();
                     push(invokeOperator(name, rhs));
@@ -590,21 +550,18 @@ public class IRInterpreter {
                     Object lhs = pop();
                     push(invokeOperator(name, lhs, rhs));
                 }
-                ip += 1 + oc;
                 break;
             }
 
             case INVOKE_DYN: {
-                int argc = pl;
-                Object result = invokeDyn(argc);
+                Object result = invokeDyn(pl);
                 push(result);
-                ip += 1 + oc;
                 break;
             }
 
             case INVOKE_METHOD: {
                 int argc = pl;
-                Method m = (Method)constantPool[code[ip + 1]];
+                Method m = (Method)constantPool[idx];
                 Closure[] args = new Closure[argc];
                 for (int i = argc - 1; i >= 0; i--) {
                     Object arg = pop();
@@ -612,26 +569,24 @@ public class IRInterpreter {
                 }
                 Object base = pop();
                 push(ELEngine.invokeMethod(elctx, base, m, args));
-                ip += 1 + oc;
                 break;
             }
 
             case INVOKE_STATIC: {
                 int argc = pl;
-                Method m = (Method)constantPool[code[ip + 1]];
+                Method m = (Method)constantPool[idx];
                 Closure[] args = new Closure[argc];
                 for (int i = argc - 1; i >= 0; i--) {
                     Object arg = pop();
                     args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
                 }
                 push(ELEngine.invokeMethod(elctx, null, m, args));
-                ip += 1 + oc;
                 break;
             }
 
             case INVOKE_EXPANDO: {
                 int argc = pl;
-                Method m = (Method)constantPool[code[ip + 1]];
+                Method m = (Method)constantPool[idx];
                 Closure[] args = new Closure[argc + 1]; // +1 for expando base
                 for (int i = argc; i >= 1; i--) {
                     Object arg = pop();
@@ -639,7 +594,6 @@ public class IRInterpreter {
                 }
                 args[0] = new LiteralClosure(pop());
                 push(ELEngine.invokeMethod(elctx, null, m, args));
-                ip += 1 + oc;
                 break;
             }
 
@@ -647,7 +601,6 @@ public class IRInterpreter {
                 Object key = pop();
                 Object base = pop();
                 push(Runtime.loadProperty(elctx, base, key));
-                ip += 1;
                 break;
             }
 
@@ -656,24 +609,22 @@ public class IRInterpreter {
                 Object base = pop();
                 Object value = pop();
                 push(Runtime.storeProperty(elctx, base, key, value));
-                ip += 1;
                 break;
             }
 
             case INVOKE_GETTER: {
-                Method m = (Method)constantPool[poolIndex(code, ip)];
+                Method m = (Method)constantPool[idx];
                 Object base = pop();
                 try {
                     push(m.invoke(base));
                 } catch (Exception e) {
                     throw new RuntimeException(_T(IR_GETTER_INVOKE_FAILED), e);
                 }
-                ip += 1 + oc;
                 break;
             }
 
             case INVOKE_SETTER: {
-                Method m = (Method)constantPool[poolIndex(code, ip + 1)];
+                Method m = (Method)constantPool[idx];
                 Object value = pop();
                 Object base = pop();
                 try {
@@ -682,24 +633,21 @@ public class IRInterpreter {
                 } catch (Exception e) {
                     throw new RuntimeException(_T(IR_SETTER_INVOKE_FAILED), e);
                 }
-                ip += 1 + oc;
                 break;
             }
 
             case LOAD_FIELD: {
                 Object base = pop();
-                String fieldName = (String)constantPool[poolIndex(code, ip + 1)];
+                String fieldName = (String)constantPool[idx];
                 push(loadField(base, fieldName));
-                ip += 1 + oc;
                 break;
             }
 
             case STORE_FIELD: {
                 Object value = pop();
                 Object base = pop();
-                String fieldName = (String)constantPool[poolIndex(code, ip + 1)];
+                String fieldName = (String)constantPool[idx];
                 push(storeField(base, fieldName, value));
-                ip += 1 + oc;
                 break;
             }
 
@@ -709,7 +657,6 @@ public class IRInterpreter {
                 if (!(tail instanceof Seq))
                     tail = TypeCoercion.coerceToSeq(tail);
                 push(new Cons(head, (Seq)tail));
-                ip += 1;
                 break;
             }
 
@@ -717,13 +664,11 @@ public class IRInterpreter {
                 Closure tail = (Closure)pop();
                 Closure head = (Closure)pop();
                 push(new DelayCons(head, tail));
-                ip += 1;
                 break;
             }
 
             case NIL: {
                 push(Cons.nil());
-                ip += 1;
                 break;
             }
 
@@ -736,7 +681,6 @@ public class IRInterpreter {
                     map.put(key, val);
                 }
                 push(map);
-                ip += 1;
                 break;
             }
 
@@ -746,7 +690,6 @@ public class IRInterpreter {
                 for (int i = count - 1; i >= 0; i--)
                     elems[i] = pop();
                 push(elems);
-                ip += 1;
                 break;
             }
 
@@ -755,13 +698,12 @@ public class IRInterpreter {
                 Object next = pop();
                 Object begin = pop();
                 push(newRange(begin, next, end));
-                ip += 1;
                 break;
             }
 
             case NEW_XML: {
                 int keyCount = pl;
-                int childCount = code[ip + 1];
+                int childCount = idx;
                 Object tag;
                 Object[] att_names = null, att_values = null;
                 Object[] children = null;
@@ -782,23 +724,20 @@ public class IRInterpreter {
                 tag = pop();
 
                 push(newXML(tag, att_names, att_values, children));
-                ip += 1 + oc;
                 break;
             }
 
             case DECLARE_NS: {
-                String prefix = (String)constantPool[poolIndex(code, ip)];
+                String prefix = (String)constantPool[idx];
                 String uri = TypeCoercion.coerceToString(pop());
                 evalContext.declarePrefix(prefix, uri);
-                ip += 1 + oc;
                 break;
             }
 
             case TRAMPOLINE: {
-                ELNode node = (ELNode)constantPool[code[ip + 1]];
+                ELNode node = (ELNode)constantPool[idx];
                 Object result = node.getValue(evalContext);
                 push(result);
-                ip += 1 + oc;
                 break;
             }
 
@@ -810,6 +749,8 @@ public class IRInterpreter {
                         "Unknown IR opcode: " + Opcode.name(op) +
                         " (" + op + ") at " + "ip=" + ip);
             }
+
+            ip++;
         }
     }
 
@@ -834,12 +775,6 @@ public class IRInterpreter {
         Object[] newStack = new Object[newSize];
         System.arraycopy(stack, 0, newStack, 0, stack.length);
         stack = newStack;
-    }
-
-    // ── Constant pool helper ──
-
-    private int poolIndex(int[] code, int pc) {
-        return IRFormat.opCount(code[pc]) == 0 ? IRFormat.payload(code[pc]) : code[pc + 1];
     }
 
     // ── Dynamic invocation ──
