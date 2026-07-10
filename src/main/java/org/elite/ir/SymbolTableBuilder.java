@@ -291,6 +291,8 @@ public final class SymbolTableBuilder {
                 // by Parser.
                 collectPatternBindings(or.left, bind);
                 collectPatternBindings(or.right, false);
+            } else if (pat instanceof ELNode.NOT not) {
+                collectPatternBindings(not.right, bind);
             } else if (pat instanceof ELNode.NEW data) {
                 var sym = table.lookup(((ELNode.IDENT)data.base).id);
                 if (sym != null)

@@ -16,6 +16,8 @@
 
 package org.elite.ir;
 
+import org.elite.eval.ELProgram;
+
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
 
@@ -43,26 +45,108 @@ final class IREmitter {
 
     // ── Core emit methods ──
 
-    private boolean isDead() {
-        if (last != -1) {
-            // Instruction after jump or return is dead.
-            int op = IRFormat.opcode(buf.get(last));
-            return op == JUMP || op == RETURN || op == RETURN_VOID || op == THROW;
-        }
-        return false;
-    }
-
     public IREmitter emit(int opcode, int kind, int payload) {
         return emit(opcode, kind, payload, 0);
     }
 
     public IREmitter emit(int opcode, int kind, int payload, int operand) {
-        if (isDead())
+        if (last != -1 && peepholeOpt(opcode, payload))
             return this;
 
         last = buf.size();
         buf.add(pack(opcode, kind, payload, operand));
         return this;
+    }
+
+    private boolean peepholeOpt(int opcode, int arg) {
+        int lastOp = IRFormat.opcode(buf.get(last));
+        int lastArg = IRFormat.payload(buf.get(last));
+
+        // Instruction after jump or return is dead.
+        if (lastOp == JUMP || lastOp == RETURN || lastOp == RETURN_VOID || lastOp == THROW)
+            return true;
+
+        switch (opcode) {
+        case POP: {
+            switch (lastOp) {
+            case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL,
+                 PUSH_VAR, PUSH_GLOBAL, CLOSURE:
+                // PUSH_CONST, POP -> NOP
+                buf.reset(last); last--;
+                return true;
+            case STORE_VAR:
+                // STORE_VAR, POP -> STORE_VAR_POP
+                buf.set(last, IRFormat.pack(STORE_VAR_POP, K_NONE, lastArg, 0));
+                return true;
+            }
+            break;
+        }
+
+        case PUSH_VAR:
+            if (lastOp == STORE_VAR_POP && arg == lastArg) {
+                // STORE_VAR_POP, PUSH_VAR -> STORE_VAR
+                buf.set(last, IRFormat.pack(STORE_VAR, K_NONE, arg, 0));
+                return true;
+            }
+            break;
+
+        case NOT:
+            if (lastOp == PUSH_TRUE) {
+                // PUSH_TRUE, NOT -> PUSH_FALSE
+                buf.set(last, IRFormat.pack(PUSH_FALSE, K_NONE, 0, 0));
+                return true;
+            }
+            if (lastOp == PUSH_FALSE) {
+                // PUSH_FALSE, NOT -> PUSH_TRUE
+                buf.set(last, IRFormat.pack(PUSH_TRUE, K_NONE, 0, 0));
+                return true;
+            }
+            break;
+
+        case JUMP_IF_TRUE:
+            if (lastOp == PUSH_TRUE) {
+                // PUSH_TRUE, JUMP_IF_TRUE -> JUMP
+                buf.set(last, IRFormat.pack(JUMP, K_NONE, arg, 0));
+                return true;
+            }
+            if (lastOp == PUSH_FALSE) {
+                // PUSH_FALSE, JUMP_IF_TRUE -> NOP
+                buf.reset(last); last--;
+                return true;
+            }
+            break;
+
+        case JUMP_IF_FALSE:
+            if (lastOp == PUSH_FALSE) {
+                // PUSH_FALSE, JUMP_IF_FALSE -> JUMP
+                buf.set(last, IRFormat.pack(JUMP, K_NONE, arg, 0));
+                return true;
+            }
+            if (lastOp == PUSH_TRUE) {
+                // PUSH_TRUE, JUMP_IF_FALSE -> NOP
+                buf.reset(last); last--;
+                return true;
+            }
+            break;
+
+        case JUMP_IF_NULL:
+            if (lastOp == PUSH_NULL) {
+                // PUSH_NULL, JUMP_IF_NULL -> JUMP
+                buf.set(last, IRFormat.pack(JUMP, K_NONE, arg, 0));
+                return true;
+            }
+            break;
+
+        case JUMP_IF_NONNULL:
+            if (lastOp == PUSH_NULL) {
+                // PUSH_NULL, JUMP_IF_NONNULL -> NOP
+                buf.reset(last); last--;
+                return true;
+            }
+            break;
+        }
+
+        return false;
     }
 
     // ── Stack ops ──
@@ -76,13 +160,6 @@ final class IREmitter {
     }
 
     public IREmitter emitPushVar(int varIndex) {
-        // Optimize for STORE_VAR_POP, PUSH_VAR to STORE_VAR
-        if (last != -1 &&
-            IRFormat.opcode(buf.get(last)) == STORE_VAR_POP &&
-            IRFormat.payload(buf.get(last)) == varIndex) {
-            buf.set(last, IRFormat.pack(STORE_VAR, K_NONE, varIndex, 0));
-            return this;
-        }
         return emit(PUSH_VAR, K_NONE, varIndex);
     }
 
@@ -103,19 +180,6 @@ final class IREmitter {
     }
 
     public IREmitter emitPop() {
-        // Optimize for pop, POP after PUSH is noop
-        if (last != -1) {
-            switch (IRFormat.opcode(buf.get(last))) {
-            case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL,
-                 PUSH_VAR, PUSH_GLOBAL, CLOSURE:
-                buf.reset(last);
-                return this;
-            case STORE_VAR:
-                int varIndex = IRFormat.payload(buf.get(last));
-                buf.set(last, IRFormat.pack(STORE_VAR_POP, K_NONE, varIndex, 0));
-                return this;
-            }
-        }
         return emit(POP, K_NONE, 0);
     }
 
@@ -280,36 +344,10 @@ final class IREmitter {
     }
 
     public IREmitter emitJumpIfTrue(int blockId) {
-        if (last != -1) {
-            int opc = IRFormat.opcode(buf.get(last));
-            if (opc == PUSH_TRUE) {
-                // PUSH_TRUE, JUMP_IF_TRUE -> JUMP
-                buf.set(last, IRFormat.pack(JUMP, K_NONE, blockId, 0));
-                return this;
-            } else if (opc == PUSH_FALSE) {
-                // PUSH_FALSE, JUMP_IF_FALSE -> NOP
-                assert false;
-                return this;
-            }
-        }
-
         return emit(JUMP_IF_TRUE, K_NONE, blockId);
     }
 
     public IREmitter emitJumpIfFalse(int blockId) {
-        if (last != -1) {
-            int opc = IRFormat.opcode(buf.get(last));
-            if (opc == PUSH_FALSE) {
-                // PUSH_FALSE, JUMP_IF_TRUE -> JUMP
-                buf.set(last, IRFormat.pack(JUMP, K_NONE, blockId, 0));
-                return this;
-            } else if (opc == PUSH_TRUE) {
-                // PUSH_TRUE, JUMP_IF_FALSE -> NOP
-                buf.reset(last);
-                return this;
-            }
-        }
-
         return emit(JUMP_IF_FALSE, K_NONE, blockId);
     }
 

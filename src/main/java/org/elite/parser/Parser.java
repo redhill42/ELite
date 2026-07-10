@@ -3442,7 +3442,8 @@ public class Parser extends Scanner
                 String type = parseTypeNameOpt();
                 ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern(bindings) : null;
                 ELNode.DEFINE def = new ELNode.DEFINE(p, id, type, null, apat); // variable
-                bindings.put(id, def);
+                if (!"_".equals(id))
+                    bindings.put(id, def);
                 return def;
             }
         }
