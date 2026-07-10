@@ -37,10 +37,17 @@ final class InstructionView {
     private final long[] code;
     private final int size;
     private int offset;
-    private Object[] constantPool;
+    private final Object[] constantPool;
 
     public InstructionView(long[] code, int offset) {
         this(code, offset, null);
+    }
+
+    public InstructionView(long[] code, int offset, int end) {
+        this.code = code;
+        this.offset = offset;
+        this.size = end;
+        this.constantPool = null;
     }
 
     public InstructionView(long[] code, int offset, Object[] constantPool) {
@@ -76,6 +83,19 @@ final class InstructionView {
     /** Get the jump target block ID from a jump instruction. */
     public int jumpTarget() {
         return IRFormat.payload(code[offset]);
+    }
+
+    public boolean isJump() {
+        int op = opcode();
+        return op == Opcode.JUMP ||
+               op == Opcode.JUMP_IF_TRUE || op == Opcode.JUMP_IF_FALSE ||
+               op == Opcode.JUMP_IF_NULL || op == Opcode.JUMP_IF_NONNULL;
+    }
+
+    // ── Mutation ──
+
+    public void set(long inst) {
+        code[offset] = inst;
     }
 
     // ── Navigation ──

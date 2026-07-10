@@ -98,13 +98,12 @@ public class IRFunction {
         return blockOffsets.length;
     }
 
-    public List<Integer> blockOfPc(int pc) {
-        List<Integer> blocks = new ArrayList<>();
+    public int blockOfPc(int pc) {
         for (int blockId = 0; blockId < blockOffsets.length; blockId++) {
             if (pc == blockOffsets[blockId])
-                blocks.add(blockId);
+                return blockId;
         }
-        return blocks;
+        return -1;
     }
 
     public String dump() {

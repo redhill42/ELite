@@ -71,8 +71,19 @@ public class IRBuilder extends ELNode.Visitor {
     private int nextTempSlot;
     private final Deque<Integer> freeSlots = new ArrayDeque<>();
 
+    private static class Block {
+        final int id;
+        final long[] code;
+        int pc;
+        int mappedId;
+
+        Block(int id, long[] code) {
+            this.id = id;
+            this.code = code;
+        }
+    }
+
     // ── Block management
-    private record Block(int id, long[] code) {}
     private final List<Block> blocks = new ArrayList<>();
     private final IREmitter current;
     private int currentBlockId = 0;
@@ -2707,19 +2718,19 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Merge block into contiguous code.
         InstList merged = new InstList();
-        int[] offsets = new int[nextBlockId];
-        Arrays.fill(offsets, -1);
         for (Block block : blocks) {
             if (opt) {
                 // Remove fallthrough jump.
                 long last = merged.back();
                 if (IRFormat.opcode(last) == JUMP &&
-                    IRFormat.payload(last) == block.id())
+                    IRFormat.payload(last) == block.id)
                     merged.reset(merged.size() - 1);
             }
-            offsets[block.id()] = merged.size();
-            merged.addAll(block.code());
+            block.pc = merged.size();
+            merged.addAll(block.code);
         }
+
+        int[] offsets = buildBlockOffsets(merged);
 
         func.populate(merged.toArray(), maxLocals, offsets,
                       constants.toArray(new Object[0]),
@@ -2732,24 +2743,22 @@ public class IRBuilder extends ELNode.Visitor {
         for (Block block : blocks) {
             // If the only instruction in a block is a jump, threading
             // jumps to target.
-            if (block.code().length == 1) {
-                long header = block.code()[0];
+            if (block.code.length == 1) {
+                long header = block.code[0];
                 if (IRFormat.opcode(header) == JUMP) {
                     int target = IRFormat.payload(header);
-                    threadingJumps.put(block.id(), target);
-                    threadingJumps.replaceAll((k, v) -> v == block.id() ? target : v);
+                    threadingJumps.put(block.id, target);
+                    threadingJumps.replaceAll((k, v) -> v == block.id ? target : v);
                 }
             }
         }
 
         // Apply all threading jumps. May produce dead blocks.
         for (Block block : blocks) {
-            InstructionView v = new InstructionView(block.code(), 0);
+            InstructionView v = new InstructionView(block.code, 0);
             for (; v.inBounds(); v.advance()) {
-                switch (v.opcode()) {
-                case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
-                     JUMP_IF_NULL, JUMP_IF_NONNULL:
-                    int target = threadingJumps.getOrDefault(v.payload(), -1);
+                if (v.isJump()) {
+                    int target = threadingJumps.getOrDefault(v.jumpTarget(), -1);
                     if (target != -1)
                         v.replace(v.opcode(), target, v.operand());
                 }
@@ -2757,14 +2766,11 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    private void scanJumpTargets(BitSet targets, long[] code) {
-        InstructionView v = new InstructionView(code, 0);
+    private void scanJumpTargets(BitSet targets, long[] code, int size) {
+        InstructionView v = new InstructionView(code, 0, size);
         for (; v.inBounds(); v.advance()) {
-            switch (v.opcode()) {
-            case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
-                 JUMP_IF_NULL, JUMP_IF_NONNULL:
+            if (v.isJump())
                 targets.set(v.jumpTarget());
-            }
         }
     }
 
@@ -2773,7 +2779,7 @@ public class IRBuilder extends ELNode.Visitor {
         BitSet jumpTargets = new BitSet();
         jumpTargets.set(0); // block 0 is entry point
         for (Block block : blocks) {
-            scanJumpTargets(jumpTargets, block.code());
+            scanJumpTargets(jumpTargets, block.code, block.code.length);
         }
 
         // Rescan blocks to eliminate dead blocks
@@ -2781,8 +2787,8 @@ public class IRBuilder extends ELNode.Visitor {
             BitSet newJumpTargets = new BitSet();
             newJumpTargets.set(0);
             for (Block block : blocks) {
-                if (jumpTargets.get(block.id()))
-                    scanJumpTargets(newJumpTargets, block.code());
+                if (jumpTargets.get(block.id))
+                    scanJumpTargets(newJumpTargets, block.code, block.code.length);
             }
             if (newJumpTargets.equals(jumpTargets)) {
                 jumpTargets = newJumpTargets;
@@ -2794,9 +2800,53 @@ public class IRBuilder extends ELNode.Visitor {
         // Eliminate dead blocks.
         for (Iterator<Block> i = blocks.iterator(); i.hasNext(); ) {
             Block block = i.next();
-            if (!jumpTargets.get(block.id()))
+            if (!jumpTargets.get(block.id))
                 i.remove();
         }
+    }
+
+    private int[] buildBlockOffsets(InstList code) {
+        // Get all reachable blocks.
+        BitSet targets = new BitSet();
+        targets.set(0);
+        scanJumpTargets(targets, code.data(), code.size());
+
+        // No need to remap if all blocks are reachable, no need to remap.
+        if (targets.size() == blocks.size()) {
+            int[] offsets = new int[blocks.size()];
+            for (Block block : blocks) {
+                offsets[block.id] = block.pc;
+            }
+            return offsets;
+        }
+
+        // Remove hole in block IDs.
+        Map<Integer, Block> remap = new HashMap<>();
+        for (Block block : blocks) {
+            if (targets.get(block.id)) {
+                block.mappedId = remap.size();
+                remap.put(block.id, block);
+            }
+        }
+
+        // Remap block IDs after dead block eliminated.
+        InstructionView v = new InstructionView(code.data(), 0, code.size());
+        for (; v.inBounds(); v.advance()) {
+            if (v.isJump()) {
+                int blockId = v.jumpTarget();
+                Block block = remap.get(blockId);
+                assert block != null;
+                if (block.id != block.mappedId)
+                    v.set(IRFormat.pack(v.opcode(), K_NONE, block.mappedId, 0));
+            }
+        }
+
+        // Build offset table.
+        int[] offsets = new int[remap.size()];
+        for (Block block : remap.values()) {
+            offsets[block.mappedId] = block.pc;
+        }
+        return offsets;
     }
 
     // ── Convenience emits ──
