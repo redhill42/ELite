@@ -26,6 +26,12 @@ final class InstList {
         return data[index];
     }
 
+    long back() {
+        if (size > 0)
+            return data[size - 1];
+        return 0; // NOP
+    }
+
     void set(int index, long value) {
         data[index] = value;
     }

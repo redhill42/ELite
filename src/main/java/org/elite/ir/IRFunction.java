@@ -16,6 +16,9 @@
 
 package org.elite.ir;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * A compiled function in IR form.
  *
@@ -95,12 +98,13 @@ public class IRFunction {
         return blockOffsets.length;
     }
 
-    public int blockOfPc(int pc) {
+    public List<Integer> blockOfPc(int pc) {
+        List<Integer> blocks = new ArrayList<>();
         for (int blockId = 0; blockId < blockOffsets.length; blockId++) {
             if (pc == blockOffsets[blockId])
-                return blockId;
+                blocks.add(blockId);
         }
-        return -1;
+        return blocks;
     }
 
     public String dump() {

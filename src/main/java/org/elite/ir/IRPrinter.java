@@ -61,20 +61,24 @@ final class IRPrinter {
         DebugInfo di = fn.debugInfo();
         InstructionView v = new InstructionView(fn.code(), 0, fn.constantPool());
         while (v.inBounds()) {
-            int blockId = fn.blockOfPc(v.offset());
-            if (blockId != -1)
-                sb.append("  B").append(blockId).append(":\n");
+            List<Integer> blockIds = fn.blockOfPc(v.offset());
+            if (!blockIds.isEmpty()) {
+                for (int blockId : blockIds)
+                    sb.append("  B").append(blockId).append(":\n");
+            }
+
             int startIdx = sb.length();
             sb.append("    ").append(formatInst(v, fn));
             int line = di.lineForPC(v.offset());
             if (line != 0) {
-                if (sb.length() - startIdx < 35)
-                    sb.append(" ".repeat(35 - (sb.length() - startIdx)));
+                if (sb.length() - startIdx < 40)
+                    sb.append(" ".repeat(40 - (sb.length() - startIdx)));
                 sb.append(" ; #").append(line);
             }
             sb.append("\n");
             v.advance();
         }
+
         return sb.toString();
     }
 

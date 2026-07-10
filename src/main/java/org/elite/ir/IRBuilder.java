@@ -71,10 +71,11 @@ public class IRBuilder extends ELNode.Visitor {
     private int nextTempSlot;
     private final Deque<Integer> freeSlots = new ArrayDeque<>();
 
-    // ── Block management (stored by ID, output in ID order) ──
-    private final Map<Integer, long[]> blockMap = new LinkedHashMap<>();
+    // ── Block management
+    private record Block(int id, long[] code) {}
+    private final List<Block> blocks = new ArrayList<>();
     private final IREmitter current;
-    private int currentBlockId;
+    private int currentBlockId = 0;
     private int nextBlockId = 1;  // 0 is the initial block
 
     // ── Constant pool (maybe shared with parent builder) ──
@@ -101,7 +102,6 @@ public class IRBuilder extends ELNode.Visitor {
     IRBuilder(ELContext elctx, IRFunction func, SymbolTable.Scope scope) {
         this.elctx = elctx;
         this.func = func;
-        this.currentBlockId = 0;
         this.current = new IREmitter();
         this.currentScope = scope;
     }
@@ -114,7 +114,6 @@ public class IRBuilder extends ELNode.Visitor {
         assert(parent != null);
         this.func = func;
         this.elctx = parent.elctx;
-        this.currentBlockId = 0;
         this.current = new IREmitter();
         this.currentScope = scope;
         this.currentFile = parent.currentFile;
@@ -131,7 +130,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     /**
      * Resolve a class name at compile time using the builder's import context.
-     * Returns null if resolution fails (caller should fall back to trampoline).
+     * Returns null if resolution fails.
      */
     Class<?> resolveClassAtCompileTime(String name) {
         try {
@@ -2158,17 +2157,10 @@ public class IRBuilder extends ELNode.Visitor {
                 }
             }
 
-            // On failure: discard case bindings, go to next case
-            startBlock(failBlock);
-
             // Leave the case scope
             if (c.scope.hasCaptures())
                 current.emitLeaveScope();
             currentScope = prevScope;
-
-            // Falls through to next case entry (unless this was the last case)
-            if (ci + 1 < node.alts.length)
-                current.emitJump(nextCase[ci + 1]);
         }
 
         // Default block
@@ -2718,8 +2710,9 @@ public class IRBuilder extends ELNode.Visitor {
      * Seal current block into blockMap and start a new block with the given ID.
      */
     private void startBlock(int blockId) {
+        assert blockId != currentBlockId;
         long[] code = current.toArray();
-        blockMap.put(currentBlockId, code);
+        blocks.add(new Block(currentBlockId, code));
         runningPc += code.length;
         if (currentPos != Position.NOPOS)
             recordDebugLine(runningPc);
@@ -2852,30 +2845,29 @@ public class IRBuilder extends ELNode.Visitor {
         // Seal current block and record its debug line
         {
             long[] code = current.toArray();
-            blockMap.put(currentBlockId, code);
+            blocks.add(new Block(currentBlockId, code));
             if (currentPos != Position.NOPOS) {
                 runningPc += code.length;
                 recordDebugLine(runningPc);
             }
         }
 
-        int count = blockMap.keySet().stream().max(Integer::compare).orElse(0) + 1;
-        long[][] ordered = new long[count][];
-        for (int i = 0; i < count; i++) {
-            ordered[i] = blockMap.get(i);
-        }
-
         // Merge block into contiguous code.
-        BitSet jumpTargets = getJumpTargets(ordered);
+        BitSet jumpTargets = getJumpTargets();
         InstList merged = new InstList();
-        int[] offsets = new int[count];
-        for (int i = 0; i < count; i++) {
-            long[] code = ordered[i];
-            if (code != null && jumpTargets.get(i)) {
-                offsets[i] = merged.size();
-                merged.addAll(ordered[i]);
+        int[] offsets = new int[blocks.size()];
+        for (Block block : blocks) {
+            if (jumpTargets.get(block.id())) {
+                // Remove fallthrough jump.
+                long last = merged.back();
+                if (IRFormat.opcode(last) == JUMP &&
+                    IRFormat.payload(last) == block.id())
+                    merged.reset(merged.size() - 1);
+                offsets[block.id()] = merged.size();
+                merged.addAll(block.code());
             } else {
-                offsets[i] = -1;
+                // Dead block.
+                offsets[block.id()] = -1;
             }
         }
 
@@ -2885,21 +2877,19 @@ public class IRBuilder extends ELNode.Visitor {
         return func;
     }
 
-    private static BitSet getJumpTargets(long[][] ordered) {
+    private BitSet getJumpTargets() {
         // Scan each block to get jump targets used to detect dead block.
         BitSet jumpTargets = new BitSet();
         jumpTargets.set(0); // block 0 is entry point
-        for (long[] code : ordered) {
-            if (code != null) {
-                InstructionView v = new InstructionView(code, 0);
-                while (v.inBounds()) {
-                    switch (v.opcode()) {
-                    case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
-                         JUMP_IF_NULL, JUMP_IF_NONNULL:
-                        jumpTargets.set(v.jumpTarget());
-                    }
-                    v.advance();
+        for (Block block : blocks) {
+            InstructionView v = new InstructionView(block.code(), 0);
+            while (v.inBounds()) {
+                switch (v.opcode()) {
+                case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
+                     JUMP_IF_NULL, JUMP_IF_NONNULL:
+                    jumpTargets.set(v.jumpTarget());
                 }
+                v.advance();
             }
         }
         return jumpTargets;
