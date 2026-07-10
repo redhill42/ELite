@@ -34,23 +34,23 @@ package org.elite.ir;
  * }</pre>
  */
 final class InstructionView {
-    private final long[] code;
+    private final int[] code;
     private final int size;
     private int offset;
     private final Object[] constantPool;
 
-    public InstructionView(long[] code, int offset) {
+    public InstructionView(int[] code, int offset) {
         this(code, offset, null);
     }
 
-    public InstructionView(long[] code, int offset, int end) {
+    public InstructionView(int[] code, int offset, int end) {
         this.code = code;
         this.offset = offset;
         this.size = end;
         this.constantPool = null;
     }
 
-    public InstructionView(long[] code, int offset, Object[] constantPool) {
+    public InstructionView(int[] code, int offset, Object[] constantPool) {
         this.code = code;
         this.size = code.length;
         this.offset = offset;
@@ -59,20 +59,23 @@ final class InstructionView {
 
     // ── Raw access ──
 
-    public long[] code()   { return code; }
+    public int[] code()   { return code; }
     public int offset()   { return offset; }
 
     // ── Header decoding ──
 
-    public long header()  { return code[offset]; }
+    public int header()   { return code[offset]; }
     public int opcode()   { return IRFormat.opcode(header()); }
-    public int kind()     { return IRFormat.kind(header()); }
     public int payload()  { return IRFormat.payload(header()); }
     public int operand()  { return IRFormat.operand(header()); }
 
+    public int count() {
+        return IRFormat.payload(code[offset]);
+    }
+
     /** Get the variable index from a PUSH_VAR instruction. */
     public int varIndex() {
-        return IRFormat.payload(code[offset]);
+        return IRFormat.operand(code[offset]);
     }
 
     /** Get the pool index from an instruction. */
@@ -82,7 +85,7 @@ final class InstructionView {
 
     /** Get the jump target block ID from a jump instruction. */
     public int jumpTarget() {
-        return IRFormat.payload(code[offset]);
+        return IRFormat.operand(code[offset]);
     }
 
     public boolean isJump() {
@@ -94,7 +97,7 @@ final class InstructionView {
 
     // ── Mutation ──
 
-    public void set(long inst) {
+    public void set(int inst) {
         code[offset] = inst;
     }
 
@@ -124,6 +127,6 @@ final class InstructionView {
 
     // ── Mutation ──
     public void replace(int opcode, int payload, int operand) {
-        code[offset] = IRFormat.pack(opcode, kind(), payload, operand);
+        code[offset] = IRFormat.pack(opcode, payload, operand);
     }
 }

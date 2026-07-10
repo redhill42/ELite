@@ -73,14 +73,14 @@ public class IRBuilder extends ELNode.Visitor {
 
     private static class Block {
         final int id;
-        final long[] code;
+        final int[] code;
         int pc;
 
         BitSet predecessors = new BitSet();
         BitSet successors = new BitSet();
         int mappedId;
 
-        Block(int id, long[] code) {
+        Block(int id, int[] code) {
             this.id = id;
             this.code = code;
         }
@@ -1873,8 +1873,9 @@ public class IRBuilder extends ELNode.Visitor {
 
     public void visit(ELNode.ASSERT node) {
         build(node.exp);
-        build(node.msg);
-        current.emitAssert();
+        if (node.msg != null)
+            build(node.msg);
+        current.emitAssert(node.msg == null ? 1 : 2);
     }
 
     public void visit(ELNode.TRY node) {
@@ -2560,7 +2561,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildTrampoline(ELNode node) {
         int poolIdx = putConstant(node);
-        current.emit(TRAMPOLINE, K_NONE, 0, poolIdx);
+        current.emit(TRAMPOLINE, 0, poolIdx);
     }
 
     // ── Block management ──
@@ -2574,7 +2575,7 @@ public class IRBuilder extends ELNode.Visitor {
      */
     private void startBlock(int blockId) {
         assert blockId != currentBlockId;
-        long[] code = current.toArray();
+        int[] code = current.toArray();
         blocks.add(new Block(currentBlockId, code));
         runningPc += code.length;
         if (currentPos != Position.NOPOS)
@@ -2706,7 +2707,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     IRFunction finish() {
         // Seal current block and record its debug line
-        long[] code = current.toArray();
+        int[] code = current.toArray();
         blocks.add(new Block(currentBlockId, code));
         if (currentPos != Position.NOPOS) {
             runningPc += code.length;
@@ -2735,7 +2736,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Merge block into contiguous code.
-        InstList merged = new InstList();
+        IntList merged = new IntList();
         for (Block block : blocks) {
             if (block.id == 0 || !block.predecessors.isEmpty()) {
                 int offset = 0;
@@ -2760,9 +2761,9 @@ public class IRBuilder extends ELNode.Visitor {
             // If the only instruction in a block is a jump, threading
             // jumps to target.
             if (block.code.length == 1) {
-                long header = block.code[0];
+                int header = block.code[0];
                 if (IRFormat.opcode(header) == JUMP) {
-                    int target = IRFormat.payload(header);
+                    int target = IRFormat.operand(header);
                     threadingJumps.put(block.id, target);
                     threadingJumps.replaceAll((k, v) -> v == block.id ? target : v);
                 }
@@ -2784,13 +2785,15 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Apply all threading jumps. May produce dead blocks.
-        for (Block block : blocks) {
-            InstructionView v = new InstructionView(block.code, 0);
-            for (; v.inBounds(); v.advance()) {
-                if (v.isJump()) {
-                    int target = threadingJumps.getOrDefault(v.jumpTarget(), -1);
-                    if (target != -1)
-                        v.replace(v.opcode(), target, v.operand());
+        if (!threadingJumps.isEmpty()) {
+            for (Block block : blocks) {
+                InstructionView v = new InstructionView(block.code, 0);
+                for (; v.inBounds(); v.advance()) {
+                    if (v.isJump()) {
+                        int target = threadingJumps.getOrDefault(v.jumpTarget(), -1);
+                        if (target != -1)
+                            v.replace(v.opcode(), 0, target);
+                    }
                 }
             }
         }
@@ -2818,7 +2821,7 @@ public class IRBuilder extends ELNode.Visitor {
         } while (changed);
     }
 
-    private int peepholeOpt(InstList merged, Block block) {
+    private int peepholeOpt(IntList merged, Block block) {
         int eliminated = 0;
 
         // Swap jump condition to make fallthrough opportunity.
@@ -2830,14 +2833,14 @@ public class IRBuilder extends ELNode.Visitor {
                 v2.opcode() == JUMP) {
                 int target1 = v1.jumpTarget();
                 int target2 = v2.jumpTarget();
-                v1.replace(inverseJump(v1.opcode()), target2, 0);
-                v2.replace(JUMP, target1, 0);
+                v1.replace(inverseJump(v1.opcode()), 0, target2);
+                v2.replace(JUMP, 0, target1);
             }
         }
 
         // Remove fallthrough jump.
-        long term = merged.back();
-        if (IRFormat.opcode(term) == JUMP && IRFormat.payload(term) == block.id) {
+        int term = merged.back();
+        if (IRFormat.opcode(term) == JUMP && IRFormat.operand(term) == block.id) {
             merged.reset(merged.size() - 1);
         }
 
@@ -2865,7 +2868,7 @@ public class IRBuilder extends ELNode.Visitor {
         };
     }
 
-    private int[] buildBlockOffsets(InstList code) {
+    private int[] buildBlockOffsets(IntList code) {
         // Get all reachable blocks.
         BitSet targets = new BitSet();
         targets.set(0);
@@ -2890,7 +2893,7 @@ public class IRBuilder extends ELNode.Visitor {
             if (v.isJump()) {
                 Block block = remap.get(v.jumpTarget());
                 if (block.id != block.mappedId)
-                    v.set(IRFormat.pack(v.opcode(), K_NONE, block.mappedId, 0));
+                    v.set(IRFormat.pack(v.opcode(), 0, block.mappedId));
             }
         }
 

@@ -108,21 +108,21 @@ final class IRPrinter {
             sb.append(" B").append(v.jumpTarget());
 
         case Opcode.INVOKE_DYN ->
-            sb.append(" ").append(v.payload());
+            sb.append(" ").append(v.count());
         case Opcode.INVOKE_DIRECT,
              Opcode.INVOKE_TARGET,
              Opcode.INVOKE_OPERATOR,
              Opcode.INVOKE_METHOD,
              Opcode.INVOKE_STATIC,
              Opcode.INVOKE_EXPANDO ->
-            formatConstPool(sb, fn, v.poolIndex());
+            formatConstPool(sb, fn, v.count());
 
         case Opcode.NEW_MAP,
              Opcode.NEW_TUPLE ->
-            sb.append(" ").append(v.payload());
+            sb.append(" ").append(v.count());
 
         case Opcode.NEW_XML ->
-            sb.append(" ").append(v.payload()).append(", ").append(v.operand());
+            sb.append(" ").append(v.count()).append(", ").append(v.operand());
         }
 
         return sb.toString();

@@ -35,7 +35,7 @@ public class IRFunction {
     private final int paramCount;
 
     /** Single contiguous code array for all blocks. */
-    private long[] code;
+    private int[] code;
     /** Number of local variable slots */
     private int maxLocals;
     /** Start offset of each basic block in the code array. */
@@ -59,7 +59,7 @@ public class IRFunction {
     }
 
     // Populate IRFunction with code after compilation.
-    void populate(long[] code, int maxLocals, int[] blockOffsets, Object[] constantPool,
+    void populate(int[] code, int maxLocals, int[] blockOffsets, Object[] constantPool,
                   DebugInfo debugInfo, Object[] defaultValues) {
         this.code = code;
         this.maxLocals = maxLocals;
@@ -74,7 +74,7 @@ public class IRFunction {
     public String name()           { return name; }
     public int paramCount()        { return paramCount; }
     public int maxLocals()         { return maxLocals; }
-    public long[] code()            { return code; }
+    public int[] code()            { return code; }
     public int[] blockOffsets()    { return blockOffsets; }
     public Object[] constantPool() { return constantPool; }
     public DebugInfo debugInfo()   { return debugInfo; }

@@ -38,86 +38,86 @@ public final class Opcode {
     public static final int DUP               = 0x09;
 
     // ── Operators ──
-    public static final int ADD               = 0x20;
-    public static final int SUB               = 0x21;
-    public static final int MUL               = 0x22;
-    public static final int DIV               = 0x23;
-    public static final int IDIV              = 0x24;
-    public static final int REM               = 0x25;
-    public static final int POW               = 0x26;
-    public static final int NEG               = 0x27;
-    public static final int CAT               = 0x28;
-    public static final int JOIN              = 0x29;
-    public static final int BITAND            = 0x2A;
-    public static final int BITOR             = 0x2B;
-    public static final int BITNOT            = 0x2C;
-    public static final int XOR               = 0x2D;
-    public static final int SHL               = 0x2E;
-    public static final int SHR               = 0x2F;
-    public static final int USHR              = 0x30;
-    public static final int EQ                = 0x31;
-    public static final int NE                = 0x32;
-    public static final int LT                = 0x33;
-    public static final int LE                = 0x34;
-    public static final int GT                = 0x35;
-    public static final int GE                = 0x36;
-    public static final int IDEQ              = 0x37;
-    public static final int IDNE              = 0x38;
-    public static final int IN                = 0x39;
-    public static final int INSTANCEOF        = 0x3A;
-    public static final int EMPTY             = 0x3B;
-    public static final int NOT               = 0x3C;
+    public static final int ADD               = 0x10;
+    public static final int SUB               = 0x11;
+    public static final int MUL               = 0x12;
+    public static final int DIV               = 0x13;
+    public static final int IDIV              = 0x14;
+    public static final int REM               = 0x15;
+    public static final int POW               = 0x16;
+    public static final int NEG               = 0x17;
+    public static final int CAT               = 0x18;
+    public static final int JOIN              = 0x19;
+    public static final int BITAND            = 0x1A;
+    public static final int BITOR             = 0x1B;
+    public static final int BITNOT            = 0x1C;
+    public static final int XOR               = 0x1D;
+    public static final int SHL               = 0x1E;
+    public static final int SHR               = 0x1F;
+    public static final int USHR              = 0x20;
+    public static final int EQ                = 0x21;
+    public static final int NE                = 0x22;
+    public static final int LT                = 0x23;
+    public static final int LE                = 0x24;
+    public static final int GT                = 0x25;
+    public static final int GE                = 0x26;
+    public static final int IDEQ              = 0x27;
+    public static final int IDNE              = 0x28;
+    public static final int IN                = 0x29;
+    public static final int INSTANCEOF        = 0x2A;
+    public static final int EMPTY             = 0x2B;
+    public static final int NOT               = 0x2C;
 
     // ── Control flow ──
-    public static final int JUMP              = 0x50;
-    public static final int JUMP_IF_TRUE      = 0x51;
-    public static final int JUMP_IF_FALSE     = 0x52;
-    public static final int JUMP_IF_NULL      = 0x53;
-    public static final int JUMP_IF_NONNULL   = 0x54;
-    public static final int RETURN            = 0x55;
-    public static final int RETURN_VOID       = 0x56;
-    public static final int TRY               = 0x57;
-    public static final int SYNCHRONIZED      = 0x58;
-    public static final int THROW             = 0x59;
-    public static final int ASSERT            = 0x5A;
-    public static final int ENTER_SCOPE       = 0x5B;
-    public static final int LEAVE_SCOPE       = 0x5C;
+    public static final int JUMP              = 0x30;
+    public static final int JUMP_IF_TRUE      = 0x31;
+    public static final int JUMP_IF_FALSE     = 0x32;
+    public static final int JUMP_IF_NULL      = 0x33;
+    public static final int JUMP_IF_NONNULL   = 0x34;
+    public static final int RETURN            = 0x35;
+    public static final int RETURN_VOID       = 0x36;
+    public static final int TRY               = 0x37;
+    public static final int SYNCHRONIZED      = 0x38;
+    public static final int THROW             = 0x39;
+    public static final int ASSERT            = 0x3A;
+    public static final int ENTER_SCOPE       = 0x3B;
+    public static final int LEAVE_SCOPE       = 0x3C;
 
     // ── Variable, Function and Property ──
-    public static final int DEFINE_GLOBAL     = 0x70;
-    public static final int STORE_GLOBAL      = 0x71;
-    public static final int STORE_VAR         = 0x72;
-    public static final int STORE_VAR_POP     = 0x73;
-    public static final int CLOSURE           = 0x74;
+    public static final int DEFINE_GLOBAL     = 0x40;
+    public static final int STORE_GLOBAL      = 0x41;
+    public static final int STORE_VAR         = 0x42;
+    public static final int STORE_VAR_POP     = 0x43;
+    public static final int CLOSURE           = 0x44;
 
-    public static final int INVOKE_DIRECT     = 0x75;
-    public static final int INVOKE_OPERATOR   = 0x76;
-    public static final int INVOKE_TARGET     = 0x77;
-    public static final int INVOKE_DYN        = 0x78;
-    public static final int INVOKE_METHOD     = 0x79;
-    public static final int INVOKE_STATIC     = 0x7A;
-    public static final int INVOKE_EXPANDO    = 0x7B;
+    public static final int INVOKE_DIRECT     = 0x45;
+    public static final int INVOKE_OPERATOR   = 0x46;
+    public static final int INVOKE_TARGET     = 0x47;
+    public static final int INVOKE_DYN        = 0x48;
+    public static final int INVOKE_METHOD     = 0x49;
+    public static final int INVOKE_STATIC     = 0x4A;
+    public static final int INVOKE_EXPANDO    = 0x4B;
 
-    public static final int LOAD_PROPERTY     = 0x7C;
-    public static final int STORE_PROPERTY    = 0x7D;
-    public static final int INVOKE_GETTER     = 0x7E;
-    public static final int INVOKE_SETTER     = 0x7F;
-    public static final int LOAD_FIELD        = 0x80;
-    public static final int STORE_FIELD       = 0x81;
+    public static final int LOAD_PROPERTY     = 0x4C;
+    public static final int STORE_PROPERTY    = 0x4D;
+    public static final int INVOKE_GETTER     = 0x4E;
+    public static final int INVOKE_SETTER     = 0x4F;
+    public static final int LOAD_FIELD        = 0x50;
+    public static final int STORE_FIELD       = 0x51;
 
     // ── Data structure ──
-    public static final int NEW_CONS          = 0xA0;
-    public static final int NEW_DELAY_CONS    = 0xA1;
-    public static final int NIL               = 0xA2;
-    public static final int NEW_MAP           = 0xA3;
-    public static final int NEW_TUPLE         = 0xA4;
-    public static final int NEW_RANGE         = 0xA5;
-    public static final int NEW_XML           = 0xA6;
-    public static final int DECLARE_NS        = 0xA7;
+    public static final int NEW_CONS          = 0x55;
+    public static final int NEW_DELAY_CONS    = 0x56;
+    public static final int NIL               = 0x57;
+    public static final int NEW_MAP           = 0x58;
+    public static final int NEW_TUPLE         = 0x59;
+    public static final int NEW_RANGE         = 0x5A;
+    public static final int NEW_XML           = 0x5B;
+    public static final int DECLARE_NS        = 0x5C;
 
     // ── Trampoline ──
     /** Evaluate an AST node directly (for features not yet compiled to IR). */
-    public static final int TRAMPOLINE        = 0xE0;
+    public static final int TRAMPOLINE        = 0x7F;
 
     /** Human-readable name for debugging. */
     public static String name(int op) {

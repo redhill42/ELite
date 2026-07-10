@@ -18,7 +18,7 @@ class IRCoreTest {
            .emitAdd()
            .emitReturn();
 
-        long[] code = out.toArray();
+        int[] code = out.toArray();
         assertEquals(4, code.length, "should be 4 words: 2x PUSH_CONST(1w each) + IADD(1w) + RETURN(1w)");
 
         InstructionView v = new InstructionView(code, 0);
@@ -48,7 +48,7 @@ class IRCoreTest {
            .emitAdd()
            .emitReturn();
 
-        long[] code = out.toArray();
+        int[] code = out.toArray();
 
         InstructionView v = new InstructionView(code, 0);
         assertEquals(Opcode.PUSH_VAR, v.opcode());
@@ -67,7 +67,7 @@ class IRCoreTest {
            .emitPushConst(2)
            .emitAdd();
 
-        long[] code = out.toArray();
+        int[] code = out.toArray();
         InstructionView v = new InstructionView(code, 0);
 
         // Peek ahead without advancing

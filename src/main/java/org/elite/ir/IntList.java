@@ -36,12 +36,36 @@ final class IntList {
         data[size++] = value;
     }
 
+    void addAll(int[] values, int offset, int length) {
+        ensureCapacity(size + length);
+        System.arraycopy(values, offset, data, size, length);
+        size += length;
+    }
+
     int get(int index) {
         return data[index];
     }
 
+    int back() {
+        if (size > 0)
+            return data[size - 1];
+        return 0; // NOP
+    }
+
     void set(int index, int value) {
         data[index] = value;
+    }
+
+    void reset(int offset) {
+        size = offset;
+    }
+
+    int[] data() {
+        return data;
+    }
+
+    int size() {
+        return size;
     }
 
     boolean isEmpty() {

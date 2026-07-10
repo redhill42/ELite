@@ -149,14 +149,14 @@ public class IRInterpreter {
 
     private Object interpret() {
         ELContext elctx = evalContext.getELContext();
-        final long[] code = function.code();
+        final int[] code = function.code();
         final Object[] constantPool = function.constantPool();
         final int[] blockOffsets = function.blockOffsets();
 
         for (; ; ) {
-            long header = code[ip];
+            int header = code[ip];
             int op = IRFormat.opcode(header);
-            int pl = IRFormat.payload(header);
+            int cnt = IRFormat.payload(header);
             int idx = IRFormat.operand(header);
 
             switch (op) {
@@ -169,7 +169,7 @@ public class IRInterpreter {
             }
 
             case PUSH_VAR: {
-                push(locals[pl]);
+                push(locals[idx]);
                 break;
             }
 
@@ -200,7 +200,7 @@ public class IRInterpreter {
             }
 
             case POP_N: {
-                sp -= pl;
+                sp -= cnt;
                 break;
             }
 
@@ -302,9 +302,8 @@ public class IRInterpreter {
             }
 
             case JOIN: {
-                int count = pl;
                 StringBuilder sb = new StringBuilder();
-                for (int i = count - 1; i >= 0; i--)
+                for (int i = cnt - 1; i >= 0; i--)
                     sb.insert(0, pop());
                 push(sb.toString());
                 break;
@@ -316,14 +315,14 @@ public class IRInterpreter {
             }
 
             case JUMP: {
-                ip = blockOffsets[pl];
+                ip = blockOffsets[idx];
                 continue;
             }
 
             case JUMP_IF_TRUE: {
                 boolean cond = TypeCoercion.coerceToBoolean(pop());
                 if (cond) {
-                    ip = blockOffsets[pl];
+                    ip = blockOffsets[idx];
                     continue;
                 }
                 break;
@@ -332,7 +331,7 @@ public class IRInterpreter {
             case JUMP_IF_FALSE: {
                 boolean cond = TypeCoercion.coerceToBoolean(pop());
                 if (!cond) {
-                    ip = blockOffsets[pl];
+                    ip = blockOffsets[idx];
                     continue;
                 }
                 break;
@@ -341,7 +340,7 @@ public class IRInterpreter {
             case JUMP_IF_NULL: {
                 Object v = pop();
                 if (v == null) {
-                    ip = blockOffsets[pl];
+                    ip = blockOffsets[idx];
                     continue;
                 }
                 break;
@@ -350,7 +349,7 @@ public class IRInterpreter {
             case JUMP_IF_NONNULL: {
                 Object v = pop();
                 if (v != null) {
-                    ip = blockOffsets[pl];
+                    ip = blockOffsets[idx];
                     continue;
                 }
                 break;
@@ -368,17 +367,16 @@ public class IRInterpreter {
 
             case TRY: {
                 // Pop closures: top → finally, handlerN..., handler1, body → bottom
-                int handlerCount = pl;
                 IRClosure body;
                 String[] types = null;
                 IRClosure[] handlers = null;
                 IRClosure finalizer;
 
                 finalizer = (IRClosure)pop();
-                if (handlerCount > 0) {
-                    types = new String[handlerCount];
-                    handlers = new IRClosure[handlerCount];
-                    for (int i = handlerCount - 1; i >= 0; i--) {
+                if (cnt > 0) {
+                    types = new String[cnt];
+                    handlers = new IRClosure[cnt];
+                    for (int i = cnt - 1; i >= 0; i--) {
                         handlers[i] = (IRClosure)pop();
                         types[i] = (String)pop();
                     }
@@ -449,12 +447,13 @@ public class IRInterpreter {
             }
 
             case ASSERT: {
-                Object msg = pop();
-                Boolean exp = (Boolean)pop();
                 try {
-                    if (msg == null) {
+                    if (cnt == 1) {
+                        Boolean exp = (Boolean)pop();
                         assert exp;
                     } else {
+                        Object msg = pop();
+                        Boolean exp = (Boolean)pop();
                         assert exp : msg;
                     }
                 } catch (AssertionError ex) {
@@ -492,13 +491,13 @@ public class IRInterpreter {
 
             case STORE_VAR: {
                 Object val = pop();
-                locals[pl] = val;
+                locals[idx] = val;
                 push(val);
                 break;
             }
 
             case STORE_VAR_POP: {
-                locals[pl] = pop();
+                locals[idx] = pop();
                 break;
             }
 
@@ -509,14 +508,11 @@ public class IRInterpreter {
             }
 
             case INVOKE_DIRECT: {
-                // function pool index in payload
-                // argCount in first operand
-                int argc = pl;
                 IRFunction targetFn = (IRFunction)constantPool[idx];
 
                 // Pop arguments
-                Object[] args = new Object[argc];
-                for (int i = argc - 1; i >= 0; i--)
+                Object[] args = new Object[cnt];
+                for (int i = cnt - 1; i >= 0; i--)
                     args[i] = pop();
 
                 IRInterpreter callee = new IRInterpreter(evalContext, targetFn);
@@ -525,14 +521,11 @@ public class IRInterpreter {
             }
 
             case INVOKE_TARGET: {
-                // target name pool index in payload
-                // argCount in first operand
-                int argc = pl;
                 String id = (String)constantPool[idx];
 
                 // Pop arguments
-                Object[] args = new Object[argc];
-                for (int i = argc - 1; i >= 0; i--)
+                Object[] args = new Object[cnt];
+                for (int i = cnt - 1; i >= 0; i--)
                     args[i] = pop();
 
                 push(invokeTarget(id, args));
@@ -540,9 +533,8 @@ public class IRInterpreter {
             }
 
             case INVOKE_OPERATOR: {
-                int argc = pl;
                 String name = (String)constantPool[idx];
-                if (argc == 1) {
+                if (cnt == 1) {
                     Object rhs = pop();
                     push(invokeOperator(name, rhs));
                 } else {
@@ -554,16 +546,15 @@ public class IRInterpreter {
             }
 
             case INVOKE_DYN: {
-                Object result = invokeDyn(pl);
+                Object result = invokeDyn(cnt);
                 push(result);
                 break;
             }
 
             case INVOKE_METHOD: {
-                int argc = pl;
                 Method m = (Method)constantPool[idx];
-                Closure[] args = new Closure[argc];
-                for (int i = argc - 1; i >= 0; i--) {
+                Closure[] args = new Closure[cnt];
+                for (int i = cnt - 1; i >= 0; i--) {
                     Object arg = pop();
                     args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
                 }
@@ -573,10 +564,9 @@ public class IRInterpreter {
             }
 
             case INVOKE_STATIC: {
-                int argc = pl;
                 Method m = (Method)constantPool[idx];
-                Closure[] args = new Closure[argc];
-                for (int i = argc - 1; i >= 0; i--) {
+                Closure[] args = new Closure[cnt];
+                for (int i = cnt - 1; i >= 0; i--) {
                     Object arg = pop();
                     args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
                 }
@@ -585,10 +575,9 @@ public class IRInterpreter {
             }
 
             case INVOKE_EXPANDO: {
-                int argc = pl;
                 Method m = (Method)constantPool[idx];
-                Closure[] args = new Closure[argc + 1]; // +1 for expando base
-                for (int i = argc; i >= 1; i--) {
+                Closure[] args = new Closure[cnt + 1]; // +1 for expando base
+                for (int i = cnt; i >= 1; i--) {
                     Object arg = pop();
                     args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
                 }
@@ -673,9 +662,8 @@ public class IRInterpreter {
             }
 
             case NEW_MAP: {
-                int count = pl;
                 LinkedHashMap<Object, Object> map = new LinkedHashMap<>();
-                for (int i = count - 1; i >= 0; i--) {
+                for (int i = cnt - 1; i >= 0; i--) {
                     Object val = pop();
                     Object key = pop();
                     map.put(key, val);
@@ -685,9 +673,8 @@ public class IRInterpreter {
             }
 
             case NEW_TUPLE: {
-                int count = pl;
-                Object[] elems = new Object[count];
-                for (int i = count - 1; i >= 0; i--)
+                Object[] elems = new Object[cnt];
+                for (int i = cnt - 1; i >= 0; i--)
                     elems[i] = pop();
                 push(elems);
                 break;
@@ -702,21 +689,19 @@ public class IRInterpreter {
             }
 
             case NEW_XML: {
-                int keyCount = pl;
-                int childCount = idx;
                 Object tag;
                 Object[] att_names = null, att_values = null;
                 Object[] children = null;
-                if (childCount != 0) {
-                    children = new Object[childCount];
-                    for (int i = childCount - 1; i >= 0; i--) {
+                if (idx != 0) {
+                    children = new Object[idx];
+                    for (int i = idx - 1; i >= 0; i--) {
                         children[i] = pop();
                     }
                 }
-                if (keyCount != 0) {
-                    att_names = new String[keyCount];
-                    att_values = new String[keyCount];
-                    for (int i = keyCount - 1; i >= 0; i--) {
+                if (cnt != 0) {
+                    att_names = new String[cnt];
+                    att_values = new String[cnt];
+                    for (int i = cnt - 1; i >= 0; i--) {
                         att_values[i] = pop();
                         att_names[i] = pop();
                     }
