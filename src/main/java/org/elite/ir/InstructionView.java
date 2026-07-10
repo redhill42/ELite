@@ -101,4 +101,9 @@ final class InstructionView {
     public InstructionView peek(int n) {
         return new InstructionView(code, offset + n, constantPool);
     }
+
+    // ── Mutation ──
+    public void replace(int opcode, int payload, int operand) {
+        code[offset] = IRFormat.pack(opcode, kind(), payload, operand);
+    }
 }

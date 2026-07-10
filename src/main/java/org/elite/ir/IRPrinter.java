@@ -59,11 +59,11 @@ final class IRPrinter {
           .append("\n");
 
         DebugInfo di = fn.debugInfo();
+        BitSet jumpTargets = getJumpTargets(fn);
         InstructionView v = new InstructionView(fn.code(), 0, fn.constantPool());
         while (v.inBounds()) {
-            List<Integer> blockIds = fn.blockOfPc(v.offset());
-            if (!blockIds.isEmpty()) {
-                for (int blockId : blockIds)
+            for (int blockId : fn.blockOfPc(v.offset())) {
+                if (jumpTargets.get(blockId))
                     sb.append("  B").append(blockId).append(":\n");
             }
 
@@ -80,6 +80,20 @@ final class IRPrinter {
         }
 
         return sb.toString();
+    }
+
+    private static BitSet getJumpTargets(IRFunction fn) {
+        BitSet targets = new BitSet();
+        targets.set(0);
+        InstructionView v = new InstructionView(fn.code(), 0);
+        for (; v.inBounds(); v.advance()) {
+            switch (v.opcode()) {
+            case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
+                 Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL:
+                targets.set(v.payload());
+            }
+        }
+        return targets;
     }
 
     private static String formatInst(InstructionView v, IRFunction fn) {

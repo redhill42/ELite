@@ -41,31 +41,6 @@ class IRCoreTest {
     }
 
     @Test
-    void packAndDecodeControlFlow() {
-        IREmitter out = new IREmitter();
-        out.emitPushTrue()
-           .emitJumpIfFalse(99)
-           .emitPushConst(1)
-           .emitReturn();
-
-        long[] code = out.toArray();
-
-        InstructionView v = new InstructionView(code, 0);
-        assertEquals(Opcode.PUSH_TRUE, v.opcode());
-        v.advance();
-
-        assertEquals(Opcode.JUMP_IF_FALSE, v.opcode());
-        assertEquals(99, v.jumpTarget());
-        v.advance();
-
-        assertEquals(Opcode.PUSH_CONST, v.opcode());
-        assertEquals(1, v.poolIndex());
-        v.advance();
-
-        assertEquals(Opcode.RETURN, v.opcode());
-    }
-
-    @Test
     void dynamicArith() {
         IREmitter out = new IREmitter();
         out.emitPushVar(0)

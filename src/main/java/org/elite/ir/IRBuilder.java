@@ -2843,32 +2843,33 @@ public class IRBuilder extends ELNode.Visitor {
 
     IRFunction finish() {
         // Seal current block and record its debug line
-        {
-            long[] code = current.toArray();
-            blocks.add(new Block(currentBlockId, code));
-            if (currentPos != Position.NOPOS) {
-                runningPc += code.length;
-                recordDebugLine(runningPc);
-            }
+        long[] code = current.toArray();
+        blocks.add(new Block(currentBlockId, code));
+        if (currentPos != Position.NOPOS) {
+            runningPc += code.length;
+            recordDebugLine(runningPc);
+        }
+
+        boolean opt = ELProgram.OPT_LEVEL != 0;
+        if (opt) {
+            jumpThreadingOpt();
+            deadBlockElim();
         }
 
         // Merge block into contiguous code.
-        BitSet jumpTargets = getJumpTargets();
         InstList merged = new InstList();
-        int[] offsets = new int[blocks.size()];
+        int[] offsets = new int[nextBlockId];
+        Arrays.fill(offsets, -1);
         for (Block block : blocks) {
-            if (jumpTargets.get(block.id())) {
+            if (opt) {
                 // Remove fallthrough jump.
                 long last = merged.back();
                 if (IRFormat.opcode(last) == JUMP &&
                     IRFormat.payload(last) == block.id())
                     merged.reset(merged.size() - 1);
-                offsets[block.id()] = merged.size();
-                merged.addAll(block.code());
-            } else {
-                // Dead block.
-                offsets[block.id()] = -1;
             }
+            offsets[block.id()] = merged.size();
+            merged.addAll(block.code());
         }
 
         func.populate(merged.toArray(), maxLocals, offsets,
@@ -2877,22 +2878,76 @@ public class IRBuilder extends ELNode.Visitor {
         return func;
     }
 
-    private BitSet getJumpTargets() {
-        // Scan each block to get jump targets used to detect dead block.
-        BitSet jumpTargets = new BitSet();
-        jumpTargets.set(0); // block 0 is entry point
+    private void jumpThreadingOpt() {
+        Map<Integer, Integer> threadingJumps = new HashMap<>();
+        for (Block block : blocks) {
+            // If the only instruction in a block is a jump, threading
+            // jumps to target.
+            if (block.code().length == 1) {
+                long header = block.code()[0];
+                if (IRFormat.opcode(header) == JUMP) {
+                    int target = IRFormat.payload(header);
+                    threadingJumps.put(block.id(), target);
+                    threadingJumps.replaceAll((k, v) -> v == block.id() ? target : v);
+                }
+            }
+        }
+
+        // Apply all threading jumps. May produce dead blocks.
         for (Block block : blocks) {
             InstructionView v = new InstructionView(block.code(), 0);
-            while (v.inBounds()) {
+            for (; v.inBounds(); v.advance()) {
                 switch (v.opcode()) {
                 case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
                      JUMP_IF_NULL, JUMP_IF_NONNULL:
-                    jumpTargets.set(v.jumpTarget());
+                    int target = threadingJumps.getOrDefault(v.payload(), -1);
+                    if (target != -1)
+                        v.replace(v.opcode(), target, v.operand());
                 }
-                v.advance();
             }
         }
-        return jumpTargets;
+    }
+
+    private void scanJumpTargets(BitSet targets, long[] code) {
+        InstructionView v = new InstructionView(code, 0);
+        for (; v.inBounds(); v.advance()) {
+            switch (v.opcode()) {
+            case JUMP, JUMP_IF_TRUE, JUMP_IF_FALSE,
+                 JUMP_IF_NULL, JUMP_IF_NONNULL:
+                targets.set(v.jumpTarget());
+            }
+        }
+    }
+
+    private void deadBlockElim() {
+        // Scan each block to get initial reachable jump targets.
+        BitSet jumpTargets = new BitSet();
+        jumpTargets.set(0); // block 0 is entry point
+        for (Block block : blocks) {
+            scanJumpTargets(jumpTargets, block.code());
+        }
+
+        // Rescan blocks to eliminate dead blocks
+        while (true) {
+            BitSet newJumpTargets = new BitSet();
+            newJumpTargets.set(0);
+            for (Block block : blocks) {
+                if (jumpTargets.get(block.id()))
+                    scanJumpTargets(newJumpTargets, block.code());
+            }
+            if (newJumpTargets.equals(jumpTargets)) {
+                jumpTargets = newJumpTargets;
+                break;
+            }
+            jumpTargets = newJumpTargets;
+        }
+
+        // Eliminate dead blocks.
+        for (Iterator<Block> i = blocks.iterator(); i.hasNext(); ) {
+            Block block = i.next();
+            if (!jumpTargets.get(block.id()))
+                i.remove();
+        }
     }
 
     // ── Convenience emits ──

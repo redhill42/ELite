@@ -280,10 +280,36 @@ final class IREmitter {
     }
 
     public IREmitter emitJumpIfTrue(int blockId) {
+        if (last != -1) {
+            int opc = IRFormat.opcode(buf.get(last));
+            if (opc == PUSH_TRUE) {
+                // PUSH_TRUE, JUMP_IF_TRUE -> JUMP
+                buf.set(last, IRFormat.pack(JUMP, K_NONE, blockId, 0));
+                return this;
+            } else if (opc == PUSH_FALSE) {
+                // PUSH_FALSE, JUMP_IF_FALSE -> NOP
+                assert false;
+                return this;
+            }
+        }
+
         return emit(JUMP_IF_TRUE, K_NONE, blockId);
     }
 
     public IREmitter emitJumpIfFalse(int blockId) {
+        if (last != -1) {
+            int opc = IRFormat.opcode(buf.get(last));
+            if (opc == PUSH_FALSE) {
+                // PUSH_FALSE, JUMP_IF_TRUE -> JUMP
+                buf.set(last, IRFormat.pack(JUMP, K_NONE, blockId, 0));
+                return this;
+            } else if (opc == PUSH_TRUE) {
+                // PUSH_TRUE, JUMP_IF_FALSE -> NOP
+                buf.reset(last);
+                return this;
+            }
+        }
+
         return emit(JUMP_IF_FALSE, K_NONE, blockId);
     }
 
