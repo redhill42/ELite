@@ -70,7 +70,7 @@ final class IREmitter {
         case POP: {
             switch (lastOp) {
             case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL,
-                 PUSH_VAR, PUSH_GLOBAL, CLOSURE:
+                 PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL:
                 // PUSH_CONST, POP -> NOP
                 buf.reset(last); last--;
                 return true;
@@ -114,6 +114,11 @@ final class IREmitter {
                 buf.reset(last); last--;
                 return true;
             }
+            if (lastOp == NOT) {
+                // NOT, JUMP_IF_TRUE -> JUMP_IF_FALSE
+                buf.set(last, IRFormat.pack(JUMP_IF_FALSE, K_NONE, arg, 0));
+                return true;
+            }
             break;
 
         case JUMP_IF_FALSE:
@@ -125,6 +130,11 @@ final class IREmitter {
             if (lastOp == PUSH_TRUE) {
                 // PUSH_TRUE, JUMP_IF_FALSE -> NOP
                 buf.reset(last); last--;
+                return true;
+            }
+            if (lastOp == NOT) {
+                // NOT, JUMP_IF_FALSE -> JUMP_IF_TRUE
+                buf.set(last, IRFormat.pack(JUMP_IF_TRUE, K_NONE, arg, 0));
                 return true;
             }
             break;

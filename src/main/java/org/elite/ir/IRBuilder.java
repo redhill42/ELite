@@ -2821,6 +2821,20 @@ public class IRBuilder extends ELNode.Visitor {
     private int peepholeOpt(InstList merged, Block block) {
         int eliminated = 0;
 
+        // Swap jump condition to make fallthrough opportunity.
+        if (merged.size() >= 2) {
+            var v1 = new InstructionView(merged.data(), merged.size() - 2, merged.size());
+            var v2 = v1.peek();
+            if (v1.isJump() && v1.opcode() != JUMP &&
+                v1.jumpTarget() == block.id && // fallthrough
+                v2.opcode() == JUMP) {
+                int target1 = v1.jumpTarget();
+                int target2 = v2.jumpTarget();
+                v1.replace(inverseJump(v1.opcode()), target2, 0);
+                v2.replace(JUMP, target1, 0);
+            }
+        }
+
         // Remove fallthrough jump.
         long term = merged.back();
         if (IRFormat.opcode(term) == JUMP && IRFormat.payload(term) == block.id) {
@@ -2839,6 +2853,16 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         return eliminated;
+    }
+
+    private static int inverseJump(int opcode) {
+        return switch (opcode) {
+            case JUMP_IF_TRUE -> JUMP_IF_FALSE;
+            case JUMP_IF_FALSE -> JUMP_IF_TRUE;
+            case JUMP_IF_NULL -> JUMP_IF_NONNULL;
+            case JUMP_IF_NONNULL -> JUMP_IF_NULL;
+            default -> opcode;
+        };
     }
 
     private int[] buildBlockOffsets(InstList code) {
