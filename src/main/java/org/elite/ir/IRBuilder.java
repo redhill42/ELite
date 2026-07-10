@@ -75,6 +75,9 @@ public class IRBuilder extends ELNode.Visitor {
         final int id;
         final long[] code;
         int pc;
+
+        BitSet predecessors = new BitSet();
+        BitSet successors = new BitSet();
         int mappedId;
 
         Block(int id, long[] code) {
@@ -2710,24 +2713,37 @@ public class IRBuilder extends ELNode.Visitor {
             recordDebugLine(runningPc);
         }
 
+        // Scan instructions to build CFG.
+        Map<Integer, Block> blockMap = new HashMap<>();
+        for (Block block : blocks)
+            blockMap.put(block.id, block);
+        for (Block block : blocks) {
+            for (var v = new InstructionView(block.code, 0); v.inBounds(); v.advance()) {
+                if (v.isJump()) {
+                    Block target = blockMap.get(v.jumpTarget());
+                    block.successors.set(target.id);
+                    target.predecessors.set(block.id);
+                }
+            }
+        }
+
+        // Run optimization passes.
         boolean opt = ELProgram.OPT_LEVEL != 0;
         if (opt) {
-            jumpThreadingOpt();
-            deadBlockElim();
+            jumpThreadingOpt(blockMap);
+            deadBlockElim(blockMap);
         }
 
         // Merge block into contiguous code.
         InstList merged = new InstList();
         for (Block block : blocks) {
-            if (opt) {
-                // Remove fallthrough jump.
-                long last = merged.back();
-                if (IRFormat.opcode(last) == JUMP &&
-                    IRFormat.payload(last) == block.id)
-                    merged.reset(merged.size() - 1);
+            if (block.id == 0 || !block.predecessors.isEmpty()) {
+                int offset = 0;
+                if (opt)
+                    offset = peepholeOpt(merged, block);
+                block.pc = merged.size();
+                merged.addAll(block.code, offset, block.code.length - offset);
             }
-            block.pc = merged.size();
-            merged.addAll(block.code);
         }
 
         int[] offsets = buildBlockOffsets(merged);
@@ -2738,7 +2754,7 @@ public class IRBuilder extends ELNode.Visitor {
         return func;
     }
 
-    private void jumpThreadingOpt() {
+    private void jumpThreadingOpt(Map<Integer, Block> blockMap) {
         Map<Integer, Integer> threadingJumps = new HashMap<>();
         for (Block block : blocks) {
             // If the only instruction in a block is a jump, threading
@@ -2751,6 +2767,20 @@ public class IRBuilder extends ELNode.Visitor {
                     threadingJumps.replaceAll((k, v) -> v == block.id ? target : v);
                 }
             }
+        }
+
+        // Update CFG.
+        for (Map.Entry<Integer, Integer> e : threadingJumps.entrySet()) {
+            Block from = blockMap.get(e.getKey());
+            Block to = blockMap.get(e.getValue());
+            for (int i = from.predecessors.nextSetBit(0); i >= 0;
+                 i = from.predecessors.nextSetBit(i+1)) {
+                Block pred = blockMap.get(i);
+                pred.successors.clear(from.id);
+                pred.successors.set(to.id);
+                to.predecessors.set(pred.id);
+            }
+            from.predecessors.clear(); // dead
         }
 
         // Apply all threading jumps. May produce dead blocks.
@@ -2766,58 +2796,59 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
-    private void scanJumpTargets(BitSet targets, long[] code, int size) {
-        InstructionView v = new InstructionView(code, 0, size);
-        for (; v.inBounds(); v.advance()) {
-            if (v.isJump())
-                targets.set(v.jumpTarget());
-        }
+    private void deadBlockElim(Map<Integer, Block> blockMap) {
+        BitSet visited = new BitSet();
+        boolean changed;
+        do {
+            changed = false;
+            for (Block block : blocks) {
+                if (visited.get(block.id))
+                    continue;
+                if (block.id != 0 && block.predecessors.isEmpty()) {
+                    // Make all successors dead.
+                    for (int i = block.successors.nextSetBit(0); i >= 0;
+                         i = block.successors.nextSetBit(i+1)) {
+                        Block succ = blockMap.get(i);
+                        succ.predecessors.clear(block.id);
+                    }
+                    visited.set(block.id);
+                    changed = true;
+                }
+            }
+        } while (changed);
     }
 
-    private void deadBlockElim() {
-        // Scan each block to get initial reachable jump targets.
-        BitSet jumpTargets = new BitSet();
-        jumpTargets.set(0); // block 0 is entry point
-        for (Block block : blocks) {
-            scanJumpTargets(jumpTargets, block.code, block.code.length);
+    private int peepholeOpt(InstList merged, Block block) {
+        int eliminated = 0;
+
+        // Remove fallthrough jump.
+        long term = merged.back();
+        if (IRFormat.opcode(term) == JUMP && IRFormat.payload(term) == block.id) {
+            merged.reset(merged.size() - 1);
         }
 
-        // Rescan blocks to eliminate dead blocks
-        while (true) {
-            BitSet newJumpTargets = new BitSet();
-            newJumpTargets.set(0);
-            for (Block block : blocks) {
-                if (jumpTargets.get(block.id))
-                    scanJumpTargets(newJumpTargets, block.code, block.code.length);
+        // Remove redundant PUSH_NULL, POP. This can happen when a control flow
+        // expression result is dropped.
+        if (block.code.length > 0 && block.predecessors.cardinality() == 1) {
+            int last = IRFormat.opcode(merged.back());
+            int current = IRFormat.opcode(block.code[0]);
+            if (last == PUSH_NULL && current == POP) {
+                merged.reset(merged.size() - 1);
+                eliminated++;
             }
-            if (newJumpTargets.equals(jumpTargets)) {
-                jumpTargets = newJumpTargets;
-                break;
-            }
-            jumpTargets = newJumpTargets;
         }
 
-        // Eliminate dead blocks.
-        for (Iterator<Block> i = blocks.iterator(); i.hasNext(); ) {
-            Block block = i.next();
-            if (!jumpTargets.get(block.id))
-                i.remove();
-        }
+        return eliminated;
     }
 
     private int[] buildBlockOffsets(InstList code) {
         // Get all reachable blocks.
         BitSet targets = new BitSet();
         targets.set(0);
-        scanJumpTargets(targets, code.data(), code.size());
-
-        // No need to remap if all blocks are reachable, no need to remap.
-        if (targets.size() == blocks.size()) {
-            int[] offsets = new int[blocks.size()];
-            for (Block block : blocks) {
-                offsets[block.id] = block.pc;
-            }
-            return offsets;
+        for (var v = new InstructionView(code.data(), 0, code.size());
+             v.inBounds(); v.advance()) {
+            if (v.isJump())
+                targets.set(v.jumpTarget());
         }
 
         // Remove hole in block IDs.
@@ -2830,12 +2861,10 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Remap block IDs after dead block eliminated.
-        InstructionView v = new InstructionView(code.data(), 0, code.size());
-        for (; v.inBounds(); v.advance()) {
+        for (var v = new InstructionView(code.data(), 0, code.size());
+             v.inBounds(); v.advance()) {
             if (v.isJump()) {
-                int blockId = v.jumpTarget();
-                Block block = remap.get(blockId);
-                assert block != null;
+                Block block = remap.get(v.jumpTarget());
                 if (block.id != block.mappedId)
                     v.set(IRFormat.pack(v.opcode(), K_NONE, block.mappedId, 0));
             }

@@ -16,10 +16,10 @@ final class InstList {
         data[size++] = value;
     }
 
-    void addAll(long[] values) {
-        ensureCapacity(size + values.length);
-        System.arraycopy(values, 0, data, size, values.length);
-        size += values.length;
+    void addAll(long[] values, int offset, int length) {
+        ensureCapacity(size + length);
+        System.arraycopy(values, offset, data, size, length);
+        size += length;
     }
 
     long get(int index) {
