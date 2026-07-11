@@ -286,8 +286,9 @@ public class IRBuilder extends ELNode.Visitor {
             if (ident.symbol != null) {
                 if (inTailPosition && ident.symbol.func == this.func) {
                     // TCO: build args and save to local slots.
-                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.def.expr,
-                                             node.args, node.keys);
+                    ELNode.LAMBDA lambda = (ELNode.LAMBDA)ident.symbol.def.expr;
+                    ELNode[] args = getCallArgs(node.pos, lambda, node.args, node.keys);
+                    int argc = buildCallArgs(lambda, args);
                     for (int i = argc; --i >= 0; ) {
                         current.emitStoreVar(i);
                         current.emitPop();
@@ -299,10 +300,9 @@ public class IRBuilder extends ELNode.Visitor {
                 }
 
                 if (ident.symbol.func != null) {
-                    int funcIdx = putConstant(ident.symbol.func);
-                    int argc = buildCallArgs(node.pos, (ELNode.LAMBDA)ident.symbol.def.expr,
-                                             node.args, node.keys);
-                    current.emitInvokeDirect(funcIdx, argc);
+                    var lambda = (ELNode.LAMBDA)ident.symbol.def.expr;
+                    ELNode[] args = getCallArgs(node.pos, lambda, node.args, node.keys);
+                    buildDirectCall(ident.symbol, args);
                     return;
                 }
 
@@ -357,14 +357,14 @@ public class IRBuilder extends ELNode.Visitor {
 
         build(base);
 
-        if (base instanceof ELNode.LAMBDA lam && lam.symbol != null && lam.symbol.func != null) {
-            // Inlined lambda no longer used.
+        if (base instanceof ELNode.LAMBDA lam && lam.symbol != null &&
+            lam.symbol.func != null) {
+            // Lambda closure no longer used.
             current.emitPop();
 
-            // Inline lambda call.
-            int funcIdx = putConstant(lam.symbol.func);
-            int argc = buildCallArgs(node.pos, lam, node.args, node.keys);
-            current.emitInvokeDirect(funcIdx, argc);
+            // One-shot lambda call.
+            ELNode[] args = getCallArgs(node.pos, lam, node.args, node.keys);
+            buildDirectCall(lam.symbol, args);
             return;
         }
 
@@ -387,7 +387,7 @@ public class IRBuilder extends ELNode.Visitor {
      * Build arguments for a direct call, handling default and named parameters.
      * Returns the total number of arguments built (including defaults).
      */
-    private int buildCallArgs(int pos, ELNode.LAMBDA lambda, ELNode[] args, String[] keys) {
+    private ELNode[] getCallArgs(int pos, ELNode.LAMBDA lambda, ELNode[] args, String[] keys) {
         int argc = args.length;
         int nvars = lambda.vars.length;
         ELNode[] xargs = null;
@@ -441,25 +441,150 @@ public class IRBuilder extends ELNode.Visitor {
             }
 
             // Assign default values
-            args = xargs;
-            argc = xargs.length;
-            for (; j < argc; j++) {
-                if (args[j] == null) {
+            for (; j < xargs.length; j++) {
+                if (xargs[j] == null) {
                     if (lambda.vars[j].expr == null)
                         throw reportError(pos, _T(EL_MISSING_ARG_VALUE, lambda.vars[j].id));
-                    args[j] = lambda.vars[j].expr;
+                    xargs[j] = lambda.vars[j].expr;
                 }
             }
+
+            args = xargs;
         }
 
+        return args;
+    }
+
+    private int buildCallArgs(ELNode.LAMBDA lambda, ELNode[] args) {
         // Build argument list, include varargs that then build to tuple.
         build(args);
 
         // Build tuple for var arg list.
         if (lambda.varargs)
-            current.emitNewTuple(argc - (nvars - 1));
+            current.emitNewTuple(args.length - (lambda.vars.length - 1));
 
-        return nvars;
+        return lambda.vars.length;
+    }
+
+    private void buildDirectCall(SymbolTable.Symbol sym, ELNode... args) {
+        IRFunction fn = sym.func;
+        ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
+
+        if (!isInlineOpportunity(fn) || lambda.varargs) {
+            int argc = buildCallArgs(lambda, args);
+            current.emitInvokeDirect(putConstant(sym.func), argc);
+            return;
+        }
+
+        // Scan for modified slots.
+        BitSet modSlots = new BitSet();
+        for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
+            if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP)
+                modSlots.set(v.varIndex());
+        }
+
+        // Allocate slots for function local variables.
+        Slot[] slots = new Slot[fn.maxLocals()];
+        for (int i = 0; i < args.length; i++) {
+            if (!modSlots.get(i)) {
+                if (args[i] instanceof ELNode.IDENT ident && !ident.symbol.captured) {
+                    slots[i] = new Slot(ident);
+                    continue;
+                }
+                if (args[i] instanceof ELNode.Constant) {
+                    slots[i] = null;
+                    continue;
+                }
+            }
+
+            slots[i] = new Slot();
+            build(args[i]);
+            slots[i].store();
+            current.emitPop();
+        }
+        for (int i = args.length; i < fn.maxLocals(); i++) {
+            slots[i] = new Slot();
+        }
+
+        inlineInstructions(lambda, fn, slots, args);
+
+        for (int i = 0; i < fn.maxLocals(); i++)
+            release(slots[i]);
+    }
+
+    private void buildDirectCall(SymbolTable.Symbol sym, Slot... args) {
+        IRFunction fn = sym.func;
+        ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
+
+        if (!isInlineOpportunity(fn) || lambda.varargs) {
+            for (Slot arg : args) {
+                arg.load();
+                current.emitPop();
+            }
+            current.emitInvokeDirect(putConstant(fn), args.length);
+        }
+
+        // Scan for modified slots.
+        BitSet modSlots = new BitSet();
+        for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
+            if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP)
+                modSlots.set(v.varIndex());
+        }
+
+        // Allocate slots for function local variables.
+        Slot[] slots = new Slot[fn.maxLocals()];
+        for (int i = 0; i < args.length; i++) {
+            if (!modSlots.get(i)) {
+                slots[i] = args[i];
+            } else {
+                slots[i] = new Slot();
+                args[i].load();
+                slots[i].store();
+                current.emitPop();
+            }
+        }
+        for (int i = args.length; i < fn.maxLocals(); i++) {
+            slots[i] = new Slot();
+        }
+
+        inlineInstructions(lambda, fn, slots, null);
+
+        for (int i = 0; i < fn.maxLocals(); i++)
+            release(slots[i]);
+    }
+
+    private void inlineInstructions(ELNode.LAMBDA lambda, IRFunction fn,
+                                    Slot[] slots, ELNode[] args) {
+        if (lambda.scope.hasCaptures())
+            current.emitEnterScope();
+
+        for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
+            if (v.opcode() == PUSH_VAR || v.opcode() == STORE_VAR ||
+                v.opcode() == STORE_VAR_POP) {
+                if (slots[v.varIndex()] == null) {
+                    // Push constant.
+                    assert v.varIndex() < args.length && v.opcode() == PUSH_VAR;
+                    build(args[v.varIndex()]);
+                } else {
+                    // Remap local variable to new slot.
+                    int newSlot = slots[v.varIndex()].slot;
+                    current.emit(v.opcode(), v.payload(), newSlot);
+                }
+            } else if (v.opcode() == RETURN) {
+                break;
+            } else {
+                current.emit(v.opcode(), v.payload(), v.operand());
+            }
+        }
+
+        if (lambda.scope.hasCaptures())
+            current.emitLeaveScope();
+    }
+
+    private boolean isInlineOpportunity(IRFunction fn) {
+        if (ELProgram.OPT_LEVEL == 0)
+            return false;
+        return !fn.isDeclaration() && fn.blockCount() == 1 && fn.code().length < 50;
     }
 
     private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {
@@ -685,11 +810,24 @@ public class IRBuilder extends ELNode.Visitor {
         // Initialize temporary variables.
         Slot indSlot = new Slot();
         Slot endSlot = new Slot();
-        Slot bodySlot = new Slot();
+        Slot bodySlot = null;
 
         build(body);
-        bodySlot.store();
-        current.emitPop();
+
+        SymbolTable.Symbol sym =
+            (body instanceof ELNode.IDENT ident)   ? ident.symbol :
+            (body instanceof ELNode.LAMBDA lambda) ? lambda.symbol : null;
+
+        if (sym != null && sym.func != null) {
+            if (sym.func.paramCount() > 1)
+                throw reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT, sym.func.name(),
+                                               sym.func.paramCount(), 1));
+            current.emitPop();
+        } else {
+            bodySlot = new Slot();
+            bodySlot.store();
+            current.emitPop();
+        }
 
         build(begin);
         indSlot.store();
@@ -716,19 +854,11 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Generate loop body.
         startBlock(bodyB);
-        if (body instanceof ELNode.LAMBDA b) {
-            bodySlot.load();
-            if (b.vars.length > 1)
-                throw reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT,
-                                              b.name == null ? "<lambda>" : b.name,
-                                              b.vars.length, 1));
-            if (b.vars.length == 1)
-                indSlot.load();
-            if (b.symbol != null) {
-                int funcIdx = putConstant(b.symbol.func);
-                current.emitInvokeDirect(funcIdx, b.vars.length);
+        if (sym != null && sym.func != null) {
+            if (sym.func.paramCount() == 1) {
+                buildDirectCall(sym, indSlot);
             } else {
-                current.emitInvokeDyn(b.vars.length);
+                buildDirectCall(sym, new Slot[0]);
             }
         } else if (!tryBuildOptimizedGlobalCall(body, indSlot)) {
             bodySlot.load();
@@ -759,38 +889,28 @@ public class IRBuilder extends ELNode.Visitor {
         if (!(base instanceof ELNode.IDENT v))
             return false;
 
-        if (v.symbol == null) {
-            var mc = MethodResolver.getInstance(elctx).resolveGlobalMethod(v.id);
-            if (mc == null)
-                return false;
+        if (v.symbol != null)
+            return false;
 
-            Method method = mc.getJavaMethod();
-            if (method == null)
-                return false;
+        var mc = MethodResolver.getInstance(elctx).resolveGlobalMethod(v.id);
+        if (mc == null)
+            return false;
 
-            int paramCount = method.getParameterCount();
-            if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
-                paramCount--;
-            if (paramCount > 1 && method.isVarArgs())
-                paramCount--;
-            if (paramCount > 1)
-                throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT, v.id, paramCount, 1));
-            if (paramCount == 1)
-                arg.load();
-            current.emitInvokeStatic(putConstant(method), paramCount);
-            return true;
-        } else if (v.symbol.def.expr instanceof ELNode.LAMBDA b) {
-            if (b.vars.length > 1)
-                throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT,
-                                              b.name == null ? "<lambda>" : b.name,
-                                              b.vars.length, 1));
-            if (b.vars.length == 1)
-                arg.load();
-            current.emitInvokeDirect(putConstant(b.symbol.func), b.vars.length);
-            return true;
-        }
+        Method method = mc.getJavaMethod();
+        if (method == null)
+            return false;
 
-        return false;
+        int paramCount = method.getParameterCount();
+        if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
+            paramCount--;
+        if (paramCount > 1 && method.isVarArgs())
+            paramCount--;
+        if (paramCount > 1)
+            throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT, v.id, paramCount, 1));
+        if (paramCount == 1)
+            arg.load();
+        current.emitInvokeStatic(putConstant(method), paramCount);
+        return true;
     }
 
     private boolean buildMathReduce(ELNode[] args, int op) {
@@ -1138,9 +1258,7 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.PREFIX node) {
         if (node.oper.symbol != null) {
             if (node.oper.symbol.func != null) {
-                int funcIdx = putConstant(node.oper.symbol.func);
-                build(node.right);
-                current.emitInvokeDirect(funcIdx, 1);
+                buildDirectCall(node.oper.symbol, node.right);
             } else {
                 build(node.oper);
                 build(node.right);
@@ -1156,10 +1274,7 @@ public class IRBuilder extends ELNode.Visitor {
     public void visit(ELNode.INFIX node) {
         if (node.oper.symbol != null) {
             if (node.oper.symbol.func != null) {
-                int funcIdx = putConstant(node.oper.symbol.func);
-                build(node.left);
-                build(node.right);
-                current.emitInvokeDirect(funcIdx, 2);
+                buildDirectCall(node.oper.symbol, node.left, node.right);
             } else {
                 build(node.oper);
                 build(node.left);
