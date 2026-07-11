@@ -29,25 +29,7 @@ final class IRPrinter {
     private IRPrinter() {}
 
     static String dumpIR(IRFunction function) {
-        LinkedHashSet<IRFunction> funcs = new LinkedHashSet<>();
-        ArrayDeque<IRFunction> worklist = new ArrayDeque<>();
-        worklist.push(function);
-
-        while (!worklist.isEmpty()) {
-            IRFunction fn = worklist.pop();
-            if (!funcs.contains(fn)) {
-                funcs.add(fn);
-                for (Object c : fn.constantPool()) {
-                    if (c instanceof IRFunction)
-                        worklist.push((IRFunction)c);
-                }
-            }
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (IRFunction fn : funcs)
-            sb.append(formatIR(fn));
-        return sb.toString();
+        return formatIR(function);
     }
 
     static String formatIR(IRFunction fn) {
@@ -114,8 +96,10 @@ final class IRPrinter {
              Opcode.INVOKE_OPERATOR,
              Opcode.INVOKE_METHOD,
              Opcode.INVOKE_STATIC,
-             Opcode.INVOKE_EXPANDO ->
-            formatConstPool(sb, fn, v.count());
+             Opcode.INVOKE_EXPANDO -> {
+            sb.append(" ").append(v.count()).append(",");
+            formatConstPool(sb, fn, v.poolIndex());
+        }
 
         case Opcode.NEW_MAP,
              Opcode.NEW_TUPLE ->

@@ -189,13 +189,13 @@ class ELiteScriptEngine extends AbstractScriptEngine
 
             case 1, 2: {
                 ELContext elctx = getELContext(getContext());
-                IRFunction fn = program.compile(elctx);
+                IRFunction fn = program.compile(elctx).entry();
                 return new IRCompiledScript(this, fn);
             }
 
             case 3: default: {
                 ELContext elctx = getELContext(getContext());
-                IRFunction fn = program.compile(elctx);
+                IRFunction fn = program.compile(elctx).entry();
                 try {
                     var cf = IRBytecodeCompiler.compile(fn);
                     return new BytecodeCompiledScript(this, cf);

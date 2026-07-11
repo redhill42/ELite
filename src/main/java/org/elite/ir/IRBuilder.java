@@ -60,6 +60,9 @@ public class IRBuilder extends ELNode.Visitor {
     // Context used to resolve global method and Java class.
     private final ELContext elctx;
 
+    // The compiled IRProgram.
+    IRProgram program;
+
     // The IRFunction to build.
     private final IRFunction func;
 
@@ -113,8 +116,10 @@ public class IRBuilder extends ELNode.Visitor {
      * Create a top-level builder.  The symbol table must already be built
      * so that AST nodes carry slot/captured annotations.
      */
-    IRBuilder(ELContext elctx, IRFunction func, SymbolTable.Scope scope) {
+    IRBuilder(ELContext elctx, IRProgram program, IRFunction func,
+              SymbolTable.Scope scope) {
         this.elctx = elctx;
+        this.program = program;
         this.func = func;
         this.current = new IREmitter();
         this.currentScope = scope;
@@ -126,6 +131,7 @@ public class IRBuilder extends ELNode.Visitor {
      */
     private IRBuilder(IRBuilder parent, IRFunction func, SymbolTable.Scope scope) {
         assert(parent != null);
+        this.program = parent.program;
         this.func = func;
         this.elctx = parent.elctx;
         this.current = new IREmitter();
@@ -1920,6 +1926,9 @@ public class IRBuilder extends ELNode.Visitor {
             node.symbol.func = func;
         }
 
+        if (program != null)
+            program.add(func);
+
         IRBuilder nested = new IRBuilder(this, func, node.scope);
 
         // Propagate source file from the AST node
@@ -2971,13 +2980,13 @@ public class IRBuilder extends ELNode.Visitor {
         IRBytecodeCompiler.resetState();
         SymbolTable symTable = SymbolTableBuilder.build(node);
         IRFunction func = new IRFunction("<expr>", 0);
-        IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
+        IRBuilder b = new IRBuilder(elctx, null, func, symTable.currentScope());
         b.build(node);
         b.current.emitReturn();
         return b.finish();
     }
 
-    public static IRFunction compile(ELContext elctx, ELProgram program) {
+    public static IRProgram compile(ELContext elctx, ELProgram program) {
         SymbolTable symTable = SymbolTableBuilder.build(program);
         reportSymbolTableError(program, symTable);
 
@@ -2987,7 +2996,8 @@ public class IRBuilder extends ELNode.Visitor {
         IRBytecodeCompiler.resetState();
 
         IRFunction func = new IRFunction("<program>", 0);
-        IRBuilder b = new IRBuilder(elctx, func, symTable.currentScope());
+        IRProgram output = new IRProgram(func);
+        IRBuilder b = new IRBuilder(elctx, output, func, symTable.currentScope());
         b.setFile(program.getFilename());
 
         // Reserve slots for all pre-allocated program-level variables.
@@ -3013,7 +3023,8 @@ public class IRBuilder extends ELNode.Visitor {
             b.current.emitReturn();
         }
 
-        return b.finish();
+        b.finish();
+        return output;
     }
 
     private static void reportSymbolTableError(ELProgram prog, SymbolTable symTable) {
