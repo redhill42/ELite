@@ -871,23 +871,39 @@ public class IRBuilder extends ELNode.Visitor {
 
     private boolean buildStepBuiltin(ELNode begin, ELNode end, ELNode body,
                                      int step, int cmpop) {
+        // Build body to make sure one-shot lambda is built.
+        build(body);
+
+        // We have three path to call the step body:
+        //  1) direct call, if and only if the body is a lambda
+        //  2) global call, if the body is a global function reference (e.g. print)
+        //  3) dynamic call, fallback for unresolved call targets.
+
+        // Determine whether the body can be inlined or direct call.
+        boolean direct = false;
+        SymbolTable.Symbol sym =
+            (body instanceof ELNode.IDENT ident)   ? ident.symbol :
+            (body instanceof ELNode.LAMBDA lambda) ? lambda.symbol : null;
+        if (sym != null && sym.func != null) {
+            if (sym.func.paramCount() > 1)
+                throw reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT, sym.func.name(),
+                                               sym.func.paramCount(), 1));
+            direct = true;
+        }
+
+        // Check if the body is a global function.
+        Method global = direct ? null : getGlobalForStepBody(body);
+
         // Initialize temporary variables.
         Slot indSlot = new Slot();
         Slot endSlot = new Slot();
         Slot bodySlot = null;
 
-        build(body);
-
-        SymbolTable.Symbol sym =
-            (body instanceof ELNode.IDENT ident)   ? ident.symbol :
-            (body instanceof ELNode.LAMBDA lambda) ? lambda.symbol : null;
-
-        if (sym != null && sym.func != null) {
-            if (sym.func.paramCount() > 1)
-                throw reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT, sym.func.name(),
-                                               sym.func.paramCount(), 1));
+        if (direct || global != null) {
+            // Discard body closure if direct call or global call.
             current.emitPop();
         } else {
+            // Store body reference for dynamic call.
             bodySlot = new Slot();
             bodySlot.store();
             current.emitPop();
@@ -918,13 +934,16 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Generate loop body.
         startBlock(bodyB);
-        if (sym != null && sym.func != null) {
+        if (direct) {
             if (sym.func.paramCount() == 1) {
                 buildDirectCall(sym, indSlot);
             } else {
                 buildDirectCall(sym, new Slot[0]);
             }
-        } else if (!tryBuildOptimizedGlobalCall(body, indSlot)) {
+        } else if (global != null) {
+            indSlot.load();
+            current.emitInvokeStatic(putConstant(global), 1);
+        } else {
             bodySlot.load();
             indSlot.load();
             current.emitInvokeDyn(1);
@@ -949,32 +968,27 @@ public class IRBuilder extends ELNode.Visitor {
         return true;
     }
 
-    private boolean tryBuildOptimizedGlobalCall(ELNode base, Slot arg) {
-        if (!(base instanceof ELNode.IDENT v))
-            return false;
+    private Method getGlobalForStepBody(ELNode body) {
+        if (!(body instanceof ELNode.IDENT v))
+            return null;
 
         if (v.symbol != null)
-            return false;
+            return null;
 
         var mc = MethodResolver.getInstance(elctx).resolveGlobalMethod(v.id);
         if (mc == null)
-            return false;
+            return null;
 
         Method method = mc.getJavaMethod();
         if (method == null)
-            return false;
+            return null;
 
         int paramCount = method.getParameterCount();
         if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
             paramCount--;
-        if (paramCount > 1 && method.isVarArgs())
-            paramCount--;
-        if (paramCount > 1)
-            throw reportError(base.pos, _T(EL_FN_BAD_ARG_COUNT, v.id, paramCount, 1));
-        if (paramCount == 1)
-            arg.load();
-        current.emitInvokeStatic(putConstant(method), paramCount);
-        return true;
+        if (paramCount != 1 || method.isVarArgs())
+            return null;
+        return method;
     }
 
     private boolean buildMathReduce(ELNode[] args, int op) {

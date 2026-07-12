@@ -62,6 +62,48 @@ public final class Runtime {
         return ELNode.ACCESS.invoke(c, base, key, ELEngine.getCallArgs(args));
     }
 
+
+    public static Object invokeAssignOp(ELContext elctx, int op, Object lhs, Object rhs) {
+        String opname = ELNode.opIdentifiers[op];
+        Closure[] args = new Closure[1];
+        Object result;
+
+        // invoke assignment operator procedure
+        if (lhs != null && opname != null) {
+            if (lhs instanceof ClosureObject co) {
+                args[0] = new LiteralClosure(rhs);
+                result = co.invokeSpecial(elctx, opname.concat("="), args);
+                if (result != NO_RESULT)
+                    return result;
+            } else if (!(lhs instanceof Number)) {
+                MethodClosure method = MethodResolver.getInstance(elctx)
+                    .resolveMethod(lhs.getClass(), opname.concat("="));
+                if (method != null) {
+                    args[0] = new LiteralClosure(rhs);
+                    return method.invoke(elctx, lhs, args);
+                }
+            }
+        }
+
+        // do standard evaluation.
+        return switch (op) {
+        case Token.ADD -> Builtin.__add__(elctx, lhs, rhs);
+        case Token.SUB -> Builtin.__sub__(elctx, lhs, rhs);
+        case Token.MUL -> Builtin.__mul__(elctx, lhs, rhs);
+        case Token.DIV -> Builtin.__div__(elctx, lhs, rhs);
+        case Token.REM -> Builtin.__rem__(elctx, lhs, rhs);
+        case Token.POW -> Builtin.__pow__(elctx, lhs, rhs);
+        case Token.BITAND -> Builtin.__bitand__(elctx, lhs, rhs);
+        case Token.BITOR -> Builtin.__bitor__(elctx, lhs, rhs);
+        case Token.XOR -> Builtin.__xor__(elctx, lhs, rhs);
+        case Token.CAT -> Builtin.__cat__(elctx, lhs, rhs);
+        case Token.SHL -> Builtin.__shl__(elctx, lhs, rhs);
+        case Token.SHR -> Builtin.__shr__(elctx, lhs, rhs);
+        case Token.USHR -> Builtin.__ushr__(elctx, lhs, rhs);
+        default -> null;
+        };
+    }
+
     public static Object newArray(ELContext elctx, Object type, Object[] dims, Object[] init) {
         if (dims == null || dims.length == 1) {
             return createOneDimensionArray(elctx, type, dims, init);
@@ -449,48 +491,5 @@ public final class Runtime {
     private static final ELNode.IN __IN__ = new ELNode.IN(-1, null, null, false);
     public static Object dynIn(ELContext elctx, Object coll, Object elem) {
         return __IN__.eval(elctx, elem, coll);
-    }
-
-    // ── Dynamic invocation ──
-
-    public static Object invokeAssignOp(ELContext elctx, int op, Object lhs, Object rhs) {
-        String opname = ELNode.opIdentifiers[op];
-        Closure[] args = new Closure[1];
-        Object result;
-
-        // invoke assignment operator procedure
-        if (lhs != null && opname != null) {
-            if (lhs instanceof ClosureObject co) {
-                args[0] = new LiteralClosure(rhs);
-                result = co.invokeSpecial(elctx, opname.concat("="), args);
-                if (result != NO_RESULT)
-                    return result;
-            } else if (!(lhs instanceof Number)) {
-                MethodClosure method = MethodResolver.getInstance(elctx)
-                    .resolveMethod(lhs.getClass(), opname.concat("="));
-                if (method != null) {
-                    args[0] = new LiteralClosure(rhs);
-                    return method.invoke(elctx, lhs, args);
-                }
-            }
-        }
-
-        // do standard evaluation.
-        return switch (op) {
-        case Token.ADD -> dynAdd(elctx, lhs, rhs);
-        case Token.SUB -> dynSub(elctx, lhs, rhs);
-        case Token.MUL -> dynMul(elctx, lhs, rhs);
-        case Token.DIV -> dynDiv(elctx, lhs, rhs);
-        case Token.REM -> dynRem(elctx, lhs, rhs);
-        case Token.POW -> dynPow(elctx, lhs, rhs);
-        case Token.BITAND -> dynBitAnd(elctx, lhs, rhs);
-        case Token.BITOR -> dynBitOr(elctx, lhs, rhs);
-        case Token.XOR -> dynXor(elctx, lhs, rhs);
-        case Token.CAT -> dynCat(elctx, lhs, rhs);
-        case Token.SHL -> dynShl(elctx, lhs, rhs);
-        case Token.SHR -> dynShr(elctx, lhs, rhs);
-        case Token.USHR -> dynUShr(elctx, lhs, rhs);
-        default -> null;
-        };
     }
 }
