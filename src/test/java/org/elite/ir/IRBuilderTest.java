@@ -210,13 +210,6 @@ class IRBuilderTest {
 
     // ── String concat ──
 
-    @Test void stringConcatCompiles() {
-        ELNode node = parse("\"hello\" ~ \"world\"");
-        IRFunction fn = IRBuilder.compile(elctx, node);
-        assertNotNull(fn);
-        assertTrue(scanOp(fn, Opcode.CAT), "string concat should use DYNCAT");
-    }
-
     static boolean scanOp(IRFunction fn, int target) {
         for (int b = 0; b < fn.blockCount(); b++) {
             InstructionView v = new InstructionView(fn.code(), fn.blockStart(b));

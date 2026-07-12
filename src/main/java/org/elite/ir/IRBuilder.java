@@ -89,6 +89,9 @@ public class IRBuilder extends ELNode.Visitor {
         }
     }
 
+    // Peephole optimizer.
+    private final PeepholeOpt peephole;
+
     // ── Block management
     private final List<Block> blocks = new ArrayList<>();
     private final IREmitter current;
@@ -121,7 +124,8 @@ public class IRBuilder extends ELNode.Visitor {
         this.elctx = elctx;
         this.program = program;
         this.func = func;
-        this.current = new IREmitter();
+        this.peephole = new PeepholeOpt(elctx, this);
+        this.current = new IREmitter(peephole);
         this.currentScope = scope;
     }
 
@@ -134,7 +138,8 @@ public class IRBuilder extends ELNode.Visitor {
         this.program = parent.program;
         this.func = func;
         this.elctx = parent.elctx;
-        this.current = new IREmitter();
+        this.peephole = parent.peephole;
+        this.current = new IREmitter(peephole);
         this.currentScope = scope;
         this.currentFile = parent.currentFile;
 
@@ -476,16 +481,28 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        // Scan for modified slots.
+        // Scan for slots in inlined function.
+        BitSet readSlots = new BitSet();
         BitSet modSlots = new BitSet();
         for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
+            if (v.opcode() == PUSH_VAR)
+                readSlots.set(v.varIndex());
             if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP)
                 modSlots.set(v.varIndex());
         }
 
-        // Allocate slots for function local variables.
+        // Allocate slots for inline function local variables.
         Slot[] slots = new Slot[fn.maxLocals()];
         for (int i = 0; i < args.length; i++) {
+            // If the slot never read, no need to allocate new slot.
+            // Argument still need to build for side effects.
+            if (!readSlots.get(i)) {
+                build(args[i]);
+                current.emitPop();
+                continue;
+            }
+
+            // Reuse slot for read only slot.
             if (!modSlots.get(i)) {
                 if (args[i] instanceof ELNode.IDENT ident &&
                     ident.symbol != null && !ident.symbol.captured) {
@@ -498,35 +515,38 @@ public class IRBuilder extends ELNode.Visitor {
                 }
             }
 
-            slots[i] = new Slot();
+            // Build argument and store to local slot.
             build(args[i]);
+            slots[i] = new Slot();
             slots[i].store();
             current.emitPop();
         }
         for (int i = args.length; i < fn.maxLocals(); i++) {
-            slots[i] = new Slot();
+            if (readSlots.get(i))
+                slots[i] = new Slot();
         }
 
         inlineInstructions(sym, slots, args);
 
-        for (int i = 0; i < fn.maxLocals(); i++)
-            release(slots[i]);
+        for (Slot slot : slots)
+            release(slot);
     }
 
     private void buildDirectCall(SymbolTable.Symbol sym, Slot... args) {
         IRFunction fn = sym.func;
 
         if (!isInlineOpportunity(sym)) {
-            for (Slot arg : args) {
+            for (Slot arg : args)
                 arg.load();
-                current.emitPop();
-            }
             current.emitInvokeDirect(putConstant(fn), args.length);
         }
 
-        // Scan for modified slots.
+        // Scan for slots in inlined function.
+        BitSet readSlots = new BitSet();
         BitSet modSlots = new BitSet();
         for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
+            if (v.opcode() == PUSH_VAR)
+                readSlots.set(v.varIndex());
             if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP)
                 modSlots.set(v.varIndex());
         }
@@ -534,23 +554,26 @@ public class IRBuilder extends ELNode.Visitor {
         // Allocate slots for function local variables.
         Slot[] slots = new Slot[fn.maxLocals()];
         for (int i = 0; i < args.length; i++) {
-            if (!modSlots.get(i)) {
-                slots[i] = args[i];
-            } else {
-                slots[i] = new Slot();
-                args[i].load();
-                slots[i].store();
-                current.emitPop();
+            if (readSlots.get(i)) {
+                if (!modSlots.get(i)) {
+                    slots[i] = args[i];
+                } else {
+                    slots[i] = new Slot();
+                    args[i].load();
+                    slots[i].store();
+                    current.emitPop();
+                }
             }
         }
         for (int i = args.length; i < fn.maxLocals(); i++) {
-            slots[i] = new Slot();
+            if (readSlots.get(i))
+                slots[i] = new Slot();
         }
 
         inlineInstructions(sym, slots, null);
 
-        for (int i = 0; i < fn.maxLocals(); i++)
-            release(slots[i]);
+        for (Slot slot : slots)
+            release(slot);
     }
 
     private void inlineInstructions(SymbolTable.Symbol sym, Slot[] slots, ELNode[] args) {
@@ -573,16 +596,26 @@ public class IRBuilder extends ELNode.Visitor {
                 startBlock(blockMap[blockId]);
             }
 
-            if (v.opcode() == PUSH_VAR || v.opcode() == STORE_VAR ||
-                v.opcode() == STORE_VAR_POP) {
-                if (slots[v.varIndex()] == null) {
+            if (v.opcode() == PUSH_VAR) {
+                Slot newSlot = slots[v.varIndex()];
+                if (newSlot == null) {
                     // Push constant.
-                    assert v.varIndex() < args.length && v.opcode() == PUSH_VAR;
-                    build(args[v.varIndex()]);
+                    int idx = v.varIndex();
+                    assert idx < args.length && args[idx] instanceof ELNode.Constant;
+                    build(args[idx]);
                 } else {
                     // Remap local variable to new slot.
-                    int newSlot = slots[v.varIndex()].slot;
-                    current.emit(v.opcode(), v.payload(), newSlot);
+                    current.emit(v.opcode(), v.payload(), newSlot.slot);
+                }
+            } else if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP) {
+                Slot newSlot = slots[v.varIndex()];
+                if (newSlot == null) {
+                    // Ignore write only slot.
+                    if (v.opcode() == STORE_VAR_POP)
+                        current.emitPop();
+                } else {
+                    // Remap local variable to new slot.
+                    current.emit(v.opcode(), v.payload(), newSlot.slot);
                 }
             } else if (v.isJump()) {
                 current.emit(v.opcode(), v.payload(), blockMap[v.jumpTarget()]);
@@ -592,7 +625,7 @@ public class IRBuilder extends ELNode.Visitor {
                 if (exitBlock == -1)
                     exitBlock = allocBlockId();
                 current.emitJump(exitBlock);
-            } else {
+            } else if (v.opcode() != NOP) {
                 current.emit(v.opcode(), v.payload(), v.operand());
             }
         }
@@ -2987,8 +3020,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private int peepholeOpt(IntList merged, Block block) {
-        int eliminated = 0;
-
         // Swap jump condition to make fallthrough opportunity.
         if (merged.size() >= 2) {
             var v1 = new InstructionView(merged.data(), merged.size() - 2, merged.size());
@@ -3009,17 +3040,17 @@ public class IRBuilder extends ELNode.Visitor {
             merged.reset(merged.size() - 1);
         }
 
-        // Remove redundant PUSH_NULL, POP. This can happen when a control flow
-        // expression result is dropped.
-        if (block.code.length > 0 && block.predecessors.cardinality() == 1) {
-            int last = IRFormat.opcode(merged.back());
-            int current = IRFormat.opcode(block.code[0]);
-            if (last == PUSH_NULL && current == POP) {
-                merged.reset(merged.size() - 1);
-                eliminated++;
+        // Peephole optimize fallthrough.
+        int eliminated = 0;
+        if (block.predecessors.cardinality() == 1) {
+            InstructionView v = new InstructionView(block.code, 0);
+            for (; v.inBounds(); v.advance()) {
+                if (peephole.run(merged, v.opcode(), v.operand()))
+                    eliminated++;
+                else
+                    break;
             }
         }
-
         return eliminated;
     }
 
@@ -3081,11 +3112,15 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Convenience emits ──
 
-    private int putConstant(Object value) {
+    int putConstant(Object value) {
         return constIndex.computeIfAbsent(value, k -> {
             constants.add(k);
             return constants.size() - 1;
         });
+    }
+
+    Object getConstant(int index) {
+        return constants.get(index);
     }
 
     private void buildConst(Object value) {
