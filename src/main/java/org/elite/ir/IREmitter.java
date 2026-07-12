@@ -47,7 +47,18 @@ final class IREmitter {
         return emit(opcode, payload, 0);
     }
 
+    public boolean isDead() {
+        if (last != -1) {
+            // Instruction after jump or return is dead.
+            int op = IRFormat.opcode(buf.get(last));
+            return op == JUMP || op == RETURN || op == THROW;
+        }
+        return false;
+    }
+
     public IREmitter emit(int opcode, int payload, int operand) {
+        if (isDead())
+            return this;
         if (last != -1 && peepholeOpt(opcode, operand))
             return this;
 
@@ -59,10 +70,6 @@ final class IREmitter {
     private boolean peepholeOpt(int opcode, int arg) {
         int lastOp = IRFormat.opcode(buf.get(last));
         int lastArg = IRFormat.operand(buf.get(last));
-
-        // Instruction after jump or return is dead.
-        if (lastOp == JUMP || lastOp == RETURN || lastOp == RETURN_VOID || lastOp == THROW)
-            return true;
 
         switch (opcode) {
         case POP: {
@@ -84,6 +91,14 @@ final class IREmitter {
             if (lastOp == STORE_VAR_POP && arg == lastArg) {
                 // STORE_VAR_POP, PUSH_VAR -> STORE_VAR
                 buf.set(last, IRFormat.pack(STORE_VAR, 0, arg));
+                return true;
+            }
+            break;
+
+        case PUSH_GLOBAL:
+            if (lastOp == PUSH_GLOBAL && arg == lastArg) {
+                // PUSH_GLOAL x, PUSH_GLOBA x -> PUSH_GLOBAL x, DUP
+                emitDup(); // recursion
                 return true;
             }
             break;
@@ -369,10 +384,6 @@ final class IREmitter {
 
     public IREmitter emitReturn() {
         return emit(RETURN, 0);
-    }
-
-    public IREmitter emitReturnVoid() {
-        return emit(RETURN_VOID, 0);
     }
 
     public IREmitter emitTry(int handlerCount) {

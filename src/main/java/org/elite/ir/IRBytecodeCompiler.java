@@ -175,7 +175,6 @@ public class IRBytecodeCompiler {
             case POP -> mv.visitInsn(A_POP);
             case POP_N -> { for (int i=0; i<pl; i++) mv.visitInsn(A_POP); }
             case RETURN -> { mv.visitInsn(A_ARETURN); }  // already boxed
-            case RETURN_VOID -> { mv.visitInsn(A_ACONST_NULL); mv.visitInsn(A_ARETURN); }
             case THROW -> {
                 // Wrap non-RuntimeException in UserException, then throw
                 mv.visitMethodInsn(A_INVOKESTATIC, "org/elite/eval/Runtime",

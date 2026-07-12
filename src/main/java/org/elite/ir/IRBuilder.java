@@ -470,7 +470,7 @@ public class IRBuilder extends ELNode.Visitor {
         IRFunction fn = sym.func;
         ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
 
-        if (!isInlineOpportunity(fn) || lambda.varargs) {
+        if (!isInlineOpportunity(sym)) {
             int argc = buildCallArgs(lambda, args);
             current.emitInvokeDirect(putConstant(sym.func), argc);
             return;
@@ -487,7 +487,8 @@ public class IRBuilder extends ELNode.Visitor {
         Slot[] slots = new Slot[fn.maxLocals()];
         for (int i = 0; i < args.length; i++) {
             if (!modSlots.get(i)) {
-                if (args[i] instanceof ELNode.IDENT ident && !ident.symbol.captured) {
+                if (args[i] instanceof ELNode.IDENT ident &&
+                    ident.symbol != null && !ident.symbol.captured) {
                     slots[i] = new Slot(ident);
                     continue;
                 }
@@ -506,7 +507,7 @@ public class IRBuilder extends ELNode.Visitor {
             slots[i] = new Slot();
         }
 
-        inlineInstructions(lambda, fn, slots, args);
+        inlineInstructions(sym, slots, args);
 
         for (int i = 0; i < fn.maxLocals(); i++)
             release(slots[i]);
@@ -514,9 +515,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     private void buildDirectCall(SymbolTable.Symbol sym, Slot... args) {
         IRFunction fn = sym.func;
-        ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
 
-        if (!isInlineOpportunity(fn) || lambda.varargs) {
+        if (!isInlineOpportunity(sym)) {
             for (Slot arg : args) {
                 arg.load();
                 current.emitPop();
@@ -547,18 +547,32 @@ public class IRBuilder extends ELNode.Visitor {
             slots[i] = new Slot();
         }
 
-        inlineInstructions(lambda, fn, slots, null);
+        inlineInstructions(sym, slots, null);
 
         for (int i = 0; i < fn.maxLocals(); i++)
             release(slots[i]);
     }
 
-    private void inlineInstructions(ELNode.LAMBDA lambda, IRFunction fn,
-                                    Slot[] slots, ELNode[] args) {
-        if (lambda.scope.hasCaptures())
+    private void inlineInstructions(SymbolTable.Symbol sym, Slot[] slots, ELNode[] args) {
+        IRFunction fn = sym.func;
+
+        // Build block map.
+        int[] blockMap = new int[fn.blockCount()];
+        for (int i = 0; i < fn.blockCount(); i++)
+            blockMap[i] = allocBlockId();
+        int exitBlock = -1;
+
+        boolean hasCaptures = sym.def.expr.scope.hasCaptures();
+        if (hasCaptures)
             current.emitEnterScope();
 
         for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
+            int blockId = fn.blockOfPc(v.offset());
+            if (blockId != -1) {
+                current.emitJump(blockMap[blockId]);
+                startBlock(blockMap[blockId]);
+            }
+
             if (v.opcode() == PUSH_VAR || v.opcode() == STORE_VAR ||
                 v.opcode() == STORE_VAR_POP) {
                 if (slots[v.varIndex()] == null) {
@@ -570,21 +584,43 @@ public class IRBuilder extends ELNode.Visitor {
                     int newSlot = slots[v.varIndex()].slot;
                     current.emit(v.opcode(), v.payload(), newSlot);
                 }
+            } else if (v.isJump()) {
+                current.emit(v.opcode(), v.payload(), blockMap[v.jumpTarget()]);
             } else if (v.opcode() == RETURN) {
-                break;
+                if (v.offset() == fn.code().length - 1)
+                    break;
+                if (exitBlock == -1)
+                    exitBlock = allocBlockId();
+                current.emitJump(exitBlock);
             } else {
                 current.emit(v.opcode(), v.payload(), v.operand());
             }
         }
 
-        if (lambda.scope.hasCaptures())
+        if (exitBlock != -1)
+            startBlock(exitBlock);
+
+        if (hasCaptures)
             current.emitLeaveScope();
     }
 
-    private boolean isInlineOpportunity(IRFunction fn) {
+    private boolean isInlineOpportunity(SymbolTable.Symbol sym) {
         if (ELProgram.OPT_LEVEL == 0)
             return false;
-        return !fn.isDeclaration() && fn.blockCount() == 1 && fn.code().length < 50;
+        if (((ELNode.LAMBDA)sym.def.expr).varargs)
+            return false; // FIXME: handle varargs
+        if (sym.func.isDeclaration() || sym.func.code().length > 50)
+            return false;
+
+        // Check self recursion function.
+        InstructionView v = new InstructionView(sym.func.code(), 0);
+        for (; v.inBounds(); v.advance()) {
+            if (v.opcode() == INVOKE_DIRECT &&
+                constants.get(v.poolIndex()) == sym.func)
+                return false;
+        }
+
+        return true;
     }
 
     private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {
@@ -1628,13 +1664,16 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         for (int i = 0; i < node.exps.length - 1; i++) {
+            if (current.isDead())
+                return;
             if (!(node.exps[i] instanceof ELNode.Constant)) {
                 build(node.exps[i]);
                 current.emitPop();
             }
         }
 
-        buildTail(node.exps[node.exps.length - 1]);
+        if (!current.isDead())
+            buildTail(node.exps[node.exps.length - 1]);
     }
 
     public void visit(ELNode.WHILE node) {
@@ -1981,10 +2020,12 @@ public class IRBuilder extends ELNode.Visitor {
 
     public void visit(ELNode.RETURN node) {
         if (node.right != null) {
-            build(node.right);
+            buildTail(node.right);
             current.emitReturn();
-        } else
-            current.emitReturnVoid();
+        } else {
+            current.emitPushNull();
+            current.emitReturn();
+        }
     }
 
     public void visit(ELNode.THROW node) {
@@ -3003,11 +3044,21 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         // Remove hole in block IDs.
-        Map<Integer, Block> remap = new HashMap<>();
+        List<Block> compactBlocks = new ArrayList<>();
+        Map<Integer, Integer> remap = new HashMap<>();
+        Map<Integer, Integer> pcMap = new HashMap<>();
         for (Block block : blocks) {
             if (targets.get(block.id)) {
-                block.mappedId = remap.size();
-                remap.put(block.id, block);
+                int dupId = pcMap.getOrDefault(block.pc, -1);
+                if (dupId != -1) {
+                    block.mappedId = dupId;
+                    remap.put(block.id, block.mappedId);
+                } else {
+                    block.mappedId = compactBlocks.size();
+                    compactBlocks.add(block);
+                    remap.put(block.id, block.mappedId);
+                    pcMap.put(block.pc, block.mappedId);
+                }
             }
         }
 
@@ -3015,15 +3066,14 @@ public class IRBuilder extends ELNode.Visitor {
         for (var v = new InstructionView(code.data(), 0, code.size());
              v.inBounds(); v.advance()) {
             if (v.isJump()) {
-                Block block = remap.get(v.jumpTarget());
-                if (block.id != block.mappedId)
-                    v.set(IRFormat.pack(v.opcode(), 0, block.mappedId));
+                int mappedId = remap.get(v.jumpTarget());
+                v.set(IRFormat.pack(v.opcode(), 0, mappedId));
             }
         }
 
         // Build offset table.
-        int[] offsets = new int[remap.size()];
-        for (Block block : remap.values()) {
+        int[] offsets = new int[compactBlocks.size()];
+        for (Block block : compactBlocks) {
             offsets[block.mappedId] = block.pc;
         }
         return offsets;

@@ -361,10 +361,6 @@ public class IRInterpreter {
                 return result;
             }
 
-            case RETURN_VOID:
-                assert sp == 0;
-                return null;
-
             case TRY: {
                 // Pop closures: top → finally, handlerN..., handler1, body → bottom
                 IRClosure body;

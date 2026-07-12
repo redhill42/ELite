@@ -75,13 +75,12 @@ public final class Opcode {
     public static final int JUMP_IF_NULL      = 0x33;
     public static final int JUMP_IF_NONNULL   = 0x34;
     public static final int RETURN            = 0x35;
-    public static final int RETURN_VOID       = 0x36;
-    public static final int TRY               = 0x37;
-    public static final int SYNCHRONIZED      = 0x38;
-    public static final int THROW             = 0x39;
-    public static final int ASSERT            = 0x3A;
-    public static final int ENTER_SCOPE       = 0x3B;
-    public static final int LEAVE_SCOPE       = 0x3C;
+    public static final int TRY               = 0x36;
+    public static final int SYNCHRONIZED      = 0x37;
+    public static final int THROW             = 0x38;
+    public static final int ASSERT            = 0x39;
+    public static final int ENTER_SCOPE       = 0x3A;
+    public static final int LEAVE_SCOPE       = 0x3B;
 
     // ── Variable, Function and Property ──
     public static final int DEFINE_GLOBAL     = 0x40;
@@ -168,7 +167,6 @@ public final class Opcode {
             case JUMP_IF_NULL   -> "JUMP_IF_NULL";
             case JUMP_IF_NONNULL -> "JUMP_IF_NONNULL";
             case RETURN         -> "RETURN";
-            case RETURN_VOID    -> "RETURN_VOID";
             case TRY            -> "TRY";
             case SYNCHRONIZED   -> "SYNCHRONIZED";
             case THROW          -> "THROW";
