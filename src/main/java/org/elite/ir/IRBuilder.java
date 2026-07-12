@@ -97,6 +97,7 @@ public class IRBuilder extends ELNode.Visitor {
     private final IREmitter current;
     private int currentBlockId = 0;
     private int nextBlockId = 1;  // 0 is the initial block
+    private int exitBlock = -1;
 
     // ── Constant pool (maybe shared with parent builder) ──
     private Map<Object, Integer> constIndex = new HashMap<>();
@@ -583,7 +584,6 @@ public class IRBuilder extends ELNode.Visitor {
         int[] blockMap = new int[fn.blockCount()];
         for (int i = 0; i < fn.blockCount(); i++)
             blockMap[i] = allocBlockId();
-        int exitBlock = -1;
 
         boolean hasCaptures = sym.def.expr.scope.hasCaptures();
         if (hasCaptures)
@@ -620,18 +620,13 @@ public class IRBuilder extends ELNode.Visitor {
             } else if (v.isJump()) {
                 current.emit(v.opcode(), v.payload(), blockMap[v.jumpTarget()]);
             } else if (v.opcode() == RETURN) {
-                if (v.offset() == fn.code().length - 1)
-                    break;
-                if (exitBlock == -1)
-                    exitBlock = allocBlockId();
-                current.emitJump(exitBlock);
+                // We have guaranteed single entry single exit.
+                assert v.offset() == fn.code().length - 1;
+                break;
             } else if (v.opcode() != NOP) {
                 current.emit(v.opcode(), v.payload(), v.operand());
             }
         }
-
-        if (exitBlock != -1)
-            startBlock(exitBlock);
 
         if (hasCaptures)
             current.emitLeaveScope();
@@ -2052,13 +2047,22 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.RETURN node) {
+        // Make sure single entry single exit.
+        if (exitBlock == -1)
+            exitBlock = allocBlockId();
         if (node.right != null) {
             buildTail(node.right);
-            current.emitReturn();
+            current.emitJump(exitBlock);
         } else {
             current.emitPushNull();
-            current.emitReturn();
+            current.emitJump(exitBlock);
         }
+    }
+
+    private void emitReturn() {
+        if (exitBlock != -1)
+            startBlock(exitBlock);
+        current.emitReturn();
     }
 
     public void visit(ELNode.THROW node) {
@@ -2138,7 +2142,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         nested.buildTail(node.body);
-        nested.current.emitReturn();
+        nested.emitReturn();
 
         IRFunction fn = nested.finish();
         fn = fn.withDefaults(getDefaultValues(node.vars));
@@ -3217,10 +3221,10 @@ public class IRBuilder extends ELNode.Visitor {
                 b.current.emitPop();
             }
             b.build(exps.get(exps.size() - 1));
-            b.current.emitReturn();
+            b.emitReturn();
         } else {
             b.current.emitPushNull();
-            b.current.emitReturn();
+            b.emitReturn();
         }
 
         b.finish();
