@@ -101,6 +101,7 @@ public final class Resources
     public static final String EL_PROPERTY_WRITE_ERROR = "EL_PROPERTY_WRITE_ERROR";
     public static final String EL_RESOLVER_NOT_WRITABLE = "EL_RESOLVER_NOT_WRITABLE";
     public static final String EL_READONLY_EXPRESSION = "EL_READONLY_EXPRESSION";
+    public static final String EL_PATTERN_NOT_MATCH = "EL_PATTERN_NOT_MATCH";
     public static final String EL_TUPLE_PATTERN_NOT_MATCH = "EL_TUPLE_PATTERN_NOT_MATCH";
     public static final String EL_CIRCULAR_CLASS_DEFINITION = "EL_CIRCULAR_CLASS_DEFINITION";
     public static final String EL_ABSTRACT_CLASS = "EL_ABSTRACT_CLASS";

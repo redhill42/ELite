@@ -4413,7 +4413,7 @@ public abstract class ELNode implements Serializable
             // No match case found, returns the default
             if (deflt == null) {
                 f.setPos(this.pos);
-                throw runtimeError(context.getELContext(), "no pattern matched.");
+                throw runtimeError(context.getELContext(), _T(EL_PATTERN_NOT_MATCH));
             } else {
                 return deflt.pos(f);
             }
@@ -4450,7 +4450,7 @@ public abstract class ELNode implements Serializable
 
             if (deflt == null) {
                 f.setPos(this.pos);
-                throw runtimeError(context.getELContext(), "no pattern matched.");
+                throw runtimeError(context.getELContext(), _T(EL_PATTERN_NOT_MATCH));
             } else {
                 return deflt.pos(f);
             }

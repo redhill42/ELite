@@ -2292,7 +2292,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.deflt != null) {
             buildTail(node.deflt);
         } else {
-            buildConst("no pattern matched");
+            buildConst(_T(EL_PATTERN_NOT_MATCH));
             current.emitThrow();
         }
         current.emitJump(exitBlock);
