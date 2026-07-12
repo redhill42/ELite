@@ -150,7 +150,8 @@ final class PeepholeOpt {
 
     // Simple constant folder.
     case ADD, SUB, MUL, DIV, IDIV, REM, POW, CAT,
-         BITAND, BITOR, XOR, SHL, SHR, USHR:
+         BITAND, BITOR, XOR, SHL, SHR, USHR,
+         EQ, NE, IDEQ, IDNE, LT, LE, GT, GE:
       if (code.size() >= 2) {
         int i1 = code.get(last - 1);
         int i2 = code.get(last);
@@ -178,6 +179,14 @@ final class PeepholeOpt {
             case SHL    -> Builtin.__shl__(elctx, c1, c2);
             case SHR    -> Builtin.__shr__(elctx, c1, c2);
             case USHR   -> Builtin.__ushr__(elctx, c1, c2);
+            case EQ     -> Builtin.__eq__(elctx, c1, c2);
+            case NE     -> Builtin.__ne__(elctx, c1, c2);
+            case IDEQ   -> c1 == c2;
+            case IDNE   -> c1 != c2;
+            case LT     -> Builtin.__lt__(elctx, c1, c2);
+            case LE     -> Builtin.__le__(elctx, c1, c2);
+            case GT     -> Builtin.__gt__(elctx, c1, c2);
+            case GE     -> Builtin.__ge__(elctx, c1, c2);
             default -> throw new AssertionError();
           };
         } catch (RuntimeException ex) {
@@ -189,6 +198,29 @@ final class PeepholeOpt {
           code.set(last, IRFormat.pack(PUSH_NULL, 0, 0));
         else if (r instanceof Boolean b)
           code.set(last, IRFormat.pack(b ? PUSH_TRUE : PUSH_FALSE, 0, 0));
+        else
+          code.set(last, IRFormat.pack(PUSH_CONST, 0, builder.putConstant(r)));
+        return true;
+      }
+      break;
+
+    case NEG, BITNOT:
+      if (lastOpcode == PUSH_CONST) {
+        Object c = builder.getConstant(lastOperand);
+        Object r;
+
+        try {
+          r = switch (opcode) {
+            case NEG    -> Builtin.__neg__(elctx, c);
+            case BITNOT -> Builtin.__bitnot__(elctx, c);
+            default -> throw new AssertionError();
+          };
+        } catch (RuntimeException ex) {
+          return false;
+        }
+
+        if (r == null)
+          code.set(last, IRFormat.pack(PUSH_NULL, 0, 0));
         else
           code.set(last, IRFormat.pack(PUSH_CONST, 0, builder.putConstant(r)));
         return true;

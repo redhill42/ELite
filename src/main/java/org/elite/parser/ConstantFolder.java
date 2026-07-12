@@ -19,7 +19,6 @@ package org.elite.parser;
 import org.elite.eval.TypeCoercion;
 
 import javax.el.ELContext;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -110,14 +109,6 @@ class ConstantFolder extends TreeTransformer {
         if (e instanceof ELNode.OR)       return new ELNode.OR(e.pos, left, right);
         if (e instanceof ELNode.CAT)      return new ELNode.CAT(e.pos, left, right);
         throw new IllegalArgumentException("unsupported binary: " + e.getClass().getSimpleName());
-    }
-
-    private static boolean isIntegerType(Object value) {
-        return value instanceof Byte ||
-               value instanceof Short ||
-               value instanceof Integer ||
-               value instanceof Long ||
-               value instanceof BigInteger;
     }
 
     // ---- Binary arithmetic ----
