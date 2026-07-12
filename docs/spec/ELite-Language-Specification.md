@@ -152,7 +152,7 @@ Additionally, `and`, `or`, `not` are keyword aliases for `&&`, `||`, `!` respect
 Arithmetic:     +   -   *   /   %   ^   div
 Comparison:     ==  !=  <   >   <=  >=  ===  !==
 Logical:        &&  ||  !   and  or  not
-Bitwise:        :|:  :&:  :^:  :!:
+Bitwise:        `|  `&  `^  `!
 Shift:          <<  >>  >>>
 String:         ~   <<   >>
 Assignment:     =   :=   +=  -=  *=  /=  %=  ~=
@@ -396,7 +396,7 @@ postfix := primary
 additive    := multiplicative { ( '+' | '-' ) multiplicative }
 multiplicative := power { ( '*' | '/' | '%' | 'div' ) power }
 power       := unary [ '^' power ]
-unary       := ( '+' | '-' | '!' | 'not' | ':!:' ) unary
+unary       := ( '+' | '-' | '!' | 'not' | '`!' ) unary
             |  postfix
 ```
 
@@ -453,15 +453,15 @@ logical_or  := logical_and { ( '||' | 'or' ) logical_and }
 
 Bitwise operators use colon-delimited syntax to distinguish from logical operators:
 
-| Operator | Meaning | Example | Result |
-|----------|---------|---------|--------|
-| `:\|:` | Bitwise OR | `3 :\|: 4` | 7 |
-| `:&:` | Bitwise AND | `5 :&: 3` | 1 |
-| `:^:` | Bitwise XOR | `3 :^: 5` | 6 |
-| `:!:` | Bitwise NOT | `:!:5` | -6 |
-| `<<` | Shift left | `1 << 3` | 8 |
-| `>>` | Shift right | `16 >> 3` | 2 |
-| `>>>` | Unsigned shift right | `16 >>> 3` | 2 |
+| Operator | Meaning | Example    | Result |
+|----------|---------|------------|--------|
+| `` `\|`` | Bitwise OR | ``3 `\| 4`` | 7 |
+| `` `&``  | Bitwise AND | ``5 `& 3`` | 1 |
+| `` `^``  | Bitwise XOR | ``3 `^ 5``  | 6 |
+| `` `!``    | Bitwise NOT | `` `!5``   | -6 |
+| `<<`     | Shift left | `1 << 3`   | 8 |
+| `>>`     | Shift right | `16 >> 3`  | 2 |
+| `>>>`    | Unsigned shift right | `16 >>> 3` | 2 |
 
 ### 4.6 String Operators
 
@@ -611,27 +611,27 @@ or bind additional variables.
 
 Operators are ordered from highest (tightest binding) to lowest precedence:
 
-| Prec | Class | Operators | Assoc |
-|------|-------|-----------|-------|
-| 18 | Postfix | `.` `->` `@` `[` `(` `++` `--` | Left |
-| 17 | Power | `^` | Right |
-| 16 | Prefix | `+x` `-x` `!x` `not x` `:!:x` `++x` `--x` `empty x` | — |
-| 15 | Transform | `x -> f`, `x @ f` | Left |
-| 14 | Multiplicative | `*` `/` `%` `div` | Left |
-| 13 | Additive | `+` `-` | Left |
-| 12 | Shift | `<<` `>>` `>>>` | Left |
-| 11 | Ordinal | `..` (range) | — |
-| 10 | Comparison | `<` `>` `<=` `>=` `in` `not in` `instanceof` `is` | — |
-| 9 | Equality | `==` `!=` `===` `!==` | — |
-| 8 | Bitwise AND | `:&:` | Left |
-| 7 | Bitwise XOR | `:^:` | Left |
-| 6 | Bitwise OR | `:\|:` | Left |
-| 5 | Logical AND | `&&` `and` | Left |
-| 4 | Logical OR | `\|\|` `or` | Left |
-| 3 | Coalesce | `??` | Left |
-| 2 | Conditional | `? :` | Right |
-| 1 | Assignment | `=` `:=` `+=` `-=` `*=` `/=` `%=` `~=` | Right |
-| 0 | Sequential | `,` `;` `\n` | Left |
+| Prec | Class | Operators                                             | Assoc |
+|------|-------|-------------------------------------------------------|-------|
+| 18 | Postfix | `.` `->` `@` `[` `(` `++` `--`                        | Left |
+| 17 | Power | `^`                                                   | Right |
+| 16 | Prefix | `+x` `-x` `!x` `not x` `` `!x`` `++x` `--x` `empty x` | — |
+| 15 | Transform | `x -> f`, `x @ f`                                     | Left |
+| 14 | Multiplicative | `*` `/` `%` `div`                                     | Left |
+| 13 | Additive | `+` `-`                                               | Left |
+| 12 | Shift | `<<` `>>` `>>>`                                       | Left |
+| 11 | Ordinal | `..` (range)                                          | — |
+| 10 | Comparison | `<` `>` `<=` `>=` `in` `not in` `instanceof` `is`     | — |
+| 9 | Equality | `==` `!=` `===` `!==`                                 | — |
+| 8 | Bitwise AND | `` `&``                                               | Left |
+| 7 | Bitwise XOR | `` `^``                                               | Left |
+| 6 | Bitwise OR | `` `\|``                                               | Left |
+| 5 | Logical AND | `&&` `and`                                            | Left |
+| 4 | Logical OR | `\|\|` `or`                                           | Left |
+| 3 | Coalesce | `??`                                                  | Left |
+| 2 | Conditional | `? :`                                                 | Right |
+| 1 | Assignment | `=` `:=` `+=` `-=` `*=` `/=` `%=` `~=`                | Right |
+| 0 | Sequential | `,` `;` `\n`                                          | Left |
 
 ---
 
@@ -1701,7 +1701,7 @@ multiplicative  := power { ( '*' | '/' | '%' | 'div' ) power }
 
 power           := unary [ '^' power ]
 
-unary           := ( '+' | '-' | '!' | 'not' | ':!:' | '++' | '--' | 'empty' )
+unary           := ( '+' | '-' | '!' | 'not' | '`!' | '++' | '--' | 'empty' )
                    unary
                 |  xform
 

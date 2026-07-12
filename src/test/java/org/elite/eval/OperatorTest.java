@@ -14,17 +14,17 @@ class OperatorTest extends EliteTestBase {
 
     @Test
     void bitwiseOr() {
-        assertEquals(7L, evalL("3 :|: 4"));
+        assertEquals(7L, evalL("3 `| 4"));
     }
 
     @Test
     void bitwiseAnd() {
-        assertEquals(1L, evalL("5 :&: 3"));
+        assertEquals(1L, evalL("5 `& 3"));
     }
 
     @Test
     void bitwiseXor() {
-        assertEquals(6L, evalL("3 :^: 5"));
+        assertEquals(6L, evalL("3 `^ 5"));
     }
 
     @Test
@@ -44,7 +44,7 @@ class OperatorTest extends EliteTestBase {
 
     @Test
     void bitwiseNot() {
-        assertEquals(-6L, evalL(":!:5"));
+        assertEquals(-6L, evalL("`!5"));
     }
 
     // ---- Compound assignment ----

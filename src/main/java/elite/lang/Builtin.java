@@ -72,8 +72,8 @@ import static org.elite.eval.ELUtils.*;
  *   <li><b>字符串/正则</b> — {@code matches}, {@code replace}, {@code join}</li>
  *   <li><b>Java 互操作</b> — {@code attach},
  *       {@code populate}, {@code asList}, {@code toArray}</li>
- *   <li><b>BitSet</b> — 通过 {@code []}, {@code :!:}, {@code :&:},
- *       {@code :|:}, {@code :^:} 运算符操作</li>
+ *   <li><b>BitSet</b> — 通过 {@code []}, {@code `!}, {@code `&},
+ *       {@code `|}, {@code `^} 运算符操作</li>
  *   <li><b>延续 (Continuation)</b> — {@code yield}, {@code call_cc},
  *       {@code run_cont}</li>
  *   <li><b>内建运算符</b> — {@code +}, {@code -}, {@code *}, {@code ==},
@@ -2047,47 +2047,47 @@ public final class Builtin
         }
     }
 
-    @Expando(name=":!:")
+    @Expando(name="`!")
     public static BitSet __bitset_flip__(BitSet s) {
         s = (BitSet)s.clone();
         s.flip(0, s.length());
         return s;
     }
 
-    @Expando(name=":&:")
+    @Expando(name="`&")
     public static BitSet __bitset_and__(BitSet s1, BitSet s2) {
         BitSet s = (BitSet)s1.clone();
         s.and(s2);
         return s;
     }
 
-    @Expando(name=":&:=")
+    @Expando(name="`&=")
     public static BitSet __bitset_iand__(BitSet s1, BitSet s2) {
         s1.and(s2);
         return s1;
     }
 
-    @Expando(name=":|:")
+    @Expando(name="`|")
     public static BitSet __bitset_or__(BitSet s1, BitSet s2) {
         BitSet s = (BitSet)s1.clone();
         s.or(s2);
         return s;
     }
 
-    @Expando(name=":|:=")
+    @Expando(name="`|=")
     public static BitSet __bitset_ior__(BitSet s1, BitSet s2) {
         s1.or(s2);
         return s1;
     }
 
-    @Expando(name=":^:")
+    @Expando(name="`^")
     public static BitSet __bitset_xor__(BitSet s1, BitSet s2) {
         BitSet s = (BitSet)s1.clone();
         s.xor(s2);
         return s;
     }
 
-    @Expando(name=":^:=")
+    @Expando(name="`^=")
     public static BitSet __bitset_ixor__(BitSet s1, BitSet s2) {
         s1.xor(s2);
         return s1;
@@ -2523,22 +2523,22 @@ public final class Builtin
         return __IN__.eval(elctx, x, y);
     }
 
-    @Expando(name=":!:", scope=GLOBAL)
+    @Expando(name="`!", scope=GLOBAL)
     public static Object __bitnot__(ELContext elctx, Object x) {
         return __BITNOT__.getValue(elctx, x);
     }
 
-    @Expando(name=":|:", scope=GLOBAL)
+    @Expando(name="`|", scope=GLOBAL)
     public static Object __bitor__(ELContext elctx, Object x, Object y) {
         return __BITOR__.getValue(elctx, x, y);
     }
 
-    @Expando(name=":&:", scope=GLOBAL)
+    @Expando(name="`&", scope=GLOBAL)
     public static Object __bitand__(ELContext elctx, Object x, Object y) {
         return __BITAND__.getValue(elctx, x, y);
     }
 
-    @Expando(name=":^:", scope=GLOBAL)
+    @Expando(name="`^", scope=GLOBAL)
     public static Object __xor__(ELContext elctx, Object x, Object y) {
         return __XOR__.getValue(elctx, x, y);
     }
@@ -2738,7 +2738,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name=":|:")
+    @Expando(name="`|")
     public static Collection<Object> __union__(Collection<Object> lhs, Collection<Object> rhs) {
         if (lhs instanceof SortedSet) {
             lhs = new TreeSet<>(lhs);
@@ -2754,7 +2754,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name=":|:=")
+    @Expando(name="`|=")
     public static Collection<Object> __iunion__(Collection<Object> lhs, Collection<Object> rhs) {
         if (lhs instanceof Set) {
             lhs.addAll(rhs);
@@ -2765,7 +2765,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name=":&:")
+    @Expando(name="`&")
     public static Collection<Object> __intersect__(Collection<Object> lhs, Collection<Object> rhs) {
         if (lhs instanceof SortedSet) {
             lhs = new TreeSet<>(lhs);
@@ -2780,7 +2780,7 @@ public final class Builtin
         return lhs;
     }
 
-    @Expando(name=":&:=")
+    @Expando(name="`&=")
     public static Collection<Object> __iintersect__(Collection<Object> lhs, Collection<Object> rhs) {
         lhs.retainAll(rhs);
         return lhs;
