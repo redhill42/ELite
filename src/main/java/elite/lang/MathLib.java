@@ -21,7 +21,10 @@ import java.math.BigDecimal;
 import javax.el.ELException;
 import javax.el.ELContext;
 
+import elite.lang.annotation.Expando;
 import org.elite.eval.closure.ClosureObject;
+
+import static elite.lang.annotation.ExpandoScope.*;
 import static org.elite.eval.TypeCoercion.*;
 import static org.elite.eval.ELUtils.*;
 import static elite.lang.Builtin.*;
@@ -29,16 +32,13 @@ import static elite.lang.Builtin.*;
 /**
  * Numeric functions.
  */
+@SuppressWarnings("unused")
 public final class MathLib
 {
     private MathLib() {}
 
     /**
      * 将数值转换成十六进制格式的字符串
-     *
-     * 用法: hex(number)
-     *      number.hex()
-     *      number->hex
      */
     public static String hex(Number x) {
         if (x instanceof BigInteger) {
@@ -52,10 +52,6 @@ public final class MathLib
 
     /**
      * 将数值转换成八进制格式的字符串
-     *
-     * 用法: oct(number)
-     *      number.oct()
-     *      number->oct
      */
     public static String oct(Number x) {
         if (x instanceof BigInteger) {
@@ -71,9 +67,8 @@ public final class MathLib
      * 将参数值连续相加.
      */
     public static Object sum(ELContext elctx, Object... args) {
-        if (args.length == 0) {
-            throw new ELException("sum: expect at least 1 argument, given 0");
-        }
+        if (args.length == 0)
+            return 0;
 
         Object res = args[0];
         for (int i = 1; i < args.length; i++) {
@@ -86,9 +81,8 @@ public final class MathLib
      * 将参数值连续相减.
      */
     public static Object difference(ELContext elctx, Object... args) {
-        if (args.length == 0) {
-            throw new ELException("difference: expect at least 1 argument, given 0");
-        }
+        if (args.length == 0)
+            return 0;
 
         Object res = args[0];
         for (int i = 1; i < args.length; i++) {
@@ -101,9 +95,8 @@ public final class MathLib
      * 将参数值连续相乘.
      */
     public static Object product(ELContext elctx, Object... args) {
-        if (args.length == 0) {
-            throw new ELException("product: expect at least 1 argument, given 0");
-        }
+        if (args.length == 0)
+            return 0;
 
         Object res = args[0];
         for (int i = 1; i < args.length; i++) {
@@ -116,9 +109,8 @@ public final class MathLib
      * 将参数值连续相除.
      */
     public static Object divide(ELContext elctx, Object... args) {
-        if (args.length == 0) {
-            throw new ELException("divide: expect at least 1 argument, given 0");
-        }
+        if (args.length == 0)
+            return 0;
 
         Object res = args[0];
         for (int i = 1; i < args.length; i++) {
@@ -206,7 +198,7 @@ public final class MathLib
     @SuppressWarnings("unchecked")
     public static int compare(ELContext elctx, Object x, Object y) {
         if (x instanceof Comparable && x.getClass().isInstance(y)) {
-            return ((Comparable)x).compareTo(y);
+            return ((Comparable<Object>)x).compareTo(y);
         }
 
         if (__eq__(elctx, x, y)) {
@@ -221,34 +213,41 @@ public final class MathLib
     /**
      * 计算绝对值.
      */
-    public static Object abs(ELContext elctx, Number x) {
-        if (x instanceof BigDecimal) {
-            return ((BigDecimal)x).abs();
-        } else if (x instanceof BigInteger) {
-            return ((BigInteger)x).abs();
-        } else if (x instanceof Decimal) {
-            return ((Decimal)x).abs();
-        } else if (x instanceof Rational) {
-            return ((Rational)x).abs();
-        } else if (x instanceof Double) {
-            return Math.abs(x.doubleValue());
-        } else if (x instanceof Float) {
-            return Math.abs(x.floatValue());
-        } else if (x instanceof Long) {
-            return Math.abs(x.longValue());
-        } else if (x instanceof Integer) {
-            return Math.abs(x.intValue());
-        } else if (x instanceof Short) {
-            return Math.abs(x.intValue());
-        } else if (x instanceof Byte) {
-            return Math.abs(x.intValue());
-        } else {
-            if (x instanceof ClosureObject) {
-                Object result = ((ClosureObject)x).invokeSpecial(elctx, "abs", NO_PARAMS);
-                if (result != NO_RESULT) return result;
-            }
-            return Math.abs(x.doubleValue());
+    @Expando(scope = {EXPANDO, GLOBAL})
+    public static Object abs(ELContext elctx, Object x) {
+        if (x instanceof ClosureObject co) {
+            Object result = co.invokeSpecial(elctx, "abs", NO_PARAMS);
+            if (result != NO_RESULT)
+                return result;
         }
+
+        if (x instanceof Number n) {
+            if (n instanceof BigDecimal) {
+                return ((BigDecimal)n).abs();
+            } else if (n instanceof BigInteger) {
+                return ((BigInteger)n).abs();
+            } else if (n instanceof Decimal) {
+                return ((Decimal)n).abs();
+            } else if (n instanceof Rational) {
+                return ((Rational)n).abs();
+            } else if (n instanceof Double) {
+                return Math.abs(n.doubleValue());
+            } else if (n instanceof Float) {
+                return Math.abs(n.floatValue());
+            } else if (n instanceof Long) {
+                return Math.abs(n.longValue());
+            } else if (n instanceof Integer) {
+                return Math.abs(n.intValue());
+            } else if (n instanceof Short) {
+                return Math.abs(n.intValue());
+            } else if (n instanceof Byte) {
+                return Math.abs(n.intValue());
+            } else {
+                return Math.abs(n.doubleValue());
+            }
+        }
+
+        return Builtin.__gt__(elctx, x, 0) ? x : Builtin.__neg__(elctx, x);
     }
 
     /**
@@ -272,7 +271,7 @@ public final class MathLib
             return (l > 0) ? 1 : (l < 0) ? -1 : 0;
         } else if (x instanceof Integer) {
             int i = (Integer)x;
-            return (i > 0) ? 1 : (i < 0) ? -1 : 0;
+            return Integer.compare(i, 0);
         } else if (x instanceof Short) {
             short i = (Short)x;
             return (i > 0) ? 1 : (i < 0) ? -1 : 0;
@@ -357,7 +356,7 @@ public final class MathLib
 
     public static double floor(double x) { return Math.floor(x); }
     public static double ceiling(double x) { return Math.ceil(x); }
-    public static double truncate(double x) { return (double)(int)x; }
+    public static double truncate(double x) { return (int)x; }
     public static long   round(double x) { return Math.round(x); }
 
     public static Object exp(ELContext elctx, Number x) {

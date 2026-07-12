@@ -978,19 +978,17 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     private boolean buildMathReduce(ELNode[] args, int op) {
-        if (args.length == 1 && args[0] instanceof ELNode.TUPLE t) {
-            if (t.elems.length == 0) {
-                buildConst(0);
-            } else {
-                build(args[0]);
-                for (int i = 1; i < t.elems.length; i++) {
-                    build(t.elems[i]);
-                    emitDynBinOp(op);
-                }
-            }
+        if (args.length == 0) {
+            buildConst(0);
             return true;
         }
-        return false;
+
+        build(args[0]);
+        for (int i = 1; i < args.length; i++) {
+            build(args[i]);
+            emitDynBinOp(op);
+        }
+        return true;
     }
 
     // ── Literals: list, map, tuple, range ──
