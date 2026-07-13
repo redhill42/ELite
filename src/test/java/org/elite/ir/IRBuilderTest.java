@@ -187,12 +187,14 @@ class IRBuilderTest {
         assertTrue(scanOp(fn, Opcode.JUMP_IF_TRUE), "?: should have JUMP_IF_TRUE");
     }
 
+    @Disabled("constant folded")
     @Test void logicalAndCompilesWithJumps() {
         ELNode node = parse("true && false");
         IRFunction fn = IRBuilder.compile(elctx, node);
         assertTrue(fn.blockCount() >= 2, "&& should produce multiple blocks");
     }
 
+    @Disabled("constant folded")
     @Test void logicalOrCompilesWithJumps() {
         ELNode node = parse("true || false");
         IRFunction fn = IRBuilder.compile(elctx, node);

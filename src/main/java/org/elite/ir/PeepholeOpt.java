@@ -84,67 +84,166 @@ final class PeepholeOpt {
       break;
 
     case NOT:
-      if (lastOpcode == PUSH_TRUE) {
+      switch (lastOpcode) {
+      case PUSH_TRUE:
         // PUSH_TRUE, NOT -> PUSH_FALSE
         code.set(last, IRFormat.pack(PUSH_FALSE, 0, 0));
         return true;
-      }
-      if (lastOpcode == PUSH_FALSE) {
+      case PUSH_FALSE:
         // PUSH_FALSE, NOT -> PUSH_TRUE
         code.set(last, IRFormat.pack(PUSH_TRUE, 0, 0));
+        return true;
+      case NOT:
+        // NOT, NOT -> NOP
+        code.reset(last);
         return true;
       }
       break;
 
     case JUMP_IF_TRUE:
-      if (lastOpcode == PUSH_TRUE) {
+      switch (lastOpcode) {
+      case PUSH_TRUE:
         // PUSH_TRUE, JUMP_IF_TRUE -> JUMP
         code.set(last, IRFormat.pack(JUMP, 0, operand));
         return true;
-      }
-      if (lastOpcode == PUSH_FALSE) {
+      case PUSH_FALSE:
         // PUSH_FALSE, JUMP_IF_TRUE -> NOP
         code.reset(last);
         return true;
-      }
-      if (lastOpcode == NOT) {
+      case NOT:
         // NOT, JUMP_IF_TRUE -> JUMP_IF_FALSE
         code.set(last, IRFormat.pack(JUMP_IF_FALSE, 0, operand));
         return true;
+      case DUP:
+        // Lookahead one instruction to find pattern.
+        // For example, to compile left || right
+        //    left ; may generate PUSH_FALSE
+        //    DUP
+        //    JUMP_IF_TRUE done
+        //    POP
+        //    right
+        // If left is PUSH_TRUE, will optimize to PUSH_TRUE because
+        // true || any == true
+        // if left is PUSH_FALSE, will skip left and generate right.
+        if (code.size() >= 2) {
+          int lookahead = code.get(code.size() - 2);
+          switch (IRFormat.opcode(lookahead)) {
+          case PUSH_TRUE:
+            // PUSH_TRUE, DUP, JUMP_IF_TRUE -> PUSH_TRUE, JUMP
+            code.set(last, IRFormat.pack(JUMP, 0, operand));
+            return true;
+          case PUSH_FALSE:
+            // PUSH_FALSE, DUP, JUMP_IF_TRUE -> PUSH_FALSE
+            code.reset(last);
+            return true;
+          }
+        }
       }
       break;
 
     case JUMP_IF_FALSE:
-      if (lastOpcode == PUSH_FALSE) {
+      switch (lastOpcode) {
+      case PUSH_FALSE:
         // PUSH_FALSE, JUMP_IF_FALSE -> JUMP
         code.set(last, IRFormat.pack(JUMP, 0, operand));
         return true;
-      }
-      if (lastOpcode == PUSH_TRUE) {
+      case PUSH_TRUE:
         // PUSH_TRUE, JUMP_IF_FALSE -> NOP
         code.reset(last);
         return true;
-      }
-      if (lastOpcode == NOT) {
+      case NOT:
         // NOT, JUMP_IF_FALSE -> JUMP_IF_TRUE
         code.set(last, IRFormat.pack(JUMP_IF_TRUE, 0, operand));
         return true;
+      case DUP:
+        // Lookahead one instruction to find pattern.
+        // For example, to compile left && right
+        //    left ; may generate PUSH_TRUE
+        //    DUP
+        //    JUMP_IF_FALSE done
+        //    POP
+        //    right
+        // If left is PUSH_TRUE, will skip left and generate right.
+        // If left is PUSH_FALSE, will optimize to PUSH_FALSE because
+        // false && any == false
+        if (code.size() >= 2) {
+          int lookahead = code.get(code.size() - 2);
+          switch (IRFormat.opcode(lookahead)) {
+          case PUSH_TRUE:
+            // PUSH_TRUE, DUP, JUMP_IF_FALSE -> PUSH_TRUE
+            code.reset(last);
+            return true;
+          case PUSH_FALSE:
+            // PUSH_FALSE, DUP, JUMP_IF_FALSE -> PUSH_FALSE, JUMP
+            code.set(last, IRFormat.pack(JUMP, 0, operand));
+            return true;
+          }
+        }
       }
       break;
 
     case JUMP_IF_NULL:
-      if (lastOpcode == PUSH_NULL) {
+      switch (lastOpcode) {
+      case PUSH_NULL:
         // PUSH_NULL, JUMP_IF_NULL -> JUMP
         code.set(last, IRFormat.pack(JUMP, 0, operand));
         return true;
+      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+        // non-null constant, JUMP_IF_NULL -> NOP
+        code.reset(last);
+        return true;
+      case DUP:
+        // Lookahead one instruction to find pattern.
+        if (code.size() >= 2) {
+          int lookahead = code.get(code.size() - 2);
+          switch (IRFormat.opcode(lookahead)) {
+          case PUSH_NULL:
+            // PUSH_NULL, DUP, JUMP_IF_NULL -> PUSH_NULL, JUMP
+            code.set(last, IRFormat.pack(JUMP, 0, operand));
+            return true;
+          case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+            // PUSH nonnull, DUP, JUMP_IF_NULL -> PUSH nonnull
+            code.reset(last);
+            return true;
+          }
+        }
       }
       break;
 
     case JUMP_IF_NONNULL:
-      if (lastOpcode == PUSH_NULL) {
+      switch (lastOpcode) {
+      case PUSH_NULL:
         // PUSH_NULL, JUMP_IF_NONNULL -> NOP
         code.reset(last);
         return true;
+      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+        // non-null constant, JUMP_IF_NONNULL -> JUMP
+        code.set(last, IRFormat.pack(JUMP, 0, operand));
+        return true;
+      case DUP:
+        // Lookahead one instruction to find pattern.
+        // For example, to compile left ?? right
+        //     left
+        //     DUP
+        //     JUMP_IF_NONNULL done
+        //     POP
+        //     right
+        // If left is PUSH_NULL, will skip left and generate right.
+        // If left is PUSH nonnull, will optimize to PUSH nonnull because
+        // nonnull ?? any == nonnull
+        if (code.size() >= 2) {
+          int lookahead = code.get(code.size() - 2);
+          switch (IRFormat.opcode(lookahead)) {
+          case PUSH_NULL:
+            // PUSH_NULL, DUP, JUMP_IF_NONNULL -> PUSH_NULL
+            code.reset(last);
+            return true;
+          case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+            // PUSH nonnull, DUP, JUMP_IF_NONNULL -> PUSH nonnull, JUMP
+            code.set(last, IRFormat.pack(JUMP, 0, operand));
+            return true;
+          }
+        }
       }
       break;
 
@@ -155,13 +254,18 @@ final class PeepholeOpt {
       if (code.size() >= 2) {
         int i1 = code.get(last - 1);
         int i2 = code.get(last);
-        if (IRFormat.opcode(i1) != PUSH_CONST ||
-            IRFormat.opcode(i2) != PUSH_CONST)
-          return false;
+        Object c1, c2, r;
 
-        Object c1 = builder.getConstant(IRFormat.operand(i1));
-        Object c2 = builder.getConstant(IRFormat.operand(i2));
-        Object r;
+        if (IRFormat.opcode(i1) == PUSH_CONST &&
+            IRFormat.opcode(i2) == PUSH_CONST) {
+          c1 = builder.getConstant(IRFormat.operand(i1));
+          c2 = builder.getConstant(IRFormat.operand(i2));
+        } else if (IRFormat.opcode(i1) == PUSH_CONST &&
+                   IRFormat.opcode(i2) == DUP) {
+          c1 = c2 = builder.getConstant(IRFormat.operand(i1));
+        } else {
+          return false;
+        }
 
         try {
           r = switch (opcode) {

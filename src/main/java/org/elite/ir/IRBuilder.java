@@ -77,15 +77,17 @@ public class IRBuilder extends ELNode.Visitor {
     private static class Block {
         final int id;
         final int[] code;
+        final Map<Integer, Integer> lineMap = new HashMap<>();
         int pc;
 
         BitSet predecessors = new BitSet();
         BitSet successors = new BitSet();
         int mappedId;
 
-        Block(int id, int[] code) {
+        Block(int id, int[] code, Map<Integer, Integer> lineMap) {
             this.id = id;
             this.code = code;
+            this.lineMap.putAll(lineMap);
         }
     }
 
@@ -112,9 +114,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Debug info ──
     private String currentFile;
-    private int currentPos = Position.NOPOS;
     private final Map<Integer, Integer> linePcMapping = new HashMap<>();
-    private int runningPc;
 
     /**
      * Create a top-level builder.  The symbol table must already be built
@@ -179,9 +179,6 @@ public class IRBuilder extends ELNode.Visitor {
             return;
         }
 
-        if (node.pos != Position.NOPOS)
-            currentPos = node.pos;
-
         if (node.scope != null) {
             SymbolTable.Scope prevScope = currentScope;
             currentScope = node.scope;
@@ -199,8 +196,12 @@ public class IRBuilder extends ELNode.Visitor {
             node.accept(this);
         }
 
-        if (node.pos != Position.NOPOS)
-            recordDebugLine(runningPc + current.size());
+        if (node.pos != Position.NOPOS) {
+            int line = Position.line(node.pos);
+            int pc = current.size();
+            linePcMapping.compute(line, (k, v) ->
+                v == null ? pc : Math.max(pc, v));
+        }
     }
 
     void build(ELNode node) {
@@ -540,6 +541,7 @@ public class IRBuilder extends ELNode.Visitor {
             for (Slot arg : args)
                 arg.load();
             current.emitInvokeDirect(putConstant(fn), args.length);
+            return;
         }
 
         // Scan for slots in inlined function.
@@ -1417,16 +1419,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     public void visit(ELNode.COALESCE node) {
-        if (node.left.op == Token.NULL) {
-            build(node.right);
-            return;
-        }
-
-        if (!nullable(node.left)) {
-            build(node.left);
-            return;
-        }
-
         int contB = allocBlockId();
         build(node.left);
         current.emitDup();
@@ -1435,16 +1427,6 @@ public class IRBuilder extends ELNode.Visitor {
         build(node.right);
         current.emitJump(contB);
         startBlock(contB);
-    }
-
-    private boolean nullable(ELNode node) {
-        return !(node instanceof ELNode.Constant ||
-                 node instanceof ELNode.Composite ||
-                 node instanceof ELNode.CONS ||
-                 node instanceof ELNode.MAP ||
-                 node instanceof ELNode.TUPLE ||
-                 node instanceof ELNode.RANGE ||
-                 node instanceof ELNode.LAMBDA);
     }
 
     public void visit(ELNode.ASSIGN node) {
@@ -2372,8 +2354,8 @@ public class IRBuilder extends ELNode.Visitor {
 
             // Left branch, argSlot already on stack top.
             compileMatchPattern(argSlot, or.left, tryRight);
-            current.emitJumpIfFalse(tryRight); // matched -> skip right
-            current.emitJump(done);
+            current.emitJumpIfFalse(tryRight);
+            current.emitJump(done); // matched -> skip right
 
             startBlock(tryRight);
             argSlot.load();
@@ -2790,12 +2772,10 @@ public class IRBuilder extends ELNode.Visitor {
     private void startBlock(int blockId) {
         assert blockId != currentBlockId;
         int[] code = current.toArray();
-        blocks.add(new Block(currentBlockId, code));
-        runningPc += code.length;
-        if (currentPos != Position.NOPOS)
-            recordDebugLine(runningPc);
+        blocks.add(new Block(currentBlockId, code, linePcMapping));
         current.clear();
         currentBlockId = blockId;
+        linePcMapping.clear();
     }
 
     // ── Local management ──
@@ -2846,7 +2826,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         void store() {
             if (captured)
-                current.emitPushGlobal(slot);
+                current.emitStoreGlobal(slot);
             else
                 current.emitStoreVar(slot);
         }
@@ -2888,45 +2868,10 @@ public class IRBuilder extends ELNode.Visitor {
 
     // ── Finalization ──
 
-    /**
-     * Record the current line for the given PC (used by debug info).
-     */
-    private void recordDebugLine(int pc) {
-        if (currentPos != Position.NOPOS) {
-            int line = Position.line(currentPos);
-            linePcMapping.compute(line, (k, v) ->
-                v == null ? pc : Math.max(pc, v));
-        }
-    }
-
-    /**
-     * Build DebugInfo from collected data.
-     */
-    private DebugInfo buildDebugInfo() {
-        // We need a sorted map from pc to line.
-        SortedMap<Integer, Integer> pcLineMapping = new TreeMap<>();
-        for (Map.Entry<Integer, Integer> kv : linePcMapping.entrySet()) {
-            pcLineMapping.put(kv.getValue(), kv.getKey());
-        }
-
-        // Build the pc to line mapping table.
-        IntList pcLineTable = new IntList();
-        for (Map.Entry<Integer, Integer> kv : pcLineMapping.entrySet()) {
-            pcLineTable.add(kv.getKey());
-            pcLineTable.add(kv.getValue());
-        }
-
-        return new DebugInfo(currentFile, pcLineTable.toArray());
-    }
-
     IRFunction finish() {
-        // Seal current block and record its debug line
+        // Finish current block.
         int[] code = current.toArray();
-        blocks.add(new Block(currentBlockId, code));
-        if (currentPos != Position.NOPOS) {
-            runningPc += code.length;
-            recordDebugLine(runningPc);
-        }
+        blocks.add(new Block(currentBlockId, code, linePcMapping));
 
         // Scan instructions to build CFG.
         Map<Integer, Block> blockMap = new HashMap<>();
@@ -2953,11 +2898,17 @@ public class IRBuilder extends ELNode.Visitor {
         IntList merged = new IntList();
         for (Block block : blocks) {
             if (block.id == 0 || !block.predecessors.isEmpty()) {
-                int offset = 0;
+                int skip = 0;
                 if (opt)
-                    offset = peepholeOpt(merged, block);
+                    skip = peepholeOpt(merged, block);
                 block.pc = merged.size();
-                merged.addAll(block.code, offset, block.code.length - offset);
+                merged.addAll(block.code, skip, block.code.length - skip);
+
+                if (skip != 0) {
+                    // Update line to pc mapping.
+                    for (var e : block.lineMap.entrySet())
+                        e.setValue(e.getValue() - skip);
+                }
             }
         }
 
@@ -3118,12 +3069,34 @@ public class IRBuilder extends ELNode.Visitor {
             }
         }
 
+
         // Build offset table.
         int[] offsets = new int[compactBlocks.size()];
         for (Block block : compactBlocks) {
             offsets[block.mappedId] = block.pc;
         }
         return offsets;
+    }
+
+    private DebugInfo buildDebugInfo() {
+        // Consolidate debug info.
+        SortedMap<Integer, Integer> pcLineMapping = new TreeMap<>();
+        for (Block block : blocks) {
+            if (block.id != 0 && block.predecessors.isEmpty())
+                continue;
+            for (var kv : block.lineMap.entrySet()) {
+                pcLineMapping.put(kv.getValue() + block.pc, kv.getKey());
+            }
+        }
+
+        // Build the pc to line mapping table.
+        IntList pcLineTable = new IntList();
+        for (var kv : pcLineMapping.entrySet()) {
+            pcLineTable.add(kv.getKey());
+            pcLineTable.add(kv.getValue());
+        }
+
+        return new DebugInfo(currentFile, pcLineTable.toArray());
     }
 
     // ── Convenience emits ──
