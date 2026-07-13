@@ -76,7 +76,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     private static class Block {
         final int id;
-        final int[] code;
+        final IntList code;
         final Map<Integer, Integer> lineMap = new HashMap<>();
         int pc;
 
@@ -86,8 +86,20 @@ public class IRBuilder extends ELNode.Visitor {
 
         Block(int id, int[] code, Map<Integer, Integer> lineMap) {
             this.id = id;
-            this.code = code;
+            this.code = new IntList(code);
             this.lineMap.putAll(lineMap);
+        }
+
+        void removeInstruction(int offset) {
+            removeInstruction(offset, 1);
+        }
+
+        void removeInstruction(int offset, int length) {
+            // Update line map.
+            lineMap.replaceAll((k, v) -> v > offset ? v - offset : v);
+
+            // Remove the instruction from list
+            code.remove(offset, length);
         }
     }
 
@@ -2878,7 +2890,7 @@ public class IRBuilder extends ELNode.Visitor {
         for (Block block : blocks)
             blockMap.put(block.id, block);
         for (Block block : blocks) {
-            for (var v = new InstructionView(block.code, 0); v.inBounds(); v.advance()) {
+            for (var v = new InstructionView(block.code); v.inBounds(); v.advance()) {
                 if (v.isJump()) {
                     Block target = blockMap.get(v.jumpTarget());
                     block.successors.set(target.id);
@@ -2892,22 +2904,58 @@ public class IRBuilder extends ELNode.Visitor {
         if (opt) {
             jumpThreadingOpt(blockMap);
             deadBlockElim(blockMap);
+            deadStoreElim();
         }
 
         // Merge block into contiguous code.
         IntList merged = new IntList();
         for (Block block : blocks) {
             if (block.id == 0 || !block.predecessors.isEmpty()) {
-                int skip = 0;
-                if (opt)
-                    skip = peepholeOpt(merged, block);
-                block.pc = merged.size();
-                merged.addAll(block.code, skip, block.code.length - skip);
+                // Swap jump condition to make fallthrough opportunity.
+                if (merged.size() >= 2) {
+                    var v1 = new InstructionView(merged.data(), merged.size() - 2, merged.size());
+                    var v2 = v1.peek();
+                    if (v1.isJump() && v1.opcode() != JUMP &&
+                        v1.jumpTarget() == block.id && // fallthrough
+                        v2.opcode() == JUMP) {
+                        int target1 = v1.jumpTarget();
+                        int target2 = v2.jumpTarget();
+                        v1.replace(inverseJump(v1.opcode()), 0, target2);
+                        v2.replace(JUMP, 0, target1);
+                    }
+                }
 
-                if (skip != 0) {
-                    // Update line to pc mapping.
-                    for (var e : block.lineMap.entrySet())
-                        e.setValue(e.getValue() - skip);
+                // Remove fallthrough jump and NOPs and end of previous block.
+                boolean fallthrough = false;
+                int term = merged.back();
+                if (IRFormat.opcode(term) == JUMP && IRFormat.operand(term) == block.id) {
+                    merged.reset(merged.size() - 1);
+                    while (!merged.isEmpty() && IRFormat.opcode(merged.back()) == NOP)
+                        merged.reset(merged.size() - 1);
+                    fallthrough = true;
+                }
+
+                block.pc = merged.size();
+
+                if ((fallthrough && block.predecessors.cardinality() == 1) ||
+                    ELProgram.OPT_LEVEL == 3) {
+                    // Run full peephole optimizer on merged code.
+                    // FIXME: peephole opt can merge code, this will ruin
+                    //  debug line table
+                    InstructionView v = new InstructionView(block.code);
+                    for (; v.inBounds(); v.advance()) {
+                        boolean cjump = v.isJump() && v.opcode() != JUMP;
+                        if (peephole.run(merged, v.opcode(), v.operand())) {
+                            // A conditional jump is optimized to unconditional
+                            // jump, the current block is dead.
+                            if (cjump && IRFormat.opcode(merged.back()) == JUMP)
+                                break;
+                            continue;
+                        }
+                        merged.add(v.header());
+                    }
+                } else {
+                    merged.addAll(block.code);
                 }
             }
         }
@@ -2920,13 +2968,23 @@ public class IRBuilder extends ELNode.Visitor {
         return func;
     }
 
+    private static int inverseJump(int opcode) {
+        return switch (opcode) {
+            case JUMP_IF_TRUE -> JUMP_IF_FALSE;
+            case JUMP_IF_FALSE -> JUMP_IF_TRUE;
+            case JUMP_IF_NULL -> JUMP_IF_NONNULL;
+            case JUMP_IF_NONNULL -> JUMP_IF_NULL;
+            default -> opcode;
+        };
+    }
+
     private void jumpThreadingOpt(Map<Integer, Block> blockMap) {
         Map<Integer, Integer> threadingJumps = new HashMap<>();
         for (Block block : blocks) {
             // If the only instruction in a block is a jump, threading
             // jumps to target.
-            if (block.code.length == 1) {
-                int header = block.code[0];
+            if (block.code.size() == 1) {
+                int header = block.code.get(0);
                 if (IRFormat.opcode(header) == JUMP) {
                     int target = IRFormat.operand(header);
                     threadingJumps.put(block.id, target);
@@ -2952,7 +3010,7 @@ public class IRBuilder extends ELNode.Visitor {
         // Apply all threading jumps. May produce dead blocks.
         if (!threadingJumps.isEmpty()) {
             for (Block block : blocks) {
-                InstructionView v = new InstructionView(block.code, 0);
+                InstructionView v = new InstructionView(block.code);
                 for (; v.inBounds(); v.advance()) {
                     if (v.isJump()) {
                         int target = threadingJumps.getOrDefault(v.jumpTarget(), -1);
@@ -2986,49 +3044,129 @@ public class IRBuilder extends ELNode.Visitor {
         } while (changed);
     }
 
-    private int peepholeOpt(IntList merged, Block block) {
-        // Swap jump condition to make fallthrough opportunity.
-        if (merged.size() >= 2) {
-            var v1 = new InstructionView(merged.data(), merged.size() - 2, merged.size());
-            var v2 = v1.peek();
-            if (v1.isJump() && v1.opcode() != JUMP &&
-                v1.jumpTarget() == block.id && // fallthrough
-                v2.opcode() == JUMP) {
-                int target1 = v1.jumpTarget();
-                int target2 = v2.jumpTarget();
-                v1.replace(inverseJump(v1.opcode()), 0, target2);
-                v2.replace(JUMP, 0, target1);
+    /**
+     * Eliminate dead stores: STORE_VAR/STORE_VAR_POP whose slot is never
+     * read (no matching PUSH_VAR).  Dead STORE_VAR becomes NOP (value
+     * stays on stack), dead STORE_VAR_POP becomes POP.  Unused slots are
+     * then compacted away via remapping.
+     */
+    private void deadStoreElim() {
+        // Collect used slots.
+        BitSet usedSlots = new BitSet();
+        Block pred = null;
+        for (Block block : blocks) {
+            if (block.id != 0 && block.predecessors.isEmpty())
+                continue;
+            final int[] data = block.code.data();
+            final int n = block.code.size();
+            for (int i = 0; i < n; i++) {
+                // We only check read slot, write only slots are dead.
+                int inst = data[i];
+                if (IRFormat.opcode(inst) == PUSH_VAR) {
+                    // Look back in previous block. If the previous block ends
+                    // with a STORE_VAR_POP and fallthrough to this block. The
+                    // STORE_VAR_POP and PUSH_VAR will fold to STORE_VAR.
+                    // The PUSH_VAR is eliminated, so this is not a REAL load.
+                    // The STORE_VAR_POP and PUSH_VAR should be removed together.
+                    // But we can't do this here, we must scan for other REAL
+                    // load to determine whether the pair can be eliminated.
+                    int varIndex = IRFormat.operand(inst);
+                    if (i == 0 && pred != null && pred.code.size() >= 2 &&
+                        block.predecessors.cardinality() == 1 &&
+                        block.predecessors.get(pred.id) &&
+                        IRFormat.match(pred.code.back(1), STORE_VAR_POP, varIndex)) {
+                        // We set a flag in instruction payload to indicates this
+                        // situation, the next scan can determine whether the instruction
+                        // can be removed or keep.
+                        pred.code.set(pred.code.size() - 2,
+                                      IRFormat.pack(STORE_VAR_POP, 1, varIndex));
+                        block.code.set(0, IRFormat.pack(PUSH_VAR, 1, varIndex));
+                    } else {
+                        usedSlots.set(varIndex);
+                    }
+                }
             }
+            pred = block;
         }
 
-        // Remove fallthrough jump.
-        int term = merged.back();
-        if (IRFormat.opcode(term) == JUMP && IRFormat.operand(term) == block.id) {
-            merged.reset(merged.size() - 1);
+        // Preserve function parameters.
+        usedSlots.set(0, func.paramCount());
+
+        // Remove unused slots.
+        int[] slotMap = new int[maxLocals];
+        int nextSlot = 0;
+        for (int i = 0; i < maxLocals; i++) {
+            if (usedSlots.get(i))
+                slotMap[i] = nextSlot++;
+            else
+                slotMap[i] = -1;
         }
 
-        // Peephole optimize fallthrough.
-        int eliminated = 0;
-        if (block.predecessors.cardinality() == 1) {
-            InstructionView v = new InstructionView(block.code, 0);
-            for (; v.inBounds(); v.advance()) {
-                if (peephole.run(merged, v.opcode(), v.operand()))
-                    eliminated++;
-                else
+        // Nothing to remap if all slots are used and contiguous.
+        if (nextSlot == maxLocals)
+            return;
+
+        // Remap slot indices and remove dead stores.
+        for (Block block : blocks) {
+            if (block.id != 0 && block.predecessors.isEmpty())
+                continue;
+
+            final int[] data = block.code.data();
+            final int n = block.code.size();
+            for (int i = 0; i < n; i++) {
+                int inst = data[i];
+                int op = IRFormat.opcode(inst);
+                int varIndex = IRFormat.operand(inst);
+
+                switch (op) {
+                case PUSH_VAR:
+                    if ((varIndex = slotMap[varIndex]) == -1) {
+                        // This must be a flagged instruction to be removed
+                        // when merged into previous block that ends with
+                        // STORE_VAR_POP.
+                        assert IRFormat.payload(inst) != 0;
+                        data[i] = IRFormat.pack(NOP, 0, 0);
+                    } else {
+                        data[i] = IRFormat.pack(PUSH_VAR, 0, varIndex);
+                    }
                     break;
+
+                case STORE_VAR:
+                    if ((varIndex = slotMap[varIndex]) == -1) {
+                        // Remove dead store.
+                        data[i] = IRFormat.pack(NOP, 0, 0);
+                    } else {
+                        data[i] = IRFormat.pack(STORE_VAR, 0, varIndex);
+                    }
+                    break;
+
+                case STORE_VAR_POP:
+                    if ((varIndex = slotMap[varIndex]) == -1) {
+                        // Dead store and pop.
+                        if (IRFormat.payload(inst) != 0) {
+                            // This flagged instruction need to be removed when
+                            // merged into fallthrough block with PUSH_VAR.
+                            data[i] = IRFormat.pack(NOP, 0, 0);
+                        } else if (i != 0 && switch (IRFormat.opcode(data[i-1])) {
+                                      case PUSH_NULL, PUSH_CONST, PUSH_TRUE, PUSH_FALSE,
+                                           PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL -> true;
+                                      default -> false;
+                                      }) {
+                            // Remove PUSH and dead store.
+                            data[i-1] = data[i] = IRFormat.pack(NOP, 0, 0);
+                        } else {
+                            // Replace dead store with POP.
+                            data[i] = IRFormat.pack(POP, 0, 0);
+                        }
+                    } else {
+                        data[i] = IRFormat.pack(STORE_VAR_POP, 0, varIndex);
+                    }
+                    break;
+                }
             }
         }
-        return eliminated;
-    }
 
-    private static int inverseJump(int opcode) {
-        return switch (opcode) {
-            case JUMP_IF_TRUE -> JUMP_IF_FALSE;
-            case JUMP_IF_FALSE -> JUMP_IF_TRUE;
-            case JUMP_IF_NULL -> JUMP_IF_NONNULL;
-            case JUMP_IF_NONNULL -> JUMP_IF_NULL;
-            default -> opcode;
-        };
+        maxLocals = nextSlot;
     }
 
     private int[] buildBlockOffsets(IntList code) {
@@ -3065,7 +3203,7 @@ public class IRBuilder extends ELNode.Visitor {
              v.inBounds(); v.advance()) {
             if (v.isJump()) {
                 int mappedId = remap.get(v.jumpTarget());
-                v.set(IRFormat.pack(v.opcode(), 0, mappedId));
+                v.replace(v.opcode(), 0, mappedId);
             }
         }
 

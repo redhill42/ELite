@@ -73,7 +73,11 @@ final class IREmitter {
     // ── Stack ops ──
 
     public IREmitter emitNop() {
-        return emit(NOP, 0);
+        if (!isDead()) {
+            // Bypass peephole optimizer.
+            buf.add(pack(NOP, 0, 0));
+        }
+        return this;
     }
 
     public IREmitter emitPushConst(int poolIndex) {

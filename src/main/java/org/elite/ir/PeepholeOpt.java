@@ -33,6 +33,8 @@ final class PeepholeOpt {
   }
 
   boolean run(IntList code, int opcode, int operand) {
+    if (opcode == NOP)
+      return true;
     if (code.isEmpty() || ELProgram.OPT_LEVEL == 0)
       return false;
 
@@ -251,87 +253,103 @@ final class PeepholeOpt {
     case ADD, SUB, MUL, DIV, IDIV, REM, POW, CAT,
          BITAND, BITOR, XOR, SHL, SHR, USHR,
          EQ, NE, IDEQ, IDNE, LT, LE, GT, GE:
-      if (code.size() >= 2) {
-        int i1 = code.get(last - 1);
-        int i2 = code.get(last);
-        Object c1, c2, r;
-
-        if (IRFormat.opcode(i1) == PUSH_CONST &&
-            IRFormat.opcode(i2) == PUSH_CONST) {
-          c1 = builder.getConstant(IRFormat.operand(i1));
-          c2 = builder.getConstant(IRFormat.operand(i2));
-        } else if (IRFormat.opcode(i1) == PUSH_CONST &&
-                   IRFormat.opcode(i2) == DUP) {
-          c1 = c2 = builder.getConstant(IRFormat.operand(i1));
-        } else {
-          return false;
+      try {
+        if (code.size() >= 3) {
+          int i1 = code.get(last - 2);
+          int i2 = code.get(last - 1);
+          int i3 = code.get(last);
+          if (IRFormat.opcode(i1) == PUSH_CONST &&
+              IRFormat.opcode(i2) == STORE_VAR &&
+              IRFormat.opcode(i3) == PUSH_CONST) {
+            // PUSH_CONST c1, STORE_VAR, PUSH_CONST c2, op ->
+            //     PUSH_CONST c1, STORE_VAR_POP, PUSH_CONST op(c1, c2)
+            Object c1 = builder.getConstant(IRFormat.operand(i1));
+            Object c2 = builder.getConstant(IRFormat.operand(i3));
+            Object r = foldConstant(opcode, c1, c2);
+            code.set(last - 1, IRFormat.pack(STORE_VAR_POP, 0, IRFormat.operand(i2)));
+            code.set(last, packConst(r));
+            return true;
+          }
         }
 
-        try {
-          r = switch (opcode) {
-            case ADD    -> Builtin.__add__(elctx, c1, c2);
-            case SUB    -> Builtin.__sub__(elctx, c1, c2);
-            case MUL    -> Builtin.__mul__(elctx, c1, c2);
-            case DIV    -> Builtin.__div__(elctx, c1, c2);
-            case IDIV   -> Builtin.__idiv__(elctx, c1, c2);
-            case REM    -> Builtin.__rem__(elctx, c1, c2);
-            case POW    -> Builtin.__pow__(elctx, c1, c2);
-            case CAT    -> Builtin.__cat__(elctx, c1, c2);
-            case BITAND -> Builtin.__bitand__(elctx, c1, c2);
-            case BITOR  -> Builtin.__bitor__(elctx, c1, c2);
-            case XOR    -> Builtin.__xor__(elctx, c1, c2);
-            case SHL    -> Builtin.__shl__(elctx, c1, c2);
-            case SHR    -> Builtin.__shr__(elctx, c1, c2);
-            case USHR   -> Builtin.__ushr__(elctx, c1, c2);
-            case EQ     -> Builtin.__eq__(elctx, c1, c2);
-            case NE     -> Builtin.__ne__(elctx, c1, c2);
-            case IDEQ   -> c1 == c2;
-            case IDNE   -> c1 != c2;
-            case LT     -> Builtin.__lt__(elctx, c1, c2);
-            case LE     -> Builtin.__le__(elctx, c1, c2);
-            case GT     -> Builtin.__gt__(elctx, c1, c2);
-            case GE     -> Builtin.__ge__(elctx, c1, c2);
-            default -> throw new AssertionError();
-          };
-        } catch (RuntimeException ex) {
-          return false;
-        }
+        if (code.size() >= 2) {
+          int i1 = code.get(last - 1);
+          int i2 = code.get(last);
+          Object c1, c2;
 
-        code.reset(last); last--;
-        if (r == null)
-          code.set(last, IRFormat.pack(PUSH_NULL, 0, 0));
-        else if (r instanceof Boolean b)
-          code.set(last, IRFormat.pack(b ? PUSH_TRUE : PUSH_FALSE, 0, 0));
-        else
-          code.set(last, IRFormat.pack(PUSH_CONST, 0, builder.putConstant(r)));
-        return true;
+          if (IRFormat.opcode(i1) == PUSH_CONST && IRFormat.opcode(i2) == PUSH_CONST) {
+            c1 = builder.getConstant(IRFormat.operand(i1));
+            c2 = builder.getConstant(IRFormat.operand(i2));
+          } else if (IRFormat.opcode(i1) == PUSH_CONST && IRFormat.opcode(i2) == DUP) {
+            c1 = c2 = builder.getConstant(IRFormat.operand(i1));
+          } else {
+            return false;
+          }
+
+          Object r = foldConstant(opcode, c1, c2);
+          code.reset(last); last--;
+          code.set(last, packConst(r));
+          return true;
+        }
+      } catch (RuntimeException ex) {
+        return false;
       }
       break;
 
     case NEG, BITNOT:
       if (lastOpcode == PUSH_CONST) {
-        Object c = builder.getConstant(lastOperand);
-        Object r;
-
         try {
-          r = switch (opcode) {
+          Object c = builder.getConstant(lastOperand);
+          Object r = switch (opcode) {
             case NEG    -> Builtin.__neg__(elctx, c);
             case BITNOT -> Builtin.__bitnot__(elctx, c);
             default -> throw new AssertionError();
           };
+          code.set(last, packConst(r));
+          return true;
         } catch (RuntimeException ex) {
           return false;
         }
-
-        if (r == null)
-          code.set(last, IRFormat.pack(PUSH_NULL, 0, 0));
-        else
-          code.set(last, IRFormat.pack(PUSH_CONST, 0, builder.putConstant(r)));
-        return true;
       }
       break;
     }
 
     return false;
+  }
+
+  private Object foldConstant(int opcode, Object c1, Object c2) {
+    return switch (opcode) {
+      case ADD    -> Builtin.__add__(elctx, c1, c2);
+      case SUB    -> Builtin.__sub__(elctx, c1, c2);
+      case MUL    -> Builtin.__mul__(elctx, c1, c2);
+      case DIV    -> Builtin.__div__(elctx, c1, c2);
+      case IDIV   -> Builtin.__idiv__(elctx, c1, c2);
+      case REM    -> Builtin.__rem__(elctx, c1, c2);
+      case POW    -> Builtin.__pow__(elctx, c1, c2);
+      case CAT    -> Builtin.__cat__(elctx, c1, c2);
+      case BITAND -> Builtin.__bitand__(elctx, c1, c2);
+      case BITOR  -> Builtin.__bitor__(elctx, c1, c2);
+      case XOR    -> Builtin.__xor__(elctx, c1, c2);
+      case SHL    -> Builtin.__shl__(elctx, c1, c2);
+      case SHR    -> Builtin.__shr__(elctx, c1, c2);
+      case USHR   -> Builtin.__ushr__(elctx, c1, c2);
+      case EQ     -> Builtin.__eq__(elctx, c1, c2);
+      case NE     -> Builtin.__ne__(elctx, c1, c2);
+      case IDEQ   -> c1 == c2;
+      case IDNE   -> c1 != c2;
+      case LT     -> Builtin.__lt__(elctx, c1, c2);
+      case LE     -> Builtin.__le__(elctx, c1, c2);
+      case GT     -> Builtin.__gt__(elctx, c1, c2);
+      case GE     -> Builtin.__ge__(elctx, c1, c2);
+      default -> throw new AssertionError();
+    };
+  }
+
+  private int packConst(Object value) {
+    if (value == null)
+      return IRFormat.pack(PUSH_NULL, 0, 0);
+    if (value instanceof Boolean b)
+      return IRFormat.pack(b ? PUSH_TRUE : PUSH_FALSE, 0, 0);
+    return IRFormat.pack(PUSH_CONST, 0, builder.putConstant(value));
   }
 }

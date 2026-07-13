@@ -41,13 +41,13 @@ final class IRPrinter {
           .append("\n");
 
         DebugInfo di = fn.debugInfo();
-        InstructionView v = new InstructionView(fn.code(), 0, fn.constantPool());
+        InstructionView v = new InstructionView(fn.code(), 0);
         while (v.inBounds()) {
             int blockId = fn.blockOfPc(v.offset());
             if (blockId != -1)
                 sb.append("  B").append(blockId).append(":\n");
             int startIdx = sb.length();
-            sb.append("    ").append(formatInst(v, fn));
+            sb.append("    ").append(formatInst(v, fn.constantPool()));
             int line = di.lineForPC(v.offset());
             if (line != 0) {
                 if (sb.length() - startIdx < 40)
@@ -61,7 +61,18 @@ final class IRPrinter {
         return sb.toString();
     }
 
-    private static String formatInst(InstructionView v, IRFunction fn) {
+    @SuppressWarnings("unused")
+    static String formatIR(IntList code, Object[] constants) {
+        StringBuilder sb = new StringBuilder();
+        InstructionView v = new InstructionView(code);
+        while (v.inBounds()) {
+            sb.append("    ").append(formatInst(v, constants)).append('\n');
+            v.advance();;
+        }
+        return sb.toString();
+    }
+
+    private static String formatInst(InstructionView v, Object[] constants) {
         int op = v.opcode();
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("%-14s", Opcode.name(op)));
@@ -80,7 +91,7 @@ final class IRPrinter {
              Opcode.CLOSURE,
              Opcode.DECLARE_NS,
              Opcode.TRAMPOLINE ->
-            formatConstPool(sb, fn, v.poolIndex());
+            formatConstPool(sb, constants, v.poolIndex());
 
         case Opcode.JUMP,
              Opcode.JUMP_IF_TRUE,
@@ -98,7 +109,7 @@ final class IRPrinter {
              Opcode.INVOKE_STATIC,
              Opcode.INVOKE_EXPANDO -> {
             sb.append(" ").append(v.count()).append(",");
-            formatConstPool(sb, fn, v.poolIndex());
+            formatConstPool(sb, constants, v.poolIndex());
         }
 
         case Opcode.NEW_MAP,
@@ -112,10 +123,10 @@ final class IRPrinter {
         return sb.toString();
     }
 
-    private static void formatConstPool(StringBuilder sb, IRFunction fn, int idx) {
+    private static void formatConstPool(StringBuilder sb, Object[] constants, int idx) {
         sb.append(" #").append(idx);
-        if (idx < fn.constantPool().length) {
-            Object val = fn.constantPool()[idx];
+        if (idx < constants.length) {
+            Object val = constants[idx];
             sb.append(" ").append(formatConst(val));
         }
     }

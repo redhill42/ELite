@@ -56,4 +56,8 @@ final class IRFormat {
     public static int opcode(int header)   { return header & 0xFF; }
     public static int payload(int header)  { return (header >>> PAYLOAD_SHIFT) & 0xFF; }
     public static int operand(int header)  { return header >>> OPERAND_SHIFT; }
+
+    public static boolean match(int inst, int opcode, int operand) {
+        return opcode(inst) == opcode && operand(inst) == operand;
+    }
 }

@@ -37,24 +37,21 @@ final class InstructionView {
     private final int[] code;
     private final int size;
     private int offset;
-    private final Object[] constantPool;
 
     public InstructionView(int[] code, int offset) {
-        this(code, offset, null);
+        this(code, offset, code.length);
     }
 
     public InstructionView(int[] code, int offset, int end) {
         this.code = code;
         this.offset = offset;
         this.size = end;
-        this.constantPool = null;
     }
 
-    public InstructionView(int[] code, int offset, Object[] constantPool) {
-        this.code = code;
-        this.size = code.length;
-        this.offset = offset;
-        this.constantPool = constantPool;
+    public InstructionView(IntList code) {
+        this.code = code.data();
+        this.size = code.size();
+        this.offset = 0;
     }
 
     // ── Raw access ──
@@ -97,8 +94,8 @@ final class InstructionView {
 
     // ── Mutation ──
 
-    public void set(int inst) {
-        code[offset] = inst;
+    public void replace(int opcode, int payload, int operand) {
+        code[offset] = IRFormat.pack(opcode, payload, operand);
     }
 
     // ── Navigation ──
@@ -117,16 +114,11 @@ final class InstructionView {
 
     /** Peek at the next instruction without consuming it. */
     public InstructionView peek() {
-        return new InstructionView(code, offset + 1, constantPool);
+        return new InstructionView(code, offset + 1);
     }
 
     /** Peek N instructions ahead without consuming. */
     public InstructionView peek(int n) {
-        return new InstructionView(code, offset + n, constantPool);
-    }
-
-    // ── Mutation ──
-    public void replace(int opcode, int payload, int operand) {
-        code[offset] = IRFormat.pack(opcode, payload, operand);
+        return new InstructionView(code, offset + n);
     }
 }
