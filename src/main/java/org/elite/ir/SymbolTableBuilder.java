@@ -20,10 +20,14 @@ public final class SymbolTableBuilder {
         SymbolTable table = new SymbolTable();
         BuilderVisitor visitor = new BuilderVisitor(table);
         table.enterScope("program", null);
+        if (program.isStandalone()) // set local scope for standalone program
+            table.enterScope("local", null);
         for (ELNode def : program.getDefinitions())
             def.accept(visitor);
         for (ELNode exp : program.getExpressions())
             exp.accept(visitor);
+        if (program.isStandalone())
+            table.leaveScope();
         visitor.finish();
         return table;
     }

@@ -53,6 +53,7 @@ public class ELProgram implements Serializable
 
     private String filename;
     private int startLine = 1;
+    private boolean standalone;
 
     /**
      * Optimization level for expression evaluation.
@@ -96,6 +97,14 @@ public class ELProgram implements Serializable
 
     public void setStartLine(int startLine) {
         this.startLine = startLine;
+    }
+
+    public void setStandalone(boolean standalone) {
+        this.standalone = standalone;
+    }
+
+    public boolean isStandalone() {
+        return standalone;
     }
 
     public void addModule(String name, String prefix) {

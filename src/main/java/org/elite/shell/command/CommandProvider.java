@@ -99,6 +99,7 @@ public final class CommandProvider {
         ScriptEngine engine = shellContext.getEngine();
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
         ELProgram program = new Parser(elctx, script).parse();
+        program.setStandalone(true);
         System.out.println(program.compile(elctx).dump());
     }
 

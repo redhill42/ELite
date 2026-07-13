@@ -183,6 +183,10 @@ class ELiteScriptEngine extends AbstractScriptEngine
             ELProgram program = parse(script);
             program.setFilename((String)get(ScriptEngine.FILENAME));
 
+            Boolean standalone = (Boolean)get("elite.standalone");
+            if (standalone != null)
+                program.setStandalone(standalone);
+
             switch (ELProgram.OPT_LEVEL) {
             case 0:
                 return new ASTCompiledScript(this, program);

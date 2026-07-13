@@ -84,6 +84,9 @@ public class Main
             shellContext.setEngine(engine);
             int status = 0;
 
+            if (!shellContext.isInteractive())
+                engine.put("elite.standalone", true);
+
             if (filename != null) {
                 if (options.hasDump()) {
                     String source = new String(Files.readAllBytes(Paths.get(filename)));
