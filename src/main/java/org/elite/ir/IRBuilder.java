@@ -2934,20 +2934,22 @@ public class IRBuilder extends ELNode.Visitor {
           merged.reset(merged.size() - 1);
           while (!merged.isEmpty() && IRFormat.opcode(merged.back()) == NOP)
             merged.reset(merged.size() - 1);
-          fallthrough = true;
+          fallthrough = block.predecessors.cardinality() == 1;
         }
 
         block.pc = merged.size();
 
-        if ((fallthrough && block.predecessors.cardinality() == 1) ||
-            ELProgram.OPT_LEVEL == 3) {
+        if (fallthrough || ELProgram.OPT_LEVEL == 3) {
+          // For blocks has multiple predecessor, don't merge code into
+          // predecessor block.
+          int boundary = fallthrough ? 0 : merged.size();
+
           // Run full peephole optimizer on merged code.
-          // FIXME: peephole opt can merge code, this will ruin
-          //  debug line table
+          // FIXME: peephole opt can merge code, this may ruin debug line table
           InstructionView v = new InstructionView(block.code);
           for (; v.inBounds(); v.advance()) {
             boolean cjump = v.isJump() && v.opcode() != JUMP;
-            if (peephole.run(merged, v.opcode(), v.operand())) {
+            if (peephole.run(merged, boundary, v.opcode(), v.operand())) {
               // A conditional jump is optimized to unconditional jump, the
               // current block is dead.
               if (cjump && IRFormat.opcode(merged.back()) == JUMP)
