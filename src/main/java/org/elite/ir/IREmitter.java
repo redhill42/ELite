@@ -39,17 +39,8 @@ import static org.elite.ir.Opcode.*;
  */
 final class IREmitter {
   private final IntList buf = new IntList();
-  private final PeepholeOpt peephole;
-
-  public IREmitter(PeepholeOpt peephole) {
-    this.peephole = peephole;
-  }
 
   // ── Core emit methods ──
-
-  public IREmitter emit(int opcode, int payload) {
-    return emit(opcode, payload, 0);
-  }
 
   public boolean isDead() {
     if (!buf.isEmpty()) {
@@ -60,13 +51,13 @@ final class IREmitter {
     return false;
   }
 
-  public IREmitter emit(int opcode, int payload, int operand) {
-    if (isDead())
-      return this;
-    if (peephole.run(buf, opcode, operand))
-      return this;
+  public IREmitter emit(int opcode, int payload) {
+    return emit(opcode, payload, 0);
+  }
 
-    buf.add(pack(opcode, payload, operand));
+  public IREmitter emit(int opcode, int payload, int operand) {
+    if (!isDead())
+      buf.add(pack(opcode, payload, operand));
     return this;
   }
 

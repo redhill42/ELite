@@ -92,6 +92,10 @@ public class IRBuilder extends ELNode.Visitor {
       this.code = new IntList(code);
       this.lineMap.putAll(lineMap);
     }
+
+    boolean isDead() {
+      return id != 0 && predecessors.isEmpty();
+    }
   }
 
   // Peephole optimizer.
@@ -129,7 +133,7 @@ public class IRBuilder extends ELNode.Visitor {
     this.program = program;
     this.func = func;
     this.peephole = new PeepholeOpt(elctx, this);
-    this.current = new IREmitter(peephole);
+    this.current = new IREmitter();
     this.currentScope = scope;
   }
 
@@ -143,7 +147,7 @@ public class IRBuilder extends ELNode.Visitor {
     this.func = func;
     this.elctx = parent.elctx;
     this.peephole = parent.peephole;
-    this.current = new IREmitter(peephole);
+    this.current = new IREmitter();
     this.currentScope = scope;
     this.currentFile = parent.currentFile;
 
@@ -230,25 +234,7 @@ public class IRBuilder extends ELNode.Visitor {
   // ── Literals ──
 
   public void visit(ELNode.NUMBER node) {
-    Number n = node.value;
-    if (n instanceof Integer || n instanceof Short || n instanceof Byte) {
-      buildConst(n.intValue());
-    } else if (n instanceof Long) {
-      long v = n.longValue();
-      if (v >= Integer.MIN_VALUE && v <= Integer.MAX_VALUE)
-        buildConst((int)v);
-      else
-        buildConst(v);
-    } else if (n instanceof Double || n instanceof Float) {
-      buildConst(n.doubleValue());
-    } else {
-      buildConst(n);
-    }
-  }
-
-  public void visit(ELNode.REGEXP node) {
-    buildConst(node.value.toString());
-    emitInvokeStatic(java.util.regex.Pattern.class, "compile", String.class);
+    buildConst(node.value);
   }
 
   public void visit(ELNode.STRINGVAL node) {
@@ -269,6 +255,11 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.NULL node) {
     current.emitPushNull();
+  }
+
+  public void visit(ELNode.REGEXP node) {
+    buildConst(node.value.toString());
+    emitInvokeStatic(java.util.regex.Pattern.class, "compile", String.class);
   }
 
   public void visit(ELNode.SYMBOL node) {
@@ -501,8 +492,9 @@ public class IRBuilder extends ELNode.Visitor {
     // Allocate slots for inline function local variables.
     Slot[] slots = new Slot[fn.maxLocals()];
     for (int i = 0; i < args.length; i++) {
-      // If the slot never read, no need to allocate new slot.
-      // Argument still need to build for side effects.
+      // If the slot never read, no need to allocate new slot. Argument still
+      // need to build for side effects. Constant argument will be discarded
+      // by peephole optimizer.
       if (!readSlots.get(i)) {
         build(args[i]);
         current.emitPop();
@@ -631,7 +623,7 @@ public class IRBuilder extends ELNode.Visitor {
         // We have guaranteed single entry single exit.
         assert v.offset() == fn.code().length - 1;
         break;
-      } else if (v.opcode() != NOP) {
+      } else {
         current.emit(v.opcode(), v.payload(), v.operand());
       }
     }
@@ -1048,7 +1040,7 @@ public class IRBuilder extends ELNode.Visitor {
     build(node.begin);
     build(node.next);
     if (node.exclude && node.end != null) {
-      // Exclusive range [begin..<end): push end-1 for inclusive range end
+      // Exclusive range [begin..<end]: push end-1 for inclusive range end
       build(node.end);
       buildConst(1);
       emitDynBinOp(Token.SUB);
@@ -1215,10 +1207,8 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (tmpSlots != null) {
-      for (Slot slot : tmpSlots) {
-        if (slot != null)
-          slot.release();
-      }
+      for (Slot slot : tmpSlots)
+        release(slot);
     }
   }
 
@@ -1380,26 +1370,25 @@ public class IRBuilder extends ELNode.Visitor {
   // ── Logical AND/OR/NOT ──
 
   public void visit(ELNode.AND node) {
-    int contB = allocBlockId();
+    int cont = allocBlockId();
     build(node.left);
     current.emitDup();
-    current.emitJumpIfFalse(contB);
+    current.emitJumpIfFalse(cont);
     current.emitPop();
     build(node.right);
-    current.emitJump(contB);
-    startBlock(contB);
+    current.emitJump(cont);
+    startBlock(cont);
   }
 
-
   public void visit(ELNode.OR node) {
-    int contB = allocBlockId();
+    int cont = allocBlockId();
     build(node.left);
     current.emitDup();
-    current.emitJumpIfTrue(contB);
+    current.emitJumpIfTrue(cont);
     current.emitPop();
     build(node.right);
-    current.emitJump(contB);
-    startBlock(contB);
+    current.emitJump(cont);
+    startBlock(cont);
   }
 
   public void visit(ELNode.NOT node) {
@@ -1416,27 +1405,24 @@ public class IRBuilder extends ELNode.Visitor {
     build(node.cond);
     current.emitJumpIfTrue(thenB);
     current.emitJump(elseB);
-
     startBlock(thenB);
     buildTail(node.left);
     current.emitJump(mergeB);
-
     startBlock(elseB);
     buildTail(node.right);
     current.emitJump(mergeB);
-
     startBlock(mergeB);
   }
 
   public void visit(ELNode.COALESCE node) {
-    int contB = allocBlockId();
+    int cont = allocBlockId();
     build(node.left);
     current.emitDup();
-    current.emitJumpIfNonNull(contB);
+    current.emitJumpIfNonNull(cont);
     current.emitPop();
     build(node.right);
-    current.emitJump(contB);
-    startBlock(contB);
+    current.emitJump(cont);
+    startBlock(cont);
   }
 
   public void visit(ELNode.ASSIGN node) {
@@ -1699,10 +1685,8 @@ public class IRBuilder extends ELNode.Visitor {
     for (int i = 0; i < node.exps.length - 1; i++) {
       if (current.isDead())
         return;
-      if (!(node.exps[i] instanceof ELNode.Constant)) {
-        build(node.exps[i]);
-        current.emitPop();
-      }
+      build(node.exps[i]);
+      current.emitPop();
     }
 
     if (!current.isDead())
@@ -1843,10 +1827,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Generate loop body.
     startBlock(bodyB);
-    if (body != null && !(body instanceof ELNode.NULL)) {
-      build(body);
-      current.emitPop();
-    }
+    build(body);
+    current.emitPop();
     current.emitJump(contB);
 
     // Generate loop step.
@@ -1940,10 +1922,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Generate loop body.
     startBlock(bodyB);
-    if (body != null && !(body instanceof ELNode.NULL)) {
-      build(body);
-      current.emitPop();
-    }
+    build(body);
+    current.emitPop();
     current.emitJump(contB);
 
     // Generate loop step.
@@ -2025,10 +2005,8 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPop();
     }
 
-    if (node.body != null && !(node.body instanceof ELNode.NULL)) {
-      build(node.body);
-      current.emitPop();
-    }
+    build(node.body);
+    current.emitPop();
     current.emitJump(header);
 
     startBlock(exit);
@@ -2102,15 +2080,12 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitTry(handlerCount);
   }
 
-  // ── Synchronized ──
-
   public void visit(ELNode.SYNCHRONIZED node) {
     build(node.exp);
     build(node.body);
     current.emitSynchronized();
   }
 
-  // ── Lambda ──
   public void visit(ELNode.LAMBDA node) {
     IRFunction func;
     if (node.symbol != null)
@@ -2134,7 +2109,7 @@ public class IRBuilder extends ELNode.Visitor {
       nested.currentFile = node.file;
 
     // Reserve slots for all pre-allocated variables in this lambda scope.
-    // Temp vars allocated via defineLocalVar will then start above the max
+    // Temp vars allocated via allocLocalVar will then start above the max
     // pre-allocated slot, avoiding collisions.
     nested.reserveSlots(node.scope.maxSlots);
 
@@ -2153,7 +2128,6 @@ public class IRBuilder extends ELNode.Visitor {
     fn = fn.withDefaults(getDefaultValues(node.vars));
     current.emitClosure(putConstant(fn));
   }
-
 
   /**
    * Extract default parameter values from lambda definitions.
@@ -2254,7 +2228,7 @@ public class IRBuilder extends ELNode.Visitor {
       if (c.patterns != null) {
         for (int pi = 0; pi < c.patterns.length; pi++) {
           argSlots[pi].load();
-          compileMatchPattern(argSlots[pi], (ELNode)c.patterns[pi], failBlock);
+          buildMatchPattern(argSlots[pi], (ELNode)c.patterns[pi], failBlock);
           current.emitJumpIfFalse(failBlock);
         }
       }
@@ -2310,7 +2284,7 @@ public class IRBuilder extends ELNode.Visitor {
   /**
    * Compile a single pattern check, leaving TRUE on stack if matched.
    */
-  private void compileMatchPattern(Slot argSlot, ELNode pat, int failBlock) {
+  private void buildMatchPattern(Slot argSlot, ELNode pat, int failBlock) {
     if (pat instanceof ELNode.DEFINE def) {
       // Type check if annotated
       if (def.type != null) {
@@ -2322,7 +2296,7 @@ public class IRBuilder extends ELNode.Visitor {
       if (def.expr != null) {
         if (def.type != null)
           argSlot.load();
-        compileMatchPattern(argSlot, def.expr, failBlock);
+        buildMatchPattern(argSlot, def.expr, failBlock);
         current.emitJumpIfFalse(failBlock);
       }
 
@@ -2354,7 +2328,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (pat instanceof ELNode.NOT not) {
-      compileMatchPattern(argSlot, not.right, failBlock);
+      buildMatchPattern(argSlot, not.right, failBlock);
       current.emitNot();
       return;
     }
@@ -2364,13 +2338,13 @@ public class IRBuilder extends ELNode.Visitor {
       int done = allocBlockId();
 
       // Left branch, argSlot already on stack top.
-      compileMatchPattern(argSlot, or.left, tryRight);
+      buildMatchPattern(argSlot, or.left, tryRight);
       current.emitJumpIfFalse(tryRight);
       current.emitJump(done); // matched -> skip right
 
       startBlock(tryRight);
       argSlot.load();
-      compileMatchPattern(argSlot, or.right, failBlock);
+      buildMatchPattern(argSlot, or.right, failBlock);
       current.emitJumpIfFalse(failBlock);
       current.emitJump(done);
       startBlock(done);
@@ -2457,9 +2431,10 @@ public class IRBuilder extends ELNode.Visitor {
             tmpSlot = new Slot();
           tmpSlot.store();
         }
-        compileMatchPattern(tmpSlot, t.elems[i], failBlock);
+        buildMatchPattern(tmpSlot, t.elems[i], failBlock);
         current.emitJumpIfFalse(failBlock);
       }
+
       release(tmpSlot);
       current.emitPushTrue();
       return;
@@ -2483,14 +2458,14 @@ public class IRBuilder extends ELNode.Visitor {
       emitInvokeMethod(Seq.class, "head");
       if (!isSimplePattern(cons.head))
         tmpSlot.store();
-      compileMatchPattern(tmpSlot, cons.head, failBlock);
+      buildMatchPattern(tmpSlot, cons.head, failBlock);
       current.emitJumpIfFalse(failBlock);
 
       seqSlot.load();
       emitInvokeMethod(Seq.class, "tail");
       if (!isSimplePattern(cons.tail))
         tmpSlot.store();
-      compileMatchPattern(tmpSlot, cons.tail, failBlock);
+      buildMatchPattern(tmpSlot, cons.tail, failBlock);
       current.emitJumpIfFalse(failBlock);
 
       release(tmpSlot);
@@ -2523,7 +2498,7 @@ public class IRBuilder extends ELNode.Visitor {
             tmpSlot = new Slot();
           tmpSlot.store();
         }
-        compileMatchPattern(tmpSlot, map.values[i], failBlock);
+        buildMatchPattern(tmpSlot, map.values[i], failBlock);
         current.emitJumpIfFalse(failBlock);
         if (i != map.keys.length - 1)
           argSlot.load();
@@ -2578,7 +2553,7 @@ public class IRBuilder extends ELNode.Visitor {
                 tmpSlot = new Slot();
               tmpSlot.store();
             }
-            compileMatchPattern(tmpSlot, args[i], failBlock);
+            buildMatchPattern(tmpSlot, args[i], failBlock);
             current.emitJumpIfFalse(failBlock);
           }
         } else {
@@ -2590,14 +2565,15 @@ public class IRBuilder extends ELNode.Visitor {
           for (int i = 0; i < argc; i++) {
             ELNode arg = args[i];
             buildConst(cdef.vars[i].id);
-            emitInvokeMethod(ClosureObject.class, "get_closure", ELContext.class, String.class);
+            emitInvokeMethod(ClosureObject.class, "get_closure",
+                             ELContext.class, String.class);
             emitInvokeMethod(Closure.class, "getValue", ELContext.class);
             if (!isSimplePattern(args[i])) {
               if (tmpSlot == null)
                 tmpSlot = new Slot();
               tmpSlot.store();
             }
-            compileMatchPattern(tmpSlot, arg, failBlock);
+            buildMatchPattern(tmpSlot, arg, failBlock);
             current.emitJumpIfFalse(failBlock);
             if (i != argc - 1)
               targetSlot.load();
@@ -2610,7 +2586,8 @@ public class IRBuilder extends ELNode.Visitor {
         String className;
         String[] slots = null;
 
-        if (base.symbol != null && base.symbol.def.expr instanceof ELNode.CLASS c) {
+        if (base.symbol != null &&
+            base.symbol.def.expr instanceof ELNode.CLASS c) {
           className = c.name;
           slots = c.slots;
         } else {
@@ -2655,7 +2632,7 @@ public class IRBuilder extends ELNode.Visitor {
               tmpSlot = new Slot();
             tmpSlot.store();
           }
-          compileMatchPattern(tmpSlot, args[i], failBlock);
+          buildMatchPattern(tmpSlot, args[i], failBlock);
           current.emitJumpIfFalse(failBlock);
         }
         release(tmpSlot);
@@ -2698,7 +2675,7 @@ public class IRBuilder extends ELNode.Visitor {
     int exitBlock = allocBlockId();
 
     argSlot.load();
-    compileMatchPattern(argSlot, node.left, failBlock);
+    buildMatchPattern(argSlot, node.left, failBlock);
     current.emitJumpIfFalse(failBlock);
     current.emitJump(exitBlock);
 
@@ -2760,8 +2737,6 @@ public class IRBuilder extends ELNode.Visitor {
   public void visit(ELNode.CONST node) {
     buildConst(node.value);
   }
-
-  // ── Trampoline ──
 
   public void visitNode(ELNode node) {
     // Default fallback.
@@ -2883,8 +2858,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   IRFunction finish() {
     // Finish current block.
-    int[] code = current.toArray();
-    blocks.add(new Block(currentBlockId, code, linePcMapping));
+    blocks.add(new Block(currentBlockId, current.toArray(), linePcMapping));
 
     // Scan instructions to build CFG.
     Map<Integer, Block> blockMap = new HashMap<>();
@@ -2903,15 +2877,16 @@ public class IRBuilder extends ELNode.Visitor {
     // Run optimization passes.
     boolean opt = ELProgram.OPT_LEVEL != 0;
     if (opt) {
-      jumpThreadingOpt(blockMap);
-      deadBlockElim(blockMap);
-      deadStoreElim();
+      runJumpThreadingOpt(blockMap);
+      runDeadBlockElim(blockMap);
+      runDeadStoreElim();
+      runBranchFolder(blockMap);
     }
 
     // Merge block into contiguous code.
     IntList merged = new IntList();
     for (Block block : blocks) {
-      if (block.id == 0 || !block.predecessors.isEmpty()) {
+      if (!block.isDead()) {
         // Swap jump condition to make fallthrough opportunity.
         if (merged.size() >= 2) {
           var v1 = new InstructionView(merged.data(), merged.size() - 2,
@@ -2927,40 +2902,12 @@ public class IRBuilder extends ELNode.Visitor {
           }
         }
 
-        // Remove fallthrough jump and NOPs and end of previous block.
-        boolean fallthrough = false;
-        int term = merged.back();
-        if (IRFormat.opcode(term) == JUMP && IRFormat.operand(term) == block.id) {
+        // Remove fallthrough jump.
+        if (IRFormat.match(merged.back(), JUMP, block.id))
           merged.reset(merged.size() - 1);
-          while (!merged.isEmpty() && IRFormat.opcode(merged.back()) == NOP)
-            merged.reset(merged.size() - 1);
-          fallthrough = block.predecessors.cardinality() == 1;
-        }
 
         block.pc = merged.size();
-
-        if (fallthrough || ELProgram.OPT_LEVEL == 3) {
-          // For blocks has multiple predecessor, don't merge code into
-          // predecessor block.
-          int boundary = fallthrough ? 0 : merged.size();
-
-          // Run full peephole optimizer on merged code.
-          // FIXME: peephole opt can merge code, this may ruin debug line table
-          InstructionView v = new InstructionView(block.code);
-          for (; v.inBounds(); v.advance()) {
-            boolean cjump = v.isJump() && v.opcode() != JUMP;
-            if (peephole.run(merged, boundary, v.opcode(), v.operand())) {
-              // A conditional jump is optimized to unconditional jump, the
-              // current block is dead.
-              if (cjump && IRFormat.opcode(merged.back()) == JUMP)
-                break;
-              continue;
-            }
-            merged.add(v.header());
-          }
-        } else {
-          merged.addAll(block.code);
-        }
+        merged.addAll(block.code);
       }
     }
 
@@ -2982,14 +2929,14 @@ public class IRBuilder extends ELNode.Visitor {
     };
   }
 
-  private void jumpThreadingOpt(Map<Integer, Block> blockMap) {
+  private void runJumpThreadingOpt(Map<Integer, Block> blockMap) {
     Map<Integer, Integer> threadingJumps = new HashMap<>();
     for (Block block : blocks) {
       // If the only instruction in a block is a jump, threading jumps to target.
       if (block.code.size() == 1) {
-        int header = block.code.get(0);
-        if (IRFormat.opcode(header) == JUMP) {
-          int target = IRFormat.operand(header);
+        int inst = block.code.get(0);
+        if (IRFormat.opcode(inst) == JUMP) {
+          int target = IRFormat.operand(inst);
           threadingJumps.put(block.id, target);
           threadingJumps.replaceAll((k, v) -> v == block.id ? target : v);
         }
@@ -3025,7 +2972,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private void deadBlockElim(Map<Integer, Block> blockMap) {
+  private void runDeadBlockElim(Map<Integer, Block> blockMap) {
     BitSet visited = new BitSet();
     boolean changed;
     do {
@@ -3033,13 +2980,14 @@ public class IRBuilder extends ELNode.Visitor {
       for (Block block : blocks) {
         if (visited.get(block.id))
           continue;
-        if (block.id != 0 && block.predecessors.isEmpty()) {
+        if (block.isDead()) {
           // Make all successors dead.
           for (int i = block.successors.nextSetBit(0); i >= 0;
                i = block.successors.nextSetBit(i + 1)) {
             Block succ = blockMap.get(i);
             succ.predecessors.clear(block.id);
           }
+          block.successors.clear();
           visited.set(block.id);
           changed = true;
         }
@@ -3053,42 +3001,19 @@ public class IRBuilder extends ELNode.Visitor {
    * dead STORE_VAR_POP becomes POP.  Unused slots are then compacted away via
    * remapping.
    */
-  private void deadStoreElim() {
+  private boolean runDeadStoreElim() {
     // Collect used slots.
     BitSet usedSlots = new BitSet();
-    Block pred = null;
     for (Block block : blocks) {
-      if (block.id != 0 && block.predecessors.isEmpty())
-        continue;
-      final int[] data = block.code.data();
-      final int n = block.code.size();
-      for (int i = 0; i < n; i++) {
-        // We only check read slot, write only slots are dead.
-        int inst = data[i];
-        if (IRFormat.opcode(inst) == PUSH_VAR) {
-          // Look back in previous block. If the previous block ends with a
-          // STORE_VAR_POP and fallthrough to this block. The STORE_VAR_POP and
-          // PUSH_VAR will fold to STORE_VAR. The PUSH_VAR is eliminated, so
-          // this is not a REAL load. The STORE_VAR_POP and PUSH_VAR should be
-          // removed together. But we can't do this here, we must scan for other
-          // REAL load to determine whether the pair can be eliminated.
-          int varIndex = IRFormat.operand(inst);
-          if (i == 0 && pred != null && pred.code.size() >= 2 &&
-              block.predecessors.cardinality() == 1 &&
-              block.predecessors.get(pred.id) &&
-              IRFormat.match(pred.code.back(1), STORE_VAR_POP, varIndex)) {
-            // We set a flag in instruction payload to indicates this situation,
-            // the next scan can determine whether the instruction can be
-            // removed or keep.
-            pred.code.set(pred.code.size() - 2,
-                          IRFormat.pack(STORE_VAR_POP, 1, varIndex));
-            block.code.set(0, IRFormat.pack(PUSH_VAR, 1, varIndex));
-          } else {
-            usedSlots.set(varIndex);
-          }
+      if (!block.isDead()) {
+        final int[] data = block.code.data();
+        final int n = block.code.size();
+        for (int i = 0; i < n; i++) {
+          // We only check read slot, write only slots are dead.
+          if (IRFormat.opcode(data[i]) == PUSH_VAR)
+            usedSlots.set(IRFormat.operand(data[i]));
         }
       }
-      pred = block;
     }
 
     // Preserve function parameters.
@@ -3106,11 +3031,12 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Nothing to remap if all slots are used and contiguous.
     if (nextSlot == maxLocals)
-      return;
+      return false;
 
     // Remap slot indices and remove dead stores.
+    boolean changed = false;
     for (Block block : blocks) {
-      if (block.id != 0 && block.predecessors.isEmpty())
+      if (block.isDead())
         continue;
 
       final int[] data = block.code.data();
@@ -3122,20 +3048,14 @@ public class IRBuilder extends ELNode.Visitor {
 
         switch (op) {
         case PUSH_VAR:
-          if ((varIndex = slotMap[varIndex]) == -1) {
-            // This must be a flagged instruction to be removed when merged into
-            // previous block that ends with STORE_VAR_POP.
-            assert IRFormat.payload(inst) != 0;
-            data[i] = IRFormat.pack(NOP, 0, 0);
-          } else {
-            data[i] = IRFormat.pack(PUSH_VAR, 0, varIndex);
-          }
+          data[i] = IRFormat.pack(PUSH_VAR, 0, slotMap[varIndex]);
           break;
 
         case STORE_VAR:
           if ((varIndex = slotMap[varIndex]) == -1) {
             // Remove dead store.
             data[i] = IRFormat.pack(NOP, 0, 0);
+            changed = true;
           } else {
             data[i] = IRFormat.pack(STORE_VAR, 0, varIndex);
           }
@@ -3143,22 +3063,9 @@ public class IRBuilder extends ELNode.Visitor {
 
         case STORE_VAR_POP:
           if ((varIndex = slotMap[varIndex]) == -1) {
-            // Dead store and pop.
-            if (IRFormat.payload(inst) != 0) {
-              // This flagged instruction need to be removed when merged into
-              // fallthrough block with PUSH_VAR.
-              data[i] = IRFormat.pack(NOP, 0, 0);
-            } else if (i != 0 && switch (IRFormat.opcode(data[i - 1])) {
-              case PUSH_NULL, PUSH_CONST, PUSH_TRUE, PUSH_FALSE,
-                   PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL -> true;
-              default -> false;
-            }) {
-              // Remove PUSH and dead store.
-              data[i - 1] = data[i] = IRFormat.pack(NOP, 0, 0);
-            } else {
-              // Replace dead store with POP.
-              data[i] = IRFormat.pack(POP, 0, 0);
-            }
+            // Dead store and pop, replace with POP.
+            data[i] = IRFormat.pack(POP, 0, 0);
+            changed = true;
           } else {
             data[i] = IRFormat.pack(STORE_VAR_POP, 0, varIndex);
           }
@@ -3168,14 +3075,150 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     maxLocals = nextSlot;
+    return changed;
+  }
+
+  /**
+   * Fold fallthrough blocks. Run peephole optimizer on every block.
+   * Eliminate dead blocks after optimized.
+   */
+  private void runBranchFolder(Map<Integer, Block> blockMap) {
+    boolean changed;
+    int iteration = 0;
+
+    do {
+      changed = false;
+      iteration++;
+
+      Map<Integer, BitSet> killed = new HashMap<>();
+      BitSet survived = new BitSet();
+      Block pred = null;
+
+      for (Block block : blocks) {
+        if (block.isDead())
+          continue;
+
+        int currentBlockId = block.id;
+        IntList code, optCode;
+
+        if (pred != null && canFoldBranch(pred, block)) {
+          // Fold current block into predecessor.
+          changed = true;
+          currentBlockId = pred.id;
+          code = block.code;
+          optCode = pred.code;
+          optCode.reset(optCode.size() - 1); // remove fallthrough jump
+
+          // Transfer successors of current block to predecessor block.
+          pred.successors.clear(block.id);
+          for (int id = block.successors.nextSetBit(0);
+               id != -1; id = block.successors.nextSetBit(id + 1)) {
+            Block succ = blockMap.get(id);
+            succ.predecessors.clear(block.id);
+            succ.predecessors.set(pred.id);
+            pred.successors.set(succ.id);
+          }
+
+          // Current block is dead.
+          block.predecessors.clear();
+          block.successors.clear();
+
+          // Consolidate debug line table.
+          pred.lineMap.putAll(block.lineMap);
+        } else if (iteration == 1) {
+          // Run the full peephole optimization for first iteration.
+          code = new IntList(block.code.toArray());
+          optCode = block.code;
+          optCode.clear();
+          pred = block;
+        } else {
+          pred = block;
+          continue;
+        }
+
+        loop:
+        for (var v = new InstructionView(code); v.inBounds(); v.advance()) {
+          boolean conditionalJump = v.isJump() && v.opcode() != JUMP;
+          int jumpTarget = conditionalJump ? v.jumpTarget() : -1;
+
+          if (peephole.run(optCode, v.opcode(), v.operand())) {
+            if (conditionalJump) {
+              switch (IRFormat.opcode(optCode.back())) {
+              case JUMP:
+                // A conditional jump is optimized to unconditional jump, the
+                // current block is dead.
+                for (v.advance(); v.inBounds(); v.advance()) {
+                  // Scan dead code to find other jump target and kill them.
+                  if (v.isJump())
+                    killed.computeIfAbsent(v.jumpTarget(), BitSet::new)
+                      .set(currentBlockId);
+                }
+                break loop;
+              case JUMP_IF_TRUE, JUMP_IF_FALSE, JUMP_IF_NULL, JUMP_IF_NONNULL:
+                if (jumpTarget == IRFormat.operand(optCode.back())) {
+                  // The conditional jump still here (may inversed condition),
+                  // continue to process.
+                  continue;
+                }
+                // fallthrough
+              default:
+                // The conditional jump has gone, the target may dead.
+                killed.computeIfAbsent(jumpTarget, BitSet::new)
+                  .set(currentBlockId);
+                continue;
+              }
+            }
+          } else {
+            if (v.isJump())
+              survived.set(v.jumpTarget()); // the jump target is survived
+            optCode.add(v.inst());
+          }
+        }
+      }
+
+      // Process killed blocks.
+      killed.keySet().removeIf(survived::get);
+      for (var e : killed.entrySet()) {
+        Block kill = blockMap.get(e.getKey());
+        for (int id = e.getValue().nextSetBit(0);
+             id != -1; id = e.getValue().nextSetBit(id + 1)) {
+          Block from = blockMap.get(id);
+          from.successors.clear(kill.id);
+          kill.predecessors.clear(from.id);
+        }
+      }
+
+      // Recursively remove dead blocks.
+      runDeadBlockElim(blockMap);
+
+      // Eliminate dead stores for merged or optimized code. Rerun full peephole
+      // optimization if dead stores eliminated.
+      if (changed || iteration == 1) {
+        if (runDeadStoreElim())
+          iteration = 0;
+      }
+    } while (changed);
+  }
+
+  private boolean canFoldBranch(Block from, Block to) {
+    if (from.successors.cardinality() != 1 ||
+        to.predecessors.cardinality() != 1)
+      return false;
+    if (!IRFormat.match(from.code.back(), JUMP, to.id))
+      return false;
+    for (var v = new InstructionView(from.code); v.inBounds(); v.advance()) {
+      if (v.isJump())
+        return v.opcode() == JUMP && v.jumpTarget() == to.id &&
+               v.offset() == from.code.size() - 1;
+    }
+    return false;
   }
 
   private int[] buildBlockOffsets(IntList code) {
     // Get all reachable blocks.
     BitSet targets = new BitSet();
     targets.set(0);
-    for (var v = new InstructionView(code.data(), 0, code.size());
-         v.inBounds(); v.advance()) {
+    for (var v = new InstructionView(code); v.inBounds(); v.advance()) {
       if (v.isJump())
         targets.set(v.jumpTarget());
     }
@@ -3221,10 +3264,10 @@ public class IRBuilder extends ELNode.Visitor {
     // Consolidate debug info.
     SortedMap<Integer, Integer> pcLineMapping = new TreeMap<>();
     for (Block block : blocks) {
-      if (block.id != 0 && block.predecessors.isEmpty())
-        continue;
-      for (var kv : block.lineMap.entrySet()) {
-        pcLineMapping.put(kv.getValue() + block.pc, kv.getKey());
+      if (!block.isDead()) {
+        for (var kv : block.lineMap.entrySet()) {
+          pcLineMapping.put(kv.getValue() + block.pc, kv.getKey());
+        }
       }
     }
 

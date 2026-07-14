@@ -66,20 +66,20 @@ final class InstructionView {
 
   // ── Header decoding ──
 
-  public int header() {
+  public int inst() {
     return code[offset];
   }
 
   public int opcode() {
-    return IRFormat.opcode(header());
+    return IRFormat.opcode(inst());
   }
 
   public int payload() {
-    return IRFormat.payload(header());
+    return IRFormat.payload(inst());
   }
 
   public int operand() {
-    return IRFormat.operand(header());
+    return IRFormat.operand(inst());
   }
 
   public int count() {

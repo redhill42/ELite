@@ -33,14 +33,10 @@ final class PeepholeOpt {
   }
 
   boolean run(IntList code, int opcode, int operand) {
-    return run(code, 0, opcode, operand);
-  }
-
-  boolean run(IntList code, int boundary, int opcode, int operand) {
-    if (opcode == NOP)
+     if (opcode == NOP)
       return true;
 
-    if (code.size() - boundary == 0 || ELProgram.OPT_LEVEL == 0)
+    if (code.isEmpty() || ELProgram.OPT_LEVEL == 0)
       return false;
 
     int last = code.size() - 1;
@@ -124,7 +120,7 @@ final class PeepholeOpt {
       case DUP:
         // Lookahead one instruction to find pattern.
         // For example, to compile left || right
-        //    left ; may generate PUSH_FALSE
+        //    left ; may generate PUSH_TRUE or PUSH_FALSE
         //    DUP
         //    JUMP_IF_TRUE done
         //    POP
@@ -132,7 +128,7 @@ final class PeepholeOpt {
         // If left is PUSH_TRUE, will optimize to PUSH_TRUE because
         // true || any == true
         // if left is PUSH_FALSE, will skip left and generate right.
-        if (code.size() - boundary >= 2) {
+        if (code.size() >= 2) {
           int lookahead = code.get(code.size() - 2);
           switch (IRFormat.opcode(lookahead)) {
           case PUSH_TRUE:
@@ -165,7 +161,7 @@ final class PeepholeOpt {
       case DUP:
         // Lookahead one instruction to find pattern.
         // For example, to compile left && right
-        //    left ; may generate PUSH_TRUE
+        //    left ; may generate PUSH_TRUE or PUSH_FALSE
         //    DUP
         //    JUMP_IF_FALSE done
         //    POP
@@ -173,7 +169,7 @@ final class PeepholeOpt {
         // If left is PUSH_TRUE, will skip left and generate right.
         // If left is PUSH_FALSE, will optimize to PUSH_FALSE because
         // false && any == false
-        if (code.size() - boundary >= 2) {
+        if (code.size() >= 2) {
           int lookahead = code.get(code.size() - 2);
           switch (IRFormat.opcode(lookahead)) {
           case PUSH_TRUE:
@@ -201,7 +197,7 @@ final class PeepholeOpt {
         return true;
       case DUP:
         // Lookahead one instruction to find pattern.
-        if (code.size() - boundary >= 2) {
+        if (code.size() >= 2) {
           int lookahead = code.get(code.size() - 2);
           switch (IRFormat.opcode(lookahead)) {
           case PUSH_NULL:
@@ -238,7 +234,7 @@ final class PeepholeOpt {
         // If left is PUSH_NULL, will skip left and generate right.
         // If left is PUSH nonnull, will optimize to PUSH nonnull because
         // nonnull ?? any == nonnull
-        if (code.size() - boundary >= 2) {
+        if (code.size() >= 2) {
           int lookahead = code.get(code.size() - 2);
           switch (IRFormat.opcode(lookahead)) {
           case PUSH_NULL:
@@ -259,7 +255,7 @@ final class PeepholeOpt {
          BITAND, BITOR, XOR, SHL, SHR, USHR,
          EQ, NE, IDEQ, IDNE, LT, LE, GT, GE:
       try {
-        if (code.size() - boundary >= 3) {
+        if (code.size() >= 3) {
           int i1 = code.get(last - 2);
           int i2 = code.get(last - 1);
           int i3 = code.get(last);
@@ -278,7 +274,7 @@ final class PeepholeOpt {
           }
         }
 
-        if (code.size() - boundary >= 2) {
+        if (code.size() >= 2) {
           int i1 = code.get(last - 1);
           int i2 = code.get(last);
           Object c1, c2;
@@ -310,7 +306,7 @@ final class PeepholeOpt {
         try {
           Object c = builder.getConstant(lastOperand);
           Object r = switch (opcode) {
-            case NEG -> Builtin.__neg__(elctx, c);
+            case NEG    -> Builtin.__neg__(elctx, c);
             case BITNOT -> Builtin.__bitnot__(elctx, c);
             default -> throw new AssertionError();
           };
