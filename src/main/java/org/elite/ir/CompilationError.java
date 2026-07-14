@@ -27,11 +27,11 @@ package org.elite.ir;
  * </ul>
  */
 public class CompilationError extends Error {
-    public CompilationError(String message) {
-        super(message);
-    }
+  public CompilationError(String message) {
+    super(message);
+  }
 
-    public CompilationError(String message, Throwable cause) {
-        super(message, cause);
-    }
+  public CompilationError(String message, Throwable cause) {
+    super(message, cause);
+  }
 }

@@ -26,38 +26,49 @@ package org.elite.ir;
  *     │        16 bit         │ 8 bits  │ 8 bits │
  *     └───────────────────────┴─────────┴────────┘
  * </pre>
- *<p>
+ * <p>
  */
 final class IRFormat {
-    private IRFormat() {}
+  private IRFormat() {
+  }
 
-    // Bit shifts
-    public static final int PAYLOAD_SHIFT = 8;
-    public static final int OPERAND_SHIFT = 16;
+  // Bit shifts
+  public static final int PAYLOAD_SHIFT = 8;
+  public static final int OPERAND_SHIFT = 16;
 
-    // Primitive type IDs
-    public static final int K_NONE    = 0;
-    public static final int K_INT     = 1;
-    public static final int K_LONG    = 2;
-    public static final int K_DOUBLE  = 3;
-    public static final int K_STRING  = 4;
-    public static final int K_BOOL    = 5;
-    public static final int K_DYNAMIC = 6;
+  // Primitive type IDs
+  public static final int K_NONE    = 0;
+  public static final int K_INT     = 1;
+  public static final int K_LONG    = 2;
+  public static final int K_DOUBLE  = 3;
+  public static final int K_STRING  = 4;
+  public static final int K_BOOL    = 5;
+  public static final int K_DYNAMIC = 6;
 
-    // ── Packing helpers ──
+  // ── Packing helpers ──
 
-    /** Pack a 1-word instruction. */
-    public static int pack(int opcode, int payload, int operand) {
-        return opcode | (payload << PAYLOAD_SHIFT) | (operand << OPERAND_SHIFT);
-    }
+  /**
+   * Pack a 1-word instruction.
+   */
+  public static int pack(int opcode, int payload, int operand) {
+    return opcode | (payload << PAYLOAD_SHIFT) | (operand << OPERAND_SHIFT);
+  }
 
-    // ── Decoding helpers ──
+  // ── Decoding helpers ──
 
-    public static int opcode(int header)   { return header & 0xFF; }
-    public static int payload(int header)  { return (header >>> PAYLOAD_SHIFT) & 0xFF; }
-    public static int operand(int header)  { return header >>> OPERAND_SHIFT; }
+  public static int opcode(int header) {
+    return header & 0xFF;
+  }
 
-    public static boolean match(int inst, int opcode, int operand) {
-        return opcode(inst) == opcode && operand(inst) == operand;
-    }
+  public static int payload(int header) {
+    return (header >>> PAYLOAD_SHIFT) & 0xFF;
+  }
+
+  public static int operand(int header) {
+    return header >>> OPERAND_SHIFT;
+  }
+
+  public static boolean match(int inst, int opcode, int operand) {
+    return opcode(inst) == opcode && operand(inst) == operand;
+  }
 }

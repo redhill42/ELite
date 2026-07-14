@@ -34,91 +34,117 @@ package org.elite.ir;
  * }</pre>
  */
 final class InstructionView {
-    private final int[] code;
-    private final int size;
-    private int offset;
+  private final int[] code;
+  private final int size;
+  private int offset;
 
-    public InstructionView(int[] code, int offset) {
-        this(code, offset, code.length);
-    }
+  public InstructionView(int[] code, int offset) {
+    this(code, offset, code.length);
+  }
 
-    public InstructionView(int[] code, int offset, int end) {
-        this.code = code;
-        this.offset = offset;
-        this.size = end;
-    }
+  public InstructionView(int[] code, int offset, int end) {
+    this.code = code;
+    this.offset = offset;
+    this.size = end;
+  }
 
-    public InstructionView(IntList code) {
-        this.code = code.data();
-        this.size = code.size();
-        this.offset = 0;
-    }
+  public InstructionView(IntList code) {
+    this.code = code.data();
+    this.size = code.size();
+    this.offset = 0;
+  }
 
-    // ── Raw access ──
+  // ── Raw access ──
 
-    public int[] code()   { return code; }
-    public int offset()   { return offset; }
+  public int[] code() {
+    return code;
+  }
 
-    // ── Header decoding ──
+  public int offset() {
+    return offset;
+  }
 
-    public int header()   { return code[offset]; }
-    public int opcode()   { return IRFormat.opcode(header()); }
-    public int payload()  { return IRFormat.payload(header()); }
-    public int operand()  { return IRFormat.operand(header()); }
+  // ── Header decoding ──
 
-    public int count() {
-        return IRFormat.payload(code[offset]);
-    }
+  public int header() {
+    return code[offset];
+  }
 
-    /** Get the variable index from a PUSH_VAR instruction. */
-    public int varIndex() {
-        return IRFormat.operand(code[offset]);
-    }
+  public int opcode() {
+    return IRFormat.opcode(header());
+  }
 
-    /** Get the pool index from an instruction. */
-    public int poolIndex() {
-        return IRFormat.operand(code[offset]);
-    }
+  public int payload() {
+    return IRFormat.payload(header());
+  }
 
-    /** Get the jump target block ID from a jump instruction. */
-    public int jumpTarget() {
-        return IRFormat.operand(code[offset]);
-    }
+  public int operand() {
+    return IRFormat.operand(header());
+  }
 
-    public boolean isJump() {
-        int op = opcode();
-        return op == Opcode.JUMP ||
-               op == Opcode.JUMP_IF_TRUE || op == Opcode.JUMP_IF_FALSE ||
-               op == Opcode.JUMP_IF_NULL || op == Opcode.JUMP_IF_NONNULL;
-    }
+  public int count() {
+    return IRFormat.payload(code[offset]);
+  }
 
-    // ── Mutation ──
+  /**
+   * Get the variable index from a PUSH_VAR instruction.
+   */
+  public int varIndex() {
+    return IRFormat.operand(code[offset]);
+  }
 
-    public void replace(int opcode, int payload, int operand) {
-        code[offset] = IRFormat.pack(opcode, payload, operand);
-    }
+  /**
+   * Get the pool index from an instruction.
+   */
+  public int poolIndex() {
+    return IRFormat.operand(code[offset]);
+  }
 
-    // ── Navigation ──
+  /**
+   * Get the jump target block ID from a jump instruction.
+   */
+  public int jumpTarget() {
+    return IRFormat.operand(code[offset]);
+  }
 
-    public boolean inBounds() {
-        return offset < size;
-    }
+  public boolean isJump() {
+    int op = opcode();
+    return op == Opcode.JUMP || op == Opcode.JUMP_IF_TRUE ||
+           op == Opcode.JUMP_IF_FALSE || op == Opcode.JUMP_IF_NULL ||
+           op == Opcode.JUMP_IF_NONNULL;
+  }
 
-    public void advance() {
-        offset += 1;
-    }
+  // ── Mutation ──
 
-    public void advance(int instructions) {
-        offset += instructions;
-    }
+  public void replace(int opcode, int payload, int operand) {
+    code[offset] = IRFormat.pack(opcode, payload, operand);
+  }
 
-    /** Peek at the next instruction without consuming it. */
-    public InstructionView peek() {
-        return new InstructionView(code, offset + 1);
-    }
+  // ── Navigation ──
 
-    /** Peek N instructions ahead without consuming. */
-    public InstructionView peek(int n) {
-        return new InstructionView(code, offset + n);
-    }
+  public boolean inBounds() {
+    return offset < size;
+  }
+
+  public void advance() {
+    offset += 1;
+  }
+
+  public void advance(int instructions) {
+    offset += instructions;
+  }
+
+  /**
+   * Peek at the next instruction without consuming it.
+   */
+  public InstructionView peek() {
+    return new InstructionView(code, offset + 1);
+  }
+
+  /**
+   * Peek N instructions ahead without consuming.
+   */
+  public InstructionView peek(int n) {
+    return new InstructionView(code, offset + n);
+  }
 }

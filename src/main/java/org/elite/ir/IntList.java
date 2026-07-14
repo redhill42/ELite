@@ -23,102 +23,106 @@ import java.util.Arrays;
  * Avoids boxing overhead of {@code ArrayList<Integer>} for IR building.
  */
 final class IntList {
-    private int[] data;
-    private int size;
+  private int[] data;
+  private int size;
 
-    IntList() {
-        this.data = new int[64];
-        this.size = 0;
-    }
+  IntList() {
+    this.data = new int[64];
+    this.size = 0;
+  }
 
-    IntList(int[] data) {
-        this.data = data;
-        this.size = data.length;
-    }
+  IntList(int[] data) {
+    this.data = data;
+    this.size = data.length;
+  }
 
-    int[] data() {
-        return data;
-    }
+  int[] data() {
+    return data;
+  }
 
-    int size() {
-        return size;
-    }
+  int size() {
+    return size;
+  }
 
-    boolean isEmpty() {
-        return size == 0;
-    }
+  boolean isEmpty() {
+    return size == 0;
+  }
 
-    void add(int value) {
-        ensureCapacity(size + 1);
-        data[size++] = value;
-    }
+  void add(int value) {
+    ensureCapacity(size + 1);
+    data[size++] = value;
+  }
 
-    void addAll(int[] values, int offset, int length) {
-        ensureCapacity(size + length);
-        System.arraycopy(values, offset, data, size, length);
-        size += length;
-    }
+  void addAll(int[] values, int offset, int length) {
+    ensureCapacity(size + length);
+    System.arraycopy(values, offset, data, size, length);
+    size += length;
+  }
 
-    void addAll(IntList il) {
-        addAll(il.data, 0, il.size);
-    }
+  void addAll(IntList il) {
+    addAll(il.data, 0, il.size);
+  }
 
-    int get(int index) {
-        return data[index];
-    }
+  int get(int index) {
+    return data[index];
+  }
 
-    /** Returns the last value in the list */
-    int back() {
-        if (size > 0)
-            return data[size - 1];
-        return 0; // NOP
-    }
+  /**
+   * Returns the last value in the list
+   */
+  int back() {
+    if (size > 0)
+      return data[size - 1];
+    return 0; // NOP
+  }
 
-    /** Returns the n'th value in back of the list. */
-    int back(int n) {
-        if (size > n)
-            return data[size - 1 - n];
-        return 0; // NOP
-    }
+  /**
+   * Returns the n'th value in back of the list.
+   */
+  int back(int n) {
+    if (size > n)
+      return data[size - 1 - n];
+    return 0; // NOP
+  }
 
-    void set(int index, int value) {
-        data[index] = value;
-    }
+  void set(int index, int value) {
+    data[index] = value;
+  }
 
-    void insert(int index, int value) {
-        assert index < size;
-        ensureCapacity(size + 1);
-        System.arraycopy(data, index, data, index + 1, size - index);
-        data[index] = value;
-    }
+  void insert(int index, int value) {
+    assert index < size;
+    ensureCapacity(size + 1);
+    System.arraycopy(data, index, data, index + 1, size - index);
+    data[index] = value;
+  }
 
-    void remove(int i) {
-        remove(i, 1);
-    }
+  void remove(int i) {
+    remove(i, 1);
+  }
 
-    void remove(int i, int len) {
-        assert i < size && i + len <= size;
-        if ((size -= len) > i) {
-            System.arraycopy(data, i + len, data, i, size - i);
-        }
+  void remove(int i, int len) {
+    assert i < size && i + len <= size;
+    if ((size -= len) > i) {
+      System.arraycopy(data, i + len, data, i, size - i);
     }
+  }
 
-    void reset(int offset) {
-        size = offset;
-    }
+  void reset(int offset) {
+    size = offset;
+  }
 
-    void clear() {
-        size = 0;
-    }
+  void clear() {
+    size = 0;
+  }
 
-    int[] toArray() {
-        return Arrays.copyOf(data, size);
-    }
+  int[] toArray() {
+    return Arrays.copyOf(data, size);
+  }
 
-    private void ensureCapacity(int needed) {
-        if (needed > data.length) {
-            int newLen = Math.max(data.length * 2, needed);
-            data = Arrays.copyOf(data, newLen);
-        }
+  private void ensureCapacity(int needed) {
+    if (needed > data.length) {
+      int newLen = Math.max(data.length * 2, needed);
+      data = Arrays.copyOf(data, newLen);
     }
+  }
 }

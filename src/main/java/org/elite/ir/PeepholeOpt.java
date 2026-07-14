@@ -266,7 +266,8 @@ final class PeepholeOpt {
             Object c1 = builder.getConstant(IRFormat.operand(i1));
             Object c2 = builder.getConstant(IRFormat.operand(i3));
             Object r = foldConstant(opcode, c1, c2);
-            code.set(last - 1, IRFormat.pack(STORE_VAR_POP, 0, IRFormat.operand(i2)));
+            code.set(last - 1,
+                     IRFormat.pack(STORE_VAR_POP, 0, IRFormat.operand(i2)));
             code.set(last, packConst(r));
             return true;
           }
@@ -277,17 +278,20 @@ final class PeepholeOpt {
           int i2 = code.get(last);
           Object c1, c2;
 
-          if (IRFormat.opcode(i1) == PUSH_CONST && IRFormat.opcode(i2) == PUSH_CONST) {
+          if (IRFormat.opcode(i1) == PUSH_CONST &&
+              IRFormat.opcode(i2) == PUSH_CONST) {
             c1 = builder.getConstant(IRFormat.operand(i1));
             c2 = builder.getConstant(IRFormat.operand(i2));
-          } else if (IRFormat.opcode(i1) == PUSH_CONST && IRFormat.opcode(i2) == DUP) {
+          } else if (IRFormat.opcode(i1) == PUSH_CONST &&
+                     IRFormat.opcode(i2) == DUP) {
             c1 = c2 = builder.getConstant(IRFormat.operand(i1));
           } else {
             return false;
           }
 
           Object r = foldConstant(opcode, c1, c2);
-          code.reset(last); last--;
+          code.reset(last);
+          last--;
           code.set(last, packConst(r));
           return true;
         }
@@ -301,7 +305,7 @@ final class PeepholeOpt {
         try {
           Object c = builder.getConstant(lastOperand);
           Object r = switch (opcode) {
-            case NEG    -> Builtin.__neg__(elctx, c);
+            case NEG -> Builtin.__neg__(elctx, c);
             case BITNOT -> Builtin.__bitnot__(elctx, c);
             default -> throw new AssertionError();
           };

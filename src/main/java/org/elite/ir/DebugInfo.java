@@ -27,29 +27,29 @@ package org.elite.ir;
  * zero runtime overhead.
  */
 public record DebugInfo(
-    String  file,         // source file name (null if unknown)
-    int[]   pcLineTable   // [pc0, line0, pc1, line1, ...] sorted by PC
+  String  file,         // source file name (null if unknown)
+  int[]   pcLineTable   // [pc0, line0, pc1, line1, ...] sorted by PC
 ) {
-    /**
-     * Look up the source line number for a given instruction pointer (PC).
-     * Returns the line of the closest recorded PC >= {@code ip}, or 0 if
-     * no mapping exists before this IP.
-     */
-    public int lineForPC(int pc) {
-        int len = pcLineTable.length / 2;
-        int lo = 0, hi = len - 1;
-        int i = len;
-        while (lo <= hi) {
-            int mid = (lo + hi) >>> 1;
-            if (pcLineTable[mid * 2] >= pc) {
-                i = mid;
-                hi = mid - 1;
-            } else {
-                lo = mid + 1;
-            }
-        }
-        if (i < len)
-            return pcLineTable[i * 2 + 1];
-        return 0;
+  /**
+   * Look up the source line number for a given instruction pointer (PC).
+   * Returns the line of the closest recorded PC >= {@code ip}, or 0 if
+   * no mapping exists before this IP.
+   */
+  public int lineForPC(int pc) {
+    int len = pcLineTable.length / 2;
+    int lo = 0, hi = len - 1;
+    int i = len;
+    while (lo <= hi) {
+      int mid = (lo + hi) >>> 1;
+      if (pcLineTable[mid * 2] >= pc) {
+        i = mid;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
     }
+    if (i < len)
+      return pcLineTable[i * 2 + 1];
+    return 0;
+  }
 }

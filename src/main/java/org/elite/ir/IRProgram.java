@@ -21,30 +21,30 @@ import java.util.Collections;
 import java.util.List;
 
 public class IRProgram {
-    private final IRFunction entry;
-    private final List<IRFunction> functions = new ArrayList<>();
+  private final IRFunction entry;
+  private final List<IRFunction> functions = new ArrayList<>();
 
-    IRProgram(IRFunction entry) {
-        this.entry = entry;
-        functions.add(entry);
-    }
+  IRProgram(IRFunction entry) {
+    this.entry = entry;
+    functions.add(entry);
+  }
 
-    void add(IRFunction function) {
-        functions.add(function);
-    }
+  void add(IRFunction function) {
+    functions.add(function);
+  }
 
-    public IRFunction entry() {
-        return entry;
-    }
+  public IRFunction entry() {
+    return entry;
+  }
 
-    public List<IRFunction> functions() {
-        return Collections.unmodifiableList(functions);
-    }
+  public List<IRFunction> functions() {
+    return Collections.unmodifiableList(functions);
+  }
 
-    public String dump() {
-        StringBuilder sb = new StringBuilder();
-        for (IRFunction fn : functions)
-            sb.append(fn.dump());
-        return sb.toString();
-    }
+  public String dump() {
+    StringBuilder sb = new StringBuilder();
+    for (IRFunction fn : functions)
+      sb.append(fn.dump());
+    return sb.toString();
+  }
 }
