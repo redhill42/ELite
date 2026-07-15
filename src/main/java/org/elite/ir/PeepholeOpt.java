@@ -17,10 +17,12 @@
 package org.elite.ir;
 
 import elite.lang.Builtin;
+import elite.lang.Closure;
 import org.elite.eval.ELProgram;
-
+import org.elite.eval.seq.Cons;
+import org.elite.eval.seq.DelayCons;
 import javax.el.ELContext;
-
+import java.util.LinkedHashMap;
 import static org.elite.ir.Opcode.*;
 
 final class PeepholeOpt {
@@ -55,6 +57,25 @@ final class PeepholeOpt {
       case STORE_VAR:
         // STORE_VAR, POP -> STORE_VAR_POP
         code.set(last, IRFormat.pack(STORE_VAR_POP, 0, lastOperand));
+        return true;
+      case NEW_TUPLE:
+        // PUSH_CONST, PUSH_CONST, ..., NEW_TUPLE(n), POP -> NOP
+        code.reset(last);
+        popN(code, IRFormat.payload(lastInst));
+        return true;
+      case NEW_CONS, NEW_DELAY_CONS:
+        // PUSH_VAR, PUSH_VAR, NEW_CONS, POP -> NOP
+        code.reset(last);
+        popN(code, 2);
+        return true;
+      case NEW_MAP:
+        // PUSH key, PUSH value, ..., NEW_MAP(n), POP -> NOP
+        code.reset(last);
+        popN(code, IRFormat.payload(lastInst) * 2);
+        return true;
+      case NEW_RANGE:
+        code.reset(last);
+        popN(code, 3);
         return true;
       }
       break;
@@ -317,9 +338,57 @@ final class PeepholeOpt {
         }
       }
       break;
+
+    case INSTANCEOF:
+      if (builder.getConstant(operand) instanceof Class<?> cls) {
+        switch (lastOpcode) {
+        case PUSH_NULL:
+          code.set(last, IRFormat.pack(PUSH_FALSE, 0, 0));
+          return true;
+        case PUSH_TRUE:
+        case PUSH_FALSE:
+          code.set(last, packBool(cls == Boolean.class || cls == Boolean.TYPE));
+          return true;
+        case PUSH_CONST:
+          Object obj = builder.getConstant(lastOperand);
+          code.set(last, packBool(cls.isInstance(obj)));
+          return true;
+        case NEW_CONS, NIL:
+          code.set(last, packBool(cls.isAssignableFrom(Cons.class)));
+          return true;
+        case NEW_DELAY_CONS:
+          code.set(last, packBool(cls.isAssignableFrom(DelayCons.class)));
+          return true;
+        case NEW_MAP:
+          code.set(last, packBool(cls.isAssignableFrom(LinkedHashMap.class)));
+          return true;
+        case CLOSURE:
+          code.set(last, packBool(cls.isAssignableFrom(Closure.class)));
+          return true;
+        }
+      }
+      break;
     }
 
     return false;
+  }
+
+  private void popN(IntList code, int count) {
+    while (count != 0) {
+      if (IRFormat.opcode(code.back()) == STORE_VAR) {
+        // STORE_VAR, POP optimized to STORE_VAR_POP that prevent eliminate
+        // other elements again.
+        run(code, POP, 0);
+        count--;
+        break;
+      }
+      if (!run(code, POP, 0))
+        break;
+      count--;
+    }
+    while (--count >= 0) {
+      code.add(IRFormat.pack(POP, 0, 0));
+    }
   }
 
   private Object foldConstant(int opcode, Object c1, Object c2) {
@@ -356,5 +425,9 @@ final class PeepholeOpt {
     if (value instanceof Boolean b)
       return IRFormat.pack(b ? PUSH_TRUE : PUSH_FALSE, 0, 0);
     return IRFormat.pack(PUSH_CONST, 0, builder.putConstant(value));
+  }
+
+  private int packBool(boolean b) {
+    return IRFormat.pack(b ? PUSH_TRUE : PUSH_FALSE, 0, 0);
   }
 }
