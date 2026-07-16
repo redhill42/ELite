@@ -35,6 +35,9 @@ class CommandOptions {
                validateWith = OptLevelValidator.class)
     public int optLevel = 2;
 
+    @Parameter(names = "--debug", description = "debug mode")
+    public boolean debug = false;
+
     @Parameter(variableArity = true)
     public List<String> args = new ArrayList<>();
 

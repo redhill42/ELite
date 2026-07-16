@@ -1596,7 +1596,7 @@ All `require` and `import` statements must appear at the top of a file, before a
 ### 16.1 Interactive REPL
 
 ```bash
-bin/elite.sh
+bin/xel
 ```
 
 Features:

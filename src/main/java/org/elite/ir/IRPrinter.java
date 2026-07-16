@@ -83,24 +83,23 @@ final class IRPrinter {
 
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
-         Opcode.DECLARE_NS, Opcode.TRAMPOLINE ->
+         Opcode.INVOKE_DIRECT, Opcode.INVOKE_METHOD, Opcode.NEW,
+         Opcode.CONSTRUCTOR, Opcode.LOAD_FIELD, Opcode.STORE_FIELD,
+         Opcode.CHECKCAST, Opcode.BOX, Opcode.UNBOX, Opcode.DECLARE_NS,
+         Opcode.TRAMPOLINE ->
       formatConstPool(sb, constants, v.poolIndex());
 
     case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
          Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
       sb.append(" B").append(v.jumpTarget());
 
-    case Opcode.INVOKE_DYN -> sb.append(" ").append(v.count());
-    case Opcode.INVOKE_DIRECT, Opcode.INVOKE_TARGET, Opcode.INVOKE_OPERATOR,
-         Opcode.INVOKE_METHOD, Opcode.INVOKE_STATIC, Opcode.INVOKE_EXPANDO -> {
+    case Opcode.NEW_ARRAY, Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY -> {
       sb.append(" ").append(v.count()).append(",");
       formatConstPool(sb, constants, v.poolIndex());
     }
 
-    case Opcode.NEW_MAP, Opcode.NEW_TUPLE -> sb.append(" ").append(v.count());
-
-    case Opcode.NEW_XML ->
-      sb.append(" ").append(v.count()).append(", ").append(v.operand());
+    case Opcode.NEW_TUPLE ->
+      sb.append(" ").append(v.count());
     }
 
     return sb.toString();

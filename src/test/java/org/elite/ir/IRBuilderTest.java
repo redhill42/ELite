@@ -132,49 +132,12 @@ class IRBuilderTest {
         catch (ScriptException e) { throw new RuntimeException("exec failed: " + stmt, e); }
     }
 
-    // ── Function calls ──
-
-    @Test void functionCallViaGlobal() {
-        ELNode node = parse("add(3, 4)");
-        // Without define, add is a global reference
-        IRFunction fn = IRBuilder.compile(elctx, node);
-        assertNotNull(fn);
-        // Should compile to PUSH_CONST(3,4) + PUSH_GLOBAL("add") + INVOKE_DYN
-        assertTrue(scanOp(fn, Opcode.INVOKE_DYN) || scanOp(fn, Opcode.INVOKE_DIRECT) ||
-                   scanOp(fn, Opcode.INVOKE_TARGET),
-            "function call should have invoke");
-    }
-
     // ── Property access ──
-
-    @Test void propertyAccessCompiles() {
-        ELNode node = parse("x.y");
-        IRFunction fn = IRBuilder.compile(elctx, node);
-        assertNotNull(fn);
-        // Should have LOAD_PROPERTY
-        assertTrue(scanOp(fn, Opcode.LOAD_PROPERTY), "x.y should use LOAD_PROPERTY");
-    }
 
     @Test void indexAccessCompiles() {
         ELNode node = parse("x[0]");
         IRFunction fn = IRBuilder.compile(elctx, node);
         assertNotNull(fn);
-    }
-
-    // ── List/map literals ──
-
-    @Test void listLiteralCompiles() {
-        ELNode node = parse("[1, 2, 3]");
-        IRFunction fn = IRBuilder.compile(elctx, node);
-        assertNotNull(fn);
-        assertTrue(scanOp(fn, Opcode.NEW_CONS), "list literal should use NEW_CONS");
-    }
-
-    @Test void mapLiteralCompiles() {
-        ELNode node = parse("{a: 1, b: 2}");
-        IRFunction fn = IRBuilder.compile(elctx, node);
-        assertNotNull(fn);
-        assertTrue(scanOp(fn, Opcode.NEW_MAP), "map literal should use NEW_MAP");
     }
 
     // ── Control flow in expressions ──

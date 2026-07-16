@@ -3801,24 +3801,24 @@ public abstract class ELNode implements Serializable
         }
 
         protected Object evaluate(ELContext elctx, Object x) {
-            boolean result;
-            if (x == null) {
-                result = true;
-            } else if (x instanceof String) {
-                result = ((String)x).length() == 0;
-            } else if (x.getClass().isArray()) {
-                result = Array.getLength(x) == 0;
-            } else if (x instanceof java.util.Map) {
-                result = ((java.util.Map)x).isEmpty();
-            } else if (x instanceof java.util.Collection) {
-                result = ((java.util.Collection)x).isEmpty();
-            } else {
-                result = false;
-            }
-            return result;
+            return eval(x);
         }
 
-        public Class getType(EvaluationContext context) {
+        public boolean eval(Object x) {
+            if (x == null)
+                return true;
+            if (x instanceof String)
+                return ((String)x).length() == 0;
+            if (x.getClass().isArray())
+                return Array.getLength(x) == 0;
+            if (x instanceof java.util.Map)
+                return ((java.util.Map<?,?>)x).isEmpty();
+            if (x instanceof java.util.Collection)
+                return ((java.util.Collection<?>)x).isEmpty();
+            return false;
+        }
+
+        public Class<?> getType(EvaluationContext context) {
             return Boolean.class;
         }
 

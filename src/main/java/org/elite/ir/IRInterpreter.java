@@ -19,30 +19,29 @@ package org.elite.ir;
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.lang.Seq;
-import elite.xml.XmlNode;
-import org.elite.eval.*;
+import org.elite.eval.EvaluationContext;
+import org.elite.eval.EvaluationException;
+import org.elite.eval.Frame;
 import org.elite.eval.Runtime;
+import org.elite.eval.StackTrace;
+import org.elite.eval.TypeCoercion;
+import org.elite.eval.UserException;
 import org.elite.eval.closure.LiteralClosure;
-import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TypedClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
 import org.elite.parser.Position;
-import org.elite.resolver.MethodResolver;
-import org.w3c.dom.DOMException;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
 
 import javax.el.ELContext;
-import javax.el.ValueExpression;
-import javax.xml.XMLConstants;
+import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
 
-import static org.elite.eval.ELUtils.NO_RESULT;
 import static org.elite.ir.Opcode.*;
 import static org.elite.resources.Resources.*;
 
@@ -170,6 +169,16 @@ public class IRInterpreter {
         break;
       }
 
+      case PUSH_ENV: {
+        push(evalContext);
+        break;
+      }
+
+      case PUSH_CTX: {
+        push(elctx);
+        break;
+      }
+
       case PUSH_VAR: {
         push(locals[idx]);
         break;
@@ -177,7 +186,7 @@ public class IRInterpreter {
 
       case PUSH_GLOBAL: {
         String name = (String)constantPool[idx];
-        push(resolveGlobal(name));
+        push(Runtime.resolveGlobal(name, evalContext));
         break;
       }
 
@@ -198,11 +207,6 @@ public class IRInterpreter {
 
       case POP: {
         pop();
-        break;
-      }
-
-      case POP_N: {
-        sp -= cnt;
         break;
       }
 
@@ -268,7 +272,7 @@ public class IRInterpreter {
         push(switch (op) {
           case NEG    -> Builtin.__neg__(elctx, rhs);
           case BITNOT -> Builtin.__bitnot__(elctx, rhs);
-          case EMPTY  -> Builtin.empty(elctx, rhs);
+          case EMPTY  -> Builtin.__empty__(elctx, rhs);
           default -> { assert (false); yield null; }
         });
         break;
@@ -300,14 +304,6 @@ public class IRInterpreter {
           push(((Class<?>)cls).isInstance(obj));
         else
           push(TypedClosure.typecheck(evalContext, (String)cls, obj));
-        break;
-      }
-
-      case JOIN: {
-        StringBuilder sb = new StringBuilder();
-        for (int i = cnt - 1; i >= 0; i--)
-          sb.insert(0, pop());
-        push(sb.toString());
         break;
       }
 
@@ -479,12 +475,7 @@ public class IRInterpreter {
       case STORE_GLOBAL: {
         String name = (String)constantPool[idx];
         Object val = pop();
-        ValueExpression ve = evalContext.resolveVariable(name);
-        if (ve == null)
-          throw new EvaluationException(elctx,
-                                        _T(EL_UNDEFINED_IDENTIFIER, name));
-        ve.setValue(elctx, val);
-        push(val);
+        push(Runtime.storeGlobal(val, name, evalContext));
         break;
       }
 
@@ -508,136 +499,100 @@ public class IRInterpreter {
 
       case INVOKE_DIRECT: {
         IRFunction targetFn = (IRFunction)constantPool[idx];
-
-        // Pop arguments
-        Object[] args = new Object[cnt];
-        for (int i = cnt - 1; i >= 0; i--)
-          args[i] = pop();
-
         IRInterpreter callee = new IRInterpreter(evalContext, targetFn);
+        Object[] args = (Object[])pop();
         push(callee.execute(args));
-        break;
-      }
-
-      case INVOKE_TARGET: {
-        String id = (String)constantPool[idx];
-
-        // Pop arguments
-        Object[] args = new Object[cnt];
-        for (int i = cnt - 1; i >= 0; i--)
-          args[i] = pop();
-
-        push(invokeTarget(id, args));
-        break;
-      }
-
-      case INVOKE_OPERATOR: {
-        String name = (String)constantPool[idx];
-        if (cnt == 1) {
-          Object rhs = pop();
-          push(invokeOperator(name, rhs));
-        } else {
-          Object rhs = pop();
-          Object lhs = pop();
-          push(invokeOperator(name, lhs, rhs));
-        }
-        break;
-      }
-
-      case INVOKE_DYN: {
-        Object result = invokeDyn(cnt);
-        push(result);
         break;
       }
 
       case INVOKE_METHOD: {
         Method m = (Method)constantPool[idx];
-        Closure[] args = new Closure[cnt];
-        for (int i = cnt - 1; i >= 0; i--) {
-          Object arg = pop();
-          args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
-        }
-        Object base = pop();
-        push(ELEngine.invokeMethod(elctx, base, m, args));
-        break;
-      }
+        Object[] args = new Object[m.getParameterCount()];
+        for (int i = m.getParameterCount(); i >= 1; i--)
+          args[i - 1] = pop();
 
-      case INVOKE_STATIC: {
-        Method m = (Method)constantPool[idx];
-        Closure[] args = new Closure[cnt];
-        for (int i = cnt - 1; i >= 0; i--) {
-          Object arg = pop();
-          args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
-        }
-        push(ELEngine.invokeMethod(elctx, null, m, args));
-        break;
-      }
+        Object base = null;
+        if (!Modifier.isStatic(m.getModifiers()))
+          base = pop();
 
-      case INVOKE_EXPANDO: {
-        Method m = (Method)constantPool[idx];
-        Closure[] args = new Closure[cnt + 1]; // +1 for expando base
-        for (int i = cnt; i >= 1; i--) {
-          Object arg = pop();
-          args[i] = (arg instanceof Closure c) ? c : new LiteralClosure(arg);
-        }
-        args[0] = new LiteralClosure(pop());
-        push(ELEngine.invokeMethod(elctx, null, m, args));
-        break;
-      }
-
-      case LOAD_PROPERTY: {
-        Object key = pop();
-        Object base = pop();
-        push(Runtime.loadProperty(elctx, base, key));
-        break;
-      }
-
-      case STORE_PROPERTY: {
-        Object key = pop();
-        Object base = pop();
-        Object value = pop();
-        push(Runtime.storeProperty(elctx, base, key, value));
-        break;
-      }
-
-      case INVOKE_GETTER: {
-        Method m = (Method)constantPool[idx];
-        Object base = pop();
         try {
-          push(m.invoke(base));
-        } catch (Exception e) {
-          throw new RuntimeException(_T(IR_GETTER_INVOKE_FAILED), e);
+          Object result = m.invoke(base, args);
+          if (m.getReturnType() != Void.TYPE)
+            push(result);
+        } catch (InvocationTargetException ex) {
+          if (ex.getTargetException() instanceof EvaluationException)
+            throw (EvaluationException)ex.getTargetException();
+          throw new EvaluationException(elctx, ex.getTargetException());
+        } catch (Exception ex) {
+          throw new EvaluationException(elctx, ex);
         }
         break;
       }
 
-      case INVOKE_SETTER: {
-        Method m = (Method)constantPool[idx];
-        Object value = pop();
-        Object base = pop();
+      case NEW:
+        // Ignore now, will create instance at CONSTRUCTOR
+        break;
+      case CONSTRUCTOR: {
         try {
-          m.invoke(base, value);
-          push(value);
-        } catch (Exception e) {
-          throw new RuntimeException(_T(IR_SETTER_INVOKE_FAILED), e);
+          Constructor<?> cons = (Constructor<?>)constantPool[idx];
+          Object[] args = new Object[cons.getParameterCount()];
+          for (int i = cons.getParameterCount(); i >= 1; i--)
+            args[i - 1] = pop();
+          push(cons.newInstance(args));
+        } catch (Exception ex) {
+          throw new AssertionError(ex);
         }
+        break;
+      }
+
+      case NEW_ARRAY: {
+        Class<?> c = (Class<?>)constantPool[idx];
+        push(Array.newInstance(c, cnt));
+        break;
+      }
+
+      case LOAD_ARRAY: {
+        push(Array.get(pop(), cnt));
+        break;
+      }
+
+      case STORE_ARRAY: {
+        Object value = pop();
+        Object array = pop();
+        Array.set(array, cnt, value);
         break;
       }
 
       case LOAD_FIELD: {
-        Object base = pop();
-        String fieldName = (String)constantPool[idx];
-        push(loadField(base, fieldName));
+        try {
+          Field field = (Field)constantPool[idx];
+          Object obj = null;
+          if (!Modifier.isStatic(field.getModifiers()))
+            obj = pop();
+          push(field.get(obj));
+        } catch (IllegalAccessException ex) {
+          throw new EvaluationException(elctx, ex);
+        }
         break;
       }
 
       case STORE_FIELD: {
-        Object value = pop();
-        Object base = pop();
-        String fieldName = (String)constantPool[idx];
-        push(storeField(base, fieldName, value));
+        try {
+          Field field = (Field)constantPool[idx];
+          Object value = pop();
+          Object obj = null;
+          if (!Modifier.isStatic(field.getModifiers()))
+            obj = pop();
+          field.set(obj, value);
+        } catch (IllegalAccessException e) {
+          throw new EvaluationException(elctx, e);
+        }
         break;
       }
+
+      case CHECKCAST, BOX, UNBOX:
+        // No effect for IR interpreter.
+        break;
 
       case NEW_CONS: {
         Object tail = pop();
@@ -660,54 +615,11 @@ public class IRInterpreter {
         break;
       }
 
-      case NEW_MAP: {
-        LinkedHashMap<Object, Object> map = new LinkedHashMap<>();
-        for (int i = cnt - 1; i >= 0; i--) {
-          Object val = pop();
-          Object key = pop();
-          map.put(key, val);
-        }
-        push(map);
-        break;
-      }
-
       case NEW_TUPLE: {
         Object[] elems = new Object[cnt];
         for (int i = cnt - 1; i >= 0; i--)
           elems[i] = pop();
         push(elems);
-        break;
-      }
-
-      case NEW_RANGE: {
-        Object end = pop();
-        Object next = pop();
-        Object begin = pop();
-        push(newRange(begin, next, end));
-        break;
-      }
-
-      case NEW_XML: {
-        Object tag;
-        Object[] att_names = null, att_values = null;
-        Object[] children = null;
-        if (idx != 0) {
-          children = new Object[idx];
-          for (int i = idx - 1; i >= 0; i--) {
-            children[i] = pop();
-          }
-        }
-        if (cnt != 0) {
-          att_names = new String[cnt];
-          att_values = new String[cnt];
-          for (int i = cnt - 1; i >= 0; i--) {
-            att_values[i] = pop();
-            att_names[i] = pop();
-          }
-        }
-        tag = pop();
-
-        push(newXML(tag, att_names, att_values, children));
         break;
       }
 
@@ -759,239 +671,5 @@ public class IRInterpreter {
     Object[] newStack = new Object[newSize];
     System.arraycopy(stack, 0, newStack, 0, stack.length);
     stack = newStack;
-  }
-
-  // ── Dynamic invocation ──
-
-  private Object resolveGlobal(String id) {
-    ELContext elctx = evalContext.getELContext();
-
-    ValueExpression expr = evalContext.resolveVariable(id);
-    if (expr != null) {
-      return expr.getValue(elctx);
-    }
-
-    elctx.setPropertyResolved(false);
-    Object value = elctx.getELResolver().getValue(elctx, null, id);
-    if (elctx.isPropertyResolved()) {
-      return value;
-    }
-
-    MethodClosure method = MethodResolver.getInstance(elctx)
-      .resolveGlobalMethod(evalContext.getFunctionMapper(), id);
-    if (method != null) {
-      return method;
-    }
-
-    throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
-  }
-
-  private Object resolveTarget(String id) {
-    ELContext elctx = evalContext.getELContext();
-
-    ValueExpression expr = evalContext.resolveVariable(id);
-    if (expr != null) {
-      return (expr instanceof LiteralClosure lc) ? lc.getValue(null) :
-             (expr instanceof Closure) ? expr : expr.getValue(elctx);
-    }
-
-    MethodClosure method = MethodResolver.getInstance(elctx)
-      .resolveGlobalMethod(evalContext.getFunctionMapper(), id);
-    if (method != null)
-      return method;
-
-    elctx.setPropertyResolved(false);
-    return elctx.getELResolver().getValue(elctx, null, id);
-  }
-
-  private Object invokeTarget(String id, Object... args) {
-    ELContext elctx = evalContext.getELContext();
-    Object target = resolveTarget(id);
-    if (target == null)
-      throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
-
-    try {
-      return ELEngine.callTarget(elctx, target, args);
-    } catch (RuntimeException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
-  }
-
-  private Object invokeDyn(int argCount) {
-    // Stack layout: target below, args on top
-    // Stack: ... target arg0 arg1 ... argN
-    Object[] args = new Object[argCount];
-    for (int i = argCount - 1; i >= 0; i--)
-      args[i] = pop();
-    Object target = pop();
-
-    ELContext elctx = evalContext.getELContext();
-    try {
-      return ELEngine.callTarget(elctx, target, args);
-    } catch (RuntimeException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
-  }
-
-  private Object invokeOperator(String name, Object rhs) {
-    ELContext elctx = evalContext.getELContext();
-
-    if (rhs != null) {
-      Object result = ELNode.Unary.invokeOperator(elctx, name, rhs);
-      if (result != NO_RESULT)
-        return result;
-    }
-
-    return invokeTarget(name, rhs);
-  }
-
-  private Object invokeOperator(String name, Object lhs, Object rhs) {
-    ELContext elctx = evalContext.getELContext();
-
-    // invoke operator procedure
-    Object result = ELNode.Binary.invokeOperator(elctx, name, lhs, rhs);
-    if (result != NO_RESULT)
-      return result;
-
-    return invokeTarget(name, lhs, rhs);
-  }
-
-  private Object loadField(Object base, String fieldName) {
-    if (base == null)
-      throw new NullPointerException(_T(IR_FIELD_READ_FROM_NULL, fieldName));
-    try {
-      Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
-      Field f = cls.getField(fieldName);
-      Object target = Modifier.isStatic(f.getModifiers()) ? null : base;
-      return f.get(target);
-    } catch (NoSuchFieldException e) {
-      throw new RuntimeException(
-        _T(IR_FIELD_NOT_FOUND, fieldName, base.getClass().getName()));
-    } catch (IllegalAccessException e) {
-      throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
-    }
-  }
-
-  private Object storeField(Object base, String fieldName, Object value) {
-    if (base == null)
-      throw new NullPointerException(_T(IR_FIELD_WRITE_TO_NULL, fieldName));
-    try {
-      Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
-      Field f = cls.getField(fieldName);
-      Object target = Modifier.isStatic(f.getModifiers()) ? null : base;
-      f.set(target, TypeCoercion.coerce(evalContext.getELContext(), value,
-                                        f.getType()));
-      return value; // assignment returns the value
-    } catch (NoSuchFieldException e) {
-      throw new RuntimeException(
-        _T(IR_FIELD_NOT_FOUND, fieldName, base.getClass().getName()));
-    } catch (IllegalAccessException e) {
-      throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, fieldName), e);
-    }
-  }
-
-  private static boolean isChar(Object o) {
-    if (o instanceof Character) {
-      return true;
-    } else if (o instanceof String) {
-      return ((String)o).length() == 1;
-    } else {
-      return false;
-    }
-  }
-
-  private static char getChar(Object o) {
-    if (o instanceof Character) {
-      return (Character)o;
-    } else if (o instanceof String) {
-      return ((String)o).charAt(0);
-    } else {
-      throw new AssertionError();
-    }
-  }
-
-  private Object newRange(Object begin, Object next, Object end) {
-    if (isChar(begin) && (next == null || isChar(next)) &&
-        (end == null || isChar(end))) {
-      char c_begin = getChar(begin);
-      int c_step = (next == null) ? 1 : getChar(next) - c_begin;
-      if (end == null) {
-        return CharRanges.createUnboundedRange(c_begin, c_step);
-      } else {
-        char c_end = getChar(end);
-        return CharRanges.createCharRange(c_begin, c_end, c_step);
-      }
-    } else {
-      long l_begin = TypeCoercion.coerceToLong(begin);
-      long l_step = (next == null) ? 1
-                                   : TypeCoercion.coerceToLong(next) - l_begin;
-      if (end == null) {
-        return Ranges.createUnboundedRange(l_begin, l_step);
-      } else {
-        long l_end = TypeCoercion.coerceToLong(end);
-        return Ranges.createRange(l_begin, l_end, l_step);
-      }
-    }
-  }
-
-  private Object newXML(Object tag, Object[] att_names, Object[] att_values,
-                        Object[] children) {
-    ELContext elctx = evalContext.getELContext();
-
-    try {
-      Document doc = XmlNode.getContextDocument(elctx);
-      Element elem;
-      String name = TypeCoercion.coerceToString(tag);
-      String prefix, uri;
-      int colon;
-
-      // handle element namespace
-      colon = name.indexOf(':');
-      if (colon == -1)
-        prefix = XMLConstants.DEFAULT_NS_PREFIX;
-      else
-        prefix = name.substring(0, colon);
-      uri = evalContext.getURI(prefix);
-      if (uri == null)
-        elem = doc.createElement(name);
-      else
-        elem = doc.createElementNS(uri, name);
-
-      // set element attributes
-      if (att_names != null) {
-        for (int i = 0; i < att_names.length; i++) {
-          String key = TypeCoercion.coerceToString(att_names[i]);
-          String value = TypeCoercion.coerceToString(att_values[i]);
-          if (key.equals("xmlns") || key.startsWith("xmlns:")) {
-            uri = XMLConstants.XMLNS_ATTRIBUTE_NS_URI;
-          } else {
-            colon = key.indexOf(':');
-            if (colon == -1)
-              prefix = XMLConstants.DEFAULT_NS_PREFIX;
-            else
-              prefix = key.substring(0, colon);
-            uri = evalContext.getURI(prefix);
-          }
-          if (uri == null)
-            elem.setAttribute(key, value);
-          else
-            elem.setAttributeNS(uri, key, value);
-        }
-      }
-
-      // recursively create child nodes
-      if (children != null) {
-        for (Object child : children) {
-          org.w3c.dom.Node node = XmlNode.coerceToNode(elctx, child);
-          if (node != null) {
-            elem.appendChild(node);
-          }
-        }
-      }
-
-      return XmlNode.valueOf(elem);
-    } catch (DOMException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
   }
 }

@@ -1,52 +1,36 @@
 package org.elite.ir;
 
+import org.elite.eval.EvaluationContext;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 
+import javax.el.ELContext;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 public class IRCompiledFunction {
-  private final java.lang.reflect.Method method;
-  private final byte[] bytecode;
-  private final String className;
-  private final int maxLocals;
-  private final Object[] defaultValues;
 
-  IRCompiledFunction(java.lang.reflect.Method m, byte[] bc, String className,
-                     int maxLocals, Object[] defaultValues) {
-    this.method = m;
-    this.className = className;
+  private final Method method;
+  private final byte[] bytecode;
+
+  IRCompiledFunction(Method m, byte[] bc) {
+    this.method   = m;
     this.bytecode = bc;
-    this.maxLocals = maxLocals;
-    this.defaultValues = defaultValues;
   }
 
-  public Object execute(javax.el.ELContext elctx, Object[] locals) {
-    // Save actual arg count BEFORE expanding the array
-    int provided = locals != null ? locals.length : 0;
-    if (locals == null)
-      locals = new Object[maxLocals];
-    else if (locals.length < maxLocals) {
-      Object[] expanded = new Object[maxLocals];
-      System.arraycopy(locals, 0, expanded, 0, locals.length);
-      locals = expanded;
-    }
-    // Apply default parameter values for missing args.
-    // Uses the original args length (saved before array expansion)
-    // to distinguish "not provided" from "explicitly passed null".
-    if (defaultValues != null) {
-      for (int i = provided;
-           i < defaultValues.length && i < locals.length; i++) {
-        if (defaultValues[i] != null)
-          locals[i] = defaultValues[i];
-      }
-    }
+  public byte[] getBytecode() {
+    return bytecode;
+  }
+
+  public Object execute(ELContext elctx, Object[] args) {
     try {
-      return method.invoke(null, elctx, locals);
-    } catch (java.lang.reflect.InvocationTargetException e) {
+      EvaluationContext env = new EvaluationContext(elctx);
+      return method.invoke(null, env, args);
+    } catch (InvocationTargetException e) {
       Throwable cause = e.getCause();
       if (cause instanceof RuntimeException re)
         throw re;
@@ -56,13 +40,6 @@ public class IRCompiledFunction {
     } catch (IllegalAccessException e) {
       throw new RuntimeException(e);
     }
-  }
-
-  /**
-   * Internal name for invokestatic bytecode.
-   */
-  public String internalName() {
-    return className.replace('.', '/');
   }
 
   /**

@@ -75,14 +75,6 @@ final class IREmitter {
     return emit(PUSH_CONST, 0, poolIndex);
   }
 
-  public IREmitter emitPushVar(int varIndex) {
-    return emit(PUSH_VAR, 0, varIndex);
-  }
-
-  public IREmitter emitPushGlobal(int poolIndex) {
-    return emit(PUSH_GLOBAL, 0, poolIndex);
-  }
-
   public IREmitter emitPushTrue() {
     return emit(PUSH_TRUE, 0);
   }
@@ -95,12 +87,24 @@ final class IREmitter {
     return emit(PUSH_NULL, 0);
   }
 
-  public IREmitter emitPop() {
-    return emit(POP, 0);
+  public IREmitter emitPushEnv() {
+    return emit(PUSH_ENV, 0, 0);
   }
 
-  public IREmitter emitPopN(int count) {
-    return emit(POP_N, count);
+  public IREmitter emitPushCtx() {
+    return emit(PUSH_CTX, 0, 0);
+  }
+
+  public IREmitter emitPushVar(int varIndex) {
+    return emit(PUSH_VAR, 0, varIndex);
+  }
+
+  public IREmitter emitPushGlobal(int poolIndex) {
+    return emit(PUSH_GLOBAL, 0, poolIndex);
+  }
+
+  public IREmitter emitPop() {
+    return emit(POP, 0);
   }
 
   public IREmitter emitDup() {
@@ -159,10 +163,6 @@ final class IREmitter {
 
   public IREmitter emitCat() {
     return emit(CAT, 0);
-  }
-
-  public IREmitter emitJoin(int count) {
-    return emit(JOIN, count, 0);
   }
 
   public IREmitter emitBitAnd() {
@@ -332,40 +332,44 @@ final class IREmitter {
   /**
    * Direct call to a known IRFunction (pool index of the IRFunction).
    */
-  public IREmitter emitInvokeDirect(int poolIdx, int argCount) {
-    return emit(INVOKE_DIRECT, argCount, poolIdx);
+  public IREmitter emitInvokeDirect(int poolIdx) {
+    return emit(INVOKE_DIRECT, 0, poolIdx);
   }
 
-  public IREmitter emitInvokeOperator(int poolIdx, int argCount) {
-    return emit(INVOKE_OPERATOR, argCount, poolIdx);
+  public IREmitter emitInvokeMethod(int poolIdx) {
+    return emit(INVOKE_METHOD, 0, poolIdx);
   }
 
-  public IREmitter emitInvokeTarget(int poolIdx, int argCount) {
-    return emit(INVOKE_TARGET, argCount, poolIdx);
+  public IREmitter emitNew(int poolIdx) {
+    return emit(NEW, 0, poolIdx);
   }
 
-  public IREmitter emitInvokeDyn(int argCount) {
-    return emit(INVOKE_DYN, argCount);
+  public IREmitter emitConstructor(int poolIdx) {
+    return emit(CONSTRUCTOR, 0, poolIdx);
   }
 
-  public IREmitter emitInvokeMethod(int poolIdx, int argCount) {
-    return emit(INVOKE_METHOD, argCount, poolIdx);
+  public IREmitter emitNewArray(int count, int poolIdx) {
+    return emit(NEW_ARRAY, count, poolIdx);
   }
 
-  public IREmitter emitInvokeStatic(int poolIdx, int argCount) {
-    return emit(INVOKE_STATIC, argCount, poolIdx);
+  public IREmitter emitLoadArray(int index, int poolIdx) {
+    return emit(LOAD_ARRAY, index, poolIdx);
   }
 
-  public IREmitter emitInvokeExpando(int poolIdx, int argCount) {
-    return emit(INVOKE_EXPANDO, argCount, poolIdx);
+  public IREmitter emitStoreArray(int index, int poolIdx) {
+    return emit(STORE_ARRAY, index, poolIdx);
   }
 
-  public IREmitter emitLoadProperty() {
-    return emit(LOAD_PROPERTY, 0);
+  public IREmitter emitCheckCast(int poolIdx) {
+    return emit(CHECKCAST, 0, poolIdx);
   }
 
-  public IREmitter emitStoreProperty() {
-    return emit(STORE_PROPERTY, 0);
+  public IREmitter emitBox(int poolIdx) {
+    return emit(BOX, 0, poolIdx);
+  }
+
+  public IREmitter emitUnbox(int poolIdx) {
+    return emit(UNBOX, 0, poolIdx);
   }
 
   public IREmitter emitNewCons() {
@@ -380,20 +384,8 @@ final class IREmitter {
     return emit(NIL, 0);
   }
 
-  public IREmitter emitNewMap(int count) {
-    return emit(NEW_MAP, count, 0);
-  }
-
-  public IREmitter emitNewRange() {
-    return emit(NEW_RANGE, 0);
-  }
-
   public IREmitter emitNewTuple(int count) {
     return emit(NEW_TUPLE, count, 0);
-  }
-
-  public IREmitter emitNewXML(int keyCount, int childCount) {
-    return emit(NEW_XML, keyCount, childCount);
   }
 
   public IREmitter emitDeclareNS(int nameIdx) {

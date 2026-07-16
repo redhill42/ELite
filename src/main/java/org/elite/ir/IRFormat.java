@@ -23,7 +23,7 @@ package org.elite.ir;
  * <pre>
  *     ┌──31───────────────────┬─15───8──┬─7────0─┐
  *     │       operand         │ payload │ opcode │
- *     │        16 bit         │ 8 bits  │ 8 bits │
+ *     │        16 bit         │ 9 bits  │ 7 bits │
  *     └───────────────────────┴─────────┴────────┘
  * </pre>
  * <p>
@@ -33,7 +33,7 @@ final class IRFormat {
   }
 
   // Bit shifts
-  public static final int PAYLOAD_SHIFT = 8;
+  public static final int PAYLOAD_SHIFT = 7;
   public static final int OPERAND_SHIFT = 16;
 
   // Primitive type IDs
@@ -57,11 +57,11 @@ final class IRFormat {
   // ── Decoding helpers ──
 
   public static int opcode(int header) {
-    return header & 0xFF;
+    return header & 0x7F;
   }
 
   public static int payload(int header) {
-    return (header >>> PAYLOAD_SHIFT) & 0xFF;
+    return (header >>> PAYLOAD_SHIFT) & 0x1FF;
   }
 
   public static int operand(int header) {

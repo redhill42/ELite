@@ -22,8 +22,10 @@ import elite.lang.MathLib;
 import elite.lang.Seq;
 import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
+import elite.lang.annotation.ExpandoScope;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
+import org.elite.eval.EvaluationContext;
 import org.elite.eval.Runtime;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.ClassDefinition;
@@ -40,6 +42,7 @@ import org.elite.resolver.MethodResolver;
 import javax.el.ELContext;
 import javax.xml.XMLConstants;
 import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.*;
@@ -258,19 +261,19 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.REGEXP node) {
-    buildConst(node.value.toString());
-    emitInvokeStatic(java.util.regex.Pattern.class, "compile", String.class);
+    buildConst(node.value);
   }
 
   public void visit(ELNode.SYMBOL node) {
-    buildConst(node.value.getName());
-    emitInvokeStatic(elite.lang.Symbol.class, "valueOf", String.class);
+    buildConst(node.value);
   }
 
   public void visit(ELNode.ACCESS node) {
     build(node.right);
     build(node.index);
-    current.emitLoadProperty();
+    current.emitPushCtx();
+    emitInvokeMethod(Runtime.class, "loadProperty", Object.class, Object.class,
+                     ELContext.class);
   }
 
   public void visit(ELNode.IDENT node) {
@@ -310,17 +313,17 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (ident.symbol.def.expr instanceof ELNode.CLASSDEF) {
           // The target is a CLASSDEF, so the defined object must be
-          // a ClassDefinition, just invoke the "invoke" method
-          // on target.
+          // a ClassDefinition, just invoke the "invoke" method on target.
 
           // Fist, build ident node to generate PUSH_GLOBAL
           // or PUSH_VAR instruction.
           build(ident);
+          current.emitCheckCast(putConstant(ClassDefinition.class));
 
           // Then invoke the ClassDefinition.invoke method to create
           // new instance of user defined class.
-          build(node.args);
-          current.emitNewTuple(node.args.length);
+          current.emitPushCtx();
+          buildTuple(node.args);
           emitInvokeMethod(ClassDefinition.class, "invoke",
                            ELContext.class, Object[].class);
           return;
@@ -333,9 +336,11 @@ public class IRBuilder extends ELNode.Visitor {
           return;
 
         // Resolve target at runtime if the given id is not a local var
-        int nameIdx = putConstant(ident.id);
-        build(node.args);
-        current.emitInvokeTarget(nameIdx, node.args.length);
+        current.emitPushEnv();
+        buildConst(ident.id);
+        buildTuple(node.args);
+        emitInvokeMethod(Runtime.class, "invokeTarget", EvaluationContext.class,
+                         String.class, Object[].class);
         return;
       }
     }
@@ -348,20 +353,22 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       // resolve method at runtime
+      current.emitPushCtx();
       build(acc.right);
       build(acc.index);
-      build(node.args);
-      current.emitNewTuple(node.args.length);
-      emitInvokeStatic(Runtime.class, "invoke", ELContext.class,
+      buildTuple(node.args);
+      emitInvokeMethod(Runtime.class, "invokeMember", ELContext.class,
                        Object.class, Object.class, Object[].class);
       return;
     }
 
+    current.emitPushCtx();
     build(base);
 
     if (base instanceof ELNode.LAMBDA lam && lam.symbol != null &&
         lam.symbol.func != null) {
       // Lambda closure no longer used.
+      current.emitPop();
       current.emitPop();
 
       // One-shot lambda call.
@@ -371,8 +378,9 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // evaluate base and generate dynamic call
-    build(node.args);
-    current.emitInvokeDyn(node.args.length);
+    buildTuple(node.args);
+    emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
+                     Object.class, Object[].class);
   }
 
   private int indexOfVar(String name, ELNode.DEFINE[] vars, boolean varargs) {
@@ -459,12 +467,17 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private int buildCallArgs(ELNode.LAMBDA lambda, ELNode[] args) {
-    // Build argument list, include varargs that then build to tuple.
-    build(args);
+    int nvars = lambda.vars.length;
+    if (lambda.varargs)
+      nvars--;
+
+    // Build argument list, exclude varargs that must build to tuple.
+    for (int i = 0; i < nvars; i++)
+      build(args[i]);
 
     // Build tuple for var arg list.
     if (lambda.varargs)
-      current.emitNewTuple(args.length - (lambda.vars.length - 1));
+      buildTuple(args, nvars, args.length - nvars);
 
     return lambda.vars.length;
   }
@@ -474,8 +487,32 @@ public class IRBuilder extends ELNode.Visitor {
     ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
 
     if (!isInlineOpportunity(sym)) {
-      int argc = buildCallArgs(lambda, args);
-      current.emitInvokeDirect(putConstant(sym.func), argc);
+      int nvars = lambda.vars.length;
+      int classId = putConstant(Object.class);
+
+      // Build argument for argument list, exclude varargs.
+      current.emitNewArray(nvars, classId);
+      if (lambda.varargs)
+        nvars--;
+      for (int i = 0; i < nvars; i++) {
+        current.emitDup();
+        build(args[i]);
+        current.emitStoreArray(i, classId);
+      }
+
+      // Build vararg list as an array and put the array into argument list.
+      if (lambda.varargs) {
+        current.emitDup(); // dup the argument list.
+        current.emitNewArray(args.length - nvars, classId);
+        for (int i = nvars; i < args.length; i++) {
+          current.emitDup();
+          build(args[i]);
+          current.emitStoreArray(i - nvars, classId);
+        }
+        current.emitStoreArray(nvars, classId);
+      }
+
+      current.emitInvokeDirect(putConstant(sym.func));
       return;
     }
 
@@ -535,9 +572,8 @@ public class IRBuilder extends ELNode.Visitor {
     IRFunction fn = sym.func;
 
     if (!isInlineOpportunity(sym)) {
-      for (Slot arg : args)
-        arg.load();
-      current.emitInvokeDirect(putConstant(fn), args.length);
+      buildTuple(args);
+      current.emitInvokeDirect(putConstant(fn));
       return;
     }
 
@@ -663,6 +699,53 @@ public class IRBuilder extends ELNode.Visitor {
     return buildMethodCall(method, null, args);
   }
 
+  private boolean tryBuildDirectMethodCall(ELNode base, String name,
+                                           ELNode[] args) {
+    Method method = resolveStaticMethod(base, name);
+    if (method != null)
+      return buildMethodCall(method, null, args);
+
+    method = resolveInstanceMethod(base, name);
+    if (method != null)
+      return buildMethodCall(method, base, args);
+
+    return false;
+  }
+
+  private Method resolveStaticMethod(ELNode base, String name) {
+    String baseClassName = getBaseClassName(base);
+    if (baseClassName == null)
+      return null;
+
+    Class<?> cls = resolveClassAtCompileTime(baseClassName);
+    if (cls == null)
+      return null;
+
+    MethodClosure mc = MethodResolver.getInstance(elctx)
+      .resolveStaticMethod(cls, name);
+    if (mc == null)
+      return null;
+
+    Method method = mc.getJavaMethod();
+    if (method == null)
+      return null;
+
+    Expando expando = method.getAnnotation(Expando.class);
+    if (expando != null &&
+        !Arrays.asList(expando.scope()).contains(ExpandoScope.GLOBAL))
+      return null;
+
+    return method;
+  }
+
+  private Method resolveInstanceMethod(ELNode base, String name) {
+    Class<?> cls = Object.class; // TODO: infer base type
+    var mc = MethodResolver.getInstance(elctx).resolveMethod(cls, name);
+    if (mc == null)
+      return null;
+    return mc.getJavaMethod();
+  }
+
   private String getBaseClassName(ELNode base) {
     if (base instanceof ELNode.IDENT var) {
       if (var.symbol == null)
@@ -689,37 +772,6 @@ public class IRBuilder extends ELNode.Visitor {
     return null;
   }
 
-  private boolean tryBuildDirectMethodCall(ELNode base, String name,
-                                           ELNode[] args) {
-    String baseClassName = getBaseClassName(base);
-    if (baseClassName != null) {
-      Class<?> cls = resolveClassAtCompileTime(baseClassName);
-      if (cls != null) {
-        MethodClosure mc = MethodResolver.getInstance(elctx)
-          .resolveStaticMethod(cls, name);
-        if (mc != null) {
-          Method method = mc.getJavaMethod();
-          if (method != null) {
-            build(args);
-            emitInvokeStatic(method);
-            return true;
-          }
-        }
-      }
-    }
-
-    Class<?> baseClass = Object.class;
-    var mc = MethodResolver.getInstance(elctx).resolveMethod(baseClass, name);
-    if (mc == null)
-      return false;
-
-    Method method = mc.getJavaMethod();
-    if (method == null)
-      return false;
-
-    return buildMethodCall(method, base, args);
-  }
-
   private boolean buildMethodCall(Method method, ELNode base, ELNode[] args) {
     Class<?>[] types = method.getParameterTypes();
     int nargs = types.length;
@@ -744,6 +796,9 @@ public class IRBuilder extends ELNode.Visitor {
     if (buildBuiltin(method, base, args))
       return true;
 
+    if (nargs > 0 && types[0] == ELContext.class)
+      current.emitPushCtx();
+
     if (base != null)
       build(base);
 
@@ -751,22 +806,19 @@ public class IRBuilder extends ELNode.Visitor {
     int i = 0;
     for (; iarg < nargs; iarg++, i++) {
       build(args[i]);
+      if (types[iarg].isPrimitive())
+        current.emitUnbox(putConstant(types[iarg]));
+      else if (types[iarg] != Object.class)
+        current.emitCheckCast(putConstant(types[iarg]));
     }
 
     // Build variable arguments.
-    if (vargs) {
-      for (; i < args.length; i++) {
-        build(args[i]);
-      }
-    }
+    if (vargs)
+      buildTuple(args, i, args.length - i);
 
-    int methodIdx = putConstant(method);
-    if (expando)
-      current.emitInvokeExpando(methodIdx, args.length);
-    else if (base == null)
-      current.emitInvokeStatic(methodIdx, args.length);
-    else
-      current.emitInvokeMethod(methodIdx, args.length);
+    current.emitInvokeMethod(putConstant(method));
+    if (method.getReturnType() == Void.TYPE)
+      current.emitPushNull();
     return true;
   }
 
@@ -821,7 +873,8 @@ public class IRBuilder extends ELNode.Visitor {
         build(args[2]);
         emitDynBinOp(Token.ADD);
         build(args[1]);
-        current.emitNewRange();
+        emitInvokeMethod(Runtime.class, "newRange", Object.class, Object.class,
+                         Object.class);
         return true;
 
       case "upto":
@@ -942,15 +995,23 @@ public class IRBuilder extends ELNode.Visitor {
       } else {
         buildDirectCall(sym, new Slot[0]);
       }
+      current.emitPop();
     } else if (global != null) {
+      Class<?>[] types = global.getParameterTypes();
+      if (types[0] == ELContext.class)
+        current.emitPushCtx();
       indSlot.load();
-      current.emitInvokeStatic(putConstant(global), 1);
+      current.emitInvokeMethod(putConstant(global));
+      if (global.getReturnType() != Void.TYPE)
+        current.emitPop();
     } else {
+      current.emitPushCtx();
       bodySlot.load();
-      indSlot.load();
-      current.emitInvokeDyn(1);
+      buildTuple(indSlot);
+      emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
+                       Object.class, Object[].class);
+      current.emitPop();
     }
-    current.emitPop();
 
     // Increment induction variable.
     indSlot.load();
@@ -1023,17 +1084,18 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.MAP node) {
-    // Emit key-value pairs: key1, val1, key2, val2, ...
+    emitNewInstance(LinkedHashMap.class);
     for (int i = 0; i < node.keys.length; i++) {
+      current.emitDup();
       build(node.keys[i]);
       build(node.values[i]);
+      emitInvokeMethod(LinkedHashMap.class, "put", Object.class, Object.class);
+      current.emitPop();
     }
-    current.emitNewMap(node.keys.length);
   }
 
   public void visit(ELNode.TUPLE node) {
-    build(node.elems);
-    current.emitNewTuple(node.elems.length);
+    buildTuple(node.elems);
   }
 
   public void visit(ELNode.RANGE node) {
@@ -1047,7 +1109,8 @@ public class IRBuilder extends ELNode.Visitor {
     } else {
       build(node.end);
     }
-    current.emitNewRange();
+    emitInvokeMethod(Runtime.class, "newRange", Object.class, Object.class,
+                     Object.class);
   }
 
   public void visit(ELNode.ARRAY node) {
@@ -1060,27 +1123,24 @@ public class IRBuilder extends ELNode.Visitor {
         buildConstantDimensionArray(node, (Class<?>)componentType))
       return;
 
+    current.emitPushCtx();
     buildConst(componentType);
 
     // Build dimension expressions into a tuple.
     if (node.dims == null) {
       current.emitPushNull();
     } else {
-      for (int i = 0; i < node.dims.length; i++)
-        build(node.dims[i]);
-      current.emitNewTuple(node.dims.length);
+      buildTuple(node.dims);
     }
 
     // Build init expressions into a tuple.
     if (node.init == null) {
       current.emitPushNull();
     } else {
-      for (int i = 0; i < node.init.length; i++)
-        build(node.init[i]);
-      current.emitNewTuple(node.init.length);
+      buildTuple(node.init);
     }
 
-    emitInvokeStatic(Runtime.class, "newArray", ELContext.class,
+    emitInvokeMethod(Runtime.class, "newArray", ELContext.class,
                      Object.class, Object[].class, Object[].class);
   }
 
@@ -1100,45 +1160,25 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.init != null && length < node.init.length)
         length = node.init.length;
 
-      buildConst(type);
-      buildConst(length);
-      emitInvokeStatic(Array.class, "newInstance", Class.class, int.class);
+      current.emitNewArray(length, putConstant(type));
 
       if (node.init != null) {
-        Slot tmpSlot = new Slot();
-        tmpSlot.store();
         for (int i = 0; i < node.init.length; i++) {
-          buildConst(i);
+          current.emitDup();
           build(node.init[i]);
-          if (type != Object.class) {
-            buildConst(type);
-            emitInvokeStatic(TypeCoercion.class, "coerce",
-                             Object.class, Class.class);
-          }
-          emitInvokeStatic(Array.class, "set", Object.class,
-                           int.class, Object.class);
-          current.emitPop();
-          tmpSlot.load();
+          current.emitStoreArray(i, putConstant(type));
         }
-        tmpSlot.release();
       }
     } else {
-      Slot tmpSlot = new Slot();
       buildConst(type);
-      buildConst(int.class);
-      buildConst(node.dims.length);
-      emitInvokeStatic(Array.class, "newInstance", Class.class, int.class);
-      tmpSlot.store();
+      current.emitCheckCast(putConstant(Class.class));
+      current.emitNewArray(node.dims.length, putConstant(Integer.TYPE));
       for (int i = 0; i < node.dims.length; i++) {
-        buildConst(i);
+        current.emitDup();
         buildConst(((ELNode.NUMBER)node.dims[i]).value.intValue());
-        emitInvokeStatic(Array.class, "set", Object.class,
-                         int.class, Object.class);
-        current.emitPop();
-        tmpSlot.load();
+        current.emitStoreArray(i, putConstant(Integer.TYPE));
       }
-      emitInvokeStatic(Array.class, "newInstance", Class.class, int[].class);
-      tmpSlot.release();
+      emitInvokeMethod(Array.class, "newInstance", Class.class, int[].class);
     }
 
     // FIXME: handle multi dimensional array
@@ -1183,24 +1223,34 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // Build XML tag, attributes, and children.
+    current.emitPushEnv();
     build(node.tag);
-    if (node.keys != null) {
-      assert node.keys.length == node.values.length;
-      for (int i = 0; i < node.keys.length; i++) {
-        build(node.keys[i]);
+
+    if (node.keys == null) {
+      current.emitPushNull().emitPushNull();
+    } else {
+      buildTuple(node.keys);
+
+      current.emitNewArray(node.values.length, putConstant(Object.class));
+      for (int i = 0; i < node.values.length; i++) {
+        current.emitDup();
         if (tmpSlots != null && tmpSlots[i] != null)
           tmpSlots[i].load();
         else
           build(node.values[i]);
+        current.emitStoreArray(i, putConstant(Object.class));
       }
     }
-    if (node.children != null) {
-      for (int i = 0; i < node.children.length; i++) {
-        build(node.children[i]);
-      }
+
+    if (node.children == null) {
+      current.emitPushNull();
+    } else {
+      buildTuple(node.children);
     }
-    current.emitNewXML(node.keys == null ? 0 : node.keys.length,
-                       node.children == null ? 0 : node.children.length);
+
+    emitInvokeMethod(Runtime.class, "newXML", EvaluationContext.class,
+                     Object.class, Object[].class, Object[].class,
+                     Object[].class);
 
     if (namespaces != 0) {
       current.emitLeaveScope();
@@ -1225,6 +1275,8 @@ public class IRBuilder extends ELNode.Visitor {
       SymbolTable.Symbol sym = currentScope.lookup(node.type);
       if (sym != null && sym.def.expr instanceof ELNode.CLASSDEF) {
         emitPushSymbol(sym);
+        current.emitCheckCast(putConstant(ClassDefinition.class));
+        current.emitPushCtx();
         build(node.right);
         emitInvokeMethod(ClassDefinition.class, "isInstance",
                          ELContext.class, Object.class);
@@ -1338,14 +1390,18 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.oper.symbol.func != null) {
         buildDirectCall(node.oper.symbol, node.right);
       } else {
+        current.emitPushCtx();
         build(node.oper);
-        build(node.right);
-        current.emitInvokeDyn(1);
+        buildTuple(node.right);
+        emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
+                         Object.class, Object[].class);
       }
     } else {
-      int nameIdx = putConstant(node.oper.id);
+      current.emitPushEnv();
+      buildConst(node.oper.id);
       build(node.right);
-      current.emitInvokeOperator(nameIdx, 1);
+      emitInvokeMethod(Runtime.class, "invokeOperator", EvaluationContext.class,
+                       String.class, Object.class);
     }
   }
 
@@ -1354,16 +1410,19 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.oper.symbol.func != null) {
         buildDirectCall(node.oper.symbol, node.left, node.right);
       } else {
+        current.emitPushCtx();
         build(node.oper);
-        build(node.left);
-        build(node.right);
-        current.emitInvokeDyn(2);
+        buildTuple(node.left, node.right);
+        emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
+                         Object.class, Object[].class);
       }
     } else {
-      int nameIdx = putConstant(node.oper.id);
+      current.emitPushEnv();
+      buildConst(node.oper.id);
       build(node.left);
       build(node.right);
-      current.emitInvokeOperator(nameIdx, 2);
+      emitInvokeMethod(Runtime.class, "invokeOperator", EvaluationContext.class,
+                       String.class, Object.class, Object.class);
     }
   }
 
@@ -1464,11 +1523,12 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.ASSIGNOP node) {
     // Invoke dynamic assignment operator
+    current.emitPushCtx();
     buildConst(node.binary.op);
     build(node.left);
     build(node.right);
-    emitInvokeStatic(Runtime.class, "invokeAssignOp", ELContext.class,
-                     int.class, Object.class, Object.class);
+    emitInvokeMethod(Runtime.class, "invokeAssignOp", ELContext.class,
+                     Integer.class, Object.class, Object.class);
 
     // Now perform assignment.
     if (node.left instanceof ELNode.IDENT ident) {
@@ -1529,7 +1589,9 @@ public class IRBuilder extends ELNode.Visitor {
   private void buildStoreProperty(ELNode.ACCESS access) {
     build(access.right);
     build(access.index);
-    current.emitStoreProperty();
+    current.emitPushCtx();
+    emitInvokeMethod(Runtime.class, "storeProperty", Object.class, Object.class,
+                     Object.class, ELContext.class);
   }
 
   private boolean isAssignableTuple(ELNode.TUPLE lhs, ELNode.TUPLE rhs) {
@@ -1613,7 +1675,7 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitJumpIfFalse(failBlock);
 
     rhsSlot.load();
-    emitInvokeStatic(Array.class, "getLength", Object.class);
+    emitInvokeMethod(Array.class, "getLength", Object.class);
     buildConst(lhs.elems.length);
     current.emitEq(K_INT);
     current.emitJumpIfFalse(failBlock);
@@ -1621,7 +1683,8 @@ public class IRBuilder extends ELNode.Visitor {
     for (int i = 0; i < lhs.elems.length; i++) {
       rhsSlot.load();
       buildConst(i);
-      emitInvokeStatic(Array.class, "get", Object.class, int.class);
+      current.emitUnbox(putConstant(Integer.TYPE));
+      emitInvokeMethod(Array.class, "get", Object.class, int.class);
       if (lhs.elems[i] instanceof ELNode.IDENT ident)
         buildStoreVariable(ident);
       else if (lhs.elems[i] instanceof ELNode.ACCESS acc)
@@ -1671,8 +1734,13 @@ public class IRBuilder extends ELNode.Visitor {
     if (node.elems.length == 0) {
       buildConst("");
     } else {
-      build(node.elems);
-      current.emitJoin(node.elems.length);
+      emitNewInstance(StringBuilder.class);
+      for (int i = 0; i < node.elems.length; i++) {
+        build(node.elems[i]);
+        emitInvokeMethod(TypeCoercion.class, "coerceToString", Object.class);
+        emitInvokeMethod(StringBuilder.class, "append", Object.class);
+      }
+      emitInvokeMethod(StringBuilder.class, "toString");
     }
   }
 
@@ -1978,7 +2046,7 @@ public class IRBuilder extends ELNode.Visitor {
       iterSlot.store();
       current.emitPop();
     } else {
-      emitInvokeStatic(Runtime.class, "getIterator", Object.class);
+      emitInvokeMethod(Runtime.class, "getIterator", Object.class);
       iterSlot.store();
       current.emitJumpIfNull(exit);
     }
@@ -2397,7 +2465,9 @@ public class IRBuilder extends ELNode.Visitor {
       emitInstanceOf(String.class);
       current.emitJumpIfFalse(failBlock);
       buildConst(re.value); // the pattern
-      argSlot.load();                  // the string to match
+      current.emitCheckCast(putConstant(java.util.regex.Pattern.class));
+      argSlot.load();       // the string to match
+      current.emitCheckCast(putConstant(CharSequence.class));
       emitInvokeMethod(java.util.regex.Pattern.class, "matcher", CharSequence.class);
       emitInvokeMethod(java.util.regex.Matcher.class, "matches");
       return;
@@ -2417,7 +2487,7 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitJumpIfFalse(failBlock);
 
       argSlot.load();
-      emitInvokeStatic(Array.class, "getLength", Object.class);
+      emitInvokeMethod(Array.class, "getLength", Object.class);
       buildConst(t.elems.length);
       current.emitEq(K_INT);
       current.emitJumpIfFalse(failBlock);
@@ -2425,7 +2495,8 @@ public class IRBuilder extends ELNode.Visitor {
       for (int i = 0; i < t.elems.length; i++) {
         argSlot.load();
         buildConst(i);
-        emitInvokeStatic(Array.class, "get", Object.class, int.class);
+        current.emitUnbox(putConstant(Integer.TYPE));
+        emitInvokeMethod(Array.class, "get", Object.class, int.class);
         if (!isSimplePattern(t.elems[i])) {
           if (tmpSlot == null)
             tmpSlot = new Slot();
@@ -2449,7 +2520,7 @@ public class IRBuilder extends ELNode.Visitor {
       emitInstanceOf(List.class);
       current.emitJumpIfFalse(failBlock);
       argSlot.load();
-      emitInvokeStatic(TypeCoercion.class, "coerceToSeq", Object.class);
+      emitInvokeMethod(TypeCoercion.class, "coerceToSeq", Object.class);
       seqSlot.store();
       emitInvokeMethod(List.class, "isEmpty");
       current.emitJumpIfTrue(failBlock);
@@ -2492,7 +2563,9 @@ public class IRBuilder extends ELNode.Visitor {
       for (int i = 0; i < map.keys.length; i++) {
         assert map.keys[i] instanceof ELNode.STRINGVAL;
         buildConst(((ELNode.STRINGVAL)map.keys[i]).value);
-        current.emitLoadProperty();
+        current.emitPushCtx();
+        emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
+                         Object.class, ELContext.class);
         if (!isSimplePattern(map.values[i])) {
           if (tmpSlot == null)
             tmpSlot = new Slot();
@@ -2528,7 +2601,10 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJumpIfFalse(failBlock);
 
         cdefSlot.load();
+        current.emitCheckCast(putConstant(ClassDefinition.class));
+        current.emitPushCtx();
         argSlot.load();
+        current.emitCheckCast(putConstant(ClosureObject.class));
         emitInvokeMethod(ClosureObject.class, "get_owner");
         targetSlot.store();
         emitInvokeMethod(ClosureObject.class, "get_class");
@@ -2564,9 +2640,11 @@ public class IRBuilder extends ELNode.Visitor {
 
           for (int i = 0; i < argc; i++) {
             ELNode arg = args[i];
+            current.emitPushCtx();
             buildConst(cdef.vars[i].id);
             emitInvokeMethod(ClosureObject.class, "get_closure",
                              ELContext.class, String.class);
+            current.emitPushCtx();
             emitInvokeMethod(Closure.class, "getValue", ELContext.class);
             if (!isSimplePattern(args[i])) {
               if (tmpSlot == null)
@@ -2626,7 +2704,9 @@ public class IRBuilder extends ELNode.Visitor {
         for (int i = 0; i < argc; i++) {
           argSlot.load();
           buildConst(slots[i]);
-          current.emitLoadProperty();
+          current.emitPushCtx();
+          emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
+                           Object.class, ELContext.class);
           if (!isSimplePattern(args[i])) {
             if (tmpSlot == null)
               tmpSlot = new Slot();
@@ -2705,11 +2785,16 @@ public class IRBuilder extends ELNode.Visitor {
       if (var.symbol.def.expr instanceof ELNode.CLASSDEF) {
         // Load the ClassDefinition.
         build(node.base);
+        current.emitCheckCast(putConstant(ClassDefinition.class));
+
+        // Push ELContext.
+        current.emitPushCtx();
+
+        // Package arguments in an array.
+        buildTuple(node.args);
 
         // Invoke ClassDefinition.invoke with arguments.
         // FIXME: handle named arguments for constructor
-        build(node.args);
-        current.emitNewTuple(node.args.length);
         emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class,
                          Object[].class);
         return;
@@ -2722,10 +2807,10 @@ public class IRBuilder extends ELNode.Visitor {
 
     Class<?> cls = resolveClassAtCompileTime(className);
     if (cls != null) {
+      current.emitPushCtx();
       buildConst(cls);
-      build(node.args);
-      current.emitNewTuple(node.args.length);
-      emitInvokeStatic(ELEngine.class, "newInstance", ELContext.class,
+      buildTuple(node.args);
+      emitInvokeMethod(ELEngine.class, "newInstance", ELContext.class,
                        Class.class, Object[].class);
       return;
     }
@@ -3317,38 +3402,47 @@ public class IRBuilder extends ELNode.Visitor {
   private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {
     try {
       Method method = c.getMethod(name, types);
-      int argc = types.length;
-      if (argc > 0 && types[0] == ELContext.class)
-        argc--;
-      int methodIdx = putConstant(method);
-      current.emitInvokeMethod(methodIdx, argc);
+      current.emitInvokeMethod(putConstant(method));
     } catch (NoSuchMethodException e) {
       throw new AssertionError(e);
     }
   }
 
-  private void emitInvokeStatic(Class<?> c, String name, Class<?>... types) {
+  private void emitNewInstance(Class<?> c) {
     try {
-      Method method = c.getMethod(name, types);
-      emitInvokeStatic(method);
+      Constructor<?> cons = c.getConstructor();
+      current.emitNew(putConstant(c));
+      current.emitConstructor(putConstant(cons));
     } catch (NoSuchMethodException e) {
       throw new AssertionError(e);
     }
   }
 
-  private void emitInvokeStatic(Method method) {
-    Class<?>[] types = method.getParameterTypes();
-    int argc = types.length;
-    if (argc > 0 && types[0] == ELContext.class)
-      argc--;
-    int methodIdx = putConstant(method);
-    current.emitInvokeStatic(methodIdx, argc);
+  private void buildTuple(ELNode... elems) {
+    buildTuple(elems, 0, elems.length);
+  }
+
+  private void buildTuple(ELNode[] elems, int start, int len) {
+    current.emitNewArray(len, putConstant(Object.class));
+    for (int i = start; i < len; i++) {
+      current.emitDup();
+      build(elems[i]);
+      current.emitStoreArray(i - start, putConstant(Object.class));
+    }
+  }
+
+  private void buildTuple(Slot... slots) {
+    current.emitNewArray(slots.length, putConstant(Object.class));
+    for (int i = 0; i < slots.length; i++) {
+      current.emitDup();
+      slots[i].load();
+      current.emitStoreArray(i, putConstant(Object.class));
+    }
   }
 
   // ── Static API ──
 
   public static IRFunction compile(ELContext elctx, ELNode node) {
-    IRBytecodeCompiler.resetState();
     SymbolTable symTable = SymbolTableBuilder.build(node);
     IRFunction func = new IRFunction("<expr>", 0);
     IRBuilder b = new IRBuilder(elctx, null, func, symTable.currentScope());
@@ -3363,8 +3457,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     List<ELNode> defs = program.getDefinitions();
     List<ELNode> exps = program.getExpressions();
-
-    IRBytecodeCompiler.resetState();
 
     IRFunction func = new IRFunction("<program>", 0);
     IRProgram output = new IRProgram(func);

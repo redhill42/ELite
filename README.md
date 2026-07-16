@@ -12,7 +12,7 @@ git clone https://github.com/hongun/ELite.git
 cd ELite
 mvn package -DskipTests
 cd target/elite-1.0-bin/elite-1.0
-bin/elite.sh
+bin/xel
 ```
 
 ```elite
@@ -49,7 +49,7 @@ Hello, World!
 
 ```bash
 mvn test -Delite.opt.level=3    # run tests at max optimization
-bin/elite.sh -Delite.opt.level=0   # REPL at AST level
+bin/xel -Delite.opt.level=0     # REPL at AST level
 ```
 
 ## Build & Test

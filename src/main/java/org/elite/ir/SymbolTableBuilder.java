@@ -306,11 +306,14 @@ public final class SymbolTableBuilder {
         collectPatternBindings(not.right, bind);
       } else if (pat instanceof ELNode.NEW data) {
         var sym = table.lookup(((ELNode.IDENT)data.base).id);
-        if (sym != null)
+        if (sym != null) {
           data.base.symbol = sym;
-        else
+          if (!inScope(sym))
+            sym.captured = true;
+        } else {
           undefined.add(new Undefined((ELNode.IDENT)data.base,
                                       table.currentScope(), false));
+        }
         for (ELNode v : data.args)
           collectPatternBindings(v, bind);
       }

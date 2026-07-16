@@ -152,6 +152,8 @@ public class Main
             shellContext.setEncoding(options.encoding);
         if (options.interactive)
             shellContext.setInteractive(true);
+        if (options.debug)
+            System.setProperty("elite.debug", "true");
         System.setProperty("elite.opt.level", String.valueOf(options.optLevel));
 
         if (options.args.size() != 0) {

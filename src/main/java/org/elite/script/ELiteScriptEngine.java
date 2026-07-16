@@ -42,9 +42,10 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.ELUtils;
 import org.elite.eval.closure.ClosureObject;
+import org.elite.ir.BytecodeCompiler;
 import org.elite.ir.CompilationError;
-import org.elite.ir.IRBytecodeCompiler;
 import org.elite.ir.IRFunction;
+import org.elite.ir.IRProgram;
 import org.elite.parser.Parser;
 import org.elite.parser.ParseException;
 import elite.lang.Closure;
@@ -199,12 +200,12 @@ class ELiteScriptEngine extends AbstractScriptEngine
 
             case 3: default: {
                 ELContext elctx = getELContext(getContext());
-                IRFunction fn = program.compile(elctx).entry();
+                IRProgram irProg = program.compile(elctx);
                 try {
-                    var cf = IRBytecodeCompiler.compile(fn);
+                    var cf = BytecodeCompiler.compile(irProg);
                     return new BytecodeCompiledScript(this, cf);
                 } catch (CompilationError e) {
-                    return new IRCompiledScript(this, fn);
+                    return new IRCompiledScript(this, irProg.entry());
                 }
             }
             }

@@ -23,8 +23,8 @@ The build produces:
 
 ```bash
 cd target/elite-1.0-bin/elite-1.0
-bin/elite.sh                  # interactive REPL
-bin/elite.sh sample/hello.xel # run a script file
+bin/xel                  # interactive REPL
+bin/xel sample/hello.xel # run a script file
 ```
 
 Or use the JAR directly:
@@ -55,7 +55,7 @@ ELite provides four execution tiers via the `elite.opt.level` system property:
 
 ```bash
 mvn test -Delite.opt.level=3        # run tests at max optimization
-bin/elite.sh -Delite.opt.level=0    # REPL at AST level
+bin/xel -Delite.opt.level=0         # REPL at AST level
 ```
 
 ## 2. Hello, World

@@ -1,0 +1,54 @@
+/**
+ * Cloudway Platform
+ * Copyright (c) 2012-2013 Cloudway Technology, Inc.
+ * All rights reserved.
+ */
+package org.elite.util;
+
+import java.util.Hashtable;
+
+/**
+ * A ClassLoader that can be used to load dynamically generated classes.
+ */
+public class DynamicClassLoader extends ClassLoader
+{
+    private final Hashtable<String, Class<?>> classes = new Hashtable<>();
+
+    private static ClassLoader getContextClassLoader() {
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        if (cl == null)
+            cl = DynamicClassLoader.class.getClassLoader();
+        return cl;
+    }
+
+    public DynamicClassLoader(ClassLoader parent) {
+        super(parent);
+    }
+
+    public DynamicClassLoader() {
+        super(getContextClassLoader());
+    }
+
+    @Override
+    protected Class<?> findClass(String name)
+        throws ClassNotFoundException
+    {
+        Class<?> c = classes.get(name);
+        if (c != null)
+            return c;
+        return super.findClass(name);
+    }
+
+    public Class<?> addClass(String name, byte[] b) {
+        try {
+            // Does class already defined? If so, return the existing class...
+            return super.loadClass(name);
+        } catch (ClassNotFoundException ex) {
+            // fall-through to define new class...
+        }
+
+        Class<?> c = defineClass(name, b, 0, b.length);
+        classes.put(name.replace('/', '.'), c);
+        return c;
+    }
+}

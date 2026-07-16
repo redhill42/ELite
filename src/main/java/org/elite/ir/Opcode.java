@@ -25,17 +25,18 @@ package org.elite.ir;
 public final class Opcode { 
   private Opcode() {}
 
-  // ── Stack ops (0x00-0x0F) ──
+  // ── Stack ops ──
   public static final int NOP               = 0x00;
   public static final int PUSH_CONST        = 0x01;
-  public static final int PUSH_VAR          = 0x02;
-  public static final int PUSH_GLOBAL       = 0x03;
-  public static final int PUSH_TRUE         = 0x04;
-  public static final int PUSH_FALSE        = 0x05;
-  public static final int PUSH_NULL         = 0x06;
-  public static final int POP               = 0x07;
-  public static final int POP_N             = 0x08;
-  public static final int DUP               = 0x09;
+  public static final int PUSH_TRUE         = 0x02;
+  public static final int PUSH_FALSE        = 0x03;
+  public static final int PUSH_NULL         = 0x04;
+  public static final int PUSH_CTX          = 0x05;
+  public static final int PUSH_ENV          = 0x06;
+  public static final int PUSH_VAR          = 0x07;
+  public static final int PUSH_GLOBAL       = 0x08;
+  public static final int POP               = 0x09;
+  public static final int DUP               = 0x0A;
 
   // ── Operators ──
   public static final int ADD               = 0x10;
@@ -47,26 +48,25 @@ public final class Opcode {
   public static final int POW               = 0x16;
   public static final int NEG               = 0x17;
   public static final int CAT               = 0x18;
-  public static final int JOIN              = 0x19;
-  public static final int BITAND            = 0x1A;
-  public static final int BITOR             = 0x1B;
-  public static final int BITNOT            = 0x1C;
-  public static final int XOR               = 0x1D;
-  public static final int SHL               = 0x1E;
-  public static final int SHR               = 0x1F;
-  public static final int USHR              = 0x20;
-  public static final int EQ                = 0x21;
-  public static final int NE                = 0x22;
-  public static final int LT                = 0x23;
-  public static final int LE                = 0x24;
-  public static final int GT                = 0x25;
-  public static final int GE                = 0x26;
-  public static final int IDEQ              = 0x27;
-  public static final int IDNE              = 0x28;
-  public static final int IN                = 0x29;
-  public static final int INSTANCEOF        = 0x2A;
-  public static final int EMPTY             = 0x2B;
-  public static final int NOT               = 0x2C;
+  public static final int BITAND            = 0x19;
+  public static final int BITOR             = 0x1A;
+  public static final int BITNOT            = 0x1B;
+  public static final int XOR               = 0x1C;
+  public static final int SHL               = 0x1D;
+  public static final int SHR               = 0x1E;
+  public static final int USHR              = 0x1F;
+  public static final int EQ                = 0x20;
+  public static final int NE                = 0x21;
+  public static final int LT                = 0x22;
+  public static final int LE                = 0x23;
+  public static final int GT                = 0x24;
+  public static final int GE                = 0x25;
+  public static final int IDEQ              = 0x26;
+  public static final int IDNE              = 0x27;
+  public static final int IN                = 0x28;
+  public static final int INSTANCEOF        = 0x29;
+  public static final int EMPTY             = 0x2A;
+  public static final int NOT               = 0x2B;
 
   // ── Control flow ──
   public static final int JUMP              = 0x30;
@@ -82,37 +82,35 @@ public final class Opcode {
   public static final int ENTER_SCOPE       = 0x3A;
   public static final int LEAVE_SCOPE       = 0x3B;
 
-  // ── Variable, Function and Property ──
+  // ── Variable, Function ──
   public static final int DEFINE_GLOBAL     = 0x40;
   public static final int STORE_GLOBAL      = 0x41;
   public static final int STORE_VAR         = 0x42;
   public static final int STORE_VAR_POP     = 0x43;
   public static final int CLOSURE           = 0x44;
 
+  // ── Direct Call ──
   public static final int INVOKE_DIRECT     = 0x45;
-  public static final int INVOKE_OPERATOR   = 0x46;
-  public static final int INVOKE_TARGET     = 0x47;
-  public static final int INVOKE_DYN        = 0x48;
-  public static final int INVOKE_METHOD     = 0x49;
-  public static final int INVOKE_STATIC     = 0x4A;
-  public static final int INVOKE_EXPANDO    = 0x4B;
 
-  public static final int LOAD_PROPERTY     = 0x4C;
-  public static final int STORE_PROPERTY    = 0x4D;
-  public static final int INVOKE_GETTER     = 0x4E;
-  public static final int INVOKE_SETTER     = 0x4F;
-  public static final int LOAD_FIELD        = 0x50;
-  public static final int STORE_FIELD       = 0x51;
+  // ── Java Interop ──
+  public static final int INVOKE_METHOD     = 0x50;
+  public static final int NEW               = 0x51;
+  public static final int CONSTRUCTOR       = 0x52;
+  public static final int NEW_ARRAY         = 0x53;
+  public static final int LOAD_ARRAY        = 0x54;
+  public static final int STORE_ARRAY       = 0x55;
+  public static final int LOAD_FIELD        = 0x56;
+  public static final int STORE_FIELD       = 0x57;
+  public static final int CHECKCAST         = 0x58;
+  public static final int BOX               = 0x59;
+  public static final int UNBOX             = 0x5A;
 
   // ── Data structure ──
-  public static final int NEW_CONS          = 0x55;
-  public static final int NEW_DELAY_CONS    = 0x56;
-  public static final int NIL               = 0x57;
-  public static final int NEW_MAP           = 0x58;
-  public static final int NEW_TUPLE         = 0x59;
-  public static final int NEW_RANGE         = 0x5A;
-  public static final int NEW_XML           = 0x5B;
-  public static final int DECLARE_NS        = 0x5C;
+  public static final int NEW_CONS          = 0x60;
+  public static final int NEW_DELAY_CONS    = 0x61;
+  public static final int NIL               = 0x62;
+  public static final int NEW_TUPLE         = 0x63;
+  public static final int DECLARE_NS        = 0x64;
 
   // ── Trampoline ──
   /** Evaluate an AST node directly (for features not yet compiled to IR). */
@@ -123,13 +121,14 @@ public final class Opcode {
     return switch (op) {
       case NOP            -> "NOP";
       case PUSH_CONST     -> "PUSH_CONST";
-      case PUSH_VAR       -> "PUSH_VAR";
-      case PUSH_GLOBAL    -> "PUSH_GLOBAL";
       case PUSH_TRUE      -> "PUSH_TRUE";
       case PUSH_FALSE     -> "PUSH_FALSE";
       case PUSH_NULL      -> "PUSH_NULL";
+      case PUSH_CTX       -> "PUSH_CTX";
+      case PUSH_ENV       -> "PUSH_ENV";
+      case PUSH_VAR       -> "PUSH_VAR";
+      case PUSH_GLOBAL    -> "PUSH_GLOBAL";
       case POP            -> "POP";
-      case POP_N          -> "POP_N";
       case DUP            -> "DUP";
 
       case ADD            -> "ADD";
@@ -141,9 +140,9 @@ public final class Opcode {
       case POW            -> "POW";
       case NEG            -> "NEG";
       case CAT            -> "CAT";
-      case JOIN           -> "JOIN";
       case BITAND         -> "BITAND";
       case BITOR          -> "BITOR";
+      case BITNOT         -> "BITNOT";
       case XOR            -> "XOR";
       case SHL            -> "SHL";
       case SHR            -> "SHR";
@@ -182,26 +181,22 @@ public final class Opcode {
       case CLOSURE        -> "CLOSURE";
 
       case INVOKE_DIRECT  -> "INVOKE_DIRECT";
-      case INVOKE_OPERATOR -> "INVOKE_OPERATOR";
-      case INVOKE_TARGET  -> "INVOKE_TARGET";
-      case INVOKE_DYN     -> "INVOKE_DYN";
       case INVOKE_METHOD  -> "INVOKE_METHOD";
-      case INVOKE_STATIC  -> "INVOKE_STATIC";
-      case INVOKE_EXPANDO -> "INVOKE_EXPANDO";
-      case LOAD_PROPERTY  -> "LOAD_PROPERTY";
-      case STORE_PROPERTY -> "STORE_PROPERTY";
-      case INVOKE_GETTER  -> "INVOKE_GETTER";
-      case INVOKE_SETTER  -> "INVOKE_SETTER";
+      case NEW            -> "NEW";
+      case CONSTRUCTOR    -> "CONSTRUCTOR";
+      case NEW_ARRAY      -> "NEW_ARRAY";
+      case LOAD_ARRAY     -> "LOAD_ARRAY";
+      case STORE_ARRAY    -> "STORE_ARRAY";
       case LOAD_FIELD     -> "LOAD_FIELD";
       case STORE_FIELD    -> "STORE_FIELD";
+      case CHECKCAST      ->  "CHECKCAST";
+      case BOX            -> "BOX";
+      case UNBOX          -> "UNBOX";
 
       case NEW_CONS       -> "NEW_CONS";
       case NEW_DELAY_CONS -> "NEW_DELAY_CONS";
       case NIL            -> "NIL";
-      case NEW_MAP        -> "NEW_MAP";
       case NEW_TUPLE      -> "NEW_TUPLE";
-      case NEW_RANGE      -> "NEW_RANGE";
-      case NEW_XML        -> "NEW_XML";
       case DECLARE_NS     -> "DECLARE_NS";
 
       case TRAMPOLINE     -> "TRAMPOLINE";

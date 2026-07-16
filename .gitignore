@@ -5,5 +5,6 @@ target
 *.iml
 *.iws
 *.swp
+*.class
 .DS_Store
 bench/*.class

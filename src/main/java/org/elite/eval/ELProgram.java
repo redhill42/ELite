@@ -16,32 +16,31 @@
 
 package org.elite.eval;
 
-import java.io.Serial;
-import java.util.List;
-import java.util.ArrayList;
-import java.io.Serializable;
-import java.lang.reflect.Method;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.Objects;
-import javax.el.ELContext;
-import javax.el.FunctionMapper;
-import javax.el.VariableMapper;
-import javax.el.ELException;
-
 import elite.lang.Closure;
+import org.elite.eval.closure.FieldClosure;
+import org.elite.eval.closure.LiteralClosure;
+import org.elite.ir.BytecodeCompiler;
+import org.elite.ir.IRBuilder;
+import org.elite.ir.IRCompiledFunction;
+import org.elite.ir.IRProgram;
 import org.elite.parser.ASTDumper;
 import org.elite.parser.ELNode;
 import org.elite.parser.Position;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
-import org.elite.eval.closure.LiteralClosure;
-import org.elite.eval.closure.FieldClosure;
-import org.elite.ir.IRBuilder;
-import org.elite.ir.IRBytecodeCompiler;
-import org.elite.ir.IRCompiledFunction;
-import org.elite.ir.IRProgram;
 import org.elite.util.Utils;
+import javax.el.ELContext;
+import javax.el.ELException;
+import javax.el.FunctionMapper;
+import javax.el.VariableMapper;
+import java.io.Serial;
+import java.io.Serializable;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 public class ELProgram implements Serializable
 {
@@ -192,7 +191,7 @@ public class ELProgram implements Serializable
         // Import modules and classes to populate global context. The global
         // context is used by compilation and execution.
         importExternals(elctx);
-        return IRBytecodeCompiler.compile(compile(elctx).entry());
+        return BytecodeCompiler.compile(compile(elctx));
     }
 
     public String dump() {

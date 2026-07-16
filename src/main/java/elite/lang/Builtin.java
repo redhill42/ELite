@@ -2519,7 +2519,7 @@ public final class Builtin
     }
 
     @Expando(name="<-", scope=GLOBAL)
-    public static Object __in__(ELContext elctx, Object x, Object y) {
+    public static boolean __in__(ELContext elctx, Object x, Object y) {
         return __IN__.eval(elctx, x, y);
     }
 
@@ -2604,7 +2604,7 @@ public final class Builtin
     }
 
     @Expando(name="!", scope=GLOBAL)
-    public static Object __not__(Object x) {
+    public static boolean __not__(Object x) {
         return !TypeCoercion.coerceToBoolean(x);
     }
 
@@ -2618,8 +2618,8 @@ public final class Builtin
         return x || TypeCoercion.coerceToBoolean(y.getValue(elctx));
     }
 
-    public static Object empty(ELContext elctx, Object x) {
-        return __EMPTY__.getValue(elctx, x);
+    public static boolean __empty__(ELContext elctx, Object x) {
+        return __EMPTY__.eval(x);
     }
 
     // Expando Operators ------------------------------

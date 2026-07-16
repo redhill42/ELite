@@ -20,8 +20,8 @@ Java 17 is required. Tests use JUnit 4 (`@Test`/`@Before`).
 
 ```bash
 cd target/elite-1.0-bin/elite-1.0
-bin/elite.sh                  # interactive REPL
-bin/elite.sh sample/hello.xel # run a script file
+bin/xel                  # interactive REPL
+bin/xel sample/hello.xel # run a script file
 ```
 
 ## Architecture

@@ -17,22 +17,29 @@
 package org.elite.eval;
 
 import javax.el.ELContext;
+import javax.el.ValueExpression;
+import javax.xml.XMLConstants;
 
 import elite.lang.Builtin;
 import elite.lang.Closure;
-import elite.lang.Seq;
+import elite.xml.XmlNode;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
-import org.elite.eval.seq.Cons;
-import org.elite.ir.IRClosure;
-import org.elite.ir.IRFunction;
+import org.elite.eval.closure.TypedClosure;
 import org.elite.parser.ELNode;
 import org.elite.parser.Token;
 import org.elite.resolver.MethodResolver;
+import org.w3c.dom.DOMException;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
+import java.io.ByteArrayInputStream;
+import java.io.ObjectInputStream;
 import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -49,21 +56,109 @@ public final class Runtime {
     private Runtime() {
     }
 
-    public static Object loadProperty(ELContext c, Object base, Object key) {
+    public static void defineGlobal(Object value, String name,
+                                    EvaluationContext env) {
+        env.setVariable(name, new LiteralClosure(value));
+    }
+
+    public static Object resolveGlobal(String name, EvaluationContext env) {
+        ELContext elctx = env.getELContext();
+
+        ValueExpression expr = env.resolveVariable(name);
+        if (expr != null) {
+            return expr.getValue(elctx);
+        }
+
+        elctx.setPropertyResolved(false);
+        Object value = elctx.getELResolver().getValue(elctx, null, name);
+        if (elctx.isPropertyResolved()) {
+            return value;
+        }
+
+        MethodClosure method = MethodResolver.getInstance(elctx)
+          .resolveGlobalMethod(env.getFunctionMapper(), name);
+        if (method != null) {
+            return method;
+        }
+
+        throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, name));
+    }
+
+    public static Object storeGlobal(Object value, String name,
+                                     EvaluationContext env) {
+        ELContext elctx = env.getELContext();
+        ValueExpression ve = env.resolveVariable(name);
+        if (ve == null)
+            throw new EvaluationException(elctx,
+                                          _T(EL_UNDEFINED_IDENTIFIER, name));
+        ve.setValue(elctx, value);
+        return value;
+    }
+
+    public static Object loadProperty(Object base, Object key, ELContext c) {
         return ELNode.ACCESS.getValue(c, base, key);
     }
 
-    public static Object storeProperty(ELContext c, Object base, Object key, Object value) {
+    public static Object storeProperty(Object value, Object base, Object key,
+                                       ELContext c) {
         ELNode.ACCESS.setValue(c, base, key, value);
         return value;
     }
 
-    public static Object invoke(ELContext c, Object base, Object key, Object[] args) {
+    public static Object invokeMember(ELContext c, Object base, Object key,
+                                      Object[] args) {
         return ELNode.ACCESS.invoke(c, base, key, ELEngine.getCallArgs(args));
     }
 
+    private static Object resolveTarget(EvaluationContext env, String id) {
+        ELContext elctx = env.getELContext();
 
-    public static Object invokeAssignOp(ELContext elctx, int op, Object lhs, Object rhs) {
+        ValueExpression expr = env.resolveVariable(id);
+        if (expr != null) {
+            return (expr instanceof LiteralClosure c) ? c.getValue(null) :
+                   (expr instanceof Closure) ? expr : expr.getValue(elctx);
+        }
+
+        MethodClosure method = MethodResolver.getInstance(elctx)
+          .resolveGlobalMethod(env.getFunctionMapper(), id);
+        if (method != null)
+            return method;
+
+        elctx.setPropertyResolved(false);
+        return elctx.getELResolver().getValue(elctx, null, id);
+    }
+
+    public static Object invokeTarget(EvaluationContext env, String id,
+                                      Object[] args) {
+        ELContext elctx = env.getELContext();
+        Object target = resolveTarget(env, id);
+        if (target == null)
+            throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
+        return ELEngine.callTarget(elctx, target, args);
+    }
+
+    public static Object invokeOperator(EvaluationContext env, String name,
+                                        Object rhs) {
+        if (rhs != null) {
+            ELContext elctx = env.getELContext();
+            Object result = ELNode.Unary.invokeOperator(elctx, name, rhs);
+            if (result != NO_RESULT)
+                return result;
+        }
+        return invokeTarget(env, name, new Object[]{rhs});
+    }
+
+    public static Object invokeOperator(EvaluationContext env, String name,
+                                        Object lhs, Object rhs) {
+        ELContext elctx = env.getELContext();
+        Object result = ELNode.Binary.invokeOperator(elctx, name, lhs, rhs);
+        if (result != NO_RESULT)
+            return result;
+        return invokeTarget(env, name, new Object[]{lhs, rhs});
+    }
+
+    public static Object invokeAssignOp(ELContext elctx, Integer op,
+                                        Object lhs, Object rhs) {
         String opname = ELNode.opIdentifiers[op];
         Closure[] args = new Closure[1];
         Object result;
@@ -77,7 +172,7 @@ public final class Runtime {
                     return result;
             } else if (!(lhs instanceof Number)) {
                 MethodClosure method = MethodResolver.getInstance(elctx)
-                    .resolveMethod(lhs.getClass(), opname.concat("="));
+                  .resolveMethod(lhs.getClass(), opname.concat("="));
                 if (method != null) {
                     args[0] = new LiteralClosure(rhs);
                     return method.invoke(elctx, lhs, args);
@@ -87,21 +182,228 @@ public final class Runtime {
 
         // do standard evaluation.
         return switch (op) {
-        case Token.ADD -> Builtin.__add__(elctx, lhs, rhs);
-        case Token.SUB -> Builtin.__sub__(elctx, lhs, rhs);
-        case Token.MUL -> Builtin.__mul__(elctx, lhs, rhs);
-        case Token.DIV -> Builtin.__div__(elctx, lhs, rhs);
-        case Token.REM -> Builtin.__rem__(elctx, lhs, rhs);
-        case Token.POW -> Builtin.__pow__(elctx, lhs, rhs);
-        case Token.BITAND -> Builtin.__bitand__(elctx, lhs, rhs);
-        case Token.BITOR -> Builtin.__bitor__(elctx, lhs, rhs);
-        case Token.XOR -> Builtin.__xor__(elctx, lhs, rhs);
-        case Token.CAT -> Builtin.__cat__(elctx, lhs, rhs);
-        case Token.SHL -> Builtin.__shl__(elctx, lhs, rhs);
-        case Token.SHR -> Builtin.__shr__(elctx, lhs, rhs);
-        case Token.USHR -> Builtin.__ushr__(elctx, lhs, rhs);
-        default -> null;
+            case Token.ADD    -> Builtin.__add__(elctx, lhs, rhs);
+            case Token.SUB    -> Builtin.__sub__(elctx, lhs, rhs);
+            case Token.MUL    -> Builtin.__mul__(elctx, lhs, rhs);
+            case Token.DIV    -> Builtin.__div__(elctx, lhs, rhs);
+            case Token.REM    -> Builtin.__rem__(elctx, lhs, rhs);
+            case Token.POW    -> Builtin.__pow__(elctx, lhs, rhs);
+            case Token.BITAND -> Builtin.__bitand__(elctx, lhs, rhs);
+            case Token.BITOR  -> Builtin.__bitor__(elctx, lhs, rhs);
+            case Token.XOR    -> Builtin.__xor__(elctx, lhs, rhs);
+            case Token.CAT    -> Builtin.__cat__(elctx, lhs, rhs);
+            case Token.SHL    -> Builtin.__shl__(elctx, lhs, rhs);
+            case Token.SHR    -> Builtin.__shr__(elctx, lhs, rhs);
+            case Token.USHR   -> Builtin.__ushr__(elctx, lhs, rhs);
+            default -> null;
         };
+    }
+
+    public static Object __add__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__add__(elctx, lhs, rhs);
+    }
+
+    public static Object __sub__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__sub__(elctx, lhs, rhs);
+    }
+
+    public static Object __mul__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__mul__(elctx, lhs, rhs);
+    }
+
+    public static Object __div__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__div__(elctx, lhs, rhs);
+    }
+
+    public static Object __idiv__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__idiv__(elctx, lhs, rhs);
+    }
+
+    public static Object __rem__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__rem__(elctx, lhs, rhs);
+    }
+
+    public static Object __pow__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__pow__(elctx, lhs, rhs);
+    }
+
+    public static Object __neg__(Object lhs, ELContext elctx) {
+        return Builtin.__neg__(elctx, lhs);
+    }
+
+    public static Object __cat__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__cat__(elctx, lhs, rhs);
+    }
+
+    public static Object __bitand__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__bitand__(elctx, lhs, rhs);
+    }
+
+    public static Object __bitor__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__bitor__(elctx, lhs, rhs);
+    }
+
+    public static Object __bitnot__(Object lhs, ELContext elctx) {
+        return Builtin.__bitnot__(elctx, lhs);
+    }
+
+    public static Object __xor__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__xor__(elctx, lhs, rhs);
+    }
+
+    public static Object __shl__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__shl__(elctx, lhs, rhs);
+    }
+
+    public static Object __shr__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__shr__(elctx, lhs, rhs);
+    }
+
+    public static Object __ushr__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__ushr__(elctx, lhs, rhs);
+    }
+
+    public static boolean __eq__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__eq__(elctx, lhs, rhs);
+    }
+
+    public static boolean __ne__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__ne__(elctx, lhs, rhs);
+    }
+
+    public static boolean __lt__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__lt__(elctx, lhs, rhs);
+    }
+
+    public static boolean __le__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__le__(elctx, lhs, rhs);
+    }
+
+    public static boolean __gt__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__gt__(elctx, lhs, rhs);
+    }
+
+    public static boolean __ge__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__ge__(elctx, lhs, rhs);
+    }
+
+    public static boolean __in__(Object lhs, Object rhs, ELContext elctx) {
+        return Builtin.__in__(elctx, lhs, rhs);
+    }
+
+    public static boolean __empty__(Object lhs, ELContext elctx) {
+        return Builtin.__empty__(elctx, lhs);
+    }
+
+    public static boolean __instanceof__(Object value, String typename,
+                                  EvaluationContext env) {
+        return TypedClosure.typecheck(env, typename, value);
+    }
+
+    public static Object newRange(Object begin, Object next, Object end) {
+        if (isChar(begin) && (next == null || isChar(next)) &&
+            (end == null || isChar(end))) {
+            char c_begin = getChar(begin);
+            int c_step = (next == null) ? 1 : getChar(next) - c_begin;
+            if (end == null) {
+                return CharRanges.createUnboundedRange(c_begin, c_step);
+            } else {
+                char c_end = getChar(end);
+                return CharRanges.createCharRange(c_begin, c_end, c_step);
+            }
+        } else {
+            long l_begin = TypeCoercion.coerceToLong(begin);
+            long l_step = (next == null) ? 1
+                                         : TypeCoercion.coerceToLong(next) - l_begin;
+            if (end == null) {
+                return Ranges.createUnboundedRange(l_begin, l_step);
+            } else {
+                long l_end = TypeCoercion.coerceToLong(end);
+                return Ranges.createRange(l_begin, l_end, l_step);
+            }
+        }
+    }
+
+    private static boolean isChar(Object o) {
+        if (o instanceof Character) {
+            return true;
+        } else if (o instanceof String) {
+            return ((String)o).length() == 1;
+        } else {
+            return false;
+        }
+    }
+
+    private static char getChar(Object o) {
+        if (o instanceof Character) {
+            return (Character)o;
+        } else if (o instanceof String) {
+            return ((String)o).charAt(0);
+        } else {
+            throw new AssertionError();
+        }
+    }
+
+    public static Object newXML(EvaluationContext env, Object tag,
+                                Object[] att_names, Object[] att_values,
+                                Object[] children) {
+        ELContext elctx = env.getELContext();
+
+        try {
+            Document doc = XmlNode.getContextDocument(elctx);
+            Element elem;
+            String name = TypeCoercion.coerceToString(tag);
+            String prefix, uri;
+            int colon;
+
+            // handle element namespace
+            colon = name.indexOf(':');
+            if (colon == -1)
+                prefix = XMLConstants.DEFAULT_NS_PREFIX;
+            else
+                prefix = name.substring(0, colon);
+            uri = env.getURI(prefix);
+            if (uri == null)
+                elem = doc.createElement(name);
+            else
+                elem = doc.createElementNS(uri, name);
+
+            // set element attributes
+            if (att_names != null) {
+                for (int i = 0; i < att_names.length; i++) {
+                    String key = TypeCoercion.coerceToString(att_names[i]);
+                    String value = TypeCoercion.coerceToString(att_values[i]);
+                    if (key.equals("xmlns") || key.startsWith("xmlns:")) {
+                        uri = XMLConstants.XMLNS_ATTRIBUTE_NS_URI;
+                    } else {
+                        colon = key.indexOf(':');
+                        if (colon == -1)
+                            prefix = XMLConstants.DEFAULT_NS_PREFIX;
+                        else
+                            prefix = key.substring(0, colon);
+                        uri = env.getURI(prefix);
+                    }
+                    if (uri == null)
+                        elem.setAttribute(key, value);
+                    else
+                        elem.setAttributeNS(uri, key, value);
+                }
+            }
+
+            // recursively create child nodes
+            if (children != null) {
+                for (Object child : children) {
+                    org.w3c.dom.Node node = XmlNode.coerceToNode(elctx, child);
+                    if (node != null) {
+                        elem.appendChild(node);
+                    }
+                }
+            }
+
+            return XmlNode.valueOf(elem);
+        } catch (DOMException ex) {
+            throw new EvaluationException(elctx, ex);
+        }
     }
 
     public static Object newArray(ELContext elctx, Object type, Object[] dims, Object[] init) {
@@ -162,26 +464,6 @@ public final class Runtime {
         }
     }
 
-    private static boolean isChar(Object o) {
-        if (o instanceof Character) {
-            return true;
-        } else if (o instanceof String) {
-            return ((String)o).length() == 1;
-        } else {
-            return false;
-        }
-    }
-
-    private static char getChar(Object o) {
-        if (o instanceof Character) {
-            return (Character)o;
-        } else if (o instanceof String) {
-            return ((String)o).charAt(0);
-        } else {
-            throw new AssertionError();
-        }
-    }
-
     public static java.util.Iterator<?> getIterator(Object coll) {
         if (coll instanceof Iterable<?>)
             return ((Iterable<?>)coll).iterator();
@@ -221,275 +503,14 @@ public final class Runtime {
         }
     }
 
-    //---------------------------------------------------------------------------//
-
-    // ── ELContext-dependent helpers ──
-
-    public static Object pushGlobal(ELContext c, String name) {
-        javax.el.ValueExpression ve = c.getVariableMapper().resolveVariable(name);
-        if (ve != null)
-            return ve.getValue(c);
-        // Check FunctionMapper for global/imported functions
-        MethodResolver mr = MethodResolver.getInstance(c);
-        MethodClosure mc = mr.resolveGlobalMethod(c.getFunctionMapper(), name);
-        if (mc != null)
-            return mc;
-        c.setPropertyResolved(false);
-        Object r = c.getELResolver().getValue(c, null, name);
-        if (c.isPropertyResolved())
-            return r;
-        throw new RuntimeException(_T(EL_UNDEFINED_IDENTIFIER, name));
-    }
-
-    public static Object defineGlobal(ELContext c, String name, Object value) {
-        c.getVariableMapper().setVariable(name, new LiteralClosure(value));
-        return value;
-    }
-
-    public static Object trampoline(ELContext c, Object nodeObj) {
-        ELNode node = (ELNode) nodeObj;
-        return node.getValue(new EvaluationContext(c));
-    }
-
-    /** Evaluate a trampoline node by pool index (for bytecode — LDC can't embed ELNode). */
-    public static Object trampolineById(ELContext c, int poolIdx) {
-        return trampoline(c, funcPool.get()[poolIdx]);
-    }
-
-    /** Wrap a throwable value as RuntimeException for ATHROW bytecode. */
-    public static RuntimeException wrapThrow(Object cause) {
-        if (cause instanceof RuntimeException re) return re;
-        if (cause instanceof Throwable t)
-            return new UserException(null, t);
-        if (cause instanceof String s)
-            return new UserException(null, s);
-        return new UserException(null);
-    }
-
-    public static Object invokeDyn(ELContext c, Object target, Object[] args) {
-        Closure[] closures = ELEngine.getCallArgs(args);
-        return ELEngine.invokeTarget(c, target, closures);
-    }
-
-    // ── Collections ──
-
-    public static Object newCons(Object head, Object tail) {
-        if (!(tail instanceof Seq))
-            tail = TypeCoercion.coerceToSeq(tail);
-        return new Cons(head, (Seq)tail);
-    }
-
-    public static Object newMap(Object[] kvs) {
-        java.util.LinkedHashMap<Object, Object> m = new java.util.LinkedHashMap<>();
-        for (int i = 0; i < kvs.length; i += 2)
-            m.put(kvs[i], kvs[i + 1]);
-        return m;
-    }
-
-    public static Object newTuple(Object[] elems) {
-        return elems;
-    }
-
-    public static Object newRange(Object begin, Object next, Object end) {
-        if (isChar(begin) && (next == null || isChar(next)) && (end == null || isChar(end))) {
-            char c_begin = getChar(begin);
-            int c_step = (next == null) ? 1 : getChar(next) - c_begin;
-            if (end == null) {
-                return CharRanges.createUnboundedRange(c_begin, c_step);
-            } else {
-                char c_end = getChar(end);
-                return CharRanges.createCharRange(c_begin, c_end, c_step);
-            }
-        } else {
-            long l_begin = TypeCoercion.coerceToLong(begin);
-            long l_step = (next == null) ? 1 : TypeCoercion.coerceToLong(next) - l_begin;
-            if (end == null) {
-                return Ranges.createUnboundedRange(l_begin, l_step);
-            } else {
-                long l_end = TypeCoercion.coerceToLong(end);
-                return Ranges.createRange(l_begin, l_end, l_step);
-            }
-        }
-    }
-
-    // ── Field access ──
-
-    public static Object loadField(Object base, String name) {
-        if (base == null)
-            throw new NullPointerException(_T(IR_FIELD_READ_FROM_NULL, name));
+    public static Object decodeObject(String src) {
         try {
-            Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
-            java.lang.reflect.Field f = cls.getField(name);
-            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
-            return f.get(target);
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException(_T(IR_FIELD_NOT_FOUND, name, base.getClass().getName()));
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, name), e);
+            byte[] decoded = Base64.getDecoder().decode(src);
+            ByteArrayInputStream bais = new ByteArrayInputStream(decoded);
+            ObjectInputStream ois = new ObjectInputStream(bais);
+            return ois.readObject();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-    }
-
-    public static Object storeFieldBC(Object value, Object base, String name) {
-        if (base == null)
-            throw new NullPointerException(_T(IR_FIELD_WRITE_TO_NULL, name));
-        try {
-            Class<?> cls = (base instanceof Class<?> c) ? c : base.getClass();
-            java.lang.reflect.Field f = cls.getField(name);
-            Object target = java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? null : base;
-            f.set(target, coerceArg(value, f.getType()));
-            return value;
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException(_T(IR_FIELD_NOT_FOUND, name, base.getClass().getName()));
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(_T(IR_FIELD_ACCESS_ERROR, name), e);
-        }
-    }
-
-    private static Object coerceArg(Object arg, Class<?> paramType) {
-        if (arg == null || paramType.isInstance(arg)) return arg;
-        if (arg instanceof Number n) {
-            if (paramType == int.class || paramType == Integer.class) return n.intValue();
-            if (paramType == long.class || paramType == Long.class) return n.longValue();
-            if (paramType == double.class || paramType == Double.class) return n.doubleValue();
-            if (paramType == float.class || paramType == Float.class) return n.floatValue();
-            if (paramType == short.class || paramType == Short.class) return n.shortValue();
-            if (paramType == byte.class || paramType == Byte.class) return n.byteValue();
-        }
-        return arg;
-    }
-
-    // ── Closures ──
-
-    private static final ThreadLocal<Object[]> funcPool =
-        ThreadLocal.withInitial(() -> new Object[0]);
-
-    /** Register constant pool for closure creation via funcIdx. */
-    public static void setFuncPool(Object[] pool) { funcPool.set(pool); }
-    public static void clearFuncPool() { funcPool.remove(); }
-
-    // ── Provided arg count for default parameter handling ──
-    // Uses ThreadLocal to avoid cross-thread interference in concurrent execution.
-    // Per JLS §17, each thread sees its own initial value (0).
-
-    private static final ThreadLocal<int[]> providedArgCount =
-        ThreadLocal.withInitial(() -> new int[1]);
-
-    /** Set the actual number of arguments passed (before default filling). */
-    public static void setProvidedArgCount(int n) { providedArgCount.get()[0] = n; }
-    /** Get the actual number of arguments passed. */
-    public static int getProvidedArgCount() { return providedArgCount.get()[0]; }
-    /** Clear the provided arg count (call after bytecode execution). */
-    public static void clearProvidedArgCount() { providedArgCount.remove(); }
-
-    public static IRClosure createClosure(ELContext elctx, IRFunction fn, Object[] captured) {
-        // Capture evalContext so captured variables resolve in the
-        // original enclosing scope. Try the ELContext first (bytecode
-        // mode stores it there), then fall back to ThreadLocal.
-        EvaluationContext env = (EvaluationContext)elctx.getContext(EvaluationContext.class);
-        return new IRClosure(env, fn);
-    }
-
-    /** Create closure by pool index (for bytecode — LDC can't embed IRFunction). */
-    public static IRClosure createClosureById(ELContext elctx, int funcIdx, Object[] captured) {
-        IRFunction fn = (IRFunction) funcPool.get()[funcIdx];
-        return createClosure(elctx, fn, captured);
-    }
-
-    // ── Dynamic ops ──
-
-    public static Object dynAdd(ELContext elctx, Object x, Object y) {
-        return Builtin.__add__(elctx, x, y);
-    }
-
-    public static Object dynSub(ELContext elctx, Object x, Object y) {
-        return Builtin.__sub__(elctx, x, y);
-    }
-
-    public static Object dynMul(ELContext elctx, Object x, Object y) {
-        return Builtin.__mul__(elctx, x, y);
-    }
-
-    public static Object dynDiv(ELContext elctx, Object x, Object y) {
-        return Builtin.__div__(elctx, x, y);
-    }
-
-    public static Object dynRem(ELContext elctx, Object x, Object y) {
-        return Builtin.__rem__(elctx, x, y);
-    }
-
-    public static Object dynPow(ELContext elctx, Object x, Object y) {
-        return Builtin.__pow__(elctx, x, y);
-    }
-
-    public static Object dynCat(ELContext elctx, Object x, Object y) {
-        return Builtin.__cat__(elctx, x, y);
-    }
-
-    private static final ELNode.NEG __NEG__ = new ELNode.NEG(-1, null);
-
-    public static Object dynNeg(ELContext elctx, Object x) {
-        return __NEG__.getValue(elctx, x);
-    }
-
-    public static Object dynShl(ELContext elctx, Object x, Object y) {
-        return Builtin.__shl__(elctx, x, y);
-    }
-
-    public static Object dynShr(ELContext elctx, Object x, Object y) {
-        return Builtin.__shr__(elctx, x, y);
-    }
-
-    public static Object dynUShr(ELContext elctx, Object x, Object y) {
-        return Builtin.__ushr__(elctx, x, y);
-    }
-
-    public static Object dynEq(ELContext elctx, Object x, Object y) {
-        return Builtin.__eq__(elctx, x, y);
-    }
-
-    public static Object dynNe(ELContext elctx, Object x, Object y) {
-        return Builtin.__ne__(elctx, x, y);
-    }
-
-    public static Object dynLt(ELContext elctx, Object x, Object y) {
-        return Builtin.__lt__(elctx, x, y);
-    }
-
-    public static Object dynLe(ELContext elctx, Object x, Object y) {
-        return Builtin.__le__(elctx, x, y);
-    }
-
-    public static Object dynGt(ELContext elctx, Object x, Object y) {
-        return Builtin.__gt__(elctx, x, y);
-    }
-
-    public static Object dynGe(ELContext elctx, Object x, Object y) {
-        return Builtin.__ge__(elctx, x, y);
-    }
-
-    public static Object dynBitAnd(ELContext elctx, Object x, Object y) {
-        return Builtin.__bitand__(elctx, x, y);
-    }
-
-    public static Object dynBitOr(ELContext elctx, Object x, Object y) {
-        return Builtin.__bitor__(elctx, x, y);
-    }
-
-    public static Object dynXor(ELContext elctx, Object x, Object y) {
-        return Builtin.__xor__(elctx, x, y);
-    }
-
-    public static Object dynBitNot(ELContext elctx, Object x) {
-        return Builtin.__bitnot__(elctx, x);
-    }
-
-    private static final ELNode.EMPTY __EMPTY__ = new ELNode.EMPTY(-1, null);
-    public static Object dynEmpty(ELContext elctx, Object x) {
-        return __EMPTY__.getValue(elctx, x);
-    }
-
-    private static final ELNode.IN __IN__ = new ELNode.IN(-1, null, null, false);
-    public static Object dynIn(ELContext elctx, Object coll, Object elem) {
-        return __IN__.eval(elctx, elem, coll);
     }
 }

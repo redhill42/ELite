@@ -107,6 +107,10 @@ public class IRFunction {
     return constantPool;
   }
 
+  public Object getConstant(int index) {
+    return constantPool[index];
+  }
+
   public DebugInfo debugInfo() {
     return debugInfo;
   }

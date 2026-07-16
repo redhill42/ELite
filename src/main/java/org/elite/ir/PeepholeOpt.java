@@ -22,7 +22,6 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import javax.el.ELContext;
-import java.util.LinkedHashMap;
 import static org.elite.ir.Opcode.*;
 
 final class PeepholeOpt {
@@ -49,7 +48,7 @@ final class PeepholeOpt {
     switch (opcode) {
     case POP: {
       switch (lastOpcode) {
-      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL,
+      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL, PUSH_ENV, PUSH_CTX,
            PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL:
         // PUSH_CONST, POP -> NOP
         code.reset(last);
@@ -67,15 +66,6 @@ final class PeepholeOpt {
         // PUSH_VAR, PUSH_VAR, NEW_CONS, POP -> NOP
         code.reset(last);
         popN(code, 2);
-        return true;
-      case NEW_MAP:
-        // PUSH key, PUSH value, ..., NEW_MAP(n), POP -> NOP
-        code.reset(last);
-        popN(code, IRFormat.payload(lastInst) * 2);
-        return true;
-      case NEW_RANGE:
-        code.reset(last);
-        popN(code, 3);
         return true;
       }
       break;
@@ -358,9 +348,6 @@ final class PeepholeOpt {
           return true;
         case NEW_DELAY_CONS:
           code.set(last, packBool(cls.isAssignableFrom(DelayCons.class)));
-          return true;
-        case NEW_MAP:
-          code.set(last, packBool(cls.isAssignableFrom(LinkedHashMap.class)));
           return true;
         case CLOSURE:
           code.set(last, packBool(cls.isAssignableFrom(Closure.class)));
