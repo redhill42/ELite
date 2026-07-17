@@ -21,7 +21,6 @@ import org.objectweb.asm.Type;
 import javax.el.ELContext;
 import javax.el.ValueExpression;
 import java.io.ByteArrayOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Constructor;
@@ -45,28 +44,25 @@ import static org.objectweb.asm.Opcodes.ACC_SUPER;
 
 public class BytecodeCompiler {
 
-  private static final DynamicClassLoader CLASS_LOADER = new DynamicClassLoader();
   private static final AtomicInteger CLASS_COUNTER = new AtomicInteger();
 
-  private static final boolean DEBUG = Boolean.getBoolean("elite.debug");
+  private final String className;
+  private final BytecodeConsumer consumer;
 
-  private String className;
-
-  private IRFunction fn;
-  private ClassAssembly cc;
+  private IRFunction     fn;
+  private ClassAssembly  cc;
   private MethodAssembly mc;
 
   private final Map<IRFunction, String> methodNames = new HashMap<>();
   private final Map<IRFunction, String> closureNames = new HashMap<>();
-
-  private final Map<Object, Integer> constantMap = new HashMap<>();
+  private final Map<Object, Integer>    constantMap = new HashMap<>();
 
   private Label[] blockLabels;
 
   // Pre-allocated slot indices.
-  private static final int S_ENV = 0;
-  private static final int S_ARGS = 1;
-  private static final int S_ELCTX = 2;
+  private static final int S_ENV   = 0;
+  private static final int S_ARGS  = 1;
+  private static final int S_CTX   = 2;
 
   // Function local slots allocated starts here. Temporary slots can be
   // allocated after SLOT_OFFSET + fn.maxLocals().
@@ -76,31 +72,22 @@ public class BytecodeCompiler {
 
   public static IRCompiledFunction compile(IRProgram program) {
     String name = "ELiteProgram$" + CLASS_COUNTER.incrementAndGet();
-    byte[] bc = new BytecodeCompiler().compileProgram(name, program);
-
-    try {
-      if (DEBUG) {
-        // Dump bc for debug.
-        try (FileOutputStream out
-               = new FileOutputStream("target/" + name + ".class")) {
-          out.write(bc);
-        }
-      }
-
-      Class<?> c = CLASS_LOADER.addClass(name, bc);
-      Method m = c.getMethod("execute$main", EvaluationContext.class,
-                             Object[].class);
-      return new IRCompiledFunction(m, bc);
-    } catch (Exception e) {
-      throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
-    }
+    var consumer = new JITBytecodeConsumer();
+    new BytecodeCompiler(name, consumer).compileProgram(program);
+    return consumer.complete();
   }
 
-  private BytecodeCompiler() {}
+  public static void compile(IRProgram program, String name,
+                             BytecodeConsumer consumer) {
+    new BytecodeCompiler(name, consumer).compileProgram(program);
+  }
 
-  private byte[] compileProgram(String name, IRProgram program) {
-    this.className = name;
+  private BytecodeCompiler(String className, BytecodeConsumer consumer) {
+    this.className = className;
+    this.consumer = consumer;
+  }
 
+  private void compileProgram(IRProgram program) {
     // Assign method names.
     methodNames.put(program.entry(), "execute$main");
     int idx = 0;
@@ -133,12 +120,14 @@ public class BytecodeCompiler {
       }
     }
 
+    // Compile final persistent constant pool.
     compileConstantPool();
 
     // Compile main method.
     compileMain();
 
-    return cc.end();
+    // Produce the final compiled program.
+    consumer.acceptProgram(className, cc.end());
   }
 
   private static boolean isJavaIdentifier(String name) {
@@ -175,7 +164,7 @@ public class BytecodeCompiler {
     // Store ELContext to local slot.
     mc.ALOAD(S_ENV)
       .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
-      .ASTORE(S_ELCTX);
+      .ASTORE(S_CTX);
 
     // Copy arguments to local slots.
     if (fn.paramCount() != 0) {
@@ -230,16 +219,16 @@ public class BytecodeCompiler {
     }
 
     case PUSH_TRUE ->
-      mc.TRUE().BOX(Boolean.TYPE);
+      mc.GETSTATIC(Boolean.class, "TRUE", Boolean.class);
     case PUSH_FALSE ->
-      mc.FALSE().BOX(Boolean.TYPE);
+      mc.GETSTATIC(Boolean.class, "FALSE", Boolean.class);
     case PUSH_NULL ->
       mc.ACONST_NULL();
 
     case PUSH_ENV ->
       mc.ALOAD(S_ENV);
     case PUSH_CTX ->
-      mc.ALOAD(S_ELCTX);
+      mc.ALOAD(S_CTX);
 
     case PUSH_VAR ->
       mc.ALOAD(v.varIndex() + SLOT_OFFSET);
@@ -373,7 +362,7 @@ public class BytecodeCompiler {
         .IFEQ(b2)
         .NEW(UserException.class)
         .DUP()
-        .ALOAD(S_ELCTX)
+        .ALOAD(S_CTX)
         .ALOAD(tmpSlot)
         .CHECKCAST(Throwable.class)
         .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
@@ -385,7 +374,7 @@ public class BytecodeCompiler {
         .IFEQ(b3)
         .NEW(UserException.class)
         .DUP()
-        .ALOAD(S_ELCTX)
+        .ALOAD(S_CTX)
         .ALOAD(tmpSlot)
         .CHECKCAST(String.class)
         .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
@@ -394,7 +383,7 @@ public class BytecodeCompiler {
       .label(b3)
         .NEW(UserException.class)
         .DUP()
-        .ALOAD(S_ELCTX)
+        .ALOAD(S_CTX)
         .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
                        ELContext.class)
         .ATHROW();
@@ -729,18 +718,7 @@ public class BytecodeCompiler {
       .ARETURN()
       .end();
 
-    byte[] bc = ccw.end();
-    CLASS_LOADER.addClass(name, bc);
-
-    if (DEBUG) {
-      try (FileOutputStream out
-             = new FileOutputStream("target/" + name + ".class")) {
-        out.write(bc);
-      } catch (Exception ex) {
-        throw new RuntimeException(ex);
-      }
-    }
-
+    consumer.acceptClosure(name, ccw.end());
     return name;
   }
 
@@ -814,7 +792,7 @@ public class BytecodeCompiler {
   //----------------------------------------------------------------------------
 
   private void emitBinary(InstructionView v, String name, Class<?> returnType) {
-    mc.ALOAD(S_ELCTX);
+    mc.ALOAD(S_CTX);
     mc.INVOKESTATIC(Runtime.class, name, returnType,
                     Object.class, Object.class, ELContext.class);
     if (returnType == Boolean.TYPE)
@@ -822,7 +800,7 @@ public class BytecodeCompiler {
   }
 
   private void emitUnary(InstructionView v, String name, Class<?> returnType) {
-    mc.ALOAD(S_ELCTX);
+    mc.ALOAD(S_CTX);
     mc.INVOKESTATIC(Runtime.class, name, returnType,
                     Object.class, ELContext.class);
     if (returnType == Boolean.TYPE)
@@ -840,6 +818,34 @@ public class BytecodeCompiler {
       v.advance();
     } else {
       mc.BOX(Boolean.TYPE);
+    }
+  }
+
+  //----------------------------------------------------------------------------
+
+  private static class JITBytecodeConsumer implements BytecodeConsumer {
+    private static final DynamicClassLoader LOADER = new DynamicClassLoader();
+    private Class<?> programClass;
+
+    @Override
+    public void acceptProgram(String className, byte[] bytecode) {
+      programClass = LOADER.addClass(className, bytecode);
+    }
+
+    @Override
+    public void acceptClosure(String className, byte[] bytecode) {
+      LOADER.addClass(className, bytecode);
+    }
+
+    IRCompiledFunction complete() {
+      try {
+        Method m = programClass.getMethod("execute$main",
+                                          EvaluationContext.class,
+                                          Object[].class);
+        return new IRCompiledFunction(m, null);
+      } catch (Exception e) {
+        throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
+      }
     }
   }
 }

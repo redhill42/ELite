@@ -1,0 +1,5 @@
+#!/bin/sh
+
+BINDIR=`dirname $0`
+. "$BINDIR/setenv"
+$JAVA_RUN -ea -cp $CP org.elite.shell.XelcMain "$@"
