@@ -98,7 +98,7 @@ final class IRPrinter {
       formatConstPool(sb, constants, v.poolIndex());
     }
 
-    case Opcode.NEW_TUPLE ->
+    case Opcode.TRY, Opcode.NEW_TUPLE ->
       sb.append(" ").append(v.count());
     }
 

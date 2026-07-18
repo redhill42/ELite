@@ -3380,8 +3380,11 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildConst(Object value) {
-    int idx = putConstant(value);
-    current.emitPushConst(idx);
+    if (value == null)
+      current.emitPushNull();
+    else {
+      current.emitPushConst(putConstant(value));
+    }
   }
 
   private void buildConst(Boolean value) {
