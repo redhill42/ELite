@@ -1,5 +1,6 @@
 package org.elite.ir;
 
+import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -27,6 +28,7 @@ public class IRCompiledFunction {
   }
 
   public Object execute(ELContext elctx, Object[] args) {
+    ELContext previousContext = ELEngine.setCurrentELContext(elctx);
     try {
       EvaluationContext env = new EvaluationContext(elctx);
       return method.invoke(null, env, args);
@@ -39,6 +41,8 @@ public class IRCompiledFunction {
       throw new RuntimeException(cause);
     } catch (IllegalAccessException e) {
       throw new RuntimeException(e);
+    } finally {
+      ELEngine.setCurrentELContext(previousContext);
     }
   }
 

@@ -935,6 +935,7 @@ public class BytecodeCompiler {
     // public static void main(String[] args) {
     //   VariableMapper vm = new StandaloneVariableMapper(args);
     //   ELContext elctx = ELEngine.createELContxt(vm);
+    //   ELEngine.setCurrentELContext(elctx);
     //   EvaluationContext env = new EvaluationContext(elctx);
     //   execute$main(env, new Object[0]);
     // }
@@ -949,6 +950,10 @@ public class BytecodeCompiler {
                      String[].class)
       .INVOKESTATIC(ELEngine.class, "createELContext", ELContext.class,
                     VariableMapper.class)
+      .DUP()
+      .INVOKESTATIC(ELEngine.class, "setCurrentELContext", ELContext.class,
+                    ELContext.class)
+      .POP()
       .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                      ELContext.class)
       .ICONST_0()
