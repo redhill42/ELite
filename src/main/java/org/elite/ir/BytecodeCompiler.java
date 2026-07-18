@@ -6,9 +6,9 @@ import elite.lang.Symbol;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.Runtime;
+import org.elite.eval.StandaloneVariableMapper;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.UserException;
-import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.TypedClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
@@ -20,7 +20,7 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import javax.el.ELContext;
-import javax.el.ValueExpression;
+import javax.el.VariableMapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
@@ -534,7 +534,7 @@ public class BytecodeCompiler {
 
     case SYNCHRONIZED -> {
       int tmp = SLOT_OFFSET + fn.maxLocals();
-      int lockSlot = tmp++, bodySlot = tmp++, resultSlot = tmp++;
+      int lockSlot = tmp++, bodySlot = tmp++, resultSlot = tmp;
       Label tryStart = new Label(), tryEnd = new Label();
       Label catchAll = new Label(), done = new Label();
 
@@ -933,26 +933,24 @@ public class BytecodeCompiler {
 
   private void compileMain() {
     // public static void main(String[] args) {
-    //   ELContext elctx = ELEngine.createELContxt();
+    //   VariableMapper vm = new StandaloneVariableMapper(args);
+    //   ELContext elctx = ELEngine.createELContxt(vm);
     //   EvaluationContext env = new EvaluationContext(elctx);
-    //   env.setVariable("ARGV", new LiteralClosure(args));
-    //   execute(env, new Object[0]);
+    //   execute$main(env, new Object[0]);
     // }
     cc.newMethod(ACC_PUBLIC | ACC_STATIC, "main", "([Ljava/lang/String;)V",
                  null)
       .NEW(EvaluationContext.class)
       .DUP()
-      .INVOKESTATIC(ELEngine.class, "createELContext", ELContext.class)
-      .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                     ELContext.class)
-      .DUP()
-      .LDC("ARGV")
-      .NEW(LiteralClosure.class)
+      .NEW(StandaloneVariableMapper.class)
       .DUP()
       .ALOAD(0)
-      .INVOKESPECIAL(LiteralClosure.class, "<init>", Void.TYPE, Object.class)
-      .INVOKEVIRTUAL(EvaluationContext.class, "setVariable", Void.TYPE,
-                     String.class, ValueExpression.class)
+      .INVOKESPECIAL(StandaloneVariableMapper.class, "<init>", Void.TYPE,
+                     String[].class)
+      .INVOKESTATIC(ELEngine.class, "createELContext", ELContext.class,
+                    VariableMapper.class)
+      .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                     ELContext.class)
       .ICONST_0()
       .ANEWARRAY(Object.class)
       .INVOKESTATIC(className, "execute$main", Object.class,

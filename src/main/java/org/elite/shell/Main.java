@@ -311,11 +311,7 @@ public class Main
     private ScriptEngine createScriptEngine(String[] args) {
         ScriptEngineManager manager = new ScriptEngineManager();
         ScriptEngine engine = manager.getEngineByName("ELite");
-
         engine.put(ScriptEngine.ARGV, args);
-        engine.put("env", System.getenv());
-        engine.put("endl", System.getProperty("line.separator"));
-
         return engine;
     }
 

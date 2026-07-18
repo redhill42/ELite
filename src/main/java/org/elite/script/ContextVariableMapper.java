@@ -39,9 +39,11 @@ class ContextVariableMapper extends VariableMapperImpl
     ContextVariableMapper(ScriptContext context) {
         this.context = context;
 
+        super.setVariable("ENV", new LiteralClosure(System.getenv()));
         super.setVariable("stdin", new StdIn());
         super.setVariable("stdout", new StdOut());
         super.setVariable("stderr", new StdErr());
+        super.setVariable("endl", new LiteralClosure(System.lineSeparator()));
     }
 
     public ValueExpression resolveVariable(String name) {

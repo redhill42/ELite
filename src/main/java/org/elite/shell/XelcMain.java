@@ -124,6 +124,7 @@ public final class XelcMain {
       Parser parser = new Parser(elctx, source);
       parser.setFileName(sourceFile);
       ELProgram prog = parser.parse();
+      prog.setStandalone(true);
       prog.setFilename(sourceFile);
 
       BytecodeConsumer consumer = new AOTBytecodeConsumer(outputDir);
