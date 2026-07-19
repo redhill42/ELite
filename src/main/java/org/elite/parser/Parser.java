@@ -3818,7 +3818,7 @@ public class Parser extends Scanner
         case IMPORT: {
             int p = scan();
             if (scan(STATIC)) {
-                prog.addLibrary(parseClassLiteral(true));
+                prog.getImports().addLibrary(parseClassLiteral(true));
             } else if (scan(MODULE)) {
                 String prefix = null;
                 if (token == IDENT) {
@@ -3829,10 +3829,10 @@ public class Parser extends Scanner
                         prefix = null;
                     }
                 }
-                prog.addModule(parseClassLiteral(false), prefix);
+                prog.getImports().addModule(parseClassLiteral(false), prefix);
             } else {
                 String name = parseClassLiteral(true);
-                prog.addImport(name);
+                prog.getImports().addImport(name);
                 if (!name.endsWith(".*")) {
                     // add a data class
                     String id = name.substring(name.lastIndexOf('.')+1);

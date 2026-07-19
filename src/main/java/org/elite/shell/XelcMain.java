@@ -128,7 +128,8 @@ public final class XelcMain {
       prog.setFilename(sourceFile);
 
       BytecodeConsumer consumer = new AOTBytecodeConsumer(outputDir);
-      BytecodeCompiler.compile(prog.compile(elctx), className, consumer);
+      BytecodeCompiler.compile(prog.compile(elctx), className, consumer,
+                               prog.getImports());
     } catch (Exception e) {
       System.err.println("xelc: " + e.getMessage());
       e.printStackTrace();

@@ -5,6 +5,7 @@ import elite.lang.Seq;
 import elite.lang.Symbol;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.ExternalImports;
 import org.elite.eval.Runtime;
 import org.elite.eval.StandaloneVariableMapper;
 import org.elite.eval.TypeCoercion;
@@ -74,13 +75,14 @@ public class BytecodeCompiler {
   public static IRCompiledFunction compile(IRProgram program) {
     String name = "ELiteProgram$" + CLASS_COUNTER.incrementAndGet();
     var consumer = new JITBytecodeConsumer();
-    new BytecodeCompiler(name, consumer).compileProgram(program);
+    new BytecodeCompiler(name, consumer).compileProgram(program, null);
     return consumer.complete();
   }
 
   public static void compile(IRProgram program, String name,
-                             BytecodeConsumer consumer) {
-    new BytecodeCompiler(name, consumer).compileProgram(program);
+                             BytecodeConsumer consumer,
+                             ExternalImports imports) {
+    new BytecodeCompiler(name, consumer).compileProgram(program, imports);
   }
 
   private BytecodeCompiler(String className, BytecodeConsumer consumer) {
@@ -88,7 +90,7 @@ public class BytecodeCompiler {
     this.consumer = consumer;
   }
 
-  private void compileProgram(IRProgram program) {
+  private void compileProgram(IRProgram program, ExternalImports imports) {
     // Assign method names.
     methodNames.put(program.entry(), "execute$main");
     int idx = 0;
@@ -125,7 +127,8 @@ public class BytecodeCompiler {
     compileConstantPool();
 
     // Compile main method.
-    compileMain();
+    if (imports != null)
+      compileMain(imports);
 
     // Produce the final compiled program.
     consumer.acceptProgram(className, cc.end());
@@ -947,31 +950,72 @@ public class BytecodeCompiler {
       .end();
   }
 
-  private void compileMain() {
+  private void compileMain(ExternalImports imports) {
     // public static void main(String[] args) {
-    //   VariableMapper vm = new StandaloneVariableMapper(args);
-    //   ELContext elctx = ELEngine.createELContxt(vm);
-    //   ELEngine.setCurrentELContext(elctx);
-    //   EvaluationContext env = new EvaluationContext(elctx);
-    //   execute$main(env, new Object[0]);
+    //     VariableMapper vm = new StandaloneVariableMapper(args);
+    //     ELContext elctx = ELEngine.createELContxt(vm);
+    //     elctx = new ExternalImports()
+    //         .addModules()
+    //         .addFunctions()
+    //         .addPackages()
+    //         .importExternal(elctx)
+    //     ELEngine.setCurrentELContext(elctx);
+    //     EvaluationContext env = new EvaluationContext(elctx);
+    //     execute$main(env, new Object[0]);
     // }
-    cc.newMethod(ACC_PUBLIC | ACC_STATIC, "main", "([Ljava/lang/String;)V",
-                 null)
-      .NEW(EvaluationContext.class)
-      .DUP()
-      .NEW(StandaloneVariableMapper.class)
+
+    mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "main", "([Ljava/lang/String;)V",
+                      null);
+
+    // Placeholder for final EvaluationContext.
+    mc.NEW(EvaluationContext.class)
+      .DUP();
+
+    // Import externals.
+    mc.NEW_INSTANCE(ExternalImports.class);
+    for (ExternalImports.Module mod : imports.getModules()) {
+      mc.LDC(mod.getName());
+      if (mod.getPrefix() != null)
+        mc.LDC(mod.getPrefix());
+      else
+        mc.ACONST_NULL();
+      mc.INVOKEVIRTUAL(ExternalImports.class, "addModule",
+                       ExternalImports.class, String.class, String.class);
+    }
+    for (String lib : imports.getLibraries()) {
+      mc.LDC(lib)
+        .INVOKEVIRTUAL(ExternalImports.class, "addLibrary",
+                       ExternalImports.class, String.class);
+    }
+    for (String imp : imports.getImports()) {
+      mc.LDC(imp)
+        .INVOKEVIRTUAL(ExternalImports.class, "addImport",
+                       ExternalImports.class, String.class);
+    }
+
+    // Create ELContext using StandaloneVariableMapper.
+    mc.NEW(StandaloneVariableMapper.class)
       .DUP()
       .ALOAD(0)
       .INVOKESPECIAL(StandaloneVariableMapper.class, "<init>", Void.TYPE,
                      String[].class)
       .INVOKESTATIC(ELEngine.class, "createELContext", ELContext.class,
                     VariableMapper.class)
+
+      // Import externals into newly created ELContext.
+      .INVOKEVIRTUAL(ExternalImports.class, "importExternals",
+                     ELContext.class, ELContext.class)
       .DUP()
       .INVOKESTATIC(ELEngine.class, "setCurrentELContext", ELContext.class,
                     ELContext.class)
       .POP()
+
+      // Create EvaluationContext using newly created ELContext.
       .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                      ELContext.class)
+
+      // Invoke the main entry using newly crated EvaluationContext and an empty
+      // argument list.
       .ICONST_0()
       .ANEWARRAY(Object.class)
       .INVOKESTATIC(className, "execute$main", Object.class,
