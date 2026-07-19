@@ -2807,16 +2807,42 @@ public class IRBuilder extends ELNode.Visitor {
 
     Class<?> cls = resolveClassAtCompileTime(className);
     if (cls != null) {
-      current.emitPushCtx();
-      buildConst(cls);
-      buildTuple(node.args);
-      emitInvokeMethod(ELEngine.class, "newInstance", ELContext.class,
-                       Class.class, Object[].class);
+      Constructor<?> cons = resolveConstructor(cls, node.args.length);
+      if (cons != null) {
+        Class<?>[] types = cons.getParameterTypes();
+        current.emitNew(putConstant(cls));
+        for (int i = 0; i < node.args.length; i++) {
+          build(node.args[i]);
+          if (types[i].isPrimitive())
+            current.emitUnbox(putConstant(types[i]));
+          else if (types[i] != Object.class)
+            current.emitCheckCast(putConstant(types[i]));
+        }
+        current.emitConstructor(putConstant(cons));
+      } else {
+        current.emitPushCtx();
+        buildConst(cls);
+        buildTuple(node.args);
+        emitInvokeMethod(ELEngine.class, "newInstance", ELContext.class,
+                         Class.class, Object[].class);
+      }
       return;
     }
 
     // Otherwise, fallback to trampoline.
     buildTrampoline(node);
+  }
+
+  private Constructor<?> resolveConstructor(Class<?> cls, int nargs) {
+    Constructor<?> cons = null;
+    for (Constructor<?> c : cls.getConstructors()) {
+      if (c.getParameterCount() == nargs && !c.isVarArgs()) {
+        if (cons != null)
+          return null;
+        cons = c;
+      }
+    }
+    return cons;
   }
 
   public void visit(ELNode.CONST node) {

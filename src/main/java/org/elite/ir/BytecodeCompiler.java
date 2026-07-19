@@ -203,7 +203,23 @@ public class BytecodeCompiler {
           value instanceof Short   || value instanceof Character ||
           value instanceof Integer || value instanceof Long ||
           value instanceof Float   || value instanceof Double) {
-        mc.BOX(value);
+        InstructionView next = peekNext(v);
+        if (next != null  && next.opcode() == UNBOX &&
+            value.getClass() == TypeCoercion.getBoxedType(
+              (Class<?>)fn.getConstant(next.poolIndex()))) {
+          if (value instanceof Boolean)
+            mc.PUSH((Boolean)value ?  1 : 0);
+          else if (value instanceof Byte || value instanceof Short ||
+                   value instanceof Integer)
+            mc.PUSH(((Number)value).intValue());
+          else if (value instanceof Character)
+            mc.PUSH((Character)value);
+          else
+            mc.LDC(value);
+          v.advance();
+        } else {
+          mc.BOX(value);
+        }
       } else if (value instanceof String) {
         mc.LDC(value);
       } else if (value instanceof Class) {
@@ -280,9 +296,9 @@ public class BytecodeCompiler {
     case EMPTY  -> emitUnary (v, "__empty__",  Boolean.TYPE);
 
     case IDEQ, IDNE -> {
-      InstructionView next = v.peek();
-      if (next.inBounds() && fn.blockOfPc(next.offset()) == -1 &&
-          (next.opcode() == JUMP_IF_TRUE || next.opcode() == JUMP_IF_FALSE)) {
+      InstructionView next = peekNext(v);
+      if (next != null && (next.opcode() == JUMP_IF_TRUE ||
+                           next.opcode() == JUMP_IF_FALSE)) {
         if ((v.opcode() == IDEQ) ^ (next.opcode() == JUMP_IF_FALSE))
           mc.IF_ACMPEQ(blockLabels[next.jumpTarget()]);
         else
@@ -317,9 +333,9 @@ public class BytecodeCompiler {
     }
 
     case NOT -> {
-      InstructionView next = v.peek();
-      if ((next.inBounds() && fn.blockOfPc(next.offset()) == -1) &&
-          (next.opcode() == JUMP_IF_TRUE || next.opcode() == JUMP_IF_FALSE)) {
+      InstructionView next = peekNext(v);
+      if (next != null && (next.opcode() == JUMP_IF_TRUE ||
+                           next.opcode() == JUMP_IF_FALSE)) {
         mc.UNBOX(Boolean.TYPE);
         if (next.opcode() == JUMP_IF_TRUE)
           mc.IFEQ(blockLabels[next.jumpTarget()]);
@@ -967,6 +983,13 @@ public class BytecodeCompiler {
 
   //----------------------------------------------------------------------------
 
+  private InstructionView peekNext(InstructionView v) {
+    InstructionView next = v.peek();
+    if (next.inBounds() && fn.blockOfPc(next.offset()) == -1)
+      return next;
+    return null;
+  }
+
   private void emitBinary(InstructionView v, String name, Class<?> returnType) {
     mc.ALOAD(S_CTX);
     mc.INVOKESTATIC(Runtime.class, name, returnType,
@@ -984,9 +1007,9 @@ public class BytecodeCompiler {
   }
 
   private void emitJumpAfterCond(InstructionView v) {
-    InstructionView next = v.peek();
-    if ((next.inBounds() && fn.blockOfPc(next.offset()) == -1) &&
-        (next.opcode() == JUMP_IF_TRUE || next.opcode() == JUMP_IF_FALSE)) {
+    InstructionView next = peekNext(v);
+    if (next != null && (next.opcode() == JUMP_IF_TRUE ||
+                         next.opcode() == JUMP_IF_FALSE)) {
       if (next.opcode() == JUMP_IF_TRUE)
         mc.IFNE(blockLabels[next.jumpTarget()]);
       else
