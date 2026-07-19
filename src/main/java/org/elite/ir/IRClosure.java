@@ -19,6 +19,7 @@ package org.elite.ir;
 import elite.lang.Closure;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.closure.CallableClosure;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.EnvExtent;
 import org.elite.resolver.MethodResolver;
@@ -35,7 +36,7 @@ import java.util.Arrays;
  * {@code .call()}, and other Closure methods are discoverable by
  * {@link MethodResolver}.
  */
-public class IRClosure extends Closure {
+public class IRClosure extends Closure implements CallableClosure {
   final IRFunction function;
 
   /**
@@ -130,7 +131,7 @@ public class IRClosure extends Closure {
    * @param args  the procedure arguments
    * @return result of procedure execution
    */
-  @SuppressWarnings("unused")
+  @Override
   public Object call_with(ELContext elctx, Object scope, Closure... args) {
     if (scope instanceof ClosureObject) {
       scope = ((ClosureObject)scope).get_owner();

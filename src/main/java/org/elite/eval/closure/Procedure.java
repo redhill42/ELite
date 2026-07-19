@@ -23,7 +23,7 @@ import elite.lang.Closure;
 import org.elite.eval.EvaluationContext;
 import org.elite.parser.ELNode;
 
-public class Procedure extends EvalClosure
+public class Procedure extends EvalClosure implements CallableClosure
 {
     public Procedure(EvaluationContext context, ELNode node) {
         super(context, node);
@@ -59,6 +59,7 @@ public class Procedure extends EvalClosure
      * @param args the procedure arguments
      * @return result of procedure execution
      */
+    @Override
     public Object call_with(ELContext elctx, Object scope, Closure... args) {
         if (scope instanceof ClosureObject) {
             scope = ((ClosureObject)scope).get_owner();

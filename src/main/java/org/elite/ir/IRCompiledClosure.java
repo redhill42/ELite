@@ -3,6 +3,7 @@ package org.elite.ir;
 import elite.lang.Closure;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.closure.CallableClosure;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.EnvExtent;
 import javax.el.ELContext;
@@ -11,7 +12,8 @@ import javax.el.PropertyNotWritableException;
 import javax.el.VariableMapper;
 import java.util.Arrays;
 
-public abstract class IRCompiledClosure extends Closure {
+public abstract class IRCompiledClosure extends Closure
+                                        implements CallableClosure {
   private transient EvaluationContext context;
 
   public IRCompiledClosure(EvaluationContext context) {
@@ -99,7 +101,7 @@ public abstract class IRCompiledClosure extends Closure {
    * @param args  the procedure arguments
    * @return result of procedure execution
    */
-  @SuppressWarnings("unused")
+  @Override
   public Object call_with(ELContext elctx, Object scope, Closure... args) {
     if (scope instanceof ClosureObject) {
       scope = ((ClosureObject)scope).get_owner();
