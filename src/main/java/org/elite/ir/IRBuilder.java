@@ -486,7 +486,7 @@ public class IRBuilder extends ELNode.Visitor {
     IRFunction fn = sym.func;
     ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
 
-    if (!isInlineOpportunity(sym)) {
+    if (!isEligibleToInline(sym)) {
       int nvars = lambda.vars.length;
       int classId = putConstant(Object.class);
 
@@ -571,7 +571,7 @@ public class IRBuilder extends ELNode.Visitor {
   private void buildDirectCall(SymbolTable.Symbol sym, Slot... args) {
     IRFunction fn = sym.func;
 
-    if (!isInlineOpportunity(sym)) {
+    if (!isEligibleToInline(sym)) {
       buildTuple(args);
       current.emitInvokeDirect(putConstant(fn));
       return;
@@ -668,12 +668,32 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitLeaveScope();
   }
 
-  private boolean isInlineOpportunity(SymbolTable.Symbol sym) {
+  private boolean isEligibleToInline(SymbolTable.Symbol sym) {
     if (ELProgram.OPT_LEVEL == 0)
       return false;
     if (((ELNode.LAMBDA)sym.def.expr).varargs)
       return false; // FIXME: handle varargs
-    if (sym.func.isDeclaration() || sym.func.code().length > 50)
+    if (sym.func.isDeclaration())
+      return false;
+
+    // Check @inline metadata.
+    boolean forceInline = false;
+    if (sym.def.meta != null) {
+      for (ELNode.METADATA meta : sym.def.meta.metadata) {
+        if (meta.type.equals("inline")) {
+          if (meta.keys.length == 0) {
+            forceInline = true;
+          } else if (meta.keys.length == 1 && meta.keys[0].equals("value") &&
+                     meta.values[0] instanceof ELNode.BOOLEANVAL b) {
+            if (b.value)
+              forceInline = true;
+            else
+              return false;
+          }
+        }
+      }
+    }
+    if (!forceInline && sym.func.code().length > 50)
       return false;
 
     // Check self recursion function.
