@@ -106,6 +106,15 @@ public class BytecodeCompiler {
     this.cc = new ClassAssembly(ACC_PUBLIC | ACC_FINAL | ACC_SUPER, className,
                                 Object.class, null);
 
+    if (program.entry().debugInfo() != null &&
+        program.entry().debugInfo().file() != null) {
+      String filename = program.entry().debugInfo().file();
+      int sep = filename.lastIndexOf('/');
+      if (sep != -1)
+        filename = filename.substring(sep + 1);
+      cc.getImpl().visitSource(filename, null);
+    }
+
     // Default constructor.
     cc.newMethod(ACC_PRIVATE, "<init>", "()V", null)
       .THIS()
@@ -128,7 +137,7 @@ public class BytecodeCompiler {
 
     // Compile main method.
     if (imports != null)
-      compileMain(imports);
+      compileMain(imports, program.entry().debugInfo());
 
     // Produce the final compiled program.
     consumer.acceptProgram(className, cc.end());
@@ -183,11 +192,24 @@ public class BytecodeCompiler {
     }
 
     // Compile IR into Java bytecode.
+    DebugInfo debug = fn.debugInfo();
+    int currentLine = 0;
+
     InstructionView v = new InstructionView(fn.code(), 0);
     for (; v.inBounds(); v.advance()) {
       int blockId = fn.blockOfPc(v.offset());
       if (blockId != -1)
         mc.label(blockLabels[blockId]);
+
+      // Emit line number if changed from previous instruction.
+      if (debug != null) {
+        int line = debug.lineForPC(v.offset());
+        if (line != 0 && line != currentLine) {
+          currentLine = line;
+          mc.getImpl().visitLineNumber(line, mc.label());
+        }
+      }
+
       compileInst(v);
     }
 
@@ -873,6 +895,14 @@ public class BytecodeCompiler {
     ClassAssembly ccc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
                                           IRCompiledClosure.class, null);
 
+    if (closure.debugInfo() != null && closure.debugInfo().file() != null) {
+      String filename = closure.debugInfo().file();
+      int sep = filename.lastIndexOf('/');
+      if (sep != -1)
+        filename = filename.substring(sep + 1);
+      ccc.getImpl().visitSource(filename, null);
+    }
+
     // Constructor.
     MethodAssembly cmc = ccc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
                                        new Class[]{EvaluationContext.class},
@@ -975,7 +1005,7 @@ public class BytecodeCompiler {
       .end();
   }
 
-  private void compileMain(ExternalImports imports) {
+  private void compileMain(ExternalImports imports, DebugInfo debug) {
     // public static void main(String[] args) {
     //     VariableMapper vm = new StandaloneVariableMapper(args);
     //     ELContext elctx = ELEngine.createELContxt(vm);
@@ -991,6 +1021,12 @@ public class BytecodeCompiler {
 
     mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "main", "([Ljava/lang/String;)V",
                       null);
+
+    if (debug != null) {
+      int line = debug.lineForPC(0);
+      if (line != 0)
+        mc.getImpl().visitLineNumber(line, mc.label());
+    }
 
     // Placeholder for final EvaluationContext.
     mc.NEW(EvaluationContext.class)
