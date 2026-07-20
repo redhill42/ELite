@@ -113,7 +113,7 @@ public class ClassDefinition extends AnnotatedClosure
 
             // Resolve base class and interfaces
             if (cdef.base != null) {
-                basecls = resolveClass(ctx, cdef.base);
+                basecls = resolveClass(ctx, cdef.getClassName());
             }
             if (cdef.ifaces != null) {
                 interfaces = new Class[cdef.ifaces.length];

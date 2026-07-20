@@ -16,6 +16,7 @@
 
 package org.elite.ir;
 
+import elite.lang.Symbol;
 import org.elite.parser.ELNode;
 
 import java.lang.reflect.Method;
@@ -119,6 +120,10 @@ final class IRPrinter {
       return "\"" + s + "\"";
     if (c instanceof Number || c instanceof Boolean)
       return c.toString();
+    if (c instanceof Symbol)
+      return c.toString();
+    if (c instanceof java.util.regex.Pattern)
+      return '/' + c.toString() + '/';
     if (c instanceof IRFunction fn)
       return "<" + fn.name() + ">";
     if (c instanceof Class<?> cls)

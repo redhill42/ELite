@@ -563,12 +563,17 @@ public class Parser extends Scanner
             if (idValue.equals("is")) {
                 int p = scan();
                 if (token == NOT && idValue != null) { // "is not"
-                    return new ELNode.INSTANCEOF(scan(), e, parseClassLiteral(false), true);
+                    return new ELNode.INSTANCEOF(
+                      scan(), e, class_literal(p, parseClassLiteral(false)),
+                      true);
                 } else {
-                    return new ELNode.INSTANCEOF(p, e, parseClassLiteral(false), false);
+                    return new ELNode.INSTANCEOF(
+                      p, e, class_literal(p, parseClassLiteral(false)), false);
                 }
             } else {
-                return new ELNode.INSTANCEOF(scan(), e, parseClassLiteral(false), false);
+                int p = scan();
+                return new ELNode.INSTANCEOF(
+                  p, e, class_literal(p, parseClassLiteral(false)), false);
             }
 
           case IN:
@@ -581,7 +586,8 @@ public class Parser extends Scanner
 
               int p = scan();
               if (scan(INSTANCEOF)) {
-                  return new ELNode.INSTANCEOF(p, e, parseClassLiteral(false), true);
+                  return new ELNode.INSTANCEOF(
+                    p, e, class_literal(p, parseClassLiteral(false)), true);
               } else if (scan(IN)) {
                   return new ELNode.IN(p, e, parseTerm(), true);
               } else if (token == EOI) {
@@ -835,8 +841,7 @@ public class Parser extends Scanner
      */
     private ELNode parseNewExpression(int p) {
         String clsName = parseClassLiteral(false);
-        ELNode cls = clsName.indexOf('.') != -1 ? new ELNode.STRINGVAL(pos, clsName)
-                                                : new ELNode.IDENT(pos, clsName);
+        ELNode cls = class_literal(p, clsName);
 
         if (token == LPAREN) {
             String[] keys;
@@ -882,7 +887,8 @@ public class Parser extends Scanner
                     ELNode.DEFINE initproc = new ELNode.DEFINE(
                         p, clstag, null, null,
                         new ELNode.LAMBDA(p, filename, EMPTY_DEFS,
-                            new ELNode.APPLY(p, new ELNode.IDENT(p, "super"), args, keys)
+                            new ELNode.APPLY(p, new ELNode.IDENT(p, "super"),
+                                             args, keys)
                         ));
 
                     ELNode.DEFINE[] tmp = new ELNode.DEFINE[body.length+1];
@@ -891,7 +897,7 @@ public class Parser extends Scanner
                     body = tmp;
                 }
 
-                return new ELNode.NEWOBJ(p, filename, clsName, clstag, body);
+                return new ELNode.NEWOBJ(p, filename, cls, clstag, body);
             }
         }
 
@@ -920,7 +926,7 @@ public class Parser extends Scanner
             String clstag = clstag();
             ELNode.DEFINE[] body = parseClassBody();
             close_scope();
-            return new ELNode.NEWOBJ(p, filename, clsName, clstag, body);
+            return new ELNode.NEWOBJ(p, filename, cls, clstag, body);
         }
     }
 
@@ -1359,6 +1365,14 @@ public class Parser extends Scanner
             }
         }
         return buf.toString();
+    }
+
+    private ELNode class_literal(int pos, String name) {
+        if (name == null)
+            return null;
+        if (name.indexOf('.') != -1)
+            return new ELNode.STRINGVAL(pos, name);
+        return new ELNode.IDENT(pos, name);
     }
 
     private String parseTypeNameOpt() {
@@ -2281,7 +2295,8 @@ public class Parser extends Scanner
             body = EMPTY_DEFS;
         }
 
-        cdef.expr = new ELNode.CLASSDEF(p, filename, id, base, ifaces, vars, body);
+        cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_literal(p, base),
+                                        ifaces, vars, body);
         return cdef;
     }
 
@@ -2459,7 +2474,9 @@ public class Parser extends Scanner
                 body = EMPTY_DEFS;
             }
 
-            cdef.expr = new ELNode.CLASSDEF(p, filename, id, base, null, to_def_a(vars), body);
+            cdef.expr = new ELNode.CLASSDEF(p, filename, id,
+                                            class_literal(p, base), null,
+                                            to_def_a(vars), body);
             defs.add(cdef);
         } while (scan(BAR));
 
@@ -2489,7 +2506,9 @@ public class Parser extends Scanner
         }
 
         cdef = new_symbol(p, base, null, adjoin(meta, Modifier.ABSTRACT));
-        cdef.expr = new ELNode.CLASSDEF(p, filename, base, basecls, baseifs, null, basebody);
+        cdef.expr = new ELNode.CLASSDEF(p, filename, base,
+                                        class_literal(p, basecls), baseifs,
+                                        null, basebody);
         defs.add(0, cdef);
 
         return defs;

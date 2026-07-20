@@ -6,7 +6,9 @@ import elite.lang.Symbol;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.ExternalImports;
+import org.elite.eval.Frame;
 import org.elite.eval.Runtime;
+import org.elite.eval.StackTrace;
 import org.elite.eval.StandaloneVariableMapper;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.UserException;
@@ -1069,6 +1071,15 @@ public class BytecodeCompiler {
       .DUP()
       .INVOKESTATIC(ELEngine.class, "setCurrentELContext", ELContext.class,
                     ELContext.class)
+      .POP()
+
+      // Create a pseudo frame to avoid NPE.
+      .DUP()
+      .LDC("")
+      .ACONST_NULL()
+      .ICONST_0()
+      .INVOKESTATIC(StackTrace.class, "addFrame", Frame.class,
+                    ELContext.class, String.class, String.class, int.class)
       .POP()
 
       // Create EvaluationContext using newly created ELContext.

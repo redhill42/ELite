@@ -132,11 +132,23 @@ public final class SymbolTableBuilder {
     }
 
     public void visit(ELNode.CLASSDEF e) {
-      // Class definition is not supported yet.
-      table.enterScope("class", e);
+      SymbolTable.Scope previous = enclosingScope;
+      table.enterScope("class", e, true);
+      enclosingScope = table.currentScope();
+
       super.visit(e);
-      e.accept(trampolineFixup);
+      if (e.vars != null)
+        for (ELNode.DEFINE v : e.vars)
+          v.symbol.captured = true;
+      if (e.cvars != null)
+        for (ELNode.DEFINE cv : e.cvars)
+          cv.symbol.captured = true;
+      if (e.ivars != null)
+        for (ELNode.DEFINE iv : e.ivars)
+          iv.symbol.captured = true;
+
       table.leaveScope();
+      enclosingScope = previous;
     }
 
     public void visit(ELNode.NEWOBJ e) {
@@ -328,8 +340,7 @@ public final class SymbolTableBuilder {
       // Resolve forward referenced functions and class definitions.
       for (Undefined undef : undefined) {
         SymbolTable.Symbol sym = undef.scope.lookup(undef.var.id);
-        if (sym != null && (sym.def.expr instanceof ELNode.LAMBDA ||
-                            sym.def.expr instanceof ELNode.CLASSDEF)) {
+        if (sym != null) {
           undef.var.symbol = sym;
           if (!(undef.call && sym.def.expr instanceof ELNode.LAMBDA) &&
               sym.scope.enclosingScope() != undef.scope.enclosingScope())

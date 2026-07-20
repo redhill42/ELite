@@ -2,6 +2,7 @@ package org.elite.ir;
 
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.StackTrace;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Label;
@@ -29,6 +30,7 @@ public class IRCompiledFunction {
 
   public Object execute(ELContext elctx, Object[] args) {
     ELContext previousContext = ELEngine.setCurrentELContext(elctx);
+    StackTrace.addFrame(elctx, "", null, 0); // add a pseudo frame
     try {
       EvaluationContext env = new EvaluationContext(elctx);
       return method.invoke(null, env, args);
@@ -42,6 +44,7 @@ public class IRCompiledFunction {
     } catch (IllegalAccessException e) {
       throw new RuntimeException(e);
     } finally {
+      StackTrace.removeFrame(elctx);
       ELEngine.setCurrentELContext(previousContext);
     }
   }

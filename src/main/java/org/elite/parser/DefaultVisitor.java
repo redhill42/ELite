@@ -47,6 +47,7 @@ public class DefaultVisitor extends ELNode.Visitor
     }
 
     public void visit(ELNode.CLASSDEF e) {
+        scan(e.base);
         scan(e.vars);
         scan(e.cvars);
         scan(e.ivars);
@@ -98,7 +99,6 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.LE e)       { visitBinary(e); }
     public void visit(ELNode.GT e)       { visitBinary(e); }
     public void visit(ELNode.GE e)       { visitBinary(e); }
-    public void visit(ELNode.INSTANCEOF e) { visitUnary(e); }
     public void visit(ELNode.IN e)       { visitBinary(e); }
     public void visit(ELNode.CAT e)      { visitBinary(e); }
     public void visit(ELNode.ADD e)      { visitBinary(e); }
@@ -116,6 +116,11 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.EMPTY e)    { visitUnary(e); }
     public void visit(ELNode.EXPR e)     { visitUnary(e); }
 
+    public void visit(ELNode.INSTANCEOF e) {
+        scan(e.type);
+        visitUnary(e);
+    }
+
     public void visit(ELNode.PREFIX e)   {
         scan(e.oper);
         visitUnary(e);
@@ -123,7 +128,7 @@ public class DefaultVisitor extends ELNode.Visitor
 
     public void visit(ELNode.INFIX e) {
         scan(e.oper);
-        visitUnary(e);
+        visitBinary(e);
     }
 
     public void visit(ELNode.COMPOUND e) {

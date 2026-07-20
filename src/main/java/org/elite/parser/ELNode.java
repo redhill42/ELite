@@ -949,7 +949,7 @@ public abstract class ELNode implements Serializable
     public static class CLASSDEF extends ELNode {
         public final String   file;     // file name that defined this class
         public final String   id;       // class id
-        public final String   base;     // base class id or java interface name
+        public final ELNode   base;     // base class id or java class name
         public final String[] ifaces;   // java interface names
         public final DEFINE[] vars;     // initial variables
         public final DEFINE[] cvars;    // class variables
@@ -958,7 +958,7 @@ public abstract class ELNode implements Serializable
         public CLASSDEF(int      pos,
                         String   file,
                         String   id,
-                        String   base,
+                        ELNode   base,
                         String[] ifaces,
                         DEFINE[] vars,
                         DEFINE[] cvars,
@@ -966,7 +966,7 @@ public abstract class ELNode implements Serializable
         {
             super(Token.CLASSDEF, pos);
             this.file = file;
-            this.id = id;
+            this.id   = id;
             this.base = base;
             this.ifaces = ifaces;
             this.vars = vars;
@@ -977,7 +977,7 @@ public abstract class ELNode implements Serializable
         public CLASSDEF(int      pos,
                         String   file,
                         String   id,
-                        String   base,
+                        ELNode   base,
                         String[] ifaces,
                         DEFINE[] vars,
                         DEFINE[] body)
@@ -989,8 +989,8 @@ public abstract class ELNode implements Serializable
             this.ifaces = ifaces;
             this.vars = vars;
 
-            List<DEFINE> cvs = new ArrayList<DEFINE>();
-            List<DEFINE> ivs = new ArrayList<DEFINE>();
+            List<DEFINE> cvs = new ArrayList<>();
+            List<DEFINE> ivs = new ArrayList<>();
             for (DEFINE def : body) {
                 (isStatic(def) ? cvs : ivs).add(def);
             }
@@ -999,15 +999,22 @@ public abstract class ELNode implements Serializable
             this.ivars = ivs.toArray(new DEFINE[ivs.size()]);
         }
 
+        public String getClassName() {
+            return base == null ? null :
+                   base instanceof STRINGVAL ? ((STRINGVAL)base).value
+                                             : ((IDENT)base).id;
+        }
+
         private static boolean isStatic(ELNode.DEFINE def) {
-            return (def.meta != null) && (def.meta.modifiers & Modifier.STATIC) != 0;
+            return (def.meta != null) &&
+                   (def.meta.modifiers & Modifier.STATIC) != 0;
         }
 
         public Object getValue(EvaluationContext context) {
             return new ClassDefinition(context, this);
         }
 
-        public Class getType(EvaluationContext context) {
+        public Class<?> getType(EvaluationContext context) {
             return ClassDefinition.class;
         }
 
@@ -2763,26 +2770,32 @@ public abstract class ELNode implements Serializable
      * INSTANCEOF expression.
      */
     public static class INSTANCEOF extends Unary {
-        public final String type;
+        public final ELNode type;
         public final boolean negative;
 
         public int precedence() {
             return ORD_PREC;
         }
 
-        public INSTANCEOF(int pos, ELNode right, String type, boolean negative) {
+        public INSTANCEOF(int pos, ELNode right, ELNode type, boolean negative) {
             super(Token.INSTANCEOF, pos, right);
             this.type = type;
             this.negative = negative;
         }
 
+        public String getTypeName() {
+            return type instanceof STRINGVAL ? ((STRINGVAL)type).value
+                                             : ((IDENT)type).id;
+        }
+
         public Object getValue(EvaluationContext context) {
             Object value = right.getValue(context);
-            boolean check = TypedClosure.typecheck(context, type, value);
+            boolean check = TypedClosure.typecheck(context, getTypeName(),
+                                                   value);
             return check ^ negative;
         }
 
-        public Class getType(EvaluationContext context) {
+        public Class<?> getType(EvaluationContext context) {
             return Boolean.class;
         }
 
@@ -5812,10 +5825,8 @@ public abstract class ELNode implements Serializable
         }
 
         public String getClassName() {
-            if (base instanceof STRINGVAL)
-                return ((STRINGVAL)base).value;
-            else
-                return ((IDENT)base).id;
+            return base instanceof STRINGVAL ? ((STRINGVAL)base).value
+                                             : ((IDENT)base).id;
         }
 
         public Object getValue(EvaluationContext context) {
@@ -5888,7 +5899,8 @@ public abstract class ELNode implements Serializable
             Object cls = ELEngine.resolveDataClass(context, getClassName());
             if (cls instanceof ClassDefinition) {
                 if (value instanceof ClosureObject) {
-                    return ((ClassDefinition)cls).matches(context, (ClosureObject)value, args, keys);
+                    return ((ClassDefinition)cls)
+                      .matches(context, (ClosureObject)value, args, keys);
                 } else {
                     return false;
                 }
@@ -5897,7 +5909,8 @@ public abstract class ELNode implements Serializable
             }
         }
 
-        private boolean matches(EvaluationContext context, DataClass cls, Object obj) {
+        private boolean matches(EvaluationContext context, DataClass cls,
+                                Object obj) {
             ELContext elctx = context.getELContext();
             int argc = args.length;
 
@@ -5944,11 +5957,13 @@ public abstract class ELNode implements Serializable
      * New object expression.
      */
     public static class NEWOBJ extends CLASSDEF {
-        public NEWOBJ(int pos, String file, String base, String tag, DEFINE[] body) {
+        public NEWOBJ(int pos, String file, ELNode base, String tag,
+                      DEFINE[] body) {
             super(pos, file, tag, base, null, null, body);
         }
 
-        public NEWOBJ(int pos, String file, String base, String tag, DEFINE[] cvars, DEFINE[] ivars) {
+        public NEWOBJ(int pos, String file, ELNode base, String tag,
+                      DEFINE[] cvars, DEFINE[] ivars) {
             super(pos, file, tag, base, null, null, cvars, ivars);
         }
 
@@ -5957,10 +5972,10 @@ public abstract class ELNode implements Serializable
             return cdef._new(context.getELContext());
         }
 
-        public Class getType(EvaluationContext context) {
-            Object cls = ELEngine.resolveClass(context, base);
+        public Class<?> getType(EvaluationContext context) {
+            Object cls = ELEngine.resolveClass(context, getClassName());
             if (cls instanceof Class) {
-                return (Class)cls;
+                return (Class<?>)cls;
             } else {
                 return Object.class;
             }

@@ -40,6 +40,7 @@ import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 
 import javax.el.ELContext;
+import javax.el.ELResolver;
 import javax.xml.XMLConstants;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
@@ -293,8 +294,20 @@ public class IRBuilder extends ELNode.Visitor {
           // TCO: build args and save to local slots.
           ELNode.LAMBDA lambda = (ELNode.LAMBDA)ident.symbol.def.expr;
           ELNode[] args = getCallArgs(node.pos, lambda, node.args, node.keys);
-          int argc = buildCallArgs(lambda, args);
-          for (int i = argc; --i >= 0; ) {
+          int nvars = lambda.vars.length;
+          if (lambda.varargs)
+            nvars--;
+
+          // Build argument list, exclude varargs that must build to tuple.
+          for (int i = 0; i < nvars; i++)
+            build(args[i]);
+
+          // Build tuple for var arg list.
+          if (lambda.varargs)
+            buildTuple(args, nvars, args.length - nvars);
+
+          // Copy tail call arguments.
+          for (int i = lambda.vars.length; --i >= 0; ) {
             current.emitStoreVar(i);
             current.emitPop();
           }
@@ -311,7 +324,7 @@ public class IRBuilder extends ELNode.Visitor {
           return;
         }
 
-        if (ident.symbol.def.expr instanceof ELNode.CLASSDEF) {
+        if (ident.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
           // The target is a CLASSDEF, so the defined object must be
           // a ClassDefinition, just invoke the "invoke" method on target.
 
@@ -323,16 +336,29 @@ public class IRBuilder extends ELNode.Visitor {
           // Then invoke the ClassDefinition.invoke method to create
           // new instance of user defined class.
           current.emitPushCtx();
-          buildTuple(node.args);
+          buildNewArgs(node.pos, cdef, node.args, node.keys);
           emitInvokeMethod(ClassDefinition.class, "invoke",
                            ELContext.class, Object[].class);
           return;
+        }
+
+        if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
+          Class<?> cls = resolveClassAtCompileTime(c.name);
+          if (cls == null)
+            throw reportError(c.pos, "class not found: " + c.name);
+          if (buildNew(cls, node.args, null))
+            return;
         }
       }
 
       if (ident.symbol == null) {
         // Resolve builtin function.
         if (tryBuildGlobalMethodCall(ident.id, node.args))
+          return;
+
+        // Resolve java class.
+        Class<?> cls = resolveClassAtCompileTime(ident.id);
+        if (cls != null && buildNew(cls, node.args, null))
           return;
 
         // Resolve target at runtime if the given id is not a local var
@@ -399,12 +425,18 @@ public class IRBuilder extends ELNode.Visitor {
    */
   private ELNode[] getCallArgs(int pos, ELNode.LAMBDA lambda, ELNode[] args,
                                String[] keys) {
+    return getCallArgs(pos, lambda.name, lambda.vars, args, keys,
+                       lambda.varargs);
+  }
+
+  private ELNode[] getCallArgs(int pos, String name, ELNode.DEFINE[] vars,
+                               ELNode[] args, String[] keys, boolean varargs) {
     int argc = args.length;
-    int nvars = lambda.vars.length;
+    int nvars = vars.length;
     ELNode[] xargs = null;
 
     boolean hasDefaults = false;
-    for (ELNode.DEFINE var : lambda.vars) {
+    for (ELNode.DEFINE var : vars) {
       if (var.expr != null) {
         hasDefaults = true;
         break;
@@ -414,8 +446,8 @@ public class IRBuilder extends ELNode.Visitor {
     if (argc < nvars && hasDefaults) {
       // pad with default values
       xargs = new ELNode[nvars];
-    } else if (lambda.varargs ? (argc < nvars - 1) : (argc != nvars)) {
-      throw reportError(pos, _T(EL_FN_BAD_ARG_COUNT, lambda.name, nvars, argc));
+    } else if (varargs ? (argc < nvars - 1) : (argc != nvars)) {
+      throw reportError(pos, _T(EL_FN_BAD_ARG_COUNT, name, nvars, argc));
     }
 
     // Rearrange named arguments
@@ -423,9 +455,9 @@ public class IRBuilder extends ELNode.Visitor {
     if (keys != null) {
       for (int i = 0; i < argc; i++) {
         if (keys[i] != null) {
-          int j = indexOfVar(keys[i], lambda.vars, lambda.varargs);
+          int j = indexOfVar(keys[i], vars, varargs);
           if (j == -1) {
-            if (!lambda.varargs || k >= argc)
+            if (!varargs || k >= argc)
               throw reportError(pos, _T(EL_UNKNOWN_ARG_NAME, keys[i]));
             if (xargs == null)
               xargs = new ELNode[argc];
@@ -454,9 +486,9 @@ public class IRBuilder extends ELNode.Visitor {
       // Assign default values
       for (; j < xargs.length; j++) {
         if (xargs[j] == null) {
-          if (lambda.vars[j].expr == null)
-            throw reportError(pos, _T(EL_MISSING_ARG_VALUE, lambda.vars[j].id));
-          xargs[j] = lambda.vars[j].expr;
+          if (vars[j].expr == null)
+            throw reportError(pos, _T(EL_MISSING_ARG_VALUE, vars[j].id));
+          xargs[j] = vars[j].expr;
         }
       }
 
@@ -466,20 +498,26 @@ public class IRBuilder extends ELNode.Visitor {
     return args;
   }
 
-  private int buildCallArgs(ELNode.LAMBDA lambda, ELNode[] args) {
+  private void buildCallArgs(ELNode.LAMBDA lambda, ELNode[] args) {
     int nvars = lambda.vars.length;
+    int classId = putConstant(Object.class);
+
+    // Build argument for argument list, exclude varargs.
+    current.emitNewArray(nvars, classId);
     if (lambda.varargs)
       nvars--;
-
-    // Build argument list, exclude varargs that must build to tuple.
-    for (int i = 0; i < nvars; i++)
+    for (int i = 0; i < nvars; i++) {
+      current.emitDup();
       build(args[i]);
+      current.emitStoreArray(i, classId);
+    }
 
-    // Build tuple for var arg list.
-    if (lambda.varargs)
+    // Build vararg list as an array and put the array into argument list.
+    if (lambda.varargs) {
+      current.emitDup();
       buildTuple(args, nvars, args.length - nvars);
-
-    return lambda.vars.length;
+      current.emitStoreArray(nvars, classId);
+    }
   }
 
   private void buildDirectCall(SymbolTable.Symbol sym, ELNode... args) {
@@ -487,31 +525,7 @@ public class IRBuilder extends ELNode.Visitor {
     ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
 
     if (!isEligibleToInline(sym)) {
-      int nvars = lambda.vars.length;
-      int classId = putConstant(Object.class);
-
-      // Build argument for argument list, exclude varargs.
-      current.emitNewArray(nvars, classId);
-      if (lambda.varargs)
-        nvars--;
-      for (int i = 0; i < nvars; i++) {
-        current.emitDup();
-        build(args[i]);
-        current.emitStoreArray(i, classId);
-      }
-
-      // Build vararg list as an array and put the array into argument list.
-      if (lambda.varargs) {
-        current.emitDup(); // dup the argument list.
-        current.emitNewArray(args.length - nvars, classId);
-        for (int i = nvars; i < args.length; i++) {
-          current.emitDup();
-          build(args[i]);
-          current.emitStoreArray(i - nvars, classId);
-        }
-        current.emitStoreArray(nvars, classId);
-      }
-
+      buildCallArgs(lambda, args);
       current.emitInvokeDirect(putConstant(sym.func));
       return;
     }
@@ -1299,15 +1313,25 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.INSTANCEOF node) {
-    if (node.type.indexOf('.') == -1) {
-      SymbolTable.Symbol sym = currentScope.lookup(node.type);
-      if (sym != null && sym.def.expr instanceof ELNode.CLASSDEF) {
-        emitPushSymbol(sym);
+    if (node.type.symbol != null) {
+      if (node.type.symbol.def.expr instanceof ELNode.CLASSDEF) {
+        emitPushSymbol(node.symbol);
         current.emitCheckCast(putConstant(ClassDefinition.class));
         current.emitPushCtx();
         build(node.right);
-        emitInvokeMethod(ClassDefinition.class, "isInstance",
-                         ELContext.class, Object.class);
+        emitInvokeMethod(ClassDefinition.class, "isInstance", ELContext.class,
+                         Object.class);
+        if (node.negative)
+          current.emitNot();
+        return;
+      }
+
+      if (node.type.symbol.def.expr instanceof ELNode.CLASS c) {
+        Class<?> cls = resolveClassAtCompileTime(c.name);
+        if (cls == null)
+          throw reportError(c.pos, "class not found: " + c.name);
+        build(node.right);
+        emitInstanceOf(cls);
         if (node.negative)
           current.emitNot();
         return;
@@ -1315,7 +1339,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     build(node.right);
-    emitInstanceOf(node.type);
+    emitInstanceOf(node.getTypeName());
     if (node.negative)
       current.emitNot();
   }
@@ -2689,21 +2713,21 @@ public class IRBuilder extends ELNode.Visitor {
         release(targetSlot);
         release(tmpSlot);
       } else {
-        String className;
+        Class<?> cls;
         String[] slots = null;
 
         if (base.symbol != null &&
             base.symbol.def.expr instanceof ELNode.CLASS c) {
-          className = c.name;
+          cls = resolveClassAtCompileTime(c.name);
+          if (cls == null)
+            throw reportError(c.pos, "class not found: " + c.name);
           slots = c.slots;
         } else {
-          className = base.id;
-        }
-
-        Class<?> cls = resolveClassAtCompileTime(className);
-        if (cls == null) {
-          emitInstanceOf(className);
-          return;
+          cls = resolveClassAtCompileTime(base.id);
+          if (cls == null) {
+            emitInstanceOf(base.id);
+            return;
+          }
         }
 
         if (argc == 0) {
@@ -2763,7 +2787,6 @@ public class IRBuilder extends ELNode.Visitor {
 
     return pat instanceof ELNode.Constant ||
            pat instanceof ELNode.IDENT ||
-           pat instanceof ELNode.NOT ||
            pat instanceof ELNode.EXPR;
   }
 
@@ -2799,66 +2822,141 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.NEW node) {
     // NEW can be used to create new instance of a Java class, a user defined
-    // elite class or a data class. First let me try Java class, then lookup
-    // symbol to see if the target is a CLASSDEF, then fallback to trampoline.
-    String className = node.getClassName();
-
-    if (node.props != null || node.keys != null) {
-      // FIXME: we cannot handle properties and named arguments yet.
-      buildTrampoline(node);
-      return;
-    }
+    // elite class or a data class. First let me lookup symbol table to see if
+    // the target is a CLASSDEF or CLASS, then try Java class.
 
     if (node.base instanceof ELNode.IDENT var && var.symbol != null) {
-      if (var.symbol.def.expr instanceof ELNode.CLASSDEF) {
+      if (var.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
         // Load the ClassDefinition.
         build(node.base);
         current.emitCheckCast(putConstant(ClassDefinition.class));
 
-        // Push ELContext.
+        // Invoke ClassDefinition.invoke method to create a new instance
+        // of user defined class.
         current.emitPushCtx();
-
-        // Package arguments in an array.
-        buildTuple(node.args);
-
-        // Invoke ClassDefinition.invoke with arguments.
-        // FIXME: handle named arguments for constructor
+        buildNewArgs(node.pos, cdef, node.args, node.keys);
         emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class,
                          Object[].class);
+
+        if (node.props != null) {
+          current.emitCheckCast(putConstant(ClosureObject.class));
+          for (int i = 0; i < node.props.keys.length; i++) {
+            current.emitDup();
+            current.emitPushCtx();
+            build(node.props.keys[i]);
+            build(node.props.values[i]);
+            emitInvokeMethod(ClosureObject.class, "setValue", ELContext.class,
+                             Object.class, Object.class);
+          }
+        }
         return;
       }
 
       if (var.symbol.def.expr instanceof ELNode.CLASS c && c.slots == null) {
-        className = c.name;
+        Class<?> cls = resolveClassAtCompileTime(c.name);
+        if (cls == null)
+          throw reportError(c.pos, "class not found: " + c.name);
+        if (buildNew(cls, node.args, node.props))
+          return;
       }
     }
 
-    Class<?> cls = resolveClassAtCompileTime(className);
-    if (cls != null) {
-      Constructor<?> cons = resolveConstructor(cls, node.args.length);
-      if (cons != null) {
-        Class<?>[] types = cons.getParameterTypes();
-        current.emitNew(putConstant(cls));
-        for (int i = 0; i < node.args.length; i++) {
-          build(node.args[i]);
-          if (types[i].isPrimitive())
-            current.emitUnbox(putConstant(types[i]));
-          else if (types[i] != Object.class)
-            current.emitCheckCast(putConstant(types[i]));
-        }
-        current.emitConstructor(putConstant(cons));
-      } else {
-        current.emitPushCtx();
-        buildConst(cls);
-        buildTuple(node.args);
-        emitInvokeMethod(ELEngine.class, "newInstance", ELContext.class,
-                         Class.class, Object[].class);
+    Class<?> cls = resolveClassAtCompileTime(node.getClassName());
+    if (cls != null && buildNew(cls, node.args, node.props))
+      return;
+
+    // Resolve Java class and constructor at runtime.
+    current.emitPushEnv();
+    buildConst(node.getClassName());
+    buildTuple(node.args);
+    if (node.props == null) {
+      current.emitPushNull();
+    } else {
+      emitNewInstance(LinkedHashMap.class);
+      for (int i = 0; i < node.props.keys.length; i++) {
+        current.emitDup();
+        build(node.props.keys[i]);
+        build(node.props.values[i]);
+        emitInvokeMethod(LinkedHashMap.class, "put", Object.class, Object.class);
+        current.emitPop();
       }
+    }
+    emitInvokeMethod(Runtime.class, "newInstance", EvaluationContext.class,
+                     String.class, Object[].class, Map.class);
+  }
+
+  private void buildNewArgs(int pos, ELNode.CLASSDEF cdef, ELNode[] args,
+                            String[] keys) {
+    // Check for constructor variables.
+    if (cdef.vars != null) {
+      args = getCallArgs(pos, cdef.id, cdef.vars, args, keys, false);
+      buildTuple(args);
       return;
     }
 
-    // Otherwise, fallback to trampoline.
-    buildTrampoline(node);
+    // Check for valueOf() static closure.
+    for (ELNode.DEFINE def : cdef.cvars) {
+      if (def.id.equals("valueOf") && def.expr instanceof ELNode.LAMBDA lambda) {
+        args = getCallArgs(pos, lambda, args, keys);
+        buildCallArgs(lambda, args);
+        return;
+      }
+    }
+
+    // Check for init procedure.
+    for (ELNode.DEFINE def : cdef.ivars) {
+      if (def.id.equals(cdef.id) && def.expr instanceof ELNode.LAMBDA lambda) {
+        args = getCallArgs(pos, lambda, args, keys);
+        buildCallArgs(lambda, args);
+        return;
+      }
+    }
+
+    buildTuple(args);
+  }
+
+  private boolean buildNew(Class<?> cls, ELNode[] args, ELNode.MAP props) {
+    Constructor<?> cons = resolveConstructor(cls, args.length);
+    if (cons == null)
+      return false;
+
+    Class<?>[] types = cons.getParameterTypes();
+    current.emitNew(putConstant(cls));
+    for (int i = 0; i < args.length; i++) {
+      if (types[i] == Object.class) {
+        build(args[i]);
+      } else {
+        current.emitPushCtx();
+        build(args[i]);
+        buildConst(TypeCoercion.getBoxedType(types[i]));
+        emitInvokeMethod(TypeCoercion.class, "coerce", ELContext.class,
+                         Object.class, Class.class);
+        if (types[i].isPrimitive())
+          current.emitUnbox(putConstant(types[i]));
+        else
+          current.emitCheckCast(putConstant(types[i]));
+      }
+    }
+    current.emitConstructor(putConstant(cons));
+
+    if (props != null) {
+      Slot tmpSlot = new Slot();
+      tmpSlot.store();
+      current.emitPushCtx();
+      emitInvokeMethod(ELContext.class, "getELResolver", ELResolver.class);
+      for (int i = 0; i < props.keys.length; i++) {
+        current.emitDup();
+        current.emitPushCtx();
+        tmpSlot.load();
+        build(props.keys[i]);
+        build(props.values[i]);
+        emitInvokeMethod(ELResolver.class, "setValue", ELContext.class,
+                         Object.class, Object.class, Object.class);
+      }
+      tmpSlot.release();
+    }
+
+    return true;
   }
 
   private Constructor<?> resolveConstructor(Class<?> cls, int nargs) {
@@ -3480,13 +3578,14 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildTuple(Class<?> type, ELNode[] elems, int start, int len) {
-    current.emitNewArray(len, putConstant(type));
-    for (int i = start; i < len; i++) {
+    int typeId = putConstant(type);
+    current.emitNewArray(len, typeId);
+    for (int i = 0; i < len; i++) {
       current.emitDup();
-      build(elems[i]);
+      build(elems[start + i]);
       if (type != Object.class)
-        current.emitCheckCast(putConstant(type));
-      current.emitStoreArray(i - start, putConstant(Object.class));
+        current.emitCheckCast(typeId);
+      current.emitStoreArray(i, typeId);
     }
   }
 

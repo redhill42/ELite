@@ -84,7 +84,7 @@ public class BinaryExpression extends Expression
         case IN:
             return new ELNode.IN(pos, lhs, rhs, false);
         case INSTANCEOF:
-            return new ELNode.INSTANCEOF(pos, lhs, ((ELNode.STRINGVAL)rhs).value, false);
+            return new ELNode.INSTANCEOF(pos, lhs, rhs, false);
         case LEFT_SHIFT:
             return new ELNode.SHL(pos, lhs, rhs);
         case LESS_THAN:

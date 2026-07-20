@@ -129,7 +129,7 @@ public class TreeTransformer extends ELNode.Visitor
 
     public void visit(ELNode.CLASSDEF e) {
         String id = transform(e.id);
-        String base = transform(e.base);
+        ELNode base = transform(e.base);
         String[] ifaces = transform(e.ifaces);
         ELNode.DEFINE[] vars = transform(e.vars);
         ELNode.DEFINE[] cvars = transform(e.cvars);
@@ -138,7 +138,8 @@ public class TreeTransformer extends ELNode.Visitor
             vars == e.vars && cvars == e.cvars && ivars == e.ivars)
             result = e;
         else
-            result = new ELNode.CLASSDEF(e.pos, e.file, id, base, ifaces, vars, cvars, ivars);
+            result = new ELNode.CLASSDEF(e.pos, e.file, id, base, ifaces, vars,
+                                         cvars, ivars);
     }
 
     public void visit(ELNode.IDENT e) {
@@ -379,7 +380,7 @@ public class TreeTransformer extends ELNode.Visitor
 
     public void visit(ELNode.INSTANCEOF e) {
         ELNode right = transform(e.right);
-        String type = transform(e.type);
+        ELNode type = transform(e.type);
         if (right == e.right && type == e.type)
             result = e;
         else
@@ -776,7 +777,7 @@ public class TreeTransformer extends ELNode.Visitor
     }
 
     public void visit(ELNode.NEWOBJ e) {
-        String base = transform(e.base);
+        ELNode base = transform(e.base);
         String id = transform(e.id);
         ELNode.DEFINE[] cvars = transform(e.cvars);
         ELNode.DEFINE[] ivars = transform(e.ivars);

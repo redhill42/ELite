@@ -87,6 +87,7 @@ public final class CommandProvider {
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
         Parser parser = new Parser(elctx, script);
         ELProgram program = parser.parse();
+        program.setStandalone(true);
         SymbolTableBuilder.build(program);
         System.out.println(program.dump());
     }

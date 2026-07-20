@@ -17,12 +17,14 @@
 package org.elite.eval;
 
 import javax.el.ELContext;
+import javax.el.ELResolver;
 import javax.el.ValueExpression;
 import javax.xml.XMLConstants;
 
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.xml.XmlNode;
+import org.elite.eval.closure.ClassDefinition;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
@@ -197,6 +199,35 @@ public final class Runtime {
             case Token.USHR   -> Builtin.__ushr__(elctx, lhs, rhs);
             default -> null;
         };
+    }
+
+    public static Object newInstance(EvaluationContext env, String className,
+                                     Object[] args, Map<Object, Object> props) {
+        ELContext elctx = env.getELContext();
+        Object cls = ELEngine.resolveClass(env, className);
+        Closure[] argv = ELEngine.getCallArgs(args);
+
+        Object obj;
+        if (cls instanceof ClassDefinition) {
+            obj = ((ClassDefinition)cls)._new(elctx, argv);
+        } else {
+            obj = ELEngine.newInstance(elctx, (Class<?>)cls, argv);
+        }
+
+        if (obj != null && props != null) {
+            if (obj instanceof ClosureObject clo) {
+                for (var e : props.entrySet()) {
+                    clo.setValue(elctx, e.getKey(), e.getValue());
+                }
+            } else {
+                ELResolver resolver = elctx.getELResolver();
+                for (var e : props.entrySet()) {
+                    resolver.setValue(elctx, obj, e.getKey(), e.getValue());
+                }
+            }
+        }
+
+        return obj;
     }
 
     public static Object __add__(Object lhs, Object rhs, ELContext elctx) {
