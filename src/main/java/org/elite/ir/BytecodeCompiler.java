@@ -827,7 +827,7 @@ public class BytecodeCompiler {
       for (int i = cnt; i != 0; i--) {
         mc.DUP_X1()
           .SWAP()
-          .PUSH(cnt)
+          .PUSH(i - 1)
           .SWAP()
           .AASTORE();
       }
@@ -870,36 +870,61 @@ public class BytecodeCompiler {
     String methodName = methodNames.get(closure);
     assert methodName != null;
 
-    ClassAssembly ccw = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
+    ClassAssembly ccc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
                                           IRCompiledClosure.class, null);
 
     // Constructor.
-    ccw.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
-                  new Class[]{EvaluationContext.class}, null)
+    MethodAssembly cmc = ccc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
+                                       new Class[]{EvaluationContext.class},
+                                       null)
       .THIS()
       .ALOAD(1)
-      .INVOKESPECIAL(IRCompiledClosure.class, "<init>", Void.TYPE,
-                     EvaluationContext.class)
-      .RETURN()
-      .end();
-
-    // Implement abstract methods.
-
-    ccw.newMethod(ACC_PUBLIC, "getName", String.class, new Class<?>[0], null)
       .LDC(closure.name())
-      .ARETURN()
-      .end();
+      .PUSH(closure.paramCount());
 
-    ccw.newMethod(ACC_PUBLIC, "arity", Integer.TYPE,
-                  new Class[]{ELContext.class}, null)
-      .PUSH(closure.paramCount())
-      .IRETURN()
+    if (closure.defaultValues() == null)
+      cmc.ACONST_NULL();
+    else {
+      Object[] defaults = closure.defaultValues();
+      cmc.PUSH(defaults.length)
+        .ANEWARRAY(Object.class);
+      for (int i = 0; i < defaults.length; i++) {
+        Object value = defaults[i];
+        cmc.DUP();
+        cmc.PUSH(i);
+        if (value == null) {
+          cmc.ACONST_NULL();
+        } else if (value instanceof Boolean || value instanceof Byte ||
+                   value instanceof Short   || value instanceof Character ||
+                   value instanceof Integer || value instanceof Long) {
+          cmc.BOX(value);
+        } else if (value instanceof String) {
+          cmc.LDC(value);
+        } else if (value instanceof Class) {
+          cmc.LDC(Type.getType((Class<?>)value));
+        } else if (value instanceof Symbol) {
+          cmc.LDC(((Symbol)value).getName())
+            .INVOKESTATIC(Symbol.class, "valueOf", Symbol.class, String.class);
+        } else {
+          // Load constant from constant pool.
+          cmc.GETSTATIC(className, CONSTANT_POOL_NAME, Object[].class)
+            .PUSH(addToConstantPool(value))
+            .AALOAD();
+        }
+        cmc.AASTORE();
+      }
+    }
+
+    cmc.INVOKESPECIAL(IRCompiledClosure.class, "<init>", Void.TYPE,
+                      EvaluationContext.class, String.class, int.class,
+                      Object[].class)
+      .RETURN()
       .end();
 
     // Object execute(EvaluationContext env, Object[] args) {
     //     return ELiteProgram$1.execute$2(env.pushContext(), args);
     // }
-    ccw.newMethod(ACC_PROTECTED, "execute", Object.class,
+    ccc.newMethod(ACC_PROTECTED, "execute", Object.class,
                   new Class[]{EvaluationContext.class, Object[].class}, null)
       .ALOAD(1)
       .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
@@ -910,7 +935,7 @@ public class BytecodeCompiler {
       .ARETURN()
       .end();
 
-    consumer.acceptClosure(name, ccw.end());
+    consumer.acceptClosure(name, ccc.end());
     return name;
   }
 

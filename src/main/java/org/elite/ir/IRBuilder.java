@@ -805,16 +805,24 @@ public class IRBuilder extends ELNode.Visitor {
     // Build fixed arguments.
     int i = 0;
     for (; iarg < nargs; iarg++, i++) {
-      build(args[i]);
-      if (types[iarg].isPrimitive())
-        current.emitUnbox(putConstant(types[iarg]));
-      else if (types[iarg] != Object.class)
-        current.emitCheckCast(putConstant(types[iarg]));
+      if (types[iarg] == Object.class) {
+        build(args[i]);
+      } else {
+        current.emitPushCtx();
+        build(args[i]);
+        buildConst(TypeCoercion.getBoxedType(types[iarg]));
+        emitInvokeMethod(TypeCoercion.class, "coerce", ELContext.class,
+                         Object.class, Class.class);
+        if (types[iarg].isPrimitive())
+          current.emitUnbox(putConstant(types[iarg]));
+        else
+          current.emitCheckCast(putConstant(types[iarg]));
+      }
     }
 
     // Build variable arguments.
     if (vargs)
-      buildTuple(args, i, args.length - i);
+      buildTuple(types[nargs].getComponentType(), args, i, args.length - i);
 
     current.emitInvokeMethod(putConstant(method));
     if (method.getReturnType() == Void.TYPE)
@@ -3447,17 +3455,27 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private void buildTuple(ELNode... elems) {
-    buildTuple(elems, 0, elems.length);
+  private void buildTuple(Class<?> type, ELNode... elems) {
+    buildTuple(type, elems, 0, elems.length);
   }
 
-  private void buildTuple(ELNode[] elems, int start, int len) {
-    current.emitNewArray(len, putConstant(Object.class));
+  private void buildTuple(Class<?> type, ELNode[] elems, int start, int len) {
+    current.emitNewArray(len, putConstant(type));
     for (int i = start; i < len; i++) {
       current.emitDup();
       build(elems[i]);
+      if (type != Object.class)
+        current.emitCheckCast(putConstant(type));
       current.emitStoreArray(i - start, putConstant(Object.class));
     }
+  }
+
+  private void buildTuple(ELNode... args) {
+    buildTuple(Object.class, args);
+  }
+
+  private void buildTuple(ELNode[] args, int start, int len) {
+    buildTuple(Object.class, args, start, len);
   }
 
   private void buildTuple(Slot... slots) {

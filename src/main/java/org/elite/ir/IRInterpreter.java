@@ -99,20 +99,15 @@ public class IRInterpreter {
                                     _T(EL_FN_BAD_ARG_COUNT, function.name(),
                                        nvars, argc));
 
-    if (args != null) {
+    if (args != null)
       System.arraycopy(args, 0, locals, 0, args.length);
-    }
 
     // Fill missing parameters with default values.
     // Use paramCount (not args.length) as the upper bound for provided args
     // because expanded args from INVOKE_DYN/IRClosure include capture slots
     // at the end, inflating args.length.
-    if (defs != null) {
-      for (int i = argc; i < nvars; i++) {
-        if (defs[i] != null)
-          locals[i] = defs[i];
-      }
-    }
+    if (defs != null)
+      System.arraycopy(defs, argc, locals, argc, nvars - argc);
 
     // Start at first block
     int[] blockOffsets = function.blockOffsets();

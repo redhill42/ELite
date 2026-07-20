@@ -3,6 +3,7 @@ package org.elite.ir;
 import elite.lang.Closure;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.EvaluationException;
 import org.elite.eval.closure.CallableClosure;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.EnvExtent;
@@ -12,15 +13,22 @@ import javax.el.PropertyNotWritableException;
 import javax.el.VariableMapper;
 import java.util.Arrays;
 
+import static org.elite.resources.Resources.*;
+
 public abstract class IRCompiledClosure extends Closure
                                         implements CallableClosure {
   private transient EvaluationContext context;
+  private final String name;
+  private final int paramCount;
+  private final Object[] defaults;
 
-  public IRCompiledClosure(EvaluationContext context) {
+  protected IRCompiledClosure(EvaluationContext context, String name,
+                              int paramCount, Object[] defaults) {
     this.context = context;
+    this.name = name;
+    this.paramCount = paramCount;
+    this.defaults = defaults;
   }
-
-  public abstract String getName();
 
   @Override
   public EvaluationContext getContext() {
@@ -70,13 +78,15 @@ public abstract class IRCompiledClosure extends Closure
   }
 
   @Override
-  public abstract int arity(ELContext elctx);
+  public int arity(ELContext elctx) {
+    return paramCount;
+  }
 
   @Override
   public MethodInfo getMethodInfo(ELContext elctx) {
     Class<?>[] paramTypes = new Class<?>[this.arity(elctx)];
     Arrays.fill(paramTypes, Object.class);
-    return new MethodInfo(getName(), Object.class, paramTypes);
+    return new MethodInfo(name, Object.class, paramTypes);
   }
 
   @Override
@@ -86,7 +96,19 @@ public abstract class IRCompiledClosure extends Closure
 
   @Override
   public Object call(ELContext elctx, Object[] args) {
-    return execute(getContext(), args);
+    int nvars = paramCount;
+    int argc = args.length;
+    if ((argc > nvars) || (argc < nvars && defaults == null))
+      throw new EvaluationException(elctx,
+                                    _T(EL_FN_BAD_ARG_COUNT, name, nvars, argc));
+    if (argc != nvars) {
+      Object[] xargs = new Object[nvars];
+      System.arraycopy(args, 0, xargs, 0, argc);
+      System.arraycopy(defaults, argc, xargs, argc, nvars - argc);
+      args = xargs;
+    }
+
+    return execute(getContext(elctx), args);
   }
 
   protected abstract Object execute(EvaluationContext env, Object[] args);
@@ -136,7 +158,6 @@ public abstract class IRCompiledClosure extends Closure
   }
 
   public String toString() {
-    String name = getName();
     if (name == null || name.equals("<lambda>"))
       return "#<procedure>";
     else
