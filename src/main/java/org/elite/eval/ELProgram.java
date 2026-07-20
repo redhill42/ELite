@@ -44,12 +44,12 @@ public class ELProgram implements Serializable
     /**
      * Optimization level for expression evaluation.
      * <ul>
-     *   <li>0 — AST interpreter only (for parser/AST validation)</li>
-     *   <li>1 — IR interpreter, no optimization passes (conservative IR)</li>
-     *   <li>2 — IR interpreter with optimizations (default; fall back to AST)</li>
-     *   <li>3 — JVM bytecode (fall back to IR for unsupported ops)</li>
+     *   <li>0 — AST interpreter (correctness baseline)</li>
+     *   <li>1 — IR interpreter (for IR verification only)</li>
+     *   <li>2 — JVM bytecode (default; no fallback to interpreter)</li>
+     *   <li>3 — JVM bytecode (reserved for aggressive optimizations; currently same as 2)</li>
      * </ul>
-     * Read from system property {@code elite.opt.level}; defaults to 2 (IR).
+     * Read from system property {@code elite.opt.level}; defaults to 2 (bytecode).
      */
     public static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
 
