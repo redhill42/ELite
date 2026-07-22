@@ -20,6 +20,7 @@ import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.ir.BytecodeCompiler;
 import org.elite.ir.BytecodeConsumer;
+import org.elite.parser.ParseException;
 import org.elite.parser.Parser;
 import javax.el.ELContext;
 import java.io.File;
@@ -130,9 +131,8 @@ public final class XelcMain {
       BytecodeConsumer consumer = new AOTBytecodeConsumer(outputDir);
       BytecodeCompiler.compile(prog.compile(elctx), className, consumer,
                                prog.getImports());
-    } catch (Exception e) {
-      System.err.println("xelc: " + e.getMessage());
-      e.printStackTrace();
+    } catch (ParseException e) {
+      System.err.println(e.getMessage());
       System.exit(1);
     }
   }

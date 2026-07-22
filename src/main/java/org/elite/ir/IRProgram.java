@@ -23,6 +23,7 @@ import java.util.List;
 public class IRProgram {
   private final IRFunction entry;
   private final List<IRFunction> functions = new ArrayList<>();
+  private final List<IRClass> classes = new ArrayList<>();
 
   IRProgram(IRFunction entry) {
     this.entry = entry;
@@ -33,12 +34,20 @@ public class IRProgram {
     functions.add(function);
   }
 
+  void add(IRClass clazz) {
+    classes.add(clazz);
+  }
+
   public IRFunction entry() {
     return entry;
   }
 
   public List<IRFunction> functions() {
     return Collections.unmodifiableList(functions);
+  }
+
+  public List<IRClass> classes() {
+    return Collections.unmodifiableList(classes);
   }
 
   public String dump() {

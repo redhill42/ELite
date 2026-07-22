@@ -1,11 +1,15 @@
 package org.elite.ir;
 
 import org.elite.parser.ELNode;
+import org.elite.parser.Position;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.elite.resources.Resources.*;
 
 public class SymbolTable {
 
@@ -20,6 +24,7 @@ public class SymbolTable {
     public int slot = -1;           // IR locals[] index
     public boolean captured;        // captured by an inner closure?
     public IRFunction func;         // known function: the compiled IRFunction
+    public IRClass clazz;           // the symbol is defined as an IRClass
 
     Symbol(Scope scope, ELNode.DEFINE def) {
       this.scope = scope;
@@ -30,6 +35,10 @@ public class SymbolTable {
     public boolean isFunction() {
       return func != null;
     }
+
+    public boolean isStatic() {
+      return def.meta != null && (def.meta.modifiers & Modifier.STATIC) != 0;
+    }
   }
 
   /**
@@ -37,17 +46,15 @@ public class SymbolTable {
    */
   public static class Scope {
     final Scope parent; // chained to direct enclosing scope
-    final String label; // for debugging
     final int depth;    // nesting depth (0 = root)
+    final ELNode fresh; // a fresh scope, may be a lambda or classdef
     final Map<String, Symbol> symbols = new LinkedHashMap<>();
-    boolean fresh;      // a fresh closure scope
     int nextSlot;       // currently allocated slots
     int maxSlots;       // max slot index used across this scope and all nested
                         // sub-scopes
 
-    Scope(Scope parent, String label, int depth, boolean fresh, int startSlot) {
+    Scope(Scope parent, int depth, ELNode fresh, int startSlot) {
       this.parent = parent;
-      this.label = label;
       this.depth = depth;
       this.fresh = fresh;
       this.nextSlot = startSlot;
@@ -98,26 +105,64 @@ public class SymbolTable {
 
     Scope enclosingScope() {
       for (Scope s = this; s != null; s = s.parent) {
-        if (s.fresh)
+        if (s.fresh != null)
           return s;
       }
       return null;
     }
+
+    boolean isClassScope() {
+      return fresh instanceof ELNode.CLASSDEF;
+    }
+
+    boolean isLambdaScope() {
+      return fresh instanceof ELNode.LAMBDA;
+    }
+
+    boolean isMemberProcedureScope() {
+      Scope s = enclosingScope();
+      return s != null && s.isLambdaScope() && s.parent.isClassScope();
+    }
+
+    boolean isStaticMemberProcedureScope() {
+      Scope s = enclosingScope();
+      return s != null && s.isLambdaScope() && s.parent.isClassScope() &&
+             s.fresh.symbol.isStatic();
+    }
+
+    boolean isInstanceMemberProcedureScope() {
+      Scope s = enclosingScope();
+      return s != null && s.isLambdaScope() && s.parent.isClassScope() &&
+             !s.fresh.symbol.isStatic();
+    }
+
+    boolean isStaticScope() {
+      Scope s = enclosingScope();
+      while (s != null) {
+        if (s.isLambdaScope() && s.parent.isClassScope() &&
+            s.fresh.symbol.isStatic())
+          return true;
+        s = s.parent;
+      }
+      return false;
+    }
   }
 
-  public record Redefinition(String id, int pos, int previousPos) {}
+  /*--------------------------------------------------------------------------*/
+
+  public record Error(int pos, String message) {}
 
   private Scope current = null;
-  private final List<Redefinition> redefinitions = new ArrayList<>();
+  private final List<Error> errors = new ArrayList<>();
 
-  void enterScope(String label, ELNode node) {
-    enterScope(label, node, false);
+  void enterScope(ELNode node) {
+    enterScope(node, null);
   }
 
-  void enterScope(String label, ELNode node, boolean fresh) {
+  void enterScope(ELNode node, ELNode fresh) {
     int depth = current == null ? 0 : current.depth + 1;
-    int startSlot = fresh || current == null ? 0 : current.nextSlot;
-    current = new Scope(current, label, depth, fresh, startSlot);
+    int startSlot = fresh != null || current == null ? 0 : current.nextSlot;
+    current = new Scope(current, depth, fresh, startSlot);
     if (node != null)
       node.scope = current;
   }
@@ -125,7 +170,7 @@ public class SymbolTable {
   void leaveScope() {
     assert current != null;
     Scope parent = current.parent;
-    if (parent != null && !current.fresh)
+    if (parent != null && current.fresh == null)
       parent.maxSlots = Math.max(parent.maxSlots, current.maxSlots);
     current = parent;
   }
@@ -138,8 +183,9 @@ public class SymbolTable {
     assert current != null;
     Symbol sym = new Symbol(current, def);
 
-    if (current.isTopLevel()) {
-      // Always put top level defined variable in global context.
+    if (current.isTopLevel() || current.isClassScope()) {
+      // Always put top level defined variable and class member variables
+      // in global context.
       sym.captured = true;
     } else {
       // Allocate local slot for nested scope.
@@ -165,11 +211,15 @@ public class SymbolTable {
     return current.get(name);
   }
 
-  void addRedefinition(String id, int pos, int previousPos) {
-    redefinitions.add(new Redefinition(id, pos, previousPos));
+  void addError(int pos, String message) {
+    errors.add(new Error(pos, message));
   }
 
-  public List<Redefinition> getRedefinitions() {
-    return redefinitions;
+  void addRedefinition(String id, int pos, int previousPos) {
+    addError(pos, _T(EL_REDEFINED_IDENTIFIER, id, Position.line(previousPos)));
+  }
+
+  public List<Error> getErrors() {
+    return errors;
   }
 }

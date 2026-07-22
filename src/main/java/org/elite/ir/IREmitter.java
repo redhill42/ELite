@@ -87,6 +87,10 @@ final class IREmitter {
     return emit(PUSH_NULL, 0);
   }
 
+  public IREmitter emitPushThis() {
+    return emit(PUSH_THIS, 0);
+  }
+
   public IREmitter emitPushEnv() {
     return emit(PUSH_ENV, 0, 0);
   }
@@ -358,6 +362,22 @@ final class IREmitter {
 
   public IREmitter emitStoreArray(int index, int poolIdx) {
     return emit(STORE_ARRAY, index, poolIdx);
+  }
+
+  public IREmitter emitGetField(int poolIdx) {
+    return emit(GETFIELD, 0, poolIdx);
+  }
+
+  public IREmitter emitPutField(int poolIdx) {
+    return emit(PUTFIELD, 0, poolIdx);
+  }
+
+  public IREmitter emitGetStatic(int poolIdx) {
+    return emit(GETSTATIC, 0, poolIdx);
+  }
+
+  public IREmitter emitPutStatic(int poolIdx) {
+    return emit(PUTSTATIC, 0, poolIdx);
   }
 
   public IREmitter emitCheckCast(int poolIdx) {

@@ -269,6 +269,8 @@ public class BytecodeCompiler {
     case PUSH_NULL ->
       mc.ACONST_NULL();
 
+    case PUSH_THIS ->
+      mc.THIS();
     case PUSH_ENV ->
       mc.ALOAD(S_ENV);
     case PUSH_CTX ->
@@ -778,26 +780,29 @@ public class BytecodeCompiler {
         mc.AASTORE();
     }
 
-    case LOAD_FIELD -> {
-      Field f = (Field)fn.getConstant(v.poolIndex());
-      if (Modifier.isStatic(f.getModifiers()))
-        mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
-      else
-        mc.GETFIELD(f.getDeclaringClass(), f.getName(), f.getType());
-      if (f.getType() == Boolean.TYPE)
-        emitJumpAfterCond(v);
-      else if (f.getType().isPrimitive())
-        mc.BOX(f.getType());
+    case GETFIELD -> {
+      String f = (String)fn.getConstant(v.poolIndex());
+      mc.THIS();
+      mc.GETFIELD(className, f, Object.class);
     }
 
-    case STORE_FIELD -> {
-      Field f = (Field)fn.getConstant(v.poolIndex());
-      if (f.getType().isPrimitive())
-        mc.UNBOX(f.getType());
-      if (Modifier.isStatic(f.getModifiers()))
-        mc.PUTSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
-      else
-        mc.PUTFIELD(f.getDeclaringClass(), f.getName(), f.getType());
+    case PUTFIELD -> {
+      String f = (String)fn.getConstant(v.poolIndex());
+      mc.THIS();
+      mc.SWAP();
+      mc.DUP_X1();
+      mc.PUTFIELD(className, f, Object.class);
+    }
+
+    case GETSTATIC -> {
+      String f = (String)fn.getConstant(v.poolIndex());
+      mc.GETSTATIC(className, f, Object.class);
+    }
+
+    case PUTSTATIC -> {
+      String f = (String)fn.getConstant(v.poolIndex());
+      mc.DUP();
+      mc.PUTSTATIC(className, f, Object.class);
     }
 
     case CHECKCAST ->

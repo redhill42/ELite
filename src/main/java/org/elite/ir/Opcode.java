@@ -31,12 +31,13 @@ public final class Opcode {
   public static final int PUSH_TRUE         = 0x02;
   public static final int PUSH_FALSE        = 0x03;
   public static final int PUSH_NULL         = 0x04;
-  public static final int PUSH_CTX          = 0x05;
-  public static final int PUSH_ENV          = 0x06;
-  public static final int PUSH_VAR          = 0x07;
-  public static final int PUSH_GLOBAL       = 0x08;
-  public static final int POP               = 0x09;
-  public static final int DUP               = 0x0A;
+  public static final int PUSH_THIS         = 0x05;
+  public static final int PUSH_CTX          = 0x06;
+  public static final int PUSH_ENV          = 0x07;
+  public static final int PUSH_VAR          = 0x08;
+  public static final int PUSH_GLOBAL       = 0x09;
+  public static final int POP               = 0x0A;
+  public static final int DUP               = 0x0B;
 
   // ── Operators ──
   public static final int ADD               = 0x10;
@@ -99,11 +100,13 @@ public final class Opcode {
   public static final int NEW_ARRAY         = 0x53;
   public static final int LOAD_ARRAY        = 0x54;
   public static final int STORE_ARRAY       = 0x55;
-  public static final int LOAD_FIELD        = 0x56;
-  public static final int STORE_FIELD       = 0x57;
-  public static final int CHECKCAST         = 0x58;
-  public static final int BOX               = 0x59;
-  public static final int UNBOX             = 0x5A;
+  public static final int GETFIELD          = 0x56;
+  public static final int PUTFIELD          = 0x57;
+  public static final int GETSTATIC         = 0x58;
+  public static final int PUTSTATIC         = 0x59;
+  public static final int CHECKCAST         = 0x5A;
+  public static final int BOX               = 0x5B;
+  public static final int UNBOX             = 0x5C;
 
   // ── Data structure ──
   public static final int NEW_CONS          = 0x60;
@@ -124,6 +127,7 @@ public final class Opcode {
       case PUSH_TRUE      -> "PUSH_TRUE";
       case PUSH_FALSE     -> "PUSH_FALSE";
       case PUSH_NULL      -> "PUSH_NULL";
+      case PUSH_THIS      -> "PUSH_THIS";
       case PUSH_CTX       -> "PUSH_CTX";
       case PUSH_ENV       -> "PUSH_ENV";
       case PUSH_VAR       -> "PUSH_VAR";
@@ -187,9 +191,11 @@ public final class Opcode {
       case NEW_ARRAY      -> "NEW_ARRAY";
       case LOAD_ARRAY     -> "LOAD_ARRAY";
       case STORE_ARRAY    -> "STORE_ARRAY";
-      case LOAD_FIELD     -> "LOAD_FIELD";
-      case STORE_FIELD    -> "STORE_FIELD";
-      case CHECKCAST      ->  "CHECKCAST";
+      case GETFIELD       -> "GETFIELD";
+      case PUTFIELD       -> "PUTFIELD";
+      case GETSTATIC      -> "GETSTATIC";
+      case PUTSTATIC      -> "PUTSTATIC";
+      case CHECKCAST      -> "CHECKCAST";
       case BOX            -> "BOX";
       case UNBOX          -> "UNBOX";
 

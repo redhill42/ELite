@@ -48,8 +48,8 @@ final class PeepholeOpt {
     switch (opcode) {
     case POP: {
       switch (lastOpcode) {
-      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL, PUSH_ENV, PUSH_CTX,
-           PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL:
+      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL, PUSH_THIS, PUSH_ENV,
+           PUSH_CTX, PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL:
         // PUSH_CONST, POP -> NOP
         code.reset(last);
         return true;

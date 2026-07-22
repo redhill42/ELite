@@ -118,6 +118,9 @@ public final class Resources
     public static final String EL_RETURN_CONTINUATION = "EL_RETURN_CONTINUATION";
     public static final String EL_STATEMENT_NOT_IN_LOOP = "EL_STATEMENT_NOT_IN_LOOP";
     public static final String EL_DEFAULT_VALUE_NOT_CONSTANT = "EL_DEFAULT_VALUE_NOT_CONSTANT";
+    public static final String EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER = "EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER";
+    public static final String EL_CLASS_NOT_FOUND = "EL_CLASS_NOT_FOUND";
+    public static final String EL_NOT_A_CLASS = "EL_NOT_A_CLASS";
 
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";
     public static final String JSPRT_UNSUPPORTED_EVAL_TYPE = "JSPRT_UNSUPPORTED_EVAL_TYPE";

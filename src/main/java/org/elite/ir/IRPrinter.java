@@ -85,9 +85,9 @@ final class IRPrinter {
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
          Opcode.INVOKE_DIRECT, Opcode.INVOKE_METHOD, Opcode.NEW,
-         Opcode.CONSTRUCTOR, Opcode.LOAD_FIELD, Opcode.STORE_FIELD,
-         Opcode.CHECKCAST, Opcode.BOX, Opcode.UNBOX, Opcode.DECLARE_NS,
-         Opcode.TRAMPOLINE ->
+         Opcode.CONSTRUCTOR, Opcode.GETFIELD, Opcode.PUTFIELD,
+         Opcode.GETSTATIC, Opcode.PUTSTATIC, Opcode.CHECKCAST, Opcode.BOX,
+         Opcode.UNBOX, Opcode.DECLARE_NS, Opcode.TRAMPOLINE ->
       formatConstPool(sb, constants, v.poolIndex());
 
     case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,

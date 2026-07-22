@@ -558,33 +558,6 @@ public class IRInterpreter {
         break;
       }
 
-      case LOAD_FIELD: {
-        try {
-          Field field = (Field)constantPool[idx];
-          Object obj = null;
-          if (!Modifier.isStatic(field.getModifiers()))
-            obj = pop();
-          push(field.get(obj));
-        } catch (IllegalAccessException ex) {
-          throw new EvaluationException(elctx, ex);
-        }
-        break;
-      }
-
-      case STORE_FIELD: {
-        try {
-          Field field = (Field)constantPool[idx];
-          Object value = pop();
-          Object obj = null;
-          if (!Modifier.isStatic(field.getModifiers()))
-            obj = pop();
-          field.set(obj, value);
-        } catch (IllegalAccessException e) {
-          throw new EvaluationException(elctx, e);
-        }
-        break;
-      }
-
       case CHECKCAST, BOX, UNBOX:
         // No effect for IR interpreter.
         break;

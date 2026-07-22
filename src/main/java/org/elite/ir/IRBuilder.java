@@ -179,6 +179,14 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
+  Class<?> loadClassAtCompileTime(int pos, String name) {
+    try {
+      return ClassResolver.getInstance(elctx).resolveClass(name);
+    } catch (ClassNotFoundException ex) {
+      throw reportError(pos, _T(EL_CLASS_NOT_FOUND, name));
+    }
+  }
+
   private ParseException reportError(int pos, String message) {
     return new ParseException(currentFile, Position.line(pos), Position.column(pos),
                               message);
@@ -278,11 +286,36 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.IDENT node) {
-    if (node.symbol == null || node.symbol.captured) {
+    if (isMemberVariable(node)) {
+      int fieldIdx = putConstant(node.id);
+      if (isStatic(node))
+        current.emitGetStatic(fieldIdx);
+      else
+        current.emitGetField(fieldIdx);
+    } else if (node.symbol == null || node.symbol.captured) {
       current.emitPushGlobal(putConstant(node.id));
     } else {
       current.emitPushVar(node.symbol.slot);
     }
+  }
+
+  private boolean isMemberVariable(ELNode node) {
+    if (!(node instanceof ELNode.IDENT))
+      return false;
+
+    // If the variable defined in a class scope, and current enclosing scope
+    // (it must be a lambda scope) is directly enclosed in this class scope,
+    // then the variable is referencing the class' instance variable.
+    SymbolTable.Symbol symbol = node.symbol;
+    return symbol != null && symbol.scope.isClassScope() &&
+           currentScope.enclosingScope().parent == symbol.scope &&
+           !(symbol.def.expr instanceof ELNode.LAMBDA) &&
+           !(symbol.def.expr instanceof ELNode.CLASSDEF);
+  }
+
+  private boolean isStatic(ELNode node) {
+    return node.symbol.def.meta != null &&
+           (node.symbol.def.meta.modifiers & Modifier.STATIC) != 0;
   }
 
   public void visit(ELNode.APPLY node) {
@@ -343,9 +376,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
-          Class<?> cls = resolveClassAtCompileTime(c.name);
-          if (cls == null)
-            throw reportError(c.pos, "class not found: " + c.name);
+          Class<?> cls = loadClassAtCompileTime(ident.pos, c.name);
           if (buildNew(cls, node.args, null))
             return;
         }
@@ -1327,11 +1358,8 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       if (node.type.symbol.def.expr instanceof ELNode.CLASS c) {
-        Class<?> cls = resolveClassAtCompileTime(c.name);
-        if (cls == null)
-          throw reportError(c.pos, "class not found: " + c.name);
         build(node.right);
-        emitInstanceOf(cls);
+        emitInstanceOf(loadClassAtCompileTime(node.pos, c.name));
         if (node.negative)
           current.emitNot();
         return;
@@ -1629,7 +1657,13 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildStoreVariable(ELNode.IDENT ident) {
-    if (ident.symbol == null || ident.symbol.captured) {
+    if (isMemberVariable(ident)) {
+      int fieldIdx = putConstant(ident.id);
+      if (isStatic(ident))
+        current.emitPutStatic(fieldIdx);
+      else
+        current.emitPutField(fieldIdx);
+    } else if (ident.symbol == null || ident.symbol.captured) {
       int nameIdx = putConstant(ident.id);
       current.emitStoreGlobal(nameIdx);
     } else {
@@ -1761,10 +1795,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // CLASS nodes (from import): push the raw Class constant
     if (node.expr instanceof ELNode.CLASS c) {
-      Class<?> cls = resolveClassAtCompileTime(c.name);
-      if (cls == null)
-        throw reportError(c.pos, "class not found: " + c.name);
-      buildConst(cls);
+      buildConst(loadClassAtCompileTime(node.pos, c.name));
     } else {
       build(node.expr);
     }
@@ -2207,6 +2238,12 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.LAMBDA node) {
+    IRFunction func = buildLambda(node);
+    program.add(func);
+    current.emitClosure(putConstant(func));
+  }
+
+  private IRFunction buildLambda(ELNode.LAMBDA node) {
     IRFunction func;
     if (node.symbol != null)
       func = node.symbol.func;
@@ -2218,9 +2255,6 @@ public class IRBuilder extends ELNode.Visitor {
       node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
       node.symbol.func = func;
     }
-
-    if (program != null)
-      program.add(func);
 
     IRBuilder nested = new IRBuilder(this, func, node.scope);
 
@@ -2245,8 +2279,7 @@ public class IRBuilder extends ELNode.Visitor {
     nested.emitReturn();
 
     IRFunction fn = nested.finish();
-    fn = fn.withDefaults(getDefaultValues(node.vars));
-    current.emitClosure(putConstant(fn));
+    return fn.withDefaults(getDefaultValues(node.vars));
   }
 
   /**
@@ -2297,6 +2330,158 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
+  }
+
+  public void visit(ELNode.CLASSDEF node) {
+    // Retrieve IRClass skeleton that created at SymbolTableBuilder.
+    IRClass clazz = node.symbol.clazz;
+    assert clazz != null;
+    program.add(clazz);
+
+    // Determine the base class. The base class must exist at compile time.
+    Object base;
+    if (node.base instanceof ELNode.IDENT ident) {
+      if (ident.symbol == null) {
+        // The base class may be an implicitly imported java class.
+        base = loadClassAtCompileTime(node.pos, ident.id);
+      } else if (ident.symbol.clazz != null) {
+        // The base class is an elite class.
+        base = ident.symbol.clazz;
+      } else if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
+        // The base class is an imported java class.
+        base = loadClassAtCompileTime(node.pos, c.name);
+      } else {
+        throw reportError(node.pos, _T(EL_NOT_A_CLASS, ident.id));
+      }
+    } else if (node.base instanceof ELNode.STRINGVAL str) {
+      // The base class must be a java class with package specified.
+      base = loadClassAtCompileTime(node.pos, str.value);
+    } else {
+      // No base class, defaults to java.lang.Object.
+      assert node.base == null;
+      base = Object.class;
+    }
+    clazz.base = base;
+
+    // Determine the outer class.
+    if (!node.symbol.isStatic()) {
+      SymbolTable.Scope outerScope = node.scope.parent.enclosingScope();
+      if (outerScope != null && outerScope.isClassScope())
+        clazz.outer = outerScope.fresh.symbol.clazz;
+    }
+
+    // Recursively build nested classes.
+    for (ELNode.DEFINE var : node.cvars) {
+      if (var.expr instanceof ELNode.CLASSDEF)
+        build(var.expr);
+    }
+    for (ELNode.DEFINE var : node.ivars) {
+      if (var.expr instanceof ELNode.CLASSDEF)
+        build(var.expr);
+    }
+
+    // Build class init proc.
+    clazz.clinit_proc = buildClassInitProc(node);
+
+    // Build instance init proc.
+    clazz.init_proc = buildInitProc(node);
+
+    // Build class and instance procedures. The ELNode.CLASSDEF is already a
+    // container for member functions. BytecodeCompiler can walk ELNode.CLASSDEF
+    // node to generate all member functions.
+    for (ELNode.DEFINE var : node.cvars) {
+      if (var.expr instanceof ELNode.LAMBDA)
+        buildLambda((ELNode.LAMBDA)var.expr);
+    }
+    for (ELNode.DEFINE var : node.ivars) {
+      if (var.expr instanceof ELNode.LAMBDA)
+        buildLambda((ELNode.LAMBDA)var.expr);
+    }
+
+    // Emit TRAMPOLINE to make IRInterpreter happy.
+    buildTrampoline(node);
+  }
+
+  private IRFunction buildClassInitProc(ELNode.CLASSDEF node) {
+    List<ELNode.DEFINE> cvars = new ArrayList<>();
+    for (ELNode.DEFINE var : node.cvars) {
+      if (!(var.expr instanceof ELNode.LAMBDA) &&
+          !(var.expr instanceof ELNode.CLASSDEF))
+        cvars.add(var);
+    }
+    if (cvars.isEmpty())
+      return null;
+
+    IRFunction func = new IRFunction("__clinit__", 0);
+    ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, null);
+    node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
+    node.symbol.func = func;
+
+    IRBuilder nested = new IRBuilder(this, func, node.scope);
+    if (node.file != null)
+      nested.currentFile = node.file;
+    nested.reserveSlots(0);
+
+    for (ELNode.DEFINE var : cvars) {
+      if (var.expr == null)
+        nested.current.emitPushNull();
+      else
+        nested.build(var.expr);
+      nested.current.emitPutStatic(putConstant(var.id));
+    }
+
+    nested.current.emitReturn();;
+    return nested.finish();
+  }
+
+  private IRFunction buildInitProc(ELNode.CLASSDEF node) {
+    ELNode.DEFINE init_proc = null;
+
+    for (ELNode.DEFINE var : node.ivars) {
+      if (var.id.equals("__init_proc__") && var.expr instanceof ELNode.LAMBDA) {
+        init_proc = var;
+        break;
+      }
+    }
+
+    int paramCount = 0;
+    if (node.vars != null)
+      paramCount = node.vars.length;
+    else if (init_proc != null)
+      paramCount = ((ELNode.LAMBDA)init_proc.expr).vars.length;
+
+    IRFunction func = new IRFunction("__init__", paramCount);
+    ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, null);
+    node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
+    node.symbol.func = func;
+
+    IRBuilder nested = new IRBuilder(this, func, node.scope);
+    if (node.file != null)
+      nested.currentFile = node.file;
+    nested.reserveSlots(0);
+
+    if (node.vars != null) {
+      for (int i = 0; i < node.vars.length; i++) {
+        nested.current.emitPushVar(i);
+        nested.current.emitPutField(putConstant(node.vars[i].id));
+      }
+    } else if (init_proc != null) {
+      Slot[] slots = new Slot[paramCount];
+      for (int i = 0; i < paramCount; i++)
+        slots[i] = new Slot();
+      nested.buildDirectCall(init_proc.symbol, slots);
+    }
+
+    for (ELNode.DEFINE var : node.ivars) {
+      if (var.expr instanceof ELNode.LAMBDA ||
+          var.expr instanceof ELNode.CLASSDEF)
+        continue;
+      nested.build(var.expr);
+      nested.current.emitPutField(putConstant(var.id));
+    }
+
+    nested.current.emitReturn();
+    return nested.finish();
   }
 
   // ── Pattern matching ──
@@ -2718,9 +2903,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (base.symbol != null &&
             base.symbol.def.expr instanceof ELNode.CLASS c) {
-          cls = resolveClassAtCompileTime(c.name);
-          if (cls == null)
-            throw reportError(c.pos, "class not found: " + c.name);
+          cls = loadClassAtCompileTime(base.pos, c.name);
           slots = c.slots;
         } else {
           cls = resolveClassAtCompileTime(base.id);
@@ -2853,9 +3036,7 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       if (var.symbol.def.expr instanceof ELNode.CLASS c && c.slots == null) {
-        Class<?> cls = resolveClassAtCompileTime(c.name);
-        if (cls == null)
-          throw reportError(c.pos, "class not found: " + c.name);
+        Class<?> cls = loadClassAtCompileTime(node.pos, c.name);
         if (buildNew(cls, node.args, node.props))
           return;
       }
@@ -3611,7 +3792,8 @@ public class IRBuilder extends ELNode.Visitor {
   public static IRFunction compile(ELContext elctx, ELNode node) {
     SymbolTable symTable = SymbolTableBuilder.build(node);
     IRFunction func = new IRFunction("<expr>", 0);
-    IRBuilder b = new IRBuilder(elctx, null, func, symTable.currentScope());
+    IRBuilder b = new IRBuilder(elctx, new IRProgram(null), func,
+                                symTable.currentScope());
     b.build(node);
     b.current.emitReturn();
     return b.finish();
@@ -3658,19 +3840,18 @@ public class IRBuilder extends ELNode.Visitor {
 
   private static void reportSymbolTableError(ELProgram prog,
                                              SymbolTable symTable) {
-    if (symTable.getRedefinitions().isEmpty())
+    if (symTable.getErrors().isEmpty())
       return;
 
     StringBuilder sb = new StringBuilder();
     String file = prog.getFilename();
-    for (SymbolTable.Redefinition redef : symTable.getRedefinitions()) {
+    for (SymbolTable.Error e : symTable.getErrors()) {
       sb.append("\n");
       if (file != null)
         sb.append(file).append(':');
-      sb.append(Position.line(redef.pos())).append(':')
-        .append(Position.column(redef.pos())).append(": ");
-      sb.append(_T(EL_REDEFINED_IDENTIFIER, redef.id(),
-                   Position.line(redef.previousPos())));
+      sb.append(Position.line(e.pos())).append(':')
+        .append(Position.column(e.pos())).append(": ");
+      sb.append(e.message());
     }
     throw new ParseException(file, 1, 1, sb.toString());
   }

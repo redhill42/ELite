@@ -7,6 +7,8 @@ import org.elite.parser.ELNode;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.elite.resources.Resources.*;
+
 /**
  * Walks an ELite program's AST and builds a {@link SymbolTable}
  * recording all variable/function/class definitions with their
@@ -21,9 +23,9 @@ public final class SymbolTableBuilder {
   public static SymbolTable build(ELProgram program) {
     SymbolTable table = new SymbolTable();
     BuilderVisitor visitor = new BuilderVisitor(table);
-    table.enterScope("program", null);
+    table.enterScope(null);
     if (program.isStandalone()) // set local scope for standalone program
-      table.enterScope("local", null);
+      table.enterScope(null);
     for (ELNode def : program.getDefinitions())
       def.accept(visitor);
     for (ELNode exp : program.getExpressions())
@@ -40,7 +42,7 @@ public final class SymbolTableBuilder {
   public static SymbolTable build(ELNode node) {
     SymbolTable table = new SymbolTable();
     BuilderVisitor visitor = new BuilderVisitor(table);
-    table.enterScope("expr", null);
+    table.enterScope(null);
     node.accept(visitor);
     visitor.finish();
     return table;
@@ -100,6 +102,8 @@ public final class SymbolTableBuilder {
         sym.func = new IRFunction(e.id, fn.vars.length);
         fn.symbol = sym;
       } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
+        // Create a IRClass skeleton.
+        sym.clazz = new IRClass(e.id, cdef);
         cdef.symbol = sym;
       }
 
@@ -108,7 +112,7 @@ public final class SymbolTableBuilder {
 
     public void visit(ELNode.LAMBDA e) {
       SymbolTable.Scope previous = enclosingScope;
-      table.enterScope(e.name != null ? "fn:" + e.name : "lambda", e, true);
+      table.enterScope(e, e);
       enclosingScope = table.currentScope();
 
       for (ELNode.DEFINE param : e.vars) {
@@ -133,26 +137,21 @@ public final class SymbolTableBuilder {
 
     public void visit(ELNode.CLASSDEF e) {
       SymbolTable.Scope previous = enclosingScope;
-      table.enterScope("class", e, true);
+      table.enterScope(e, e);
       enclosingScope = table.currentScope();
 
+      // Add an implicit this variable.
+      table.define(new ELNode.DEFINE(e.pos, "this"));
+
+      // Run default visitor to populate member symbols.
       super.visit(e);
-      if (e.vars != null)
-        for (ELNode.DEFINE v : e.vars)
-          v.symbol.captured = true;
-      if (e.cvars != null)
-        for (ELNode.DEFINE cv : e.cvars)
-          cv.symbol.captured = true;
-      if (e.ivars != null)
-        for (ELNode.DEFINE iv : e.ivars)
-          iv.symbol.captured = true;
 
       table.leaveScope();
       enclosingScope = previous;
     }
 
     public void visit(ELNode.NEWOBJ e) {
-      table.enterScope("class", e);
+      table.enterScope(e);
       super.visit(e);
       e.accept(trampolineFixup);
       table.leaveScope();
@@ -161,6 +160,9 @@ public final class SymbolTableBuilder {
     public void visit(ELNode.IDENT e) {
       var sym = table.lookup(e.id);
       if (sym != null) {
+        if (!checkAccess(e.pos, sym, table.currentScope()))
+          return;
+
         e.symbol = sym;
 
         // Mark this variable is captured by enclosing lambda.
@@ -204,20 +206,20 @@ public final class SymbolTableBuilder {
 
     public void visit(ELNode.WHILE e) {
       scan(e.cond);
-      table.enterScope("while", e.body);
+      table.enterScope(e.body);
       scan(e.body);
       table.leaveScope();
     }
 
     public void visit(ELNode.FOR e) {
       if (e.local) {
-        table.enterScope("for", e);
+        table.enterScope(e);
         super.visit(e);
         table.leaveScope();
       } else {
         scan(e.init);
         scan(e.cond);
-        table.enterScope("for", e.body);
+        table.enterScope(e.body);
         scan(e.body);
         table.leaveScope();
         scan(e.step);
@@ -225,18 +227,18 @@ public final class SymbolTableBuilder {
     }
 
     public void visit(ELNode.FOREACH e) {
-      table.enterScope("foreach", e);
+      table.enterScope(e);
       super.visit(e);
       table.leaveScope();
     }
 
     public void visit(ELNode.COND e) {
       scan(e.cond);
-      table.enterScope("if", e.left);
+      table.enterScope(e.left);
       scan(e.left);
       table.leaveScope();
       if (e.right != null) {
-        table.enterScope("if", e.right);
+        table.enterScope(e.right);
         scan(e.right);
         table.leaveScope();
       }
@@ -244,7 +246,7 @@ public final class SymbolTableBuilder {
 
     public void visit(ELNode.COMPOUND e) {
       if (e.scope == null) {
-        table.enterScope("compound", e);
+        table.enterScope(e);
         super.visit(e);
         table.leaveScope();
       } else {
@@ -256,7 +258,7 @@ public final class SymbolTableBuilder {
       // Each case body gets its own scope for pattern variables.
       scan(e.args);
       for (ELNode.CASE c : e.alts) {
-        table.enterScope("case", c);
+        table.enterScope(c);
         collectCaseBindings(c);
         scan(c.guards);
         scan(c.bodies);
@@ -264,7 +266,7 @@ public final class SymbolTableBuilder {
       }
 
       if (e.deflt != null) {
-        table.enterScope("case", e.deflt);
+        table.enterScope(e.deflt);
         scan(e.deflt);
         table.leaveScope();
       }
@@ -341,12 +343,29 @@ public final class SymbolTableBuilder {
       for (Undefined undef : undefined) {
         SymbolTable.Symbol sym = undef.scope.lookup(undef.var.id);
         if (sym != null) {
+          if (!checkAccess(undef.var.pos, sym, undef.scope))
+            continue;
+
           undef.var.symbol = sym;
           if (!(undef.call && sym.def.expr instanceof ELNode.LAMBDA) &&
               sym.scope.enclosingScope() != undef.scope.enclosingScope())
             sym.captured = true;
         }
       }
+    }
+
+    private boolean checkAccess(int pos, SymbolTable.Symbol sym,
+                                SymbolTable.Scope scope) {
+      // Check if the symbol is a class member variable.
+      if (sym.scope.isClassScope()) {
+        // The instance member can only be accessed by instance procedure.
+        if (!sym.isStatic() && scope.isStaticScope()) {
+          table.addError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER,
+                                 sym.name));
+          return false;
+        }
+      }
+      return true;
     }
   }
 }
