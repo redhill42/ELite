@@ -556,6 +556,10 @@ public class IRBuilder extends ELNode.Visitor {
     ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
 
     if (!isEligibleToInline(sym)) {
+      if (fn.owner() != null && !fn.isStatic())
+        current.emitPushThis();
+      current.emitPushEnv();
+      emitInvokeMethod(EvaluationContext.class, "pushContext");
       buildCallArgs(lambda, args);
       current.emitInvokeDirect(putConstant(sym.func));
       return;
@@ -617,6 +621,10 @@ public class IRBuilder extends ELNode.Visitor {
     IRFunction fn = sym.func;
 
     if (!isEligibleToInline(sym)) {
+      if (fn.owner() != null && !fn.isStatic())
+        current.emitPushThis();
+      current.emitPushEnv();
+      emitInvokeMethod(EvaluationContext.class, "pushContext");
       buildTuple(args);
       current.emitInvokeDirect(putConstant(fn));
       return;
@@ -1820,8 +1828,13 @@ public class IRBuilder extends ELNode.Visitor {
       emitNewInstance(StringBuilder.class);
       for (int i = 0; i < node.elems.length; i++) {
         build(node.elems[i]);
-        emitInvokeMethod(TypeCoercion.class, "coerceToString", Object.class);
-        emitInvokeMethod(StringBuilder.class, "append", Object.class);
+        if (node.elems[i] instanceof ELNode.STRINGVAL ||
+            node.elems[i] instanceof ELNode.LITERAL) {
+          emitInvokeMethod(StringBuilder.class, "append", String.class);
+        } else {
+          emitInvokeMethod(TypeCoercion.class, "coerceToString", Object.class);
+          emitInvokeMethod(StringBuilder.class, "append", Object.class);
+        }
       }
       emitInvokeMethod(StringBuilder.class, "toString");
     }

@@ -36,8 +36,25 @@ public class SymbolTable {
       return func != null;
     }
 
+    public boolean isPublic() {
+      return def.meta == null || Modifier.isPublic(def.meta.modifiers) ||
+             (!Modifier.isPrivate(def.meta.modifiers) &&
+              !Modifier.isProtected(def.meta.modifiers));
+    }
+    public boolean isPrivate() {
+      return def.meta != null && Modifier.isPrivate(def.meta.modifiers);
+    }
+    public boolean isProtected() {
+      return def.meta != null && Modifier.isProtected(def.meta.modifiers);
+    }
     public boolean isStatic() {
-      return def.meta != null && (def.meta.modifiers & Modifier.STATIC) != 0;
+      return def.meta != null && Modifier.isStatic(def.meta.modifiers);
+    }
+    public boolean isFinal() {
+      return def.meta != null && Modifier.isFinal(def.meta.modifiers);
+    }
+    public boolean isAbstract() {
+      return def.meta != null && Modifier.isAbstract(def.meta.modifiers);
     }
   }
 

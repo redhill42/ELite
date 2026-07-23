@@ -182,7 +182,7 @@ public final class XelcMain {
     }
 
     @Override
-    public void acceptClosure(String className, byte[] bytecode) {
+    public void acceptClass(String className, byte[] bytecode) {
       writeClassFile(className, bytecode);
     }
 

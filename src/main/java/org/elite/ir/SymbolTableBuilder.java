@@ -102,7 +102,13 @@ public final class SymbolTableBuilder {
 
       if (e.expr instanceof ELNode.LAMBDA fn) {
         // Create a IRFunction skeleton.
-        sym.func = new IRFunction(e.id, fn.vars.length);
+        IRClass owner = null;
+        int modifiers = Modifier.PUBLIC | Modifier.STATIC;
+        if (enclosingScope != null && enclosingScope.isClassScope()) {
+          owner = enclosingScope.fresh.symbol.clazz;
+          modifiers = e.meta != null ? e.meta.modifiers : Modifier.PUBLIC;
+        }
+        sym.func = new IRFunction(owner, e.id, fn.vars.length, modifiers);
         fn.symbol = sym;
       } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
         // Create a IRClass skeleton.

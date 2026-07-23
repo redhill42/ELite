@@ -73,7 +73,7 @@ final class IRPrinter {
       sb.append(cls.name).append('.').append(dumpIR(cls.clinit_proc.symbol.func));
     if (cls.init_proc != null)
       sb.append(cls.name).append('.').append(dumpIR(cls.init_proc.symbol.func));
-    for (IRFunction fn : cls.members)
+    for (IRFunction fn : cls.functions())
       sb.append(cls.name).append('.').append(dumpIR(fn));
     return sb.toString();
   }

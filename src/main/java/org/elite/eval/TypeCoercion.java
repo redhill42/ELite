@@ -207,7 +207,7 @@ public final class TypeCoercion
         return buf.toString();
     }
     
-    public static void escape(StringBuilder buf, String s) {
+    public static StringBuilder escape(StringBuilder buf, String s) {
         boolean escaped = false;
         for (int i = 0, len = s.length(); i < len; i++) {
             char c = s.charAt(i);
@@ -215,7 +215,7 @@ public final class TypeCoercion
             if (esc != null) {
                 if (!escaped) {
                     buf.append('"');
-                    buf.append(s.substring(0, i));
+                    buf.append(s, 0, i);
                     escaped = true;
                 }
                 buf.append(esc);
@@ -231,6 +231,7 @@ public final class TypeCoercion
             buf.append(s);
             buf.append('\'');
         }
+        return buf;
     }
 
     public static String escape(char c) {

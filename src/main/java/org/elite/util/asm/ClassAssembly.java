@@ -33,7 +33,8 @@ public class ClassAssembly
         impl.visit(V17, access, name, null, superName, interfaces);
     }
 
-    public ClassAssembly(int access, String name, Class superClass, Class[] interfaces) {
+    public ClassAssembly(int access, String name, Class<?> superClass,
+                         Class<?>[] interfaces) {
         this.className = name;
         this.superName = superClass.getName();
 
@@ -42,7 +43,7 @@ public class ClassAssembly
         String[] interfaceNames = AsmType.toInternalName(interfaces);
 
         impl = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-        impl.visit(V1_6, access, thisName, null, superName, interfaceNames);
+        impl.visit(V17, access, thisName, null, superName, interfaceNames);
     }
 
     public String getClassName() {
@@ -57,6 +58,17 @@ public class ClassAssembly
         return impl;
     }
 
+    public AnnotationAssembly ANNOTATION(String descriptor, boolean visible) {
+        return new AnnotationAssembly(
+          null, impl.visitAnnotation(descriptor, visible));
+    }
+
+    public AnnotationAssembly ANNOTATION(Class<?> type, boolean visible) {
+        return new AnnotationAssembly(
+          null, impl.visitAnnotation(AsmType.toInternalName(type.getName()),
+                                     visible));
+    }
+
     public void addField(int access, String name, String desc) {
         FieldVisitor fw = impl.visitField(access, name, desc, null, null);
         fw.visitEnd();
@@ -67,19 +79,20 @@ public class ClassAssembly
         fw.visitEnd();
     }
 
-    public void addField(int access, String name, Class type) {
+    public void addField(int access, String name, Class<?> type) {
         String desc = AsmType.getDescriptor(type);
         FieldVisitor fw = impl.visitField(access, name, desc, null, null);
         fw.visitEnd();
     }
 
-    public void addField(int access, String name, Class type, Object value) {
+    public void addField(int access, String name, Class<?> type, Object value) {
         String desc = AsmType.getDescriptor(type);
         FieldVisitor fw = impl.visitField(access, name, desc, null, value);
         fw.visitEnd();
     }
 
-    public MethodAssembly newMethod(int access, String name, String desc, String[] exceptions) {
+    public MethodAssembly newMethod(int access, String name, String desc,
+                                    String[] exceptions) {
         exceptions = AsmType.toInternalName(exceptions);
 
         MethodVisitor mv = impl.visitMethod(access, name, desc, null, exceptions);
@@ -87,9 +100,8 @@ public class ClassAssembly
     }
 
     public MethodAssembly
-    newMethod(int access, String name,
-                                    Class returnType, Class[] argumentTypes,
-                                    Class[] exceptionTypes)
+    newMethod(int access, String name, Class<?> returnType,
+              Class<?>[] argumentTypes, Class<?>[] exceptionTypes)
     {
         String desc = AsmType.getMethodDescritpor(returnType, argumentTypes);
         String[] exceptions = AsmType.toInternalName(exceptionTypes);
@@ -115,7 +127,8 @@ public class ClassAssembly
 
     void addClassLiteralField(String name) {
         if (!classLiteralFields.contains(name)) {
-            FieldVisitor fw = impl.visitField(ACC_STATIC, name, "Ljava/lang/Class;", null, null);
+            FieldVisitor fw = impl.visitField(ACC_STATIC, name,
+                                              "Ljava/lang/Class;", null, null);
             fw.visitEnd();
             classLiteralFields.add(name);
         }
@@ -148,7 +161,8 @@ public class ClassAssembly
 
         mw.label(try_start);
         mw.ALOAD(name_var);
-        mw.INVOKESTATIC("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;");
+        mw.INVOKESTATIC("java/lang/Class", "forName",
+                        "(Ljava/lang/String;)Ljava/lang/Class;");
         mw.label(try_end);
         mw.ARETURN();
 
@@ -157,10 +171,13 @@ public class ClassAssembly
         mw.NEW("java/lang/NoClassDefFoundError");
         mw.DUP();
         mw.ALOAD(ex_var);
-        mw.INVOKEVIRTUAL("java/lang/Throwable", "getMessage", "()Ljava/lang/String;");
-        mw.INVOKESPECIAL("java/lang/NoClassDefFoundError", "<init>", "(Ljava/lang/String;)V");
+        mw.INVOKEVIRTUAL("java/lang/Throwable", "getMessage",
+                         "()Ljava/lang/String;");
+        mw.INVOKESPECIAL("java/lang/NoClassDefFoundError", "<init>",
+                         "(Ljava/lang/String;)V");
         mw.ATHROW();
-        mw.TryCatchBlock(try_start, try_end, handler, "java/lang/ClassNotFoundException");
+        mw.TryCatchBlock(try_start, try_end, handler,
+                         "java/lang/ClassNotFoundException");
 
         mw.end();
         classLiteralLookupMethod = true;

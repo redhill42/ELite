@@ -33,6 +33,17 @@ public class MethodAssembly
         impl.visitEnd();
     }
 
+    public AnnotationAssembly ANNOTATION(String descriptor, boolean visible) {
+        return new AnnotationAssembly(
+          null, impl.visitAnnotation(descriptor, visible));
+    }
+
+    public AnnotationAssembly ANNOTATION(Class<?> type, boolean visible) {
+        return new AnnotationAssembly(
+          null, impl.visitAnnotation(AsmType.toInternalName(type.getName()),
+                                     visible));
+    }
+
     // zero operand instructions ...
 
     public MethodAssembly NOP()           { impl.visitInsn(NOP);           return this; }

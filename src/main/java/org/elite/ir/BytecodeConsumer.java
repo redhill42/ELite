@@ -38,10 +38,10 @@ public interface BytecodeConsumer {
   void acceptProgram(String className, byte[] bytecode);
 
   /**
-   * Called for each closure inner class that is compiled.
+   * Called for each nested class that is compiled.
    *
-   * @param className fully-qualified binary name of the closure class
+   * @param className fully-qualified binary name of the nested class
    * @param bytecode  the {@code .class} file bytes
    */
-  void acceptClosure(String className, byte[] bytecode);
+  void acceptClass(String className, byte[] bytecode);
 }

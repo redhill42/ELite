@@ -39,7 +39,7 @@ public class DefaultLexer extends Lexer
         // optimization: transition table indexed by event
         private Transition[] table;
         private static final int MAX_EVENT = 256;
-        private static final int SHRESHOLD = 10;
+        private static final int THRESHOLD = 10;
 
         State() {
             transitions = new ArrayList<Transition>();
@@ -70,7 +70,7 @@ public class DefaultLexer extends Lexer
             if (event < MAX_EVENT) {
                 if (table != null) {
                     table[event] = t;
-                } else if (transitions.size() > SHRESHOLD) {
+                } else if (transitions.size() > THRESHOLD) {
                     table = new Transition[MAX_EVENT];
                     for (Transition x : transitions) {
                         if (x.event < MAX_EVENT)

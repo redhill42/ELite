@@ -61,7 +61,7 @@ public class IRClass {
   /** The class and instance initialize procedure. */
   public ELNode.LAMBDA init_proc;
   public ELNode.LAMBDA clinit_proc;
-  public final List<IRFunction> members = new ArrayList<>();
+  private final List<IRFunction> functions = new ArrayList<>();
 
   public IRClass(String name, ELNode.CLASSDEF node) {
     this.name = name;
@@ -69,7 +69,11 @@ public class IRClass {
   }
 
   public void add(IRFunction func) {
-    members.add(func);
+    functions.add(func);
+  }
+
+  public List<IRFunction> functions() {
+    return functions;
   }
 
   public String dump() {

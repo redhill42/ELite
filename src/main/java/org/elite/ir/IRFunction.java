@@ -16,6 +16,8 @@
 
 package org.elite.ir;
 
+import java.lang.reflect.Modifier;
+
 /**
  * A compiled function in IR form.
  * <p>
@@ -29,8 +31,10 @@ package org.elite.ir;
  */
 public class IRFunction {
 
+  private final IRClass owner;
   private final String name;
   private final int paramCount;
+  private final int modifiers;
 
   /**
    * Single contiguous code array for all blocks.
@@ -61,10 +65,17 @@ public class IRFunction {
    */
   private Object[] defaultValues;
 
-  // Create a IRFunction skeleton.
+  // Create a IRFunction skeleton for a standalone function.
   IRFunction(String name, int paramCount) {
+    this(null, name, paramCount, Modifier.PUBLIC | Modifier.STATIC);
+  }
+
+  // Create a IRFunction skeleton for class member function.
+  IRFunction(IRClass owner, String name, int paramCount, int modifiers) {
+    this.owner = owner;
     this.name = name;
     this.paramCount = paramCount;
+    this.modifiers = modifiers;
   }
 
   // Populate IRFunction with code after compilation.
@@ -83,12 +94,24 @@ public class IRFunction {
     return code == null;
   }
 
+  public IRClass owner() {
+    return owner;
+  }
+
   public String name() {
     return name;
   }
 
   public int paramCount() {
     return paramCount;
+  }
+
+  public int modifiers() {
+    return modifiers;
+  }
+
+  public boolean isStatic() {
+    return Modifier.isStatic(modifiers);
   }
 
   public int maxLocals() {

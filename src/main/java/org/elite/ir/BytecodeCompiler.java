@@ -3,6 +3,8 @@ package org.elite.ir;
 import elite.lang.Closure;
 import elite.lang.Seq;
 import elite.lang.Symbol;
+import elite.lang.annotation.Expando;
+import elite.lang.annotation.ExpandoScope;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.ExternalImports;
@@ -33,11 +35,13 @@ import java.lang.reflect.Modifier;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.elite.eval.ELUtils.*;
 import static org.elite.ir.Opcode.*;
 import static org.elite.resources.Resources.*;
+import static org.objectweb.asm.Opcodes.ACC_ABSTRACT;
 import static org.objectweb.asm.Opcodes.ACC_FINAL;
 import static org.objectweb.asm.Opcodes.ACC_PRIVATE;
 import static org.objectweb.asm.Opcodes.ACC_PROTECTED;
@@ -138,6 +142,10 @@ public class BytecodeCompiler {
       }
     }
 
+    // Assign class names.
+    for (IRClass c : program.classes())
+      c.internalName = ProgramClassName + "$" + c.internalName;
+
     ClassAssembly cc = new ClassAssembly(ACC_PUBLIC | ACC_FINAL | ACC_SUPER,
                                          ProgramClassName, Object.class, null);
 
@@ -165,6 +173,11 @@ public class BytecodeCompiler {
       if (f != program.entry()) {
         compileFunction(cc, f);
       }
+    }
+
+    // Compile classes.
+    for (IRClass clazz : program.classes()) {
+      compileClass(clazz);
     }
 
     // Compile final persistent constant pool.
@@ -199,7 +212,341 @@ public class BytecodeCompiler {
       ACC_PUBLIC | ACC_STATIC | ACC_FINAL, methodName, Object.class,
       new Class<?>[]{EvaluationContext.class, Object[].class}, null);
 
-    new FunctionCompiler(f, ProgramClassName, true, mc).compile();
+    new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
+  }
+
+  private void compileClass(IRClass clazz) {
+    scope.push();
+
+    Map<IRFunction, ELNode.DEFINE> fmap = new HashMap<>();
+    Map<String, IRFunction> vmap = new HashMap<>();
+    Map<String, IRFunction> cvmap = new HashMap<>();
+
+    for (ELNode.DEFINE var : clazz.node.cvars) {
+      if (var.expr instanceof ELNode.LAMBDA fn) {
+        fmap.put(fn.symbol.func, var);
+        cvmap.put(var.id, fn.symbol.func);
+      }
+    }
+
+    for (ELNode.DEFINE var : clazz.node.ivars) {
+      if (var.expr instanceof ELNode.LAMBDA fn) {
+        fmap.put(fn.symbol.func, var);
+        vmap.put(var.id, fn.symbol.func);
+      }
+    }
+
+    // Register member function -> method mapping.
+    int idx = 0;
+    for (IRFunction fn : clazz.functions()) {
+      String methodName;
+      ELNode.DEFINE def = fmap.get(fn);
+      if (def == null) {
+        methodName = "__execute$" +
+                     ((isJavaIdentifier(fn.name())) ? fn.name() : "") +
+                     "$" + idx++;
+      } else if (fn.name().equals(clazz.name)) {
+        methodName = "__init__";
+      } else {
+        methodName = mangle(def.id);
+      }
+      scope.registerFunction(fn, methodName);
+    }
+
+    ClassAssembly cc = new ClassAssembly(
+      (clazz.node.symbol.isStatic() ? ACC_STATIC : 0) | ACC_PUBLIC | ACC_SUPER,
+      clazz.internalName, Object.class, null);
+
+    // Add static and instance fields.
+    for (ELNode.DEFINE var : clazz.node.cvars) {
+      if (!(var.expr instanceof ELNode.LAMBDA) &&
+          !(var.expr instanceof ELNode.CLASSDEF))
+        cc.addField(ACC_PUBLIC | ACC_STATIC, var.id, Object.class);
+    }
+    if (clazz.node.vars != null) {
+      for (ELNode.DEFINE var : clazz.node.vars)
+        cc.addField(ACC_PUBLIC, var.id, Object.class);
+    }
+    for (ELNode.DEFINE var : clazz.node.ivars) {
+      if (!(var.expr instanceof ELNode.LAMBDA) &&
+          !(var.expr instanceof ELNode.CLASSDEF))
+        cc.addField(ACC_PUBLIC, var.id, Object.class);
+    }
+
+    // Constructor.
+    IRFunction initFunc = clazz.init_proc.symbol.func;
+    MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
+      new Class<?>[]{EvaluationContext.class, Object[].class}, null);
+    mc.THIS()
+      .INVOKESPECIAL(Object.class, "<init>", Void.TYPE, NO_ARGS);
+    new FunctionCompiler(initFunc, clazz.internalName, false, Void.TYPE, mc)
+      .compile();
+
+    // Class initializer.
+    if (clazz.clinit_proc != null) {
+      IRFunction clinitFunc = clazz.clinit_proc.symbol.func;
+      mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", Void.TYPE,
+                        new Class<?>[0], null);
+      mc.NEW(EvaluationContext.class)
+        .DUP()
+        .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+        .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                       ELContext.class)
+        .ASTORE(0)
+        .ICONST_0()
+        .ANEWARRAY(Object.class)
+        .ASTORE(1);
+      new FunctionCompiler(clinitFunc, clazz.internalName, true, Void.TYPE, mc)
+        .compile();
+    }
+
+    // Generate member functions.
+    for (IRFunction fn : clazz.functions()) {
+      ELNode.DEFINE def = fmap.get(fn);
+      if (def != null && (def.id.equals("toString") ||
+                          def.id.equals("equals") ||
+                          def.id.equals("hashCode")))
+        continue; // generated differently
+
+      String methodName = scope.lookupMethod(fn);
+      assert methodName != null;
+
+      int mods = 0;
+      if (def != null) {
+        if (def.symbol.isPrivate())
+          mods |= ACC_PRIVATE;
+        else if (def.symbol.isProtected())
+          mods |= ACC_PROTECTED;
+        else
+          mods |= ACC_PUBLIC;
+        if (def.symbol.isAbstract())
+          mods |= ACC_ABSTRACT;
+      }
+      if (def == null || def.symbol.isStatic())
+        mods |= ACC_STATIC;
+
+      mc = cc.newMethod(mods, methodName, Object.class,
+                        new Class<?>[]{EvaluationContext.class, Object[].class},
+                        null);
+
+      // Add annotation for operator procedure.
+      if (!methodName.equals(fn.name())) {
+        mc.ANNOTATION(Expando.class, true)
+          .FIELD("name", fn.name())
+          .ARRAY("scope")
+            .ENUM(null, ExpandoScope.class, "OPERATOR")
+            .end()
+          .end();
+      }
+
+      if ((mods & ACC_ABSTRACT) == 0) {
+        new FunctionCompiler(fn, clazz.internalName, (mods & ACC_STATIC) != 0,
+                             Object.class, mc).compile();
+      }
+    }
+
+    // Generate toString method.
+    if (vmap.containsKey("toString") || clazz.node.vars != null) {
+      mc = cc.newMethod(ACC_PUBLIC, "toString", String.class, new Class<?>[0],
+                        null);
+
+      IRFunction fn = vmap.get("toString");
+      if (fn != null) {
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(1)
+          .ICONST_0()
+          .ANEWARRAY(Object.class)
+          .ASTORE(2);
+        new FunctionCompiler(fn, clazz.internalName, false, String.class, mc)
+          .compile();
+      } else {
+        mc.NEW_INSTANCE(StringBuilder.class)
+          .LDC(clazz.name + "(")
+          .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                         String.class);
+
+        for (int i = 0; i < clazz.node.vars.length; i++) {
+          Label b1 = new Label(), b2 = new Label();
+          if (i > 0) {
+            mc.LDC(", ")
+              .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                             String.class);
+          }
+          mc.THIS()
+            .GETFIELD(clazz.internalName, clazz.node.vars[i].id, Object.class)
+            .DUP()
+            .INSTANCEOF(String.class)
+            .IFEQ(b1)
+            .CHECKCAST(String.class)
+            .INVOKESTATIC(TypeCoercion.class, "escape", StringBuilder.class,
+                          StringBuilder.class, String.class)
+            .GOTO(b2)
+          .label(b1)
+            .INVOKESTATIC(TypeCoercion.class, "coerceToString", String.class,
+                          Object.class)
+            .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                           String.class)
+          .label(b2);
+        }
+
+        mc.LDC(")")
+          .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                         String.class)
+          .INVOKEVIRTUAL(StringBuilder.class, "toString", String.class)
+          .ARETURN()
+          .end();
+      }
+    }
+
+    // Generate equals method.
+    if (vmap.containsKey("equals") || clazz.node.vars != null) {
+      mc = cc.newMethod(ACC_PUBLIC, "equals", Boolean.TYPE,
+                        new Class<?>[]{Object.class}, null);
+
+      IRFunction fn = vmap.get("equals");
+      if (fn != null) {
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(1)
+          .ICONST_1()
+          .ANEWARRAY(Object.class)
+          .DUP()
+          .ICONST_0()
+          .ALOAD(1)
+          .AASTORE()
+          .ASTORE(2);
+        new FunctionCompiler(fn, clazz.internalName, false, Boolean.TYPE, mc)
+          .compile();
+      } else {
+        Label exit = new Label();
+        mc.ALOAD(1)
+          .INSTANCEOF(clazz.internalName)
+          .IFEQ(exit)
+          .ALOAD(1)
+          .CHECKCAST(clazz.internalName)
+          .ASTORE(2);
+
+        for (ELNode.DEFINE var : clazz.node.vars) {
+          mc.THIS()
+            .GETFIELD(clazz.internalName, var.id, Object.class)
+            .ALOAD(2)
+            .GETFIELD(clazz.internalName, var.id, Object.class)
+            .INVOKESTATIC(Objects.class, "equals", Boolean.TYPE, Object.class,
+                          Object.class)
+            .IFEQ(exit);
+        }
+
+        mc.TRUE()
+          .IRETURN();
+
+        mc.label(exit)
+          .FALSE()
+          .IRETURN()
+          .end();
+      }
+    }
+
+    // Generate hashCode method.
+    if (vmap.containsKey("hashCode") || clazz.node.vars != null) {
+      mc = cc.newMethod(ACC_PUBLIC, "hashCode", Integer.TYPE, new Class<?>[0],
+                        null);
+
+      IRFunction fn = vmap.get("hashCode");
+      if (fn != null) {
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(1)
+          .ICONST_0()
+          .ANEWARRAY(Object.class)
+          .ASTORE(2);
+        new FunctionCompiler(fn, clazz.internalName, false, Integer.TYPE, mc)
+          .compile();
+      } else {
+        mc.ICONST_1();
+        for (ELNode.DEFINE var : clazz.node.vars) {
+          Label b1 = new Label(), b2 = new Label();
+          mc.PUSH(31)
+            .IMUL()
+            .THIS()
+            .GETFIELD(clazz.internalName, var.id, Object.class).DUP()
+            .IFNONNULL(b1)
+            .POP()
+            .ICONST_0()
+            .GOTO(b2)
+            .label(b1)
+            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+            .label(b2)
+            .IADD();
+        }
+        mc.IRETURN().end();
+      }
+    }
+
+    consumer.acceptClass(clazz.internalName, cc.end());
+
+    scope.pop();
+  }
+
+  private String mangle(String id) {
+    if (isJavaIdentifier(id))
+      return id;
+
+    return switch (id) {
+      case "+"   -> "__add__";
+      case "-"   -> "__sub__";
+      case "*"   -> "__mul__";
+      case "/"   -> "__div__";
+      case "%"   -> "__rem__";
+      case "^"   -> "__pow__";
+      case "`!"  -> "__bitnot__";
+      case "`|"  -> "__bitor__";
+      case "`&"  -> "__bitand__";
+      case "`^"  -> "__xor__";
+      case "<<"  -> "__shl__";
+      case ">>"  -> "__shr__";
+      case ">>>" -> "__ushr__";
+      case "<"   -> "__lt__";
+      case "<="  -> "__le__";
+      case ">"   -> "__gt__";
+      case ">="  -> "__ge__";
+      case "=="  -> "__eq__";
+      case "!="  -> "__ne__";
+      case "+="  -> "__add_assign__";
+      case "-="  -> "__sub_assign__";
+      case "*="  -> "__mul_assign__";
+      case "/="  -> "__div_assign__";
+      case "%="  -> "__rem_assign__";
+      case "^="  -> "__pow_assign__";
+      case "`|=" -> "__bitor_assign__";
+      case "`&=" -> "__bitand_assign__";
+      case "`^=" -> "__xor_assign__";
+      case "<<=" -> "__shl_assign__";
+      case ">>=" -> "__shr_assign__";
+      case">>>=" -> "__ushr_assign__";
+      default -> {
+        StringBuilder sb = new StringBuilder();
+        sb.append("__");
+        for (int i = 0; i < id.length(); i++) {
+          char c = id.charAt(i);
+          if (Character.isJavaIdentifierPart(c))
+            sb.append(c);
+          else
+            sb.append("$").append(Integer.toHexString(c));
+        }
+        sb.append("__");
+        yield  sb.toString();
+      }
+    };
   }
 
   private void compileConstantPool(ClassAssembly cc) {
@@ -345,14 +692,16 @@ public class BytecodeCompiler {
     private final IRFunction     fn;
     private final String         className;
     private final boolean        isStatic;
+    private final Class<?>       returnType;
     private final MethodAssembly mc;
     private final Label[]        blockLabels;
 
     FunctionCompiler(IRFunction fn, String className, boolean isStatic,
-                     MethodAssembly mc) {
+                     Class<?> returnType, MethodAssembly mc) {
       this.fn = fn;
       this.className = className;
       this.isStatic = isStatic;
+      this.returnType = returnType;
       this.mc = mc;
       
       this.blockLabels = new Label[fn.blockCount()];
@@ -471,7 +820,7 @@ public class BytecodeCompiler {
         mc.GETSTATIC(Boolean.class, "FALSE", Boolean.class);
       case PUSH_NULL ->
         mc.ACONST_NULL();
-  
+
       case PUSH_THIS ->
         mc.THIS();
       case PUSH_ENV ->
@@ -592,8 +941,22 @@ public class BytecodeCompiler {
         mc.IFNULL(blockLabels[v.jumpTarget()]);
       case JUMP_IF_NONNULL ->
         mc.IFNONNULL(blockLabels[v.jumpTarget()]);
-  
-      case RETURN -> mc.ARETURN();
+
+      case RETURN -> {
+        if (returnType == Object.class) {
+          mc.ARETURN();
+        } else if (returnType == Void.TYPE) {
+          mc.POP().RETURN();
+        } else {
+          mc.ALOAD(S_CTX())
+            .SWAP()
+            .LDC(Type.getType(TypeCoercion.getBoxedType(returnType)))
+            .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
+                          ELContext.class, Object.class, Class.class)
+            .UNBOX(returnType)
+            .XRETURN(returnType);
+        }
+      }
   
       case THROW -> {
         Label b1 = new Label(), b2 = new Label(), b3 = new Label();
@@ -867,14 +1230,15 @@ public class BytecodeCompiler {
         IRFunction closure = (IRFunction)fn.getConstant(v.poolIndex());
         String methodName = scope.lookupMethod(closure);
         assert methodName != null;
-  
+
         // Invoke function method, the argument list is on stack top.
-        mc.ALOAD(S_ENV())
-          .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
-                         EvaluationContext.class)
-          .SWAP()
-          .INVOKESTATIC(className, methodName, Object.class,
-                        EvaluationContext.class, Object[].class);
+        if (closure.isStatic()) {
+          mc.INVOKESTATIC(className, methodName, Object.class,
+                          EvaluationContext.class, Object[].class);
+        } else {
+          mc.INVOKEVIRTUAL(className, methodName, Object.class,
+                           EvaluationContext.class, Object[].class);
+        }
       }
 
       case INVOKE_METHOD -> {
@@ -1184,7 +1548,7 @@ public class BytecodeCompiler {
         .ARETURN()
         .end();
 
-      consumer.acceptClosure(name, cc.end());
+      consumer.acceptClass(name, cc.end());
       return name;
     }
 
@@ -1238,11 +1602,15 @@ public class BytecodeCompiler {
     }
 
     @Override
-    public void acceptClosure(String className, byte[] bytecode) {
+    public void acceptClass(String className, byte[] bytecode) {
       LOADER.addClass(className, bytecode);
     }
 
     IRCompiledFunction complete() {
+      // Load classes to verify generated bytecode. Remove this after bytecode
+      // generation is bug free.
+      LOADER.verify();
+
       try {
         Method m = programClass.getMethod("execute$main",
                                           EvaluationContext.class,

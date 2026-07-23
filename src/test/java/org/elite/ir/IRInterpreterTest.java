@@ -80,21 +80,4 @@ class IRInterpreterTest {
             else assertEquals(a,b);
         }
     }
-
-    // ── helpers ──
-
-    private static IRFunction buildFn(String name, int[] code, int paramCount) {
-        IRFunction irf = new IRFunction(name, paramCount);
-        irf.populate(code, 2, new int[]{0}, new Object[]{0,1}, null, null);
-        return irf;
-    }
-
-    private static boolean scanOp(IRFunction fn, int op) {
-        for (int b=0; b<fn.blockCount(); b++) {
-            InstructionView v = new InstructionView(fn.code(), fn.blockStart(b));
-            int end = (b+1<fn.blockCount()) ? fn.blockStart(b+1) : fn.code().length;
-            while (v.inBounds() && v.offset()<end) { if(v.opcode()==op) return true; v.advance(); }
-        }
-        return false;
-    }
 }
