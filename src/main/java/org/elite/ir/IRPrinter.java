@@ -29,11 +29,16 @@ final class IRPrinter {
   private IRPrinter() {
   }
 
-  static String dumpIR(IRFunction function) {
-    return formatIR(function);
+  static String dumpIR(IRProgram program) {
+    StringBuilder sb = new StringBuilder();
+    for (IRFunction fn : program.functions())
+      sb.append(dumpIR(fn));
+    for (IRClass cls : program.classes())
+      sb.append(dumpIR(cls));
+    return sb.toString();
   }
 
-  static String formatIR(IRFunction fn) {
+  static String dumpIR(IRFunction fn) {
     StringBuilder sb = new StringBuilder();
     sb.append(fn.name()).append(" params=").append(fn.paramCount())
       .append(" locals=").append(fn.maxLocals()).append(" blocks=")
@@ -61,14 +66,25 @@ final class IRPrinter {
     return sb.toString();
   }
 
+  static String dumpIR(IRClass cls) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("class ").append(cls.internalName).append("\n");
+    if (cls.clinit_proc != null)
+      sb.append(cls.name).append('.').append(dumpIR(cls.clinit_proc.symbol.func));
+    if (cls.init_proc != null)
+      sb.append(cls.name).append('.').append(dumpIR(cls.init_proc.symbol.func));
+    for (IRFunction fn : cls.members)
+      sb.append(cls.name).append('.').append(dumpIR(fn));
+    return sb.toString();
+  }
+
   @SuppressWarnings("unused")
-  static String formatIR(IntList code, Object[] constants) {
+  private static String formatIR(IntList code, Object[] constants) {
     StringBuilder sb = new StringBuilder();
     InstructionView v = new InstructionView(code);
     while (v.inBounds()) {
       sb.append("    ").append(formatInst(v, constants)).append('\n');
       v.advance();
-      ;
     }
     return sb.toString();
   }

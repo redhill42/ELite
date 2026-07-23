@@ -51,9 +51,6 @@ public class IRProgram {
   }
 
   public String dump() {
-    StringBuilder sb = new StringBuilder();
-    for (IRFunction fn : functions)
-      sb.append(fn.dump());
-    return sb.toString();
+    return IRPrinter.dumpIR(this);
   }
 }

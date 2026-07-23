@@ -2239,7 +2239,11 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.LAMBDA node) {
     IRFunction func = buildLambda(node);
-    program.add(func);
+    IRClass enclosingClass = currentScope.enclosingClass();
+    if (enclosingClass != null)
+      enclosingClass.add(func);
+    else
+      program.add(func);
     current.emitClosure(putConstant(func));
   }
 
@@ -2363,6 +2367,14 @@ public class IRBuilder extends ELNode.Visitor {
     }
     clazz.base = base;
 
+    // Resolve interfaces.
+    if (node.ifaces != null) {
+      Class<?>[] interfaces = new Class<?>[node.ifaces.length];
+      for (int i = 0; i < interfaces.length; i++)
+        interfaces[i] = loadClassAtCompileTime(node.pos, node.ifaces[i]);
+      clazz.interfaces = interfaces;
+    }
+
     // Determine the outer class.
     if (!node.symbol.isStatic()) {
       SymbolTable.Scope outerScope = node.scope.parent.enclosingScope();
@@ -2380,108 +2392,29 @@ public class IRBuilder extends ELNode.Visitor {
         build(var.expr);
     }
 
-    // Build class init proc.
-    clazz.clinit_proc = buildClassInitProc(node);
-
-    // Build instance init proc.
-    clazz.init_proc = buildInitProc(node);
-
-    // Build class and instance procedures. The ELNode.CLASSDEF is already a
-    // container for member functions. BytecodeCompiler can walk ELNode.CLASSDEF
-    // node to generate all member functions.
+    // Build class and instance procedures.
     for (ELNode.DEFINE var : node.cvars) {
-      if (var.expr instanceof ELNode.LAMBDA)
-        buildLambda((ELNode.LAMBDA)var.expr);
+      if (var.expr instanceof ELNode.LAMBDA) {
+        build(var.expr);
+        current.emitPop();
+      }
     }
     for (ELNode.DEFINE var : node.ivars) {
-      if (var.expr instanceof ELNode.LAMBDA)
-        buildLambda((ELNode.LAMBDA)var.expr);
+      if (var.expr instanceof ELNode.LAMBDA) {
+        build(var.expr);
+        current.emitPop();
+      }
     }
+
+    // Build class init p roc.
+    if (clazz.clinit_proc != null)
+      buildLambda(clazz.clinit_proc);
+
+    // Build instance init proc.
+    buildLambda(clazz.init_proc);
 
     // Emit TRAMPOLINE to make IRInterpreter happy.
     buildTrampoline(node);
-  }
-
-  private IRFunction buildClassInitProc(ELNode.CLASSDEF node) {
-    List<ELNode.DEFINE> cvars = new ArrayList<>();
-    for (ELNode.DEFINE var : node.cvars) {
-      if (!(var.expr instanceof ELNode.LAMBDA) &&
-          !(var.expr instanceof ELNode.CLASSDEF))
-        cvars.add(var);
-    }
-    if (cvars.isEmpty())
-      return null;
-
-    IRFunction func = new IRFunction("__clinit__", 0);
-    ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, null);
-    node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
-    node.symbol.func = func;
-
-    IRBuilder nested = new IRBuilder(this, func, node.scope);
-    if (node.file != null)
-      nested.currentFile = node.file;
-    nested.reserveSlots(0);
-
-    for (ELNode.DEFINE var : cvars) {
-      if (var.expr == null)
-        nested.current.emitPushNull();
-      else
-        nested.build(var.expr);
-      nested.current.emitPutStatic(putConstant(var.id));
-    }
-
-    nested.current.emitReturn();;
-    return nested.finish();
-  }
-
-  private IRFunction buildInitProc(ELNode.CLASSDEF node) {
-    ELNode.DEFINE init_proc = null;
-
-    for (ELNode.DEFINE var : node.ivars) {
-      if (var.id.equals("__init_proc__") && var.expr instanceof ELNode.LAMBDA) {
-        init_proc = var;
-        break;
-      }
-    }
-
-    int paramCount = 0;
-    if (node.vars != null)
-      paramCount = node.vars.length;
-    else if (init_proc != null)
-      paramCount = ((ELNode.LAMBDA)init_proc.expr).vars.length;
-
-    IRFunction func = new IRFunction("__init__", paramCount);
-    ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, null);
-    node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
-    node.symbol.func = func;
-
-    IRBuilder nested = new IRBuilder(this, func, node.scope);
-    if (node.file != null)
-      nested.currentFile = node.file;
-    nested.reserveSlots(0);
-
-    if (node.vars != null) {
-      for (int i = 0; i < node.vars.length; i++) {
-        nested.current.emitPushVar(i);
-        nested.current.emitPutField(putConstant(node.vars[i].id));
-      }
-    } else if (init_proc != null) {
-      Slot[] slots = new Slot[paramCount];
-      for (int i = 0; i < paramCount; i++)
-        slots[i] = new Slot();
-      nested.buildDirectCall(init_proc.symbol, slots);
-    }
-
-    for (ELNode.DEFINE var : node.ivars) {
-      if (var.expr instanceof ELNode.LAMBDA ||
-          var.expr instanceof ELNode.CLASSDEF)
-        continue;
-      nested.build(var.expr);
-      nested.current.emitPutField(putConstant(var.id));
-    }
-
-    nested.current.emitReturn();
-    return nested.finish();
   }
 
   // ── Pattern matching ──

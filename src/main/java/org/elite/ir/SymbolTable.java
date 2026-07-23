@@ -111,6 +111,14 @@ public class SymbolTable {
       return null;
     }
 
+    IRClass enclosingClass() {
+      for (Scope s = this; s != null; s = s.parent) {
+        if (s.fresh instanceof ELNode.CLASSDEF)
+          return s.fresh.symbol.clazz;
+      }
+      return null;
+    }
+
     boolean isClassScope() {
       return fresh instanceof ELNode.CLASSDEF;
     }

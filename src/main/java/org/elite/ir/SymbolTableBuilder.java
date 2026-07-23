@@ -4,7 +4,10 @@ import org.elite.eval.ELProgram;
 import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.elite.resources.Resources.*;
@@ -140,14 +143,117 @@ public final class SymbolTableBuilder {
       table.enterScope(e, e);
       enclosingScope = table.currentScope();
 
-      // Add an implicit this variable.
-      table.define(new ELNode.DEFINE(e.pos, "this"));
+      IRClass clazz = e.symbol.clazz;
+
+      // Create internal class name for nested class. This includes inner class
+      // and static nested class.
+      String internalName = e.id;
+      IRClass outer = table.currentScope().parent.enclosingClass();
+      if (outer != null)
+        internalName = outer.name + "$" + internalName;
+      clazz.internalName = internalName;
 
       // Run default visitor to populate member symbols.
       super.visit(e);
 
+      // Add an implicit this variable.
+      table.define(new ELNode.DEFINE(e.pos, "this"));
+
+      // Create AST for init procedures.
+      clazz.clinit_proc = createClassInitProc(e);
+      clazz.init_proc = createInitProc(e);
+
       table.leaveScope();
       enclosingScope = previous;
+    }
+
+    private ELNode.LAMBDA createClassInitProc(ELNode.CLASSDEF e) {
+      List<ELNode> initBody = new ArrayList<>();
+      ELNode.DEFINE initProc = null;
+      for (ELNode.DEFINE var : e.cvars) {
+        if (!(var.expr instanceof ELNode.LAMBDA) &&
+            !(var.expr instanceof ELNode.CLASSDEF) &&
+            !(var.expr instanceof ELNode.NULL)) {
+          ELNode.IDENT ident = new ELNode.IDENT(var.pos, var.id);
+          initBody.add(new ELNode.ASSIGN(var.pos, ident, var.expr));
+        } else if (var.id.equals("__clinit__") &&
+                   var.expr instanceof ELNode.LAMBDA) {
+          initProc = var;
+        }
+      }
+      if (initProc != null) {
+        initBody.add(new ELNode.APPLY(
+          e.pos, new ELNode.IDENT(e.pos, initProc.id), new ELNode[0], null));
+      }
+
+      if (initBody.isEmpty())
+        return null;
+
+      ELNode.LAMBDA initFunc = new ELNode.LAMBDA(
+        e.pos, e.file, "<clinit>", null, new ELNode.DEFINE[0], false,
+        new ELNode.COMPOUND(e.pos, initBody.toArray(new ELNode[0])));
+      ELNode.DEFINE initDef = new ELNode.DEFINE(
+        e.pos, "<clinit>", null, new ELNode.METASET(e.pos, Modifier.STATIC),
+        initFunc);
+      scan(initDef);
+      return initFunc;
+    }
+
+    private ELNode.LAMBDA createInitProc(ELNode.CLASSDEF e) {
+      List<ELNode.DEFINE> initVars = new ArrayList<>();
+      if (e.vars != null)
+        Collections.addAll(initVars, e.vars);
+      Collections.addAll(initVars, e.ivars);
+
+      ELNode.DEFINE initProc = null;
+      for (ELNode.DEFINE ivar : e.ivars) {
+        if (ivar.id.equals(e.id) && ivar.expr instanceof ELNode.LAMBDA fn) {
+          initProc = ivar;
+          break;
+        }
+      }
+
+      List<ELNode.DEFINE> initParams = new ArrayList<>();
+      if (e.vars != null) {
+        for (ELNode.DEFINE var : e.vars) {
+          initParams.add(new ELNode.DEFINE(var.pos, "*"+initParams.size()+"*",
+                                           null, null, var.expr));
+        }
+      } else if (initProc != null) {
+        initParams.addAll(Arrays.asList(((ELNode.LAMBDA)initProc.expr).vars));
+      }
+
+      List<ELNode> initBody = new ArrayList<>();
+      for (ELNode.DEFINE var : initVars) {
+        if (!(var.expr instanceof ELNode.LAMBDA) &&
+            !(var.expr instanceof ELNode.CLASSDEF) &&
+            !(var.expr instanceof ELNode.NULL)) {
+          ELNode.IDENT ident = new ELNode.IDENT(var.pos, var.id);
+          ELNode value;
+          if (e.vars != null && initBody.size() < e.vars.length)
+            value = new ELNode.IDENT(var.pos, "*" + initBody.size() + "*");
+          else
+            value = var.expr;
+          initBody.add(new ELNode.ASSIGN(var.pos, ident, value));
+        }
+      }
+
+      if (initProc != null) {
+        ELNode.DEFINE[] params = ((ELNode.LAMBDA)initProc.expr).vars;
+        ELNode.IDENT[] args = new ELNode.IDENT[params.length];
+        for (int i = 0; i < args.length; i++)
+          args[i] = new ELNode.IDENT(e.pos, params[i].id);
+        initBody.add(new ELNode.APPLY(
+          e.pos, new ELNode.IDENT(e.pos, initProc.id), args, null));
+      }
+
+      ELNode.LAMBDA initFunc = new ELNode.LAMBDA(
+        e.pos, e.file, "<init>", null, initParams.toArray(new ELNode.DEFINE[0]),
+        false, new ELNode.COMPOUND(e.pos, initBody.toArray(new ELNode[0])));
+      ELNode.DEFINE initDef = new ELNode.DEFINE(e.pos, "<init>", null, null,
+                                                initFunc);
+      scan(initDef);
+      return initFunc;
     }
 
     public void visit(ELNode.NEWOBJ e) {

@@ -52,11 +52,60 @@ public class BytecodeCompiler {
   private final String ProgramClassName;
   private final BytecodeConsumer consumer;
 
-  private final Map<IRFunction, String> methodNames = new HashMap<>();
-  private final Map<IRFunction, String> closureNames = new HashMap<>();
-  private final Map<Object, Integer>    constantMap = new HashMap<>();
-
   private static final String CONSTANT_POOL_NAME = "$C";
+  private final Map<Object, Integer> constantMap = new HashMap<>();
+
+  private Scope scope = new Scope(null);
+
+  /**
+   * The scope used to isolate method name resolution. Program scope and Class
+   * scope has different function->method mapping. To find a function method
+   * name, search from Class scope first if it exists, then search from program
+   * scope.
+   */
+  class Scope {
+    private final Map<IRFunction, String> methodNames = new HashMap<>();
+    private final Map<IRFunction, String> closureNames = new HashMap<>();
+    private final Scope parent;
+
+    private Scope(Scope parent) {
+      this.parent = parent;
+    }
+
+    void push() {
+      scope = new Scope(scope);
+    }
+
+    void pop() {
+      scope = scope.parent;
+    }
+
+    void registerFunction(IRFunction function, String name) {
+      methodNames.put(function, name);
+    }
+
+    String lookupMethod(IRFunction function) {
+      for (Scope s = this; s != null; s = s.parent) {
+        String name = s.methodNames.get(function);
+        if (name != null)
+          return name;
+      }
+      return null;
+    }
+
+    void registerClosure(IRFunction function, String name) {
+      closureNames.put(function, name);
+    }
+
+    String lookupClosure(IRFunction function) {
+      for (Scope s = this; s != null; s = s.parent) {
+        String name = s.closureNames.get(function);
+        if (name != null)
+          return name;
+      }
+      return null;
+    }
+  }
 
   public static IRCompiledFunction compile(IRProgram program) {
     String name = "ELiteProgram$" + CLASS_COUNTER.incrementAndGet();
@@ -78,14 +127,14 @@ public class BytecodeCompiler {
 
   private void compileProgram(IRProgram program, ExternalImports imports) {
     // Assign method names.
-    methodNames.put(program.entry(), "execute$main");
+    scope.registerFunction(program.entry(), "execute$main");
     int idx = 0;
     for (IRFunction f : program.functions()) {
       if (f != program.entry()) {
         String methodName = "execute$" +
                             (isJavaIdentifier(f.name()) ? f.name() : "") +
                             "$" + idx++;
-        methodNames.put(f, methodName);
+        scope.registerFunction(f, methodName);
       }
     }
 
@@ -141,7 +190,7 @@ public class BytecodeCompiler {
   }
 
   private void compileFunction(ClassAssembly cc, IRFunction f) {
-    String methodName = methodNames.get(f);
+    String methodName = scope.lookupMethod(f);
 
     // The function method:
     // public static Object execute$func$0(
@@ -816,7 +865,7 @@ public class BytecodeCompiler {
   
       case INVOKE_DIRECT -> {
         IRFunction closure = (IRFunction)fn.getConstant(v.poolIndex());
-        String methodName = methodNames.get(closure);
+        String methodName = scope.lookupMethod(closure);
         assert methodName != null;
   
         // Invoke function method, the argument list is on stack top.
@@ -827,7 +876,7 @@ public class BytecodeCompiler {
           .INVOKESTATIC(className, methodName, Object.class,
                         EvaluationContext.class, Object[].class);
       }
-  
+
       case INVOKE_METHOD -> {
         Method m = (Method)fn.getConstant(v.poolIndex());
         if (Modifier.isStatic(m.getModifiers())) {
@@ -1052,16 +1101,16 @@ public class BytecodeCompiler {
     }
 
     private String compileClosure(IRFunction closure) {
-      String name = closureNames.get(closure);
+      String name = scope.lookupClosure(closure);
       if (name != null)
         return name;
 
       name = className + "$Closure$" +
              (isJavaIdentifier(closure.name()) ? closure.name() : "") +
-             "$" + closureNames.size();
-      closureNames.put(closure, name);
+             "$" + CLASS_COUNTER.getAndIncrement();
+      scope.registerClosure(closure, name);
 
-      String methodName = methodNames.get(closure);
+      String methodName = scope.lookupMethod(closure);
       assert methodName != null;
 
       ClassAssembly cc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,

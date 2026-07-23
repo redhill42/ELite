@@ -17,6 +17,8 @@
 package org.elite.ir;
 
 import org.elite.parser.ELNode;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Intermediate representation of an ELite class definition.
@@ -41,21 +43,36 @@ public class IRClass {
   /** The ELNode that contains original class definition information. */
   public final ELNode.CLASSDEF node;
 
+  /** Internal class name for nested class. */
+  public String internalName;
+
   /**
    * The base class. {@link IRClass} elite class, {@link java.lang.Class}
    * for java class, null if no base class.
    */
   public Object base;
 
+  /** The Java interfaces implemented by this class. */
+  public Class<?>[] interfaces;
+
   /** Enclosing class (for nested / inner classes). */
   public IRClass outer;
 
   /** The class and instance initialize procedure. */
-  public IRFunction init_proc;
-  public IRFunction clinit_proc;
+  public ELNode.LAMBDA init_proc;
+  public ELNode.LAMBDA clinit_proc;
+  public final List<IRFunction> members = new ArrayList<>();
 
   public IRClass(String name, ELNode.CLASSDEF node) {
     this.name = name;
     this.node = node;
+  }
+
+  public void add(IRFunction func) {
+    members.add(func);
+  }
+
+  public String dump() {
+    return IRPrinter.dumpIR(this);
   }
 }
