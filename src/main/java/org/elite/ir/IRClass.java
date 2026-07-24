@@ -76,6 +76,10 @@ public class IRClass {
     return functions;
   }
 
+  public boolean isCompilable() {
+    return base == Object.class && interfaces == null;
+  }
+
   public String dump() {
     return IRPrinter.dumpIR(this);
   }

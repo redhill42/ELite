@@ -26,6 +26,7 @@ import org.elite.eval.Runtime;
 import org.elite.eval.StackTrace;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.UserException;
+import org.elite.eval.closure.ClassDefinition;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.TypedClosure;
 import org.elite.eval.seq.Cons;
@@ -295,7 +296,12 @@ public class IRInterpreter {
       case INSTANCEOF: {
         Object obj = pop();
         Object cls = constantPool[idx];
-        if (cls instanceof Class<?>)
+        if (cls instanceof IRClass c) {
+          Object cdef = Runtime.resolveGlobal(c.name, evalContext);
+          if (!(cdef instanceof ClassDefinition))
+            return false;
+          return ((ClassDefinition)cdef).isInstance(elctx, obj);
+        } else if (cls instanceof Class<?>)
           push(((Class<?>)cls).isInstance(obj));
         else
           push(TypedClosure.typecheck(evalContext, (String)cls, obj));

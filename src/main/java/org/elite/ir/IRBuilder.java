@@ -358,20 +358,32 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (ident.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
-          // The target is a CLASSDEF, so the defined object must be
-          // a ClassDefinition, just invoke the "invoke" method on target.
+          IRClass clazz = cdef.symbol.clazz;
+          if (clazz.isCompilable()) {
+            ELNode[] args = getCallArgs(node.pos, clazz.init_proc, node.args,
+                                        node.keys);
+            current.emitNew(putConstant(clazz));
+            current.emitPushEnv();
+            buildCallArgs(clazz.init_proc, args);
+            current.emitConstructor(putConstant(clazz));
+          } else {
+            // TODO: remove legacy code.
 
-          // Fist, build ident node to generate PUSH_GLOBAL
-          // or PUSH_VAR instruction.
-          build(ident);
-          current.emitCheckCast(putConstant(ClassDefinition.class));
+            // The target is a CLASSDEF, so the defined object must be
+            // a ClassDefinition, just invoke the "invoke" method on target.
 
-          // Then invoke the ClassDefinition.invoke method to create
-          // new instance of user defined class.
-          current.emitPushCtx();
-          buildNewArgs(node.pos, cdef, node.args, node.keys);
-          emitInvokeMethod(ClassDefinition.class, "invoke",
-                           ELContext.class, Object[].class);
+            // Fist, build ident node to generate PUSH_GLOBAL
+            // or PUSH_VAR instruction.
+            build(ident);
+            current.emitCheckCast(putConstant(ClassDefinition.class));
+
+            // Then invoke the ClassDefinition.invoke method to create
+            // new instance of user defined class.
+            current.emitPushCtx();
+            buildNewArgs(node.pos, cdef, node.args, node.keys);
+            emitInvokeMethod(ClassDefinition.class, "invoke",
+                             ELContext.class, Object[].class);
+          }
           return;
         }
 
@@ -1353,13 +1365,22 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.INSTANCEOF node) {
     if (node.type.symbol != null) {
-      if (node.type.symbol.def.expr instanceof ELNode.CLASSDEF) {
-        emitPushSymbol(node.symbol);
-        current.emitCheckCast(putConstant(ClassDefinition.class));
-        current.emitPushCtx();
-        build(node.right);
-        emitInvokeMethod(ClassDefinition.class, "isInstance", ELContext.class,
-                         Object.class);
+      if (node.type.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
+        IRClass clazz = cdef.symbol.clazz;
+        if (clazz.isCompilable()) {
+          build(node.right);
+          current.emitInstanceOf(putConstant(clazz));
+          if (node.negative)
+            current.emitNot();
+        } else {
+          // TODO: remove legacy code.
+          emitPushSymbol(node.symbol);
+          current.emitCheckCast(putConstant(ClassDefinition.class));
+          current.emitPushCtx();
+          build(node.right);
+          emitInvokeMethod(ClassDefinition.class, "isInstance", ELContext.class,
+                           Object.class);
+        }
         if (node.negative)
           current.emitNot();
         return;
@@ -2353,7 +2374,6 @@ public class IRBuilder extends ELNode.Visitor {
     // Retrieve IRClass skeleton that created at SymbolTableBuilder.
     IRClass clazz = node.symbol.clazz;
     assert clazz != null;
-    program.add(clazz);
 
     // Determine the base class. The base class must exist at compile time.
     Object base;
@@ -2426,8 +2446,15 @@ public class IRBuilder extends ELNode.Visitor {
     // Build instance init proc.
     buildLambda(clazz.init_proc);
 
-    // Emit TRAMPOLINE to make IRInterpreter happy.
-    buildTrampoline(node);
+    if (clazz.isCompilable()) {
+      program.add(clazz);
+
+      // Emit TRAMPOLINE to make IRInterpreter happy. Ignored by
+      // BytecodeCompiler.
+      buildTrampoline(node, true);
+    } else {
+      buildTrampoline(node, false);
+    }
   }
 
   // ── Pattern matching ──
@@ -2956,26 +2983,37 @@ public class IRBuilder extends ELNode.Visitor {
 
     if (node.base instanceof ELNode.IDENT var && var.symbol != null) {
       if (var.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
-        // Load the ClassDefinition.
-        build(node.base);
-        current.emitCheckCast(putConstant(ClassDefinition.class));
+        IRClass clazz = cdef.symbol.clazz;
+        if (clazz.isCompilable()) {
+          ELNode[] args = getCallArgs(node.pos, clazz.init_proc, node.args,
+                                      node.keys);
+          current.emitNew(putConstant(clazz));
+          current.emitPushEnv();
+          buildCallArgs(clazz.init_proc, args);
+          current.emitConstructor(putConstant(clazz));
+        } else {
+          // TODO: remove legacy code.
+          // Load the ClassDefinition.
+          build(node.base);
+          current.emitCheckCast(putConstant(ClassDefinition.class));
 
-        // Invoke ClassDefinition.invoke method to create a new instance
-        // of user defined class.
-        current.emitPushCtx();
-        buildNewArgs(node.pos, cdef, node.args, node.keys);
-        emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class,
-                         Object[].class);
+          // Invoke ClassDefinition.invoke method to create a new instance
+          // of user defined class.
+          current.emitPushCtx();
+          buildNewArgs(node.pos, cdef, node.args, node.keys);
+          emitInvokeMethod(ClassDefinition.class, "invoke", ELContext.class,
+                           Object[].class);
 
-        if (node.props != null) {
-          current.emitCheckCast(putConstant(ClosureObject.class));
-          for (int i = 0; i < node.props.keys.length; i++) {
-            current.emitDup();
-            current.emitPushCtx();
-            build(node.props.keys[i]);
-            build(node.props.values[i]);
-            emitInvokeMethod(ClosureObject.class, "setValue", ELContext.class,
-                             Object.class, Object.class);
+          if (node.props != null) {
+            current.emitCheckCast(putConstant(ClosureObject.class));
+            for (int i = 0; i < node.props.keys.length; i++) {
+              current.emitDup();
+              current.emitPushCtx();
+              build(node.props.keys[i]);
+              build(node.props.values[i]);
+              emitInvokeMethod(ClosureObject.class, "setValue", ELContext.class,
+                               Object.class, Object.class);
+            }
           }
         }
         return;
@@ -3104,12 +3142,12 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visitNode(ELNode node) {
     // Default fallback.
-    buildTrampoline(node);
+    buildTrampoline(node, false);
   }
 
-  private void buildTrampoline(ELNode node) {
+  private void buildTrampoline(ELNode node, boolean ignore) {
     int poolIdx = putConstant(node);
-    current.emit(TRAMPOLINE, 0, poolIdx);
+    current.emit(TRAMPOLINE, ignore ? 1 : 0, poolIdx);
   }
 
   // ── Block management ──

@@ -902,7 +902,9 @@ public class BytecodeCompiler {
   
       case INSTANCEOF -> {
         Object cls = fn.getConstant(v.poolIndex());
-        if (cls instanceof Class) {
+        if (cls instanceof IRClass irc) {
+          mc.INSTANCEOF(irc.internalName);
+        } else if (cls instanceof Class) {
           mc.INSTANCEOF((Class<?>)cls);
         } else {
           mc.LDC(cls)
@@ -1261,13 +1263,25 @@ public class BytecodeCompiler {
           mc.BOX(m.getReturnType());
       }
   
-      case NEW ->
-        mc.NEW((Class<?>)fn.getConstant(v.poolIndex()))
-          .DUP();
+      case NEW -> {
+        Object cls = fn.getConstant(v.poolIndex());
+        if (cls instanceof IRClass irc) {
+          mc.NEW(irc.internalName).DUP();
+        } else {
+          mc.NEW((Class<?>)cls).DUP();
+        }
+      }
+
       case CONSTRUCTOR -> {
-        Constructor<?> cons = (Constructor<?>)fn.getConstant(v.poolIndex());
-        mc.INVOKESPECIAL(cons.getDeclaringClass(), "<init>", Void.TYPE,
-                         cons.getParameterTypes());
+        Object c = fn.getConstant(v.poolIndex());
+        if (c instanceof IRClass irc) {
+          mc.INVOKESPECIAL(irc.internalName, "<init>", Void.TYPE,
+                           EvaluationContext.class, Object[].class);
+        } else {
+          Constructor<?> cons = (Constructor<?>)c;
+          mc.INVOKESPECIAL(cons.getDeclaringClass(), "<init>", Void.TYPE,
+                           cons.getParameterTypes());
+        }
       }
   
       case NEW_ARRAY -> {
@@ -1452,11 +1466,16 @@ public class BytecodeCompiler {
                          String.class, String.class);
   
       case TRAMPOLINE -> {
-        loadConstant(mc, fn.getConstant(v.poolIndex()));
-        mc.CHECKCAST(ELNode.class)
-          .ALOAD(S_ENV())
-          .INVOKEVIRTUAL(ELNode.class, "getValue", Object.class,
-                         EvaluationContext.class);
+        if (v.payload() == 0) {
+          loadConstant(mc, fn.getConstant(v.poolIndex()));
+          mc.CHECKCAST(ELNode.class)
+            .ALOAD(S_ENV())
+            .INVOKEVIRTUAL(ELNode.class, "getValue", Object.class,
+                           EvaluationContext.class);
+        } else {
+          // Ignored trampoline.
+          mc.ACONST_NULL();
+        }
       }
   
       default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, v.opcode(),
