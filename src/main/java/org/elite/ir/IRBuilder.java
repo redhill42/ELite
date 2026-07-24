@@ -422,11 +422,11 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       // resolve method at runtime
-      current.emitPushCtx();
+      current.emitPushEnv();
       build(acc.right);
       build(acc.index);
       buildTuple(node.args);
-      emitInvokeMethod(Runtime.class, "invokeMember", ELContext.class,
+      emitInvokeMethod(Runtime.class, "invokeMember", EvaluationContext.class,
                        Object.class, Object.class, Object[].class);
       return;
     }

@@ -110,6 +110,12 @@ public class ClassAssembly
         return new MethodAssembly(this, mv);
     }
 
+    public MethodAssembly
+    newMethod(int access, String name, Class<?> returnType,
+              Class<?>... argumentTypes) {
+        return newMethod(access, name, returnType, argumentTypes, null);
+    }
+
     public MethodAssembly newMethod(int access, Method method) {
         return newMethod(access, method.getName(), method.getReturnType(),
                          method.getParameterTypes(), method.getExceptionTypes());

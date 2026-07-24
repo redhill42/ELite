@@ -5,8 +5,10 @@ import elite.lang.Seq;
 import elite.lang.Symbol;
 import elite.lang.annotation.Expando;
 import elite.lang.annotation.ExpandoScope;
+import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.EvaluationException;
 import org.elite.eval.ExternalImports;
 import org.elite.eval.Frame;
 import org.elite.eval.Runtime;
@@ -18,6 +20,7 @@ import org.elite.eval.closure.TypedClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
+import org.elite.resources.Resources;
 import org.elite.util.DynamicClassLoader;
 import org.elite.util.asm.ClassAssembly;
 import org.elite.util.asm.MethodAssembly;
@@ -32,10 +35,13 @@ import java.io.ObjectOutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.elite.eval.ELUtils.*;
@@ -210,7 +216,7 @@ public class BytecodeCompiler {
     //    EvaluationContext env, Object[] args)
     MethodAssembly mc = cc.newMethod(
       ACC_PUBLIC | ACC_STATIC | ACC_FINAL, methodName, Object.class,
-      new Class<?>[]{EvaluationContext.class, Object[].class}, null);
+      EvaluationContext.class, Object[].class);
 
     new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
   }
@@ -255,7 +261,8 @@ public class BytecodeCompiler {
 
     ClassAssembly cc = new ClassAssembly(
       (clazz.node.symbol.isStatic() ? ACC_STATIC : 0) | ACC_PUBLIC | ACC_SUPER,
-      clazz.internalName, Object.class, null);
+      clazz.internalName, Object.class,
+      new Class<?>[]{DynamicDispatcher.class});
 
     // Add static and instance fields.
     for (ELNode.DEFINE var : clazz.node.cvars) {
@@ -276,7 +283,7 @@ public class BytecodeCompiler {
     // Constructor.
     IRFunction initFunc = clazz.init_proc.symbol.func;
     MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
-      new Class<?>[]{EvaluationContext.class, Object[].class}, null);
+      EvaluationContext.class, Object[].class);
     mc.THIS()
       .INVOKESPECIAL(Object.class, "<init>", Void.TYPE, NO_ARGS);
     new FunctionCompiler(initFunc, clazz.internalName, false, Void.TYPE, mc)
@@ -285,8 +292,7 @@ public class BytecodeCompiler {
     // Class initializer.
     if (clazz.clinit_proc != null) {
       IRFunction clinitFunc = clazz.clinit_proc.symbol.func;
-      mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", Void.TYPE,
-                        new Class<?>[0], null);
+      mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", Void.TYPE);
       mc.NEW(EvaluationContext.class)
         .DUP()
         .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
@@ -325,9 +331,8 @@ public class BytecodeCompiler {
       if (def == null || def.symbol.isStatic())
         mods |= ACC_STATIC;
 
-      mc = cc.newMethod(mods, methodName, Object.class,
-                        new Class<?>[]{EvaluationContext.class, Object[].class},
-                        null);
+      mc = cc.newMethod(mods, methodName, Object.class, EvaluationContext.class,
+                        Object[].class);
 
       // Add annotation for operator procedure.
       if (!methodName.equals(fn.name())) {
@@ -345,10 +350,90 @@ public class BytecodeCompiler {
       }
     }
 
+    // Implement DynamicDispatcher interface.
+    mc = cc.newMethod(ACC_PUBLIC, "__invoke__", Object.class,
+                      EvaluationContext.class, String.class, Object[].class);
+
+    TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
+    for (ELNode.DEFINE def : clazz.node.ivars) {
+      if (!(def.expr instanceof ELNode.LAMBDA) ||
+          def.id.equals(clazz.name) || def.id.equals("toString") ||
+          def.id.equals("equals") || def.id.equals("hashCode"))
+        continue;
+      cases.computeIfAbsent(def.id.hashCode(), ArrayList::new).add(def);
+    }
+
+    Label fail = new Label();
+    if (!cases.isEmpty()) {
+      int[] keys = new int[cases.size()];
+      Label[] labels = new Label[cases.size()];
+      int i = 0;
+      for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
+        keys[i] = entry.getKey();
+        labels[i] = new Label();
+        i++;
+      }
+
+      if (cases.size() > 1) {
+        mc.ALOAD(2)
+          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+          .SWITCH(keys, labels, fail, 5);
+      }
+
+      i = 0;
+      for (List<ELNode.DEFINE> defs : cases.values()) {
+        mc.label(labels[i++]);
+        for (int j = 0; j < defs.size(); j++) {
+          ELNode.DEFINE def = defs.get(j);
+          ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
+          Label next = j == defs.size() - 1 ? fail : new Label();
+          String methodName = scope.lookupMethod(proc.symbol.func);
+          mc.LDC(def.id)
+            .ALOAD(2)
+            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+            .IFEQ(next)
+            .ALOAD(3)
+            .ARRAYLENGTH()
+            .PUSH(proc.vars.length)
+            .IF_ICMPNE(fail)
+            .THIS()
+            .ALOAD(1)
+            .ALOAD(3)
+            .INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
+                           EvaluationContext.class, Object[].class)
+            .ARETURN();
+          if (j != defs.size() - 1)
+            mc.label(next);
+        }
+      }
+    }
+
+    mc.label(fail)
+      .NEW(EvaluationException.class)
+      .DUP()
+      .ALOAD(1)
+      .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
+      .LDC(EL_METHOD_NOT_FOUND)
+      .ICONST_2()
+      .ANEWARRAY(Object.class)
+      .DUP()
+      .ICONST_0()
+      .LDC(clazz.name)
+      .AASTORE()
+      .DUP()
+      .ICONST_1()
+      .ALOAD(2)
+      .AASTORE()
+      .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
+                    Object[].class)
+      .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
+                     ELContext.class, String.class)
+      .ATHROW()
+      .end();
+
     // Generate toString method.
     if (vmap.containsKey("toString") || clazz.node.vars != null) {
-      mc = cc.newMethod(ACC_PUBLIC, "toString", String.class, new Class<?>[0],
-                        null);
+      mc = cc.newMethod(ACC_PUBLIC, "toString", String.class);
 
       IRFunction fn = vmap.get("toString");
       if (fn != null) {
@@ -404,8 +489,7 @@ public class BytecodeCompiler {
 
     // Generate equals method.
     if (vmap.containsKey("equals") || clazz.node.vars != null) {
-      mc = cc.newMethod(ACC_PUBLIC, "equals", Boolean.TYPE,
-                        new Class<?>[]{Object.class}, null);
+      mc = cc.newMethod(ACC_PUBLIC, "equals", Boolean.TYPE, Object.class);
 
       IRFunction fn = vmap.get("equals");
       if (fn != null) {
@@ -455,8 +539,7 @@ public class BytecodeCompiler {
 
     // Generate hashCode method.
     if (vmap.containsKey("hashCode") || clazz.node.vars != null) {
-      mc = cc.newMethod(ACC_PUBLIC, "hashCode", Integer.TYPE, new Class<?>[0],
-                        null);
+      mc = cc.newMethod(ACC_PUBLIC, "hashCode", Integer.TYPE);
 
       IRFunction fn = vmap.get("hashCode");
       if (fn != null) {
@@ -1509,8 +1592,7 @@ public class BytecodeCompiler {
 
       // Constructor.
       MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
-                                        new Class[]{EvaluationContext.class},
-                                        null)
+                                        EvaluationContext.class)
         .THIS()
         .ALOAD(1)
         .LDC(closure.name())
@@ -1557,7 +1639,7 @@ public class BytecodeCompiler {
       //     return ELiteProgram$1.execute$2(env.pushContext(), args);
       // }
       cc.newMethod(ACC_PROTECTED, "execute", Object.class,
-                   new Class[]{EvaluationContext.class, Object[].class}, null)
+                   EvaluationContext.class, Object[].class)
         .ALOAD(1)
         .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
                        EvaluationContext.class)
