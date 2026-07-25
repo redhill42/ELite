@@ -65,58 +65,6 @@ public class BytecodeCompiler {
   private static final String CONSTANT_POOL_NAME = "$C";
   private final Map<Object, Integer> constantMap = new HashMap<>();
 
-  private Scope scope = new Scope(null);
-
-  /**
-   * The scope used to isolate method name resolution. Program scope and Class
-   * scope has different function->method mapping. To find a function method
-   * name, search from Class scope first if it exists, then search from program
-   * scope.
-   */
-  class Scope {
-    private final Map<IRFunction, String> methodNames = new HashMap<>();
-    private final Map<IRFunction, String> closureNames = new HashMap<>();
-    private final Scope parent;
-
-    private Scope(Scope parent) {
-      this.parent = parent;
-    }
-
-    void push() {
-      scope = new Scope(scope);
-    }
-
-    void pop() {
-      scope = scope.parent;
-    }
-
-    void registerFunction(IRFunction function, String name) {
-      methodNames.put(function, name);
-    }
-
-    String lookupMethod(IRFunction function) {
-      for (Scope s = this; s != null; s = s.parent) {
-        String name = s.methodNames.get(function);
-        if (name != null)
-          return name;
-      }
-      return null;
-    }
-
-    void registerClosure(IRFunction function, String name) {
-      closureNames.put(function, name);
-    }
-
-    String lookupClosure(IRFunction function) {
-      for (Scope s = this; s != null; s = s.parent) {
-        String name = s.closureNames.get(function);
-        if (name != null)
-          return name;
-      }
-      return null;
-    }
-  }
-
   public static IRCompiledFunction compile(IRProgram program) {
     String name = "ELiteProgram$" + CLASS_COUNTER.incrementAndGet();
     var consumer = new JITBytecodeConsumer();
@@ -136,22 +84,23 @@ public class BytecodeCompiler {
   }
 
   private void compileProgram(IRProgram program, ExternalImports imports) {
-    // Assign method names.
-    scope.registerFunction(program.entry(), "execute$main");
+    // Map functions to program class methods.
     int idx = 0;
     for (IRFunction f : program.functions()) {
-      if (f != program.entry()) {
-        String methodName = "execute$" +
-                            (isJavaIdentifier(f.name()) ? f.name() : "") +
-                            "$" + idx++;
-        scope.registerFunction(f, methodName);
+      if (f == program.entry()) {
+        f.internalName = "execute$main";
+      } else {
+        f.internalName = "execute$" +
+                         (isJavaIdentifier(f.name()) ? f.name() : "") +
+                         "$" + idx++;
       }
     }
 
-    // Assign class names.
+    // Map elite class to Java class.
     for (IRClass c : program.classes())
       c.internalName = ProgramClassName + "$" + c.internalName;
 
+    // Create program class.
     ClassAssembly cc = new ClassAssembly(ACC_PUBLIC | ACC_FINAL | ACC_SUPER,
                                          ProgramClassName, Object.class, null);
 
@@ -171,14 +120,9 @@ public class BytecodeCompiler {
       .RETURN()
       .end();
 
-    // Compile entry function.
-    compileFunction(cc, program.entry());
-
-    // Compile lambdas.
+    // Compile program functions. This includes program entry function.
     for (IRFunction f : program.functions()) {
-      if (f != program.entry()) {
-        compileFunction(cc, f);
-      }
+      compileFunction(cc, f);
     }
 
     // Compile classes.
@@ -209,29 +153,23 @@ public class BytecodeCompiler {
   }
 
   private void compileFunction(ClassAssembly cc, IRFunction f) {
-    String methodName = scope.lookupMethod(f);
-
     // The function method:
     // public static Object execute$func$0(
     //    EvaluationContext env, Object[] args)
     MethodAssembly mc = cc.newMethod(
-      ACC_PUBLIC | ACC_STATIC | ACC_FINAL, methodName, Object.class,
+      ACC_PUBLIC | ACC_STATIC | ACC_FINAL, f.internalName, Object.class,
       EvaluationContext.class, Object[].class);
 
     new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
   }
 
   private void compileClass(IRClass clazz) {
-    scope.push();
-
     Map<IRFunction, ELNode.DEFINE> fmap = new HashMap<>();
     Map<String, IRFunction> vmap = new HashMap<>();
-    Map<String, IRFunction> cvmap = new HashMap<>();
 
     for (ELNode.DEFINE var : clazz.node.cvars) {
       if (var.expr instanceof ELNode.LAMBDA fn) {
         fmap.put(fn.symbol.func, var);
-        cvmap.put(var.id, fn.symbol.func);
       }
     }
 
@@ -242,27 +180,33 @@ public class BytecodeCompiler {
       }
     }
 
-    // Register member function -> method mapping.
+    // Map member function to Java method.
     int idx = 0;
     for (IRFunction fn : clazz.functions()) {
-      String methodName;
       ELNode.DEFINE def = fmap.get(fn);
       if (def == null) {
-        methodName = "__execute$" +
-                     ((isJavaIdentifier(fn.name())) ? fn.name() : "") +
-                     "$" + idx++;
+        fn.internalName = "__execute$" +
+                          ((isJavaIdentifier(fn.name())) ? fn.name() : "") +
+                          "$" + idx++;
       } else if (fn.name().equals(clazz.name)) {
-        methodName = "__init__";
+        fn.internalName = "__init__";
       } else {
-        methodName = mangle(def.id);
+        fn.internalName = mangle(def.id);
       }
-      scope.registerFunction(fn, methodName);
     }
 
+    String className = clazz.internalName;
     ClassAssembly cc = new ClassAssembly(
       (clazz.node.symbol.isStatic() ? ACC_STATIC : 0) | ACC_PUBLIC | ACC_SUPER,
-      clazz.internalName, Object.class,
-      new Class<?>[]{DynamicDispatcher.class});
+      className, Object.class, new Class<?>[]{DynamicDispatcher.class});
+
+    if (clazz.node.file != null) {
+      String filename = clazz.node.file;
+      int sep = filename.lastIndexOf('/');
+      if (sep != -1)
+        filename = filename.substring(sep + 1);
+      cc.getImpl().visitSource(filename, null);
+    }
 
     // Add static and instance fields.
     for (ELNode.DEFINE var : clazz.node.cvars) {
@@ -286,8 +230,7 @@ public class BytecodeCompiler {
       EvaluationContext.class, Object[].class);
     mc.THIS()
       .INVOKESPECIAL(Object.class, "<init>", Void.TYPE, NO_ARGS);
-    new FunctionCompiler(initFunc, clazz.internalName, false, Void.TYPE, mc)
-      .compile();
+    new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
 
     // Class initializer.
     if (clazz.clinit_proc != null) {
@@ -302,8 +245,7 @@ public class BytecodeCompiler {
         .ICONST_0()
         .ANEWARRAY(Object.class)
         .ASTORE(1);
-      new FunctionCompiler(clinitFunc, clazz.internalName, true, Void.TYPE, mc)
-        .compile();
+      new FunctionCompiler(clinitFunc, className, true, Void.TYPE, mc).compile();
     }
 
     // Generate member functions.
@@ -313,9 +255,6 @@ public class BytecodeCompiler {
                           def.id.equals("equals") ||
                           def.id.equals("hashCode")))
         continue; // generated differently
-
-      String methodName = scope.lookupMethod(fn);
-      assert methodName != null;
 
       int mods = 0;
       if (def != null) {
@@ -331,11 +270,11 @@ public class BytecodeCompiler {
       if (def == null || def.symbol.isStatic())
         mods |= ACC_STATIC;
 
-      mc = cc.newMethod(mods, methodName, Object.class, EvaluationContext.class,
-                        Object[].class);
+      mc = cc.newMethod(mods, fn.internalName, Object.class,
+                        EvaluationContext.class, Object[].class);
 
       // Add annotation for operator procedure.
-      if (!methodName.equals(fn.name())) {
+      if (!fn.internalName.equals(fn.name())) {
         mc.ANNOTATION(Expando.class, true)
           .FIELD("name", fn.name())
           .ARRAY("scope")
@@ -345,7 +284,7 @@ public class BytecodeCompiler {
       }
 
       if ((mods & ACC_ABSTRACT) == 0) {
-        new FunctionCompiler(fn, clazz.internalName, (mods & ACC_STATIC) != 0,
+        new FunctionCompiler(fn, className, (mods & ACC_STATIC) != 0,
                              Object.class, mc).compile();
       }
     }
@@ -360,7 +299,7 @@ public class BytecodeCompiler {
           def.id.equals(clazz.name) || def.id.equals("toString") ||
           def.id.equals("equals") || def.id.equals("hashCode"))
         continue;
-      cases.computeIfAbsent(def.id.hashCode(), ArrayList::new).add(def);
+      cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
     }
 
     Label fail = new Label();
@@ -387,7 +326,7 @@ public class BytecodeCompiler {
           ELNode.DEFINE def = defs.get(j);
           ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
           Label next = j == defs.size() - 1 ? fail : new Label();
-          String methodName = scope.lookupMethod(proc.symbol.func);
+          String methodName = proc.symbol.func.internalName;
           mc.LDC(def.id)
             .ALOAD(2)
             .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
@@ -399,7 +338,7 @@ public class BytecodeCompiler {
             .THIS()
             .ALOAD(1)
             .ALOAD(3)
-            .INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
+            .INVOKEVIRTUAL(className, methodName, Object.class,
                            EvaluationContext.class, Object[].class)
             .ARETURN();
           if (j != defs.size() - 1)
@@ -446,7 +385,7 @@ public class BytecodeCompiler {
           .ICONST_0()
           .ANEWARRAY(Object.class)
           .ASTORE(2);
-        new FunctionCompiler(fn, clazz.internalName, false, String.class, mc)
+        new FunctionCompiler(fn, className, false, String.class, mc)
           .compile();
       } else {
         mc.NEW_INSTANCE(StringBuilder.class)
@@ -454,6 +393,7 @@ public class BytecodeCompiler {
           .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
                          String.class);
 
+        assert clazz.node.vars != null;
         for (int i = 0; i < clazz.node.vars.length; i++) {
           Label b1 = new Label(), b2 = new Label();
           if (i > 0) {
@@ -462,7 +402,7 @@ public class BytecodeCompiler {
                              String.class);
           }
           mc.THIS()
-            .GETFIELD(clazz.internalName, clazz.node.vars[i].id, Object.class)
+            .GETFIELD(className, clazz.node.vars[i].id, Object.class)
             .DUP()
             .INSTANCEOF(String.class)
             .IFEQ(b1)
@@ -506,22 +446,23 @@ public class BytecodeCompiler {
           .ALOAD(1)
           .AASTORE()
           .ASTORE(2);
-        new FunctionCompiler(fn, clazz.internalName, false, Boolean.TYPE, mc)
+        new FunctionCompiler(fn, className, false, Boolean.TYPE, mc)
           .compile();
       } else {
         Label exit = new Label();
         mc.ALOAD(1)
-          .INSTANCEOF(clazz.internalName)
+          .INSTANCEOF(className)
           .IFEQ(exit)
           .ALOAD(1)
-          .CHECKCAST(clazz.internalName)
+          .CHECKCAST(className)
           .ASTORE(2);
 
+        assert clazz.node.vars != null;
         for (ELNode.DEFINE var : clazz.node.vars) {
           mc.THIS()
-            .GETFIELD(clazz.internalName, var.id, Object.class)
+            .GETFIELD(className, var.id, Object.class)
             .ALOAD(2)
-            .GETFIELD(clazz.internalName, var.id, Object.class)
+            .GETFIELD(className, var.id, Object.class)
             .INVOKESTATIC(Objects.class, "equals", Boolean.TYPE, Object.class,
                           Object.class)
             .IFEQ(exit);
@@ -552,16 +493,17 @@ public class BytecodeCompiler {
           .ICONST_0()
           .ANEWARRAY(Object.class)
           .ASTORE(2);
-        new FunctionCompiler(fn, clazz.internalName, false, Integer.TYPE, mc)
+        new FunctionCompiler(fn, className, false, Integer.TYPE, mc)
           .compile();
       } else {
+        assert clazz.node.vars != null;
         mc.ICONST_1();
         for (ELNode.DEFINE var : clazz.node.vars) {
           Label b1 = new Label(), b2 = new Label();
           mc.PUSH(31)
             .IMUL()
             .THIS()
-            .GETFIELD(clazz.internalName, var.id, Object.class).DUP()
+            .GETFIELD(className, var.id, Object.class).DUP()
             .IFNONNULL(b1)
             .POP()
             .ICONST_0()
@@ -575,9 +517,7 @@ public class BytecodeCompiler {
       }
     }
 
-    consumer.acceptClass(clazz.internalName, cc.end());
-
-    scope.pop();
+    consumer.acceptClass(className, cc.end());
   }
 
   private String mangle(String id) {
@@ -773,7 +713,7 @@ public class BytecodeCompiler {
    */
   private class FunctionCompiler {
     private final IRFunction     fn;
-    private final String         className;
+    private final String         currentClassName;
     private final boolean        isStatic;
     private final Class<?>       returnType;
     private final MethodAssembly mc;
@@ -782,7 +722,7 @@ public class BytecodeCompiler {
     FunctionCompiler(IRFunction fn, String className, boolean isStatic,
                      Class<?> returnType, MethodAssembly mc) {
       this.fn = fn;
-      this.className = className;
+      this.currentClassName = className;
       this.isStatic = isStatic;
       this.returnType = returnType;
       this.mc = mc;
@@ -849,13 +789,13 @@ public class BytecodeCompiler {
           }
         }
   
-        compileInst(v);
+        compileInstruction(v);
       }
   
       mc.end();
     }
   
-    private void compileInst(InstructionView v) {
+    private void compileInstruction(InstructionView v) {
       switch (v.opcode()) {
       case NOP -> {}
       case DUP -> mc.DUP();
@@ -1312,16 +1252,13 @@ public class BytecodeCompiler {
       }
   
       case INVOKE_DIRECT -> {
-        IRFunction closure = (IRFunction)fn.getConstant(v.poolIndex());
-        String methodName = scope.lookupMethod(closure);
-        assert methodName != null;
-
         // Invoke function method, the argument list is on stack top.
-        if (closure.isStatic()) {
-          mc.INVOKESTATIC(className, methodName, Object.class,
+        IRFunction f = (IRFunction)fn.getConstant(v.poolIndex());
+        if (f.isStatic()) {
+          mc.INVOKESTATIC(currentClassName, f.internalName, Object.class,
                           EvaluationContext.class, Object[].class);
         } else {
-          mc.INVOKEVIRTUAL(className, methodName, Object.class,
+          mc.INVOKEVIRTUAL(currentClassName, f.internalName, Object.class,
                            EvaluationContext.class, Object[].class);
         }
       }
@@ -1447,7 +1384,7 @@ public class BytecodeCompiler {
       case GETFIELD -> {
         String f = (String)fn.getConstant(v.poolIndex());
         mc.THIS()
-          .GETFIELD(className, f, Object.class);
+          .GETFIELD(currentClassName, f, Object.class);
       }
   
       case PUTFIELD -> {
@@ -1461,12 +1398,12 @@ public class BytecodeCompiler {
           else
             v.advance(); // no DUP, eat POP
         }
-        mc.PUTFIELD(className, f, Object.class);
+        mc.PUTFIELD(currentClassName, f, Object.class);
       }
   
       case GETSTATIC -> {
         String f = (String)fn.getConstant(v.poolIndex());
-        mc.GETSTATIC(className, f, Object.class);
+        mc.GETSTATIC(currentClassName, f, Object.class);
       }
   
       case PUTSTATIC -> {
@@ -1478,7 +1415,7 @@ public class BytecodeCompiler {
           else
             v.advance(); // no DUP, eat POP
         }
-        mc.PUTSTATIC(className, f, Object.class);
+        mc.PUTSTATIC(currentClassName, f, Object.class);
       }
   
       case CHECKCAST ->
@@ -1561,23 +1498,20 @@ public class BytecodeCompiler {
         }
       }
   
-      default -> throw new CompilationError(_T(IR_BC_UNHANDLED_OPCODE, v.opcode(),
-                                             Opcode.name(v.opcode())));
+      default -> throw new CompilationError(
+        _T(IR_BC_UNHANDLED_OPCODE, v.opcode(), Opcode.name(v.opcode())));
       }
     }
 
     private String compileClosure(IRFunction closure) {
-      String name = scope.lookupClosure(closure);
+      String name = closure.closureName;
       if (name != null)
         return name;
 
-      name = className + "$Closure$" +
+      name = currentClassName + "$Closure$" +
              (isJavaIdentifier(closure.name()) ? closure.name() : "") +
              "$" + CLASS_COUNTER.getAndIncrement();
-      scope.registerClosure(closure, name);
-
-      String methodName = scope.lookupMethod(closure);
-      assert methodName != null;
+      closure.closureName = name;
 
       ClassAssembly cc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
                                            IRCompiledClosure.class, null);
@@ -1644,7 +1578,7 @@ public class BytecodeCompiler {
         .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
                        EvaluationContext.class)
         .ALOAD(2)
-        .INVOKESTATIC(className, methodName, Object.class,
+        .INVOKESTATIC(currentClassName, closure.internalName, Object.class,
                       EvaluationContext.class, Object[].class)
         .ARETURN()
         .end();

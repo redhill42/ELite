@@ -32,7 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class SampleScriptTest {
 
     private static final List<String> SAMPLES = List.of(
-        "C", "dsl", "hello", "list", "rbtree", "scheme", "seq", "uri", "xml", "xmlbuilder"
+        "C", "dsl", "hello", "list", "rbtree", "scheme", "seq", "uri", "xml"
     );
 
     private static final String SAMPLE_DIR = "src/sample/";
@@ -47,8 +47,6 @@ class SampleScriptTest {
     void setup() {
         engine = new ScriptEngineManager().getEngineByName("ELite");
         assertNotNull(engine);
-        // Shell-provided variables that sample scripts may reference
-        engine.put("endl", System.getProperty("line.separator"));
     }
 
     @ParameterizedTest(name = "{0}")

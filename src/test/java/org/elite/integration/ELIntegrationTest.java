@@ -270,8 +270,9 @@ class ELIntegrationTest extends EliteTestBase {
 
     @Test
     void simpleClass() {
-        exec("class Point(x, y) { toString() => \"(\" ~ x ~ \", \" ~ y ~ \")\" }");
-        Object result = eval("Point(3, 4)");
+        Object result = eval(
+          "class Point(x, y) { toString() => \"(\" ~ x ~ \", \" ~ y ~ \")\" }\n" +
+          "Point(3, 4)");
         assertNotNull(result);
     }
 

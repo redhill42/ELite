@@ -37,6 +37,16 @@ public class IRFunction {
   private final int modifiers;
 
   /**
+   * Internal name used by BytecodeCompiler.
+   */
+  public String internalName;
+
+  /**
+   * Closure class name used by BytecodeCompiler.
+   */
+  public String closureName;
+
+  /**
    * Single contiguous code array for all blocks.
    */
   private int[] code;
