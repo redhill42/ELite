@@ -40,8 +40,7 @@ public class MethodAssembly
 
     public AnnotationAssembly ANNOTATION(Class<?> type, boolean visible) {
         return new AnnotationAssembly(
-          null, impl.visitAnnotation(AsmType.toInternalName(type.getName()),
-                                     visible));
+          null, impl.visitAnnotation(AsmType.getDescriptor(type), visible));
     }
 
     // zero operand instructions ...

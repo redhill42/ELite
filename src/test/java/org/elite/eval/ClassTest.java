@@ -59,10 +59,11 @@ class ClassTest extends EliteTestBase {
 
     @Test
     void classOperatorEquals() {
-        exec("class Point(x, y) { ==(other) => x == other.x && y == other.y }\n" +
-             "define a = Point(1, 2)" +
-             "define b = Point(1, 2)" +
-             "define c = Point(3, 4)");
+        exec("""
+             class Point(x, y) { ==(other) => x == other.x && y == other.y }
+             define a = Point(1, 2)
+             define b = Point(1, 2)
+             define c = Point(3, 4)""");
         assertEquals(true, eval("a == b"));
         assertEquals(false, eval("a == c"));
     }

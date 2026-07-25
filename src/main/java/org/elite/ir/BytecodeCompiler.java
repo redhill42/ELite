@@ -276,7 +276,9 @@ public class BytecodeCompiler {
       // Add annotation for operator procedure.
       if (!fn.internalName.equals(fn.name())) {
         mc.ANNOTATION(Expando.class, true)
-          .FIELD("name", fn.name())
+          .ARRAY("name")
+            .FIELD(null, fn.name())
+            .end()
           .ARRAY("scope")
             .ENUM(null, ExpandoScope.class, "OPERATOR")
             .end()
@@ -292,83 +294,11 @@ public class BytecodeCompiler {
     // Implement DynamicDispatcher interface.
     mc = cc.newMethod(ACC_PUBLIC, "__invoke__", Object.class,
                       EvaluationContext.class, String.class, Object[].class);
+    compileInvokeMethod(clazz, clazz.node.ivars, mc);
 
-    TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
-    for (ELNode.DEFINE def : clazz.node.ivars) {
-      if (!(def.expr instanceof ELNode.LAMBDA) ||
-          def.id.equals(clazz.name) || def.id.equals("toString") ||
-          def.id.equals("equals") || def.id.equals("hashCode"))
-        continue;
-      cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
-    }
-
-    Label fail = new Label();
-    if (!cases.isEmpty()) {
-      int[] keys = new int[cases.size()];
-      Label[] labels = new Label[cases.size()];
-      int i = 0;
-      for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
-        keys[i] = entry.getKey();
-        labels[i] = new Label();
-        i++;
-      }
-
-      if (cases.size() > 1) {
-        mc.ALOAD(2)
-          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .SWITCH(keys, labels, fail, 5);
-      }
-
-      i = 0;
-      for (List<ELNode.DEFINE> defs : cases.values()) {
-        mc.label(labels[i++]);
-        for (int j = 0; j < defs.size(); j++) {
-          ELNode.DEFINE def = defs.get(j);
-          ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
-          Label next = j == defs.size() - 1 ? fail : new Label();
-          String methodName = proc.symbol.func.internalName;
-          mc.LDC(def.id)
-            .ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-            .IFEQ(next)
-            .ALOAD(3)
-            .ARRAYLENGTH()
-            .PUSH(proc.vars.length)
-            .IF_ICMPNE(fail)
-            .THIS()
-            .ALOAD(1)
-            .ALOAD(3)
-            .INVOKEVIRTUAL(className, methodName, Object.class,
-                           EvaluationContext.class, Object[].class)
-            .ARETURN();
-          if (j != defs.size() - 1)
-            mc.label(next);
-        }
-      }
-    }
-
-    mc.label(fail)
-      .NEW(EvaluationException.class)
-      .DUP()
-      .ALOAD(1)
-      .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
-      .LDC(EL_METHOD_NOT_FOUND)
-      .ICONST_2()
-      .ANEWARRAY(Object.class)
-      .DUP()
-      .ICONST_0()
-      .LDC(clazz.name)
-      .AASTORE()
-      .DUP()
-      .ICONST_1()
-      .ALOAD(2)
-      .AASTORE()
-      .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
-                    Object[].class)
-      .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                     ELContext.class, String.class)
-      .ATHROW()
-      .end();
+    mc = cc.newMethod(ACC_PUBLIC, "__invokeStatic__", Object.class,
+                      EvaluationContext.class, String.class, Object[].class);
+    compileInvokeMethod(clazz, clazz.node.cvars, mc);
 
     // Generate toString method.
     if (vmap.containsKey("toString") || clazz.node.vars != null) {
@@ -428,11 +358,11 @@ public class BytecodeCompiler {
     }
 
     // Generate equals method.
-    if (vmap.containsKey("equals") || clazz.node.vars != null) {
+    if (vmap.containsKey("equals") || vmap.containsKey("==") ||
+        clazz.node.vars != null) {
       mc = cc.newMethod(ACC_PUBLIC, "equals", Boolean.TYPE, Object.class);
 
-      IRFunction fn = vmap.get("equals");
-      if (fn != null) {
+      if (vmap.containsKey("equals") && !vmap.containsKey("==")) {
         mc.NEW(EvaluationContext.class)
           .DUP()
           .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
@@ -446,6 +376,8 @@ public class BytecodeCompiler {
           .ALOAD(1)
           .AASTORE()
           .ASTORE(2);
+
+        IRFunction fn = vmap.getOrDefault("equals", vmap.get("=="));
         new FunctionCompiler(fn, className, false, Boolean.TYPE, mc)
           .compile();
       } else {
@@ -518,6 +450,90 @@ public class BytecodeCompiler {
     }
 
     consumer.acceptClass(className, cc.end());
+  }
+
+  private void compileInvokeMethod(IRClass clazz, ELNode.DEFINE[] vars,
+                                   MethodAssembly mc) {
+    TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
+    for (ELNode.DEFINE def : vars) {
+      if (!(def.expr instanceof ELNode.LAMBDA) ||
+          def.id.equals(clazz.name) || def.id.equals("toString") ||
+          def.id.equals("equals") || def.id.equals("hashCode"))
+        continue;
+      cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
+    }
+
+    Label fail = new Label();
+    if (!cases.isEmpty()) {
+      int[] keys = new int[cases.size()];
+      Label[] labels = new Label[cases.size()];
+      int i = 0;
+      for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
+        keys[i] = entry.getKey();
+        labels[i] = new Label();
+        i++;
+      }
+
+      if (cases.size() > 1) {
+        mc.ALOAD(2)
+          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+          .SWITCH(keys, labels, fail, 5);
+      }
+
+      i = 0;
+      for (List<ELNode.DEFINE> defs : cases.values()) {
+        mc.label(labels[i++]);
+        for (int j = 0; j < defs.size(); j++) {
+          ELNode.DEFINE def = defs.get(j);
+          ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
+          Label next = j == defs.size() - 1 ? fail : new Label();
+          String methodName = proc.symbol.func.internalName;
+          mc.LDC(def.id)
+            .ALOAD(2)
+            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+            .IFEQ(next)
+            .ALOAD(3)
+            .ARRAYLENGTH()
+            .PUSH(proc.vars.length)
+            .IF_ICMPNE(fail)
+            .THIS()
+            .ALOAD(1)
+            .ALOAD(3);
+          if (def.symbol.isStatic())
+            mc.INVOKESTATIC(clazz.internalName, methodName, Object.class,
+                            EvaluationContext.class, Object[].class);
+          else
+            mc.INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
+                             EvaluationContext.class, Object[].class);
+          mc.ARETURN();
+          if (j != defs.size() - 1)
+            mc.label(next);
+        }
+      }
+    }
+
+    mc.label(fail)
+      .NEW(EvaluationException.class)
+      .DUP()
+      .ALOAD(1)
+      .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
+      .LDC(EL_METHOD_NOT_FOUND)
+      .ICONST_2()
+      .ANEWARRAY(Object.class)
+      .DUP()
+      .ICONST_0()
+      .LDC(clazz.name)
+      .AASTORE()
+      .DUP()
+      .ICONST_1()
+      .ALOAD(2)
+      .AASTORE()
+      .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
+                    Object[].class)
+      .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
+                     ELContext.class, String.class)
+      .ATHROW()
+      .end();
   }
 
   private String mangle(String id) {
@@ -1418,8 +1434,14 @@ public class BytecodeCompiler {
         mc.PUTSTATIC(currentClassName, f, Object.class);
       }
   
-      case CHECKCAST ->
-        mc.CHECKCAST((Class<?>)fn.getConstant(v.poolIndex()));
+      case CHECKCAST -> {
+        Object cls = fn.getConstant(v.poolIndex());
+        if (cls instanceof IRClass)
+          mc.CHECKCAST(((IRClass)cls).internalName);
+        else
+          mc.CHECKCAST((Class<?>)cls);
+      }
+
       case BOX ->
         mc.BOX((Class<?>)fn.getConstant(v.poolIndex()));
       case UNBOX ->

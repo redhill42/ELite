@@ -20,5 +20,7 @@ package org.elite.eval;
  * procedures.
  */
 public interface DynamicDispatcher {
-  Object __invoke__(EvaluationContext env, String name, Object[] args);
+  Object __invoke__(EvaluationContext env, String name, Object... args);
+
+  Object __invokeStatic__(EvaluationContext env, String name, Object... args);
 }

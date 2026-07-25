@@ -27,7 +27,7 @@ public class AnnotationAssembly {
   }
 
   public AnnotationAssembly ENUM(String name, Class<?> type, String value) {
-    impl.visitEnum(name, AsmType.toInternalName(type), value);
+    impl.visitEnum(name, AsmType.getDescriptor(type), value);
     return this;
   }
 

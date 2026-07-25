@@ -2798,78 +2798,128 @@ public class IRBuilder extends ELNode.Visitor {
 
       if (base.symbol != null &&
           base.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
-        Slot cdefSlot = new Slot(base);
-        Slot targetSlot = new Slot();
-        Slot tmpSlot = null;
 
-        if (data.keys == null && cdef.vars == null || cdef.vars.length != argc) {
+        if (data.keys == null && (cdef.vars == null ||
+                                  cdef.vars.length != argc)) {
           current.emitPushFalse();
           return;
         }
 
-        emitInstanceOf(ClosureObject.class);
-        current.emitJumpIfFalse(failBlock);
+        IRClass clazz = cdef.symbol.clazz;
+        if (clazz.isCompilable()) {
+          Slot tmpSlot = null;
 
-        cdefSlot.load();
-        current.emitCheckCast(putConstant(ClassDefinition.class));
-        current.emitPushCtx();
-        argSlot.load();
-        current.emitCheckCast(putConstant(ClosureObject.class));
-        emitInvokeMethod(ClosureObject.class, "get_owner");
-        targetSlot.store();
-        emitInvokeMethod(ClosureObject.class, "get_class");
-        emitInvokeMethod(ClassDefinition.class, "isAssignableFrom",
-                         ELContext.class, ClassDefinition.class);
-        current.emitJumpIfFalse(failBlock);
+          current.emitInstanceOf(putConstant(clazz));
+          current.emitJumpIfFalse(failBlock);
 
-        if (argc == 0) {
-          current.emitPushTrue();
-          return;
-        }
-
-        if (data.keys != null) {
-          // matches for closure object properties
-          for (int i = 0; i < argc; i++) {
-            targetSlot.load();
-            buildConst(data.keys[i]);
-            emitInvokeMethod(ClosureObject.class, "getValue",
-                             ELContext.class, Object.class);
-            if (!isSimplePattern(args[i])) {
-              if (tmpSlot == null)
-                tmpSlot = new Slot();
-              tmpSlot.store();
-            }
-            buildMatchPattern(tmpSlot, args[i], failBlock);
-            current.emitJumpIfFalse(failBlock);
+          if (argc == 0) {
+            current.emitPushTrue();
+            return;
           }
+
+          if (data.keys != null) {
+            // Matches for object properties.
+            for (int i = 0; i < argc; i++) {
+              argSlot.load();
+              buildConst(data.keys[i]);
+              current.emitPushCtx();
+              emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
+                               Object.class, ELContext.class);
+              if (!isSimplePattern(args[i])) {
+                if (tmpSlot == null)
+                  tmpSlot = new Slot();
+                tmpSlot.store();
+              }
+              buildMatchPattern(tmpSlot, args[i], failBlock);
+              current.emitJumpIfFalse(failBlock);
+            }
+          } else {
+            // Matches for constructor variables.
+            for (int i = 0; i < argc; i++) {
+              argSlot.load();
+              buildConst(cdef.vars[i].id);
+              current.emitPushCtx();
+              emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
+                               Object.class, ELContext.class);
+              if (!isSimplePattern(args[i])) {
+                if (tmpSlot == null)
+                  tmpSlot = new Slot();
+                tmpSlot.store();
+              }
+              buildMatchPattern(tmpSlot, args[i], failBlock);
+              current.emitJumpIfFalse(failBlock);
+            }
+          }
+          release(tmpSlot);
         } else {
-          // matches for constructor variables
-          targetSlot.load();
-          emitInvokeMethod(ClosureObject.class, "get_this");
+          Slot cdefSlot = new Slot(base);
+          Slot targetSlot = new Slot();
+          Slot tmpSlot = null;
+
+          emitInstanceOf(ClosureObject.class);
+          current.emitJumpIfFalse(failBlock);
+
+          cdefSlot.load();
+          current.emitCheckCast(putConstant(ClassDefinition.class));
+          current.emitPushCtx();
+          argSlot.load();
+          current.emitCheckCast(putConstant(ClosureObject.class));
+          emitInvokeMethod(ClosureObject.class, "get_owner");
           targetSlot.store();
+          emitInvokeMethod(ClosureObject.class, "get_class");
+          emitInvokeMethod(ClassDefinition.class, "isAssignableFrom",
+                           ELContext.class, ClassDefinition.class);
+          current.emitJumpIfFalse(failBlock);
 
-          for (int i = 0; i < argc; i++) {
-            ELNode arg = args[i];
-            current.emitPushCtx();
-            buildConst(cdef.vars[i].id);
-            emitInvokeMethod(ClosureObject.class, "get_closure",
-                             ELContext.class, String.class);
-            current.emitPushCtx();
-            emitInvokeMethod(Closure.class, "getValue", ELContext.class);
-            if (!isSimplePattern(args[i])) {
-              if (tmpSlot == null)
-                tmpSlot = new Slot();
-              tmpSlot.store();
-            }
-            buildMatchPattern(tmpSlot, arg, failBlock);
-            current.emitJumpIfFalse(failBlock);
-            if (i != argc - 1)
-              targetSlot.load();
+          if (argc == 0) {
+            current.emitPushTrue();
+            return;
           }
-        }
 
-        release(targetSlot);
-        release(tmpSlot);
+          if (data.keys != null) {
+            // matches for closure object properties
+            for (int i = 0; i < argc; i++) {
+              targetSlot.load();
+              buildConst(data.keys[i]);
+              emitInvokeMethod(ClosureObject.class, "getValue", ELContext.class,
+                               Object.class);
+              if (!isSimplePattern(args[i])) {
+                if (tmpSlot == null)
+                  tmpSlot = new Slot();
+                tmpSlot.store();
+              }
+              buildMatchPattern(tmpSlot, args[i], failBlock);
+              current.emitJumpIfFalse(failBlock);
+            }
+          } else {
+            // matches for constructor variables
+            targetSlot.load();
+            emitInvokeMethod(ClosureObject.class, "get_this");
+            targetSlot.store();
+
+            for (int i = 0; i < argc; i++) {
+              ELNode arg = args[i];
+              current.emitPushCtx();
+              buildConst(cdef.vars[i].id);
+              emitInvokeMethod(ClosureObject.class, "get_closure",
+                               ELContext.class, String.class);
+              current.emitPushCtx();
+              emitInvokeMethod(Closure.class, "getValue", ELContext.class);
+              if (!isSimplePattern(args[i])) {
+                if (tmpSlot == null)
+                  tmpSlot = new Slot();
+                tmpSlot.store();
+              }
+              buildMatchPattern(tmpSlot, arg, failBlock);
+              current.emitJumpIfFalse(failBlock);
+              if (i != argc - 1)
+                targetSlot.load();
+            }
+          }
+
+          release(targetSlot);
+          release(tmpSlot);
+        }
       } else {
         Class<?> cls;
         String[] slots = null;

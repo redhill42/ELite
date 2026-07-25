@@ -29,7 +29,16 @@ public class ClassAssembly
         superName  = AsmType.toInternalName(superName);
         interfaces = AsmType.toInternalName(interfaces);
 
-        impl = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        impl = new ClassWriter(ClassWriter.COMPUTE_FRAMES) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                try {
+                    return super.getCommonSuperClass(type1, type2);
+                } catch (TypeNotPresentException ex) {
+                    return AsmType.toInternalName(Object.class);
+                }
+            }
+        };
         impl.visit(V17, access, name, null, superName, interfaces);
     }
 
@@ -42,7 +51,16 @@ public class ClassAssembly
         String   superName      = AsmType.toInternalName(superClass);
         String[] interfaceNames = AsmType.toInternalName(interfaces);
 
-        impl = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        impl = new ClassWriter(ClassWriter.COMPUTE_FRAMES) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                try {
+                    return super.getCommonSuperClass(type1, type2);
+                } catch (TypeNotPresentException ex) {
+                    return AsmType.toInternalName(Object.class);
+                }
+            }
+        };
         impl.visit(V17, access, thisName, null, superName, interfaceNames);
     }
 
@@ -65,8 +83,7 @@ public class ClassAssembly
 
     public AnnotationAssembly ANNOTATION(Class<?> type, boolean visible) {
         return new AnnotationAssembly(
-          null, impl.visitAnnotation(AsmType.toInternalName(type.getName()),
-                                     visible));
+          null, impl.visitAnnotation(AsmType.getDescriptor(type), visible));
     }
 
     public void addField(int access, String name, String desc) {
