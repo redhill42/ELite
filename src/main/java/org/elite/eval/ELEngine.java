@@ -322,6 +322,17 @@ public final class ELEngine
      * @return 方法调用的返回值
      */
     public static Object invokeMethod(ELContext elctx, Object base, Method method, Closure[] args) {
+        if (DynamicDispatcher.class.isAssignableFrom(method.getDeclaringClass())) {
+            try {
+                return method.invoke(base, new EvaluationContext(elctx),
+                                     getArgValues(elctx, args));
+            } catch (InvocationTargetException ex) {
+                invokeError(elctx, ex.getTargetException());
+            } catch (Exception ex) {
+                invokeError(elctx, ex);
+            }
+        }
+
         Class<?>[] types  = method.getParameterTypes();
         int      nargs  = types.length;
         Object[] values = new Object[nargs];

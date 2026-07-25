@@ -16,6 +16,10 @@
 
 package org.elite.ir;
 
+import org.elite.eval.EvaluationContext;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
 
@@ -39,6 +43,11 @@ import static org.elite.ir.Opcode.*;
  */
 final class IREmitter {
   private final IntList buf = new IntList();
+  private final IRBuilder builder;
+
+  IREmitter(IRBuilder builder) {
+    this.builder = builder;
+  }
 
   // ── Core emit methods ──
 
@@ -46,7 +55,7 @@ final class IREmitter {
     if (!buf.isEmpty()) {
       // Instruction after jump or return is dead.
       int op = IRFormat.opcode(buf.back());
-      return op == JUMP || op == RETURN || op == THROW;
+      return op == JUMP || op == RETURN || op == THROW || op == THROW_EXCEPTION;
     }
     return false;
   }
@@ -71,8 +80,8 @@ final class IREmitter {
     return this;
   }
 
-  public IREmitter emitPushConst(int poolIndex) {
-    return emit(PUSH_CONST, 0, poolIndex);
+  public IREmitter emitPushConst(Object value) {
+    return emit(PUSH_CONST, 0, builder.putConstant(value));
   }
 
   public IREmitter emitPushTrue() {
@@ -103,8 +112,12 @@ final class IREmitter {
     return emit(PUSH_VAR, 0, varIndex);
   }
 
-  public IREmitter emitPushGlobal(int poolIndex) {
-    return emit(PUSH_GLOBAL, 0, poolIndex);
+  public IREmitter emitPushGlobal(int slot) {
+    return emit(PUSH_GLOBAL, 0, slot);
+  }
+
+  public IREmitter emitPushGlobal(String name) {
+    return emit(PUSH_GLOBAL, 0, builder.putConstant(name));
   }
 
   public IREmitter emitPop() {
@@ -245,8 +258,16 @@ final class IREmitter {
     return emit(IN, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitInstanceOf(int poolIdx) {
-    return emit(INSTANCEOF, 0, poolIdx);
+  public IREmitter emitInstanceOf(Class<?> cls) {
+    return emit(INSTANCEOF, 0, builder.putConstant(cls));
+  }
+
+  public IREmitter emitInstanceOf(IRClass cls) {
+    return emit(INSTANCEOF, 0, builder.putConstant(cls));
+  }
+
+  public IREmitter emitInstanceOf(String clsid) {
+    return emit(INSTANCEOF, 0, builder.putConstant(clsid));
   }
 
   public IREmitter emitEmpty() {
@@ -295,6 +316,14 @@ final class IREmitter {
     return emit(THROW, 0);
   }
 
+  public IREmitter emitThrowException() {
+    return emit(THROW_EXCEPTION, 0, 0);
+  }
+
+  public IREmitter emitThrowException(String message) {
+    return emit(THROW_EXCEPTION, 1, builder.putConstant(message));
+  }
+
   public IREmitter emitAssert(int count) {
     return emit(ASSERT, count);
   }
@@ -307,18 +336,20 @@ final class IREmitter {
     return emit(LEAVE_SCOPE, 0);
   }
 
-  /**
-   * Pop value, store to global variable (name in constant pool).
-   */
-  public IREmitter emitDefineGlobal(int poolIndex) {
-    return emit(DEFINE_GLOBAL, 0, poolIndex);
+  public IREmitter emitDefineGlobal(int slot) {
+    return emit(DEFINE_GLOBAL, 0, slot);
   }
 
-  /**
-   * Store to global with full chain search — throws if variable not defined.
-   */
-  public IREmitter emitStoreGlobal(int poolIndex) {
-    return emit(STORE_GLOBAL, 0, poolIndex);
+  public IREmitter emitDefineGlobal(String name) {
+    return emit(DEFINE_GLOBAL, 0, builder.putConstant(name));
+  }
+
+  public IREmitter emitStoreGlobal(int slot) {
+    return emit(STORE_GLOBAL, 0, slot);
+  }
+
+  public IREmitter emitStoreGlobal(String name) {
+    return emit(STORE_GLOBAL, 0, builder.putConstant(name));
   }
 
   public IREmitter emitStoreVar(int varIndex) {
@@ -329,67 +360,92 @@ final class IREmitter {
     return emit(STORE_VAR_POP, 0, varIndex);
   }
 
-  public IREmitter emitClosure(int poolIdx) {
-    return emit(CLOSURE, 0, poolIdx);
+  public IREmitter emitClosure(IRFunction func) {
+    return emit(CLOSURE, 0, builder.putConstant(func));
   }
 
-  /**
-   * Direct call to a known IRFunction (pool index of the IRFunction).
-   */
-  public IREmitter emitInvokeDirect(int poolIdx) {
-    return emit(INVOKE_DIRECT, 0, poolIdx);
+  public IREmitter emitInvokeDirect(IRFunction fn) {
+    return emit(INVOKE_DIRECT, 0, builder.putConstant(fn));
   }
 
-  public IREmitter emitInvokeMethod(int poolIdx) {
-    return emit(INVOKE_METHOD, 0, poolIdx);
+  public IREmitter emitInvokeMethod(Method method) {
+    return emit(INVOKE_METHOD, 0, builder.putConstant(method));
   }
 
-  public IREmitter emitNew(int poolIdx) {
-    return emit(NEW, 0, poolIdx);
+  public IREmitter emitNew(Class<?> c) {
+    return emit(NEW, 0, builder.putConstant(c));
   }
 
-  public IREmitter emitConstructor(int poolIdx) {
-    return emit(CONSTRUCTOR, 0, poolIdx);
+  public IREmitter emitNew(IRClass clazz) {
+    return emit(NEW, 0, builder.putConstant(clazz));
   }
 
-  public IREmitter emitNewArray(int count, int poolIdx) {
-    return emit(NEW_ARRAY, count, poolIdx);
+  public IREmitter emitConstructor(Constructor<?> constructor) {
+    return emit(CONSTRUCTOR, 0, builder.putConstant(constructor));
   }
 
-  public IREmitter emitLoadArray(int index, int poolIdx) {
-    return emit(LOAD_ARRAY, index, poolIdx);
+  public IREmitter emitConstructor(IRClass clazz) {
+    return emit(CONSTRUCTOR, 0, builder.putConstant(clazz));
   }
 
-  public IREmitter emitStoreArray(int index, int poolIdx) {
-    return emit(STORE_ARRAY, index, poolIdx);
+  public IREmitter emitNewArray(int count, Class<?> type) {
+    return emit(NEW_ARRAY, count, builder.putConstant(type));
   }
 
-  public IREmitter emitGetField(int poolIdx) {
-    return emit(GETFIELD, 0, poolIdx);
+  public IREmitter emitLoadArray(int index, Class<?> type) {
+    return emit(LOAD_ARRAY, index, builder.putConstant(type));
   }
 
-  public IREmitter emitPutField(int poolIdx) {
-    return emit(PUTFIELD, 0, poolIdx);
+  public IREmitter emitStoreArray(int index, Class<?> type) {
+    return emit(STORE_ARRAY, index, builder.putConstant(type));
   }
 
-  public IREmitter emitGetStatic(int poolIdx) {
-    return emit(GETSTATIC, 0, poolIdx);
+  public IREmitter emitGetField(IRClass clazz, String field) {
+    return emit(GETFIELD, 0, builder.putConstant(new IRClass.Field(clazz, field)));
   }
 
-  public IREmitter emitPutStatic(int poolIdx) {
-    return emit(PUTSTATIC, 0, poolIdx);
+  public IREmitter emitGetField(String field) {
+    return emit(GETFIELD, 0, builder.putConstant(field));
   }
 
-  public IREmitter emitCheckCast(int poolIdx) {
-    return emit(CHECKCAST, 0, poolIdx);
+  public IREmitter emitPutField(IRClass clazz, String field) {
+    return emit(PUTFIELD, 0, builder.putConstant(new IRClass.Field(clazz, field)));
   }
 
-  public IREmitter emitBox(int poolIdx) {
-    return emit(BOX, 0, poolIdx);
+  public IREmitter emitPutField(String field) {
+    return emit(PUTFIELD, 0, builder.putConstant(field));
   }
 
-  public IREmitter emitUnbox(int poolIdx) {
-    return emit(UNBOX, 0, poolIdx);
+  public IREmitter emitGetStatic(IRClass clazz, String field) {
+    return emit(GETSTATIC, 0, builder.putConstant(new IRClass.Field(clazz, field)));
+  }
+
+  public IREmitter emitGetStatic(String field) {
+    return emit(GETSTATIC, 0, builder.putConstant(field));
+  }
+
+  public IREmitter emitPutStatic(IRClass clazz, String field) {
+    return emit(PUTSTATIC, 0, builder.putConstant(new IRClass.Field(clazz, field)));
+  }
+
+  public IREmitter emitPutStatic(String field) {
+    return emit(PUTSTATIC, 0, builder.putConstant(field));
+  }
+
+  public IREmitter emitCheckCast(Class<?> type) {
+    return emit(CHECKCAST, 0, builder.putConstant(type));
+  }
+
+  public IREmitter emitCheckCast(IRClass clazz) {
+    return emit(CHECKCAST, 0, builder.putConstant(clazz));
+  }
+
+  public IREmitter emitBox(Class<?> type) {
+    return emit(BOX, 0, builder.putConstant(type));
+  }
+
+  public IREmitter emitUnbox(Class<?> type) {
+    return emit(UNBOX, 0, builder.putConstant(type));
   }
 
   public IREmitter emitNewCons() {
@@ -408,8 +464,8 @@ final class IREmitter {
     return emit(NEW_TUPLE, count, 0);
   }
 
-  public IREmitter emitDeclareNS(int nameIdx) {
-    return emit(DECLARE_NS, 0, nameIdx);
+  public IREmitter emitDeclareNS(String prefix) {
+    return emit(DECLARE_NS, 0, builder.putConstant(prefix));
   }
 
   public int[] toArray() {

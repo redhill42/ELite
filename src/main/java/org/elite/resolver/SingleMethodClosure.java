@@ -25,6 +25,7 @@ import javax.el.MethodInfo;
 import javax.el.ELException;
 
 import elite.lang.Closure;
+import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.ELEngine;
 import org.elite.eval.closure.NamedClosure;
 import org.elite.util.Utils;
@@ -80,12 +81,12 @@ class SingleMethodClosure extends JavaMethodClosure
     }
 
     public Object invoke(ELContext elctx, Object base, Closure[] args) {
-        checkArgs(args);
+        checkArgs(base, args);
         return ELEngine.invokeMethod(elctx, base, method, args);
     }
 
     public Object invokeSuper(ELContext elctx, Object base, Closure[] args) {
-        checkArgs(args);
+        checkArgs(base, args);
         return invokeSuper(elctx, method, base, args);
     }
 
@@ -135,7 +136,10 @@ class SingleMethodClosure extends JavaMethodClosure
         vargs = method.isVarArgs();
     }
 
-    private void checkArgs(Closure[] args) {
+    private void checkArgs(Object base, Closure[] args) {
+        if (base instanceof DynamicDispatcher)
+            return; // self checked
+
         if (nargs != args.length && (!vargs || args.length < nargs-1)) {
             throw new ELException(_T(EL_FN_BAD_ARG_COUNT, getName(), nargs, args.length));
         }

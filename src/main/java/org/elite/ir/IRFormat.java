@@ -65,7 +65,7 @@ final class IRFormat {
   }
 
   public static int operand(int header) {
-    return header >>> OPERAND_SHIFT;
+    return header >> OPERAND_SHIFT;
   }
 
   public static boolean match(int inst, int opcode, int operand) {

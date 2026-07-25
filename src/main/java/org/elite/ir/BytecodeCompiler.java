@@ -196,9 +196,19 @@ public class BytecodeCompiler {
     }
 
     String className = clazz.internalName;
+    String baseName = clazz.base instanceof IRClass
+                      ? ((IRClass)clazz.base).internalName
+                      : ((Class<?>)clazz.base).getName();
+    String[] interfaces = new String[1 + (clazz.interfaces != null
+                                          ? clazz.interfaces.length : 0)];
+    if (clazz.interfaces != null)
+      for (int i = 0; i < clazz.interfaces.length; i++)
+        interfaces[i] = clazz.interfaces[i].getName();
+    interfaces[interfaces.length - 1] = DynamicDispatcher.class.getName();
+
     ClassAssembly cc = new ClassAssembly(
       (clazz.node.symbol.isStatic() ? ACC_STATIC : 0) | ACC_PUBLIC | ACC_SUPER,
-      className, Object.class, new Class<?>[]{DynamicDispatcher.class});
+      className, baseName, interfaces);
 
     if (clazz.node.file != null) {
       String filename = clazz.node.file;
@@ -228,8 +238,16 @@ public class BytecodeCompiler {
     IRFunction initFunc = clazz.init_proc.symbol.func;
     MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
       EvaluationContext.class, Object[].class);
-    mc.THIS()
-      .INVOKESPECIAL(Object.class, "<init>", Void.TYPE, NO_ARGS);
+    if (clazz.base instanceof IRClass) {
+      mc.THIS()
+        .ALOAD(1)
+        .ALOAD(2)
+        .INVOKESPECIAL(((IRClass)clazz.base).internalName, "<init>", Void.TYPE,
+                       EvaluationContext.class, Object[].class);
+    } else {
+      mc.THIS()
+        .INVOKESPECIAL((Class<?>)clazz.base, "<init>", Void.TYPE, NO_ARGS);
+    }
     new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
 
     // Class initializer.
@@ -1041,7 +1059,22 @@ public class BytecodeCompiler {
                          ELContext.class)
           .ATHROW();
       }
-  
+
+      case THROW_EXCEPTION -> {
+        if (v.count() != 0) {
+          String message = (String)fn.getConstant(v.poolIndex());
+          mc.NEW(UserException.class)
+            .DUP()
+            .ALOAD(S_CTX())
+            .LDC(message)
+            .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
+                           ELContext.class, String.class)
+            .ATHROW();
+        } else {
+          mc.ATHROW();
+        }
+      }
+
       case TRY -> {
         // Pop closures: finalizer, handlers+types, body (top -> bottom)
         int cnt            = v.count();
@@ -1398,40 +1431,61 @@ public class BytecodeCompiler {
       }
   
       case GETFIELD -> {
-        String f = (String)fn.getConstant(v.poolIndex());
-        mc.THIS()
-          .GETFIELD(currentClassName, f, Object.class);
+        Object field = fn.getConstant(v.poolIndex());
+        if (field instanceof IRClass.Field f) {
+          mc.GETFIELD(f.clazz().internalName, f.field(), Object.class);
+        } else {
+          mc.THIS().GETFIELD(currentClassName, (String)field, Object.class);
+        }
       }
   
       case PUTFIELD -> {
-        String f = (String)fn.getConstant(v.poolIndex());
+        Object field = fn.getConstant(v.poolIndex());
+        String className, fieldName;
+        if (field instanceof IRClass.Field f) {
+          className = f.clazz().internalName;
+          fieldName = f.field();
+        } else {
+          className = currentClassName;
+          fieldName = (String)field;
+        }
+
         mc.THIS()
           .SWAP();
         InstructionView next = peekNext(v);
-        if (next != null) {
-          if (next.opcode() != Opcode.POP)
-            mc.DUP_X1();
-          else
-            v.advance(); // no DUP, eat POP
-        }
-        mc.PUTFIELD(currentClassName, f, Object.class);
+        if (next == null || next.opcode() != POP)
+          mc.DUP_X1();
+        else
+          v.advance(); // no DUP, eat POP
+        mc.PUTFIELD(className, fieldName, Object.class);
       }
   
       case GETSTATIC -> {
-        String f = (String)fn.getConstant(v.poolIndex());
-        mc.GETSTATIC(currentClassName, f, Object.class);
+        Object field = fn.getConstant(v.poolIndex());
+        if (field instanceof IRClass.Field f) {
+          mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
+        } else {
+          mc.GETSTATIC(currentClassName, (String)field, Object.class);
+        }
       }
   
       case PUTSTATIC -> {
-        String f = (String)fn.getConstant(v.poolIndex());
-        InstructionView next = peekNext(v);
-        if (next != null) {
-          if (next.opcode() != Opcode.POP)
-            mc.DUP();
-          else
-            v.advance(); // no DUP, eat POP
+        Object field = fn.getConstant(v.poolIndex());
+        String className, fieldName;
+        if (field instanceof IRClass.Field f) {
+          className = f.clazz().internalName;
+          fieldName = f.field();
+        } else {
+          className = currentClassName;
+          fieldName = (String)field;
         }
-        mc.PUTSTATIC(currentClassName, f, Object.class);
+
+        InstructionView next = peekNext(v);
+        if (next == null || next.opcode() != POP)
+          mc.DUP();
+        else
+          v.advance(); // no DUP, eat POP
+        mc.PUTSTATIC(className, fieldName, Object.class);
       }
   
       case CHECKCAST -> {
@@ -1508,16 +1562,8 @@ public class BytecodeCompiler {
                          String.class, String.class);
   
       case TRAMPOLINE -> {
-        if (v.payload() == 0) {
-          loadConstant(mc, fn.getConstant(v.poolIndex()));
-          mc.CHECKCAST(ELNode.class)
-            .ALOAD(S_ENV())
-            .INVOKEVIRTUAL(ELNode.class, "getValue", Object.class,
-                           EvaluationContext.class);
-        } else {
-          // Ignored trampoline.
-          mc.ACONST_NULL();
-        }
+        // Ignored trampoline.
+        mc.ACONST_NULL();
       }
   
       default -> throw new CompilationError(
@@ -1666,13 +1712,19 @@ public class BytecodeCompiler {
     IRCompiledFunction complete() {
       // Load classes to verify generated bytecode. Remove this after bytecode
       // generation is bug free.
-      LOADER.verify();
+      ELContext previousContext = ELEngine.getCurrentELContext();
+      try {
+        ELEngine.setCurrentELContext(ELEngine.createELContext());
+        LOADER.verify();
+      } finally {
+        ELEngine.setCurrentELContext(previousContext);
+      }
 
       try {
         Method m = programClass.getMethod("execute$main",
                                           EvaluationContext.class,
                                           Object[].class);
-        return new IRCompiledFunction(m, null);
+        return new IRCompiledFunction(m);
       } catch (Exception e) {
         throw new RuntimeException(_T(IR_BYTECODE_COMPILE_FAILED), e);
       }

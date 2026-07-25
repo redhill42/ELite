@@ -22,14 +22,13 @@ class CommandOptions {
                description = "specify the encoding of script files")
     public String encoding = null;
 
-    @Parameter(names = "--dump-ast", description = "dump program AST")
+    @Parameter(names = "--dump-ast", description = "dump program AST",
+               hidden = true)
     public boolean dumpAST = false;
 
-    @Parameter(names = "--dump-ir", description = "dump program IR")
+    @Parameter(names = "--dump-ir", description = "dump program IR",
+               hidden = true)
     public boolean dumpIR = false;
-
-    @Parameter(names = "--dump-bc", description = "dump generated Java bytecode")
-    public boolean dumpBC = false;
 
     @Parameter(names = "-O", description = "optimization level",
                validateWith = OptLevelValidator.class)
@@ -42,7 +41,7 @@ class CommandOptions {
     public List<String> args = new ArrayList<>();
 
     public boolean hasDump() {
-        return dumpAST || dumpIR || dumpBC;
+        return dumpAST || dumpIR;
     }
 
     public static class OptLevelValidator implements IParameterValidator {

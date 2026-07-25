@@ -355,6 +355,14 @@ final class PeepholeOpt {
         }
       }
       break;
+
+      case THROW:
+        if (lastOpcode == PUSH_CONST &&
+            builder.getConstant(lastOperand) instanceof String) {
+          code.set(last, IRFormat.pack(THROW_EXCEPTION, 1, lastOperand));
+          return true;
+        }
+        break;
     }
 
     return false;

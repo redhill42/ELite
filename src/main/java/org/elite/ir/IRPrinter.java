@@ -142,6 +142,8 @@ final class IRPrinter {
       return '/' + c.toString() + '/';
     if (c instanceof IRFunction fn)
       return "<" + fn.name() + ">";
+    if (c instanceof IRClass cls)
+      return "IRClass(" + cls.name + ")";
     if (c instanceof Class<?> cls)
       return "<" + cls.getName() + ">";
     if (c instanceof Method m)

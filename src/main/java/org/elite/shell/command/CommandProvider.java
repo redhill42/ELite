@@ -104,18 +104,6 @@ public final class CommandProvider {
         System.out.println(program.compile(elctx).dump());
     }
 
-    @Command("dump-bc")
-    public static void dump_bc(ShellContext shellContext, String script) {
-        if (script.isBlank())
-            script = shellContext.getLastScript();
-        if (script.isBlank())
-            return;
-        ScriptEngine engine = shellContext.getEngine();
-        ELContext elctx = (ELContext) engine.get(ELContext.class.getName());
-        ELProgram program = new Parser(elctx, script).parse();
-        System.out.println(program.compileToByteCode(elctx).dump());
-    }
-
     public static void ls(ShellContext shellContext, String args) {
         ScriptEngine engine = shellContext.getEngine();
         ELContext elctx = (ELContext) engine.get(ELContext.class.getName());

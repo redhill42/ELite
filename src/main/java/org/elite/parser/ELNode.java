@@ -4617,7 +4617,7 @@ public abstract class ELNode implements Serializable
         }
     }
 
-    static boolean isWildcard(ELNode pattern) {
+    public static boolean isWildcard(ELNode pattern) {
         if (pattern instanceof ELNode.DEFINE) {
             ELNode.DEFINE var = (ELNode.DEFINE)pattern;
             return "_".equals(var.id) && var.type == null && var.expr == null;
