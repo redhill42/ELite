@@ -22,6 +22,7 @@ import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
 import org.elite.resources.Resources;
 import org.elite.util.DynamicClassLoader;
+import org.elite.util.asm.AsmType;
 import org.elite.util.asm.ClassAssembly;
 import org.elite.util.asm.MethodAssembly;
 import org.objectweb.asm.Label;
@@ -185,7 +186,7 @@ public class BytecodeCompiler {
     for (IRFunction fn : clazz.functions()) {
       ELNode.DEFINE def = fmap.get(fn);
       if (def == null) {
-        fn.internalName = "__execute$" +
+        fn.internalName = "__lambda$" +
                           ((isJavaIdentifier(fn.name())) ? fn.name() : "") +
                           "$" + idx++;
       } else if (fn.name().equals(clazz.name)) {
@@ -285,7 +286,7 @@ public class BytecodeCompiler {
         if (def.symbol.isAbstract())
           mods |= ACC_ABSTRACT;
       }
-      if (def == null || def.symbol.isStatic())
+      if (def != null && def.symbol.isStatic())
         mods |= ACC_STATIC;
 
       mc = cc.newMethod(mods, fn.internalName, Object.class,
@@ -453,14 +454,15 @@ public class BytecodeCompiler {
           mc.PUSH(31)
             .IMUL()
             .THIS()
-            .GETFIELD(className, var.id, Object.class).DUP()
+            .GETFIELD(className, var.id, Object.class)
+            .DUP()
             .IFNONNULL(b1)
             .POP()
             .ICONST_0()
             .GOTO(b2)
-            .label(b1)
+          .label(b1)
             .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-            .label(b2)
+          .label(b2)
             .IADD();
         }
         mc.IRETURN().end();
@@ -601,7 +603,7 @@ public class BytecodeCompiler {
             sb.append("$").append(Integer.toHexString(c));
         }
         sb.append("__");
-        yield  sb.toString();
+        yield sb.toString();
       }
     };
   }
@@ -1294,10 +1296,17 @@ public class BytecodeCompiler {
         IRFunction closure = (IRFunction)fn.getConstant(v.poolIndex());
         String closureName = compileClosure(closure);
         mc.NEW(closureName)
-          .DUP()
-          .ALOAD(S_ENV())
-          .INVOKESPECIAL(closureName, "<init>", Void.TYPE,
-                         EvaluationContext.class);
+          .DUP();
+        if (fn.owner() != null) {
+          mc.ALOAD(S_ENV())
+            .THIS()
+            .INVOKESPECIAL(closureName, "<init>", AsmType.toMethodDescriptor(
+              "V", EvaluationContext.class.getName(), currentClassName));
+        } else {
+          mc.ALOAD(S_ENV())
+            .INVOKESPECIAL(closureName, "<init>", Void.TYPE,
+                           EvaluationContext.class);
+        }
       }
   
       case INVOKE_DIRECT -> {
@@ -1592,10 +1601,21 @@ public class BytecodeCompiler {
         cc.getImpl().visitSource(filename, null);
       }
 
+      MethodAssembly mc;
+      if (fn.owner() != null) {
+        cc.addField(ACC_PRIVATE, "$this", AsmType.toDescriptor(currentClassName));
+        mc = cc.newMethod(ACC_PUBLIC, "<init>", AsmType.toMethodDescriptor(
+          "V", EvaluationContext.class.getName(), currentClassName), null);
+        mc.THIS()
+          .ALOAD(2)
+          .PUTFIELD(name, "$this", AsmType.toDescriptor(currentClassName));
+      } else {
+        mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
+                          EvaluationContext.class);
+      }
+
       // Constructor.
-      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
-                                        EvaluationContext.class)
-        .THIS()
+      mc.THIS()
         .ALOAD(1)
         .LDC(closure.name())
         .PUSH(closure.paramCount());
@@ -1640,16 +1660,29 @@ public class BytecodeCompiler {
       // Object execute(EvaluationContext env, Object[] args) {
       //     return ELiteProgram$1.execute$2(env.pushContext(), args);
       // }
-      cc.newMethod(ACC_PROTECTED, "execute", Object.class,
-                   EvaluationContext.class, Object[].class)
-        .ALOAD(1)
-        .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
-                       EvaluationContext.class)
-        .ALOAD(2)
-        .INVOKESTATIC(currentClassName, closure.internalName, Object.class,
-                      EvaluationContext.class, Object[].class)
-        .ARETURN()
-        .end();
+      mc = cc.newMethod(ACC_PROTECTED, "execute", Object.class,
+                        EvaluationContext.class, Object[].class);
+      if (fn.owner() != null) {
+        mc.THIS()
+          .GETFIELD(name, "$this", AsmType.toDescriptor(currentClassName))
+          .ALOAD(1)
+          .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
+                         EvaluationContext.class)
+          .ALOAD(2)
+          .INVOKEVIRTUAL(currentClassName, closure.internalName, Object.class,
+                         EvaluationContext.class, Object[].class)
+          .ARETURN()
+          .end();
+      } else {
+        mc.ALOAD(1)
+          .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
+                         EvaluationContext.class)
+          .ALOAD(2)
+          .INVOKESTATIC(currentClassName, closure.internalName, Object.class,
+                        EvaluationContext.class, Object[].class)
+          .ARETURN()
+          .end();
+      }
 
       consumer.acceptClass(name, cc.end());
       return name;

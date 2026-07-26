@@ -308,7 +308,7 @@ public class IRBuilder extends ELNode.Visitor {
     // then the variable is referencing the class' instance variable.
     SymbolTable.Symbol symbol = node.symbol;
     return symbol != null && symbol.scope.isClassScope() &&
-           currentScope.enclosingScope().parent == symbol.scope &&
+           currentScope.enclosingClassScope() == symbol.scope &&
            !(symbol.def.expr instanceof ELNode.LAMBDA) &&
            !(symbol.def.expr instanceof ELNode.CLASSDEF);
   }

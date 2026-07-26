@@ -128,6 +128,14 @@ public class SymbolTable {
       return null;
     }
 
+    Scope enclosingClassScope() {
+      for (Scope s = this; s != null; s = s.parent) {
+        if (s.fresh instanceof ELNode.CLASSDEF)
+          return s;
+      }
+      return null;
+    }
+
     IRClass enclosingClass() {
       for (Scope s = this; s != null; s = s.parent) {
         if (s.fresh instanceof ELNode.CLASSDEF)
