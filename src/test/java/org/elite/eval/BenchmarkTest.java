@@ -8,6 +8,7 @@ import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
 import org.elite.ir.*;
+import org.elite.util.DynamicClassLoader;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -381,7 +382,7 @@ class BenchmarkTest {
                                    javax.el.ELContext ectx, EvaluationContext evalCtx) {
         ELProgram program = new Parser(elctx, expr).parse();
         IRProgram irp = IRBuilder.compile(elctx, program);
-        IRCompiledFunction cf = BytecodeCompiler.compile(irp);
+        IRCompiledFunction cf = BytecodeCompiler.compile(irp, new DynamicClassLoader());
         for (int i = 0; i < warmup; i++) cf.execute(ectx, null);
         long start = System.nanoTime();
         for (int i = 0; i < iters; i++) cf.execute(ectx, null);

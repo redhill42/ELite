@@ -48,12 +48,14 @@ import org.elite.ir.IRProgram;
 import org.elite.parser.Parser;
 import org.elite.parser.ParseException;
 import elite.lang.Closure;
+import org.elite.util.DynamicClassLoader;
 
 class ELiteScriptEngine extends AbstractScriptEngine
     implements Invocable, Compilable
 {
     private final ELiteScriptEngineFactory factory;
     private Parser parser;
+    private final DynamicClassLoader loader;
 
     // the key used to give back ELContext from ScriptContext
     public static final String EL_CONTEXT_KEY = ELContext.class.getName();
@@ -61,6 +63,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
     ELiteScriptEngine(ELiteScriptEngineFactory factory) {
         this.factory = factory;
         this.context = new ScriptContextImpl();
+        this.loader = new DynamicClassLoader();
     }
 
     /**
@@ -78,8 +81,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
     public Object eval(String script, ScriptContext ctx)
         throws ScriptException
     {
-        CompiledScript cs = compile(script);
-        return cs.eval();
+        return compile(script).eval();
     }
 
     public Object eval(Reader reader, ScriptContext context)
@@ -200,7 +202,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
             case 2: case 3: default: { // Bytecode — no fallback to interpreter
                 ELContext elctx = getELContext(getContext());
                 IRProgram irProg = program.compile(elctx);
-                var cf = BytecodeCompiler.compile(irProg);
+                var cf = BytecodeCompiler.compile(irProg, loader);
                 return new BytecodeCompiledScript(this, cf);
             }
             }

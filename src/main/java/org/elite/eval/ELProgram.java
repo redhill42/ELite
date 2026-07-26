@@ -173,13 +173,6 @@ public class ELProgram implements Serializable
     }
 
     /**
-     * Compile program into Java bytecode.
-     */
-    public IRCompiledFunction compileToByteCode(ELContext elctx) {
-        return BytecodeCompiler.compile(compile(elctx));
-    }
-
-    /**
      * Dump the AST tree.
      */
     public String dump() {
