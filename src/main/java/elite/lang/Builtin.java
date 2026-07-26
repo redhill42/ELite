@@ -99,7 +99,6 @@ import static org.elite.eval.ELUtils.*;
  *
  * @see elite.lang.annotation.Expando
  * @see ELNode
- * @see elite.lang.Continuation
  */
 @SuppressWarnings({"unchecked", "unused"})
 public final class Builtin
@@ -121,16 +120,6 @@ public final class Builtin
         } else {
             return false;
         }
-    }
-
-    /**
-     * 创建多维数组.
-     * <p>
-     * 用法: myclass.newArray(dimensions...)
-     */
-    @Expando
-    public static Object newArray(Class<?> cls, int... dimensions) {
-        return Array.newInstance(cls, dimensions);
     }
 
     /**
@@ -1286,13 +1275,6 @@ public final class Builtin
     }
 
     /**
-     * List Monad支持函数，与mappend定义相同。
-     */
-    @Expando
-    public static Seq bind(Seq seq, Closure proc) {
-        return MappendSeq.make(seq, proc);
-    }
-
     /**
      * 使用指定的谓词将一个列表分成两部分, 第一部分包含所有满足谓词
      * 的元素, 第二部分包含所有不满足谓词的元素.
@@ -2178,24 +2160,6 @@ public final class Builtin
     @Expando
     public static char toUpper(Character c) {
         return Character.toUpperCase(c);
-    }
-
-    // Continuation
-
-    public static Object run_cont(ELContext ctx, Continuation m, Closure f) {
-        return m.run(ctx, f);
-    }
-
-    public static Object run_cont(ELContext ctx, Continuation m) {
-        return m.run(ctx);
-    }
-
-    public static Continuation yield(Closure val) {
-        return new Continuation.Yield(val);
-    }
-
-    public static Continuation call_cc(Closure f) {
-        return new Continuation.CallCC(f);
     }
 
     // Other functions

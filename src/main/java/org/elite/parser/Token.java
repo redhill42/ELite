@@ -140,8 +140,7 @@ public final class Token
     public static final int EXTENDS         = 1 + CLASSDEF;
     public static final int IMPLEMENTS      = 1 + EXTENDS;
     public static final int LET             = 1 + IMPLEMENTS;
-    public static final int DO              = 1 + LET;
-    public static final int COMPOUND        = 1 + DO;
+    public static final int COMPOUND        = 1 + LET;
     public static final int IF              = 1 + COMPOUND;
     public static final int ELSE            = 1 + IF;
     public static final int FOR             = 1 + ELSE;
@@ -174,7 +173,7 @@ public final class Token
         "abstract", "synchronized", "true", "false", "null", "void",
         ":", "::", "?", "(", ")", "[", "]", "{", "}", "|", "&", "@", "#", "=>", "...", ",", ";",
         "require", "import", "module", "grammar", "define", "class", "extends", "implements",
-        "let", "do", "compound", "if", "else", "for", "while", "switch", "case", "case",
+        "let", "compound", "if", "else", "for", "while", "switch", "case", "case",
         "default", "break", "continue", "return", "throw", "try", "catch", "finally", "assert", "LALR"
     };
 

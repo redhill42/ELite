@@ -128,7 +128,11 @@ goal
 
     | 'convert' #amount #from_unit 'into' #to_unit
       -> amount[from_unit] -> to_unit
+
+    | 'please' #action 'the' #what 'of' #n
+      -> action(what(n))
 }
 
 send 'Welcome to earth' to 'Uncle Martin';
 print(convert 25 DEM into ECU);
+please print the Math.sqrt of 100;

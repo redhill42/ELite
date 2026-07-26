@@ -829,7 +829,6 @@ public class DefaultLexer extends Lexer
         shared.addOperator("-=", ASSIGNOP, SUB);
         shared.addOperator("--", DEC, -1);
         shared.addOperator("->", XFORM, -1);
-        shared.addOperator("->>", INFIX, 1);
         shared.addOperator("+", ADD, -1);
         shared.addOperator("+=", ASSIGNOP, ADD);
         shared.addOperator("++", INC, -1);
@@ -875,7 +874,6 @@ public class DefaultLexer extends Lexer
         shared.addOperator("*=", ASSIGNOP, MUL);
 
         shared.addOperator("module", MODULE, -1); // FIXME
-        shared.addOperator("do", DO, -1);
         shared.addOperator("and", "&&", AND, -1);
         shared.addOperator("or", "||", OR, -1);
         shared.addOperator("eq", "==", EQ, -1);

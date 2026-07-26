@@ -196,14 +196,6 @@ public class Parser extends Scanner
             if (op != null) {
                 if (op.token == PREFIX) {
                     return new ELNode.PREFIX(scan(), op.name, op.token2, parseTerm());
-                } else if (op.token == DO) { // 'do' is a pseudo keyword
-                    mark(); scan();
-                    if (token == LBRACE) {
-                        scan();
-                        return parseDoExpression();
-                    } else {
-                        reset();
-                    }
                 }
             }
 
@@ -2872,108 +2864,6 @@ public class Parser extends Scanner
                 });
             }
         }
-    }
-
-    private static final class DoList {
-        ELNode.Pattern pat;
-        ELNode         exp;
-        boolean        let;
-        DoList         next;
-
-        DoList(ELNode.Pattern pat, ELNode exp, boolean let, DoList next) {
-            this.pat  = pat;
-            this.exp  = exp;
-            this.let  = let;
-            this.next = next;
-        }
-    }
-
-    private ELNode parseDoExpression() {
-        DoList head = null;
-
-        while (!scan(RBRACE)) {
-            ELNode.Pattern pat;
-            ELNode         exp = null;
-            boolean        let = false;
-
-            if (scan(SEMI))
-                continue;
-
-            Scanner mark = save();
-            if (token == LET) {
-                scan();
-                pat = parsePatternOpt();
-                if (pat != null && token == ASSIGN) {
-                    let = true;
-                    scan();
-                    exp = parseExpressionStatement();
-                    expect(SEMI);
-                }
-            } else {
-                pat = parsePatternOpt();
-                if (pat != null && token == IN && idValue == null) {
-                    scan();
-                    exp = parseExpressionStatement();
-                    expect(SEMI);
-                }
-            }
-
-            if (exp == null) {
-                restore(mark);
-                pat = null;
-                exp = parseExpressionStatement();
-                expect(SEMI);
-            }
-
-            // add variable and expression into list in reversed order
-            head = new DoList(pat, exp, let, head);
-        }
-
-        if (head == null) {
-            throw parseError(pos, _T(EL_EMPTY_DO_CONSTRUCT));
-        } else if (head.pat != null) {
-            throw parseError(head.exp.pos, _T(EL_LAST_DO_STATEMENT));
-        }
-
-        // translate expressions
-        ELNode exp = head.exp;
-        for (head = head.next; head != null; head = head.next) {
-            ELNode e = head.exp;
-            ELNode.DEFINE v;
-
-            if (head.pat == null) {
-                v = new ELNode.DEFINE(e.pos, tempvar()); // wildcard
-            } else if (head.pat instanceof ELNode.DEFINE) {
-                v = (ELNode.DEFINE)head.pat; // simple case
-                if ("_".equals(v.id)) {
-                    v.id = tempvar();
-                }
-            } else {
-                v = new ELNode.DEFINE(e.pos, tempvar());
-                exp = new ELNode.MATCH(e.pos,
-                          new ELNode.IDENT(e.pos, v.id),
-                          new ELNode.CASE(e.pos, head.pat, exp),
-                          null);
-            }
-
-            if (head.let) {
-                // let v = e1; e2  ==> (\v => e2)(e1)
-                exp = new ELNode.APPLY(e.pos,
-                          new ELNode.LAMBDA(e.pos, filename,
-                                            new ELNode.DEFINE[] {v},
-                                            exp),
-                          e);
-            } else {
-                // v <- e1; e2  ==> e1.bind(\v => e2)
-                exp = new ELNode.APPLY(e.pos,
-                          new ELNode.ACCESS(e.pos, e, new ELNode.STRINGVAL(e.pos, "bind")),
-                          new ELNode.LAMBDA(e.pos, filename,
-                                            new ELNode.DEFINE[] {v},
-                                            exp));
-            }
-        }
-
-        return exp;
     }
 
     /**
