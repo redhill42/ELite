@@ -536,16 +536,6 @@ public class Parser extends Scanner
           case LPAREN:
             return parseApplyExpression(scan(), e);
 
-          case ATSIGN: {
-            int p = scan();
-            String id = scanQName();
-            expect(IDENT);
-            ELNode.IDENT ident = new ELNode.IDENT(p, id);
-            if (e instanceof ELNode.TUPLE t)
-                return new ELNode.APPLY(p, ident, t.elems, null);
-            return new ELNode.APPLY(p, ident, new ELNode[]{e}, null);
-          }
-
           case XFORM:
             // x->f is syntax sugar of f(x)
             if (e instanceof ELNode.TUPLE t)
