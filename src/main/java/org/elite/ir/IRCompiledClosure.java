@@ -69,7 +69,7 @@ public abstract class IRCompiledClosure extends Closure
 
   @Override
   public Class<?> getType(ELContext elctx) {
-    return IRClosure.class;
+    return IRCompiledClosure.class;
   }
 
   @Override

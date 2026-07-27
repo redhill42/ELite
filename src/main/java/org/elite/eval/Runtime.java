@@ -621,6 +621,16 @@ public final class Runtime {
     }
   }
 
+  public static Throwable wrapException(Object t, ELContext elctx) {
+    if (t instanceof RuntimeException)
+      return (RuntimeException)t;
+    if (t instanceof Throwable)
+      return new UserException(elctx, (Throwable)t);
+    if (t instanceof String)
+      return new UserException(elctx, (String)t);
+    return new UserException(elctx);
+  }
+
   public static Object decodeObject(String src) {
     try {
       byte[] decoded = Base64.getDecoder().decode(src);

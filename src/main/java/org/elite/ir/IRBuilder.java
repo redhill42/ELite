@@ -2213,28 +2213,37 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.TRY node) {
     // Compile try body (zero-param closure).
-    build(node.body);
+    IRFunction body = buildLambda((ELNode.LAMBDA)node.body);
+    program.add(body);
 
     // Handlers: each handler is a DEFINE(id = exception var, expr = body).
-    int handlerCount = node.handlers != null ? node.handlers.length : 0;
-    for (int i = 0; i < handlerCount; i++) {
-      buildConst(node.types[i]);
-      build(node.handlers[i]);
+    int count = node.handlers != null ? node.handlers.length : 0;
+    IRFunction[] handlers = new IRFunction[count];
+    String[] types = new String[count];
+    for (int i = 0; i < count; i++) {
+      types[i] = node.types[i];
+      handlers[i] = buildLambda((ELNode.LAMBDA)node.handlers[i]);
+      program.add(handlers[i]);
     }
 
     // Finally (optional, zero-param closure).
-    if (node.finalizer != null)
-      build(node.finalizer);
-    else
-      current.emitPushNull();
+    IRFunction finalizer = null;
+    if (node.finalizer != null) {
+      finalizer = buildLambda((ELNode.LAMBDA)node.finalizer);
+      program.add(finalizer);
+    }
 
-    current.emitTry(handlerCount);
+    // Construct the TryDescriptor.
+    var desc = new IRFunction.TryDescriptor(body, handlers, types, finalizer);
+    current.emitTry(desc);
   }
 
   public void visit(ELNode.SYNCHRONIZED node) {
+    IRFunction body = buildLambda((ELNode.LAMBDA)node.body);
+    program.add(body);
+
     build(node.exp);
-    build(node.body);
-    current.emitSynchronized();
+    current.emitSynchronized(body);
   }
 
   public void visit(ELNode.LAMBDA node) {
@@ -2407,7 +2416,7 @@ public class IRBuilder extends ELNode.Visitor {
       }
     }
 
-    // Build class init p roc.
+    // Build class init proc.
     if (clazz.clinit_proc != null)
       buildLambda(clazz.clinit_proc);
 
@@ -3447,7 +3456,7 @@ public class IRBuilder extends ELNode.Visitor {
                 for (v.advance(); v.inBounds(); v.advance()) {
                   // Scan dead code to find other jump target and kill them.
                   if (v.isJump())
-                    killed.computeIfAbsent(v.jumpTarget(), BitSet::new)
+                    killed.computeIfAbsent(v.jumpTarget(), x -> new BitSet())
                       .set(currentBlockId);
                 }
                 break loop;
@@ -3460,7 +3469,7 @@ public class IRBuilder extends ELNode.Visitor {
                 // fallthrough
               default:
                 // The conditional jump has gone, the target may dead.
-                killed.computeIfAbsent(jumpTarget, BitSet::new)
+                killed.computeIfAbsent(jumpTarget, x -> new BitSet())
                   .set(currentBlockId);
                 continue;
               }

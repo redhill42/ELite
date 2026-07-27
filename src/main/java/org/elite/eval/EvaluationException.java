@@ -43,7 +43,7 @@ public class EvaluationException extends ELException
     }
     
     public String getMessage() {
-        if (frame == null) {
+        if (frame == null || frame.getLineNumber() == 0) {
             return super.getMessage();
         } else {
             StringBuilder buf = new StringBuilder();

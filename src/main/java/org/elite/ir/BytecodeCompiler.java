@@ -305,7 +305,7 @@ public class BytecodeCompiler {
                         EvaluationContext.class, Object[].class);
 
       // Add annotation for operator procedure.
-      if (!fn.internalName.equals(fn.name())) {
+      if (!isJavaIdentifier(fn.name())) {
         mc.ANNOTATION(Expando.class, true)
           .ARRAY("name")
             .FIELD(null, fn.name())
@@ -860,7 +860,7 @@ public class BytecodeCompiler {
               value.getClass() == TypeCoercion.getBoxedType(
                 (Class<?>)fn.getConstant(next.poolIndex()))) {
             if (value instanceof Boolean)
-              mc.PUSH((Boolean)value ?  1 : 0);
+              mc.PUSH((Boolean)value ? 1 : 0);
             else if (value instanceof Byte || value instanceof Short ||
                      value instanceof Integer)
               mc.PUSH(((Number)value).intValue());
@@ -1031,48 +1031,11 @@ public class BytecodeCompiler {
         }
       }
   
-      case THROW -> {
-        Label b1 = new Label(), b2 = new Label(), b3 = new Label();
-        int tmpSlot = TMP_SLOT();
-        mc.DUP()
-          .ASTORE(tmpSlot)
-          .INSTANCEOF(RuntimeException.class)
-          .IFEQ(b1)
-          .ALOAD(tmpSlot)
-          .CHECKCAST(RuntimeException.class)
-          .ATHROW()
-        .label(b1)
-          .ALOAD(tmpSlot)
-          .INSTANCEOF(Throwable.class)
-          .IFEQ(b2)
-          .NEW(UserException.class)
-          .DUP()
-          .ALOAD(S_CTX())
-          .ALOAD(tmpSlot)
-          .CHECKCAST(Throwable.class)
-          .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
-                         ELContext.class, Throwable.class)
-          .ATHROW()
-        .label(b2)
-          .ALOAD(tmpSlot)
-          .INSTANCEOF(String.class)
-          .IFEQ(b3)
-          .NEW(UserException.class)
-          .DUP()
-          .ALOAD(S_CTX())
-          .ALOAD(tmpSlot)
-          .CHECKCAST(String.class)
-          .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
-                         ELContext.class, String.class)
-          .ATHROW()
-        .label(b3)
-          .NEW(UserException.class)
-          .DUP()
-          .ALOAD(S_CTX())
-          .INVOKESPECIAL(UserException.class, "<init>", Void.TYPE,
-                         ELContext.class)
+      case THROW ->
+        mc.ALOAD(S_CTX())
+          .INVOKESTATIC(Runtime.class, "wrapException", Throwable.class,
+                        Object.class, ELContext.class)
           .ATHROW();
-      }
 
       case THROW_EXCEPTION -> {
         if (v.count() != 0) {
@@ -1090,44 +1053,28 @@ public class BytecodeCompiler {
       }
 
       case TRY -> {
-        // Pop closures: finalizer, handlers+types, body (top -> bottom)
-        int cnt            = v.count();
-        int[] handlerSlots = new int[cnt];
-        int[] typeSlots    = new int[cnt];
-        int tmp            = TMP_SLOT();
-        int finalizerSlot  = tmp++;
-        int resultSlot     = tmp++;
-        int caughtSlot     = tmp++;
-        mc.ASTORE(finalizerSlot);
-        for (int i = cnt - 1; i >= 0; i--) {
-          handlerSlots[i]  = tmp++;
-          typeSlots[i]     = tmp++;
-          mc.ASTORE(handlerSlots[i]);
-          mc.ASTORE(typeSlots[i]);
-        }
-  
         // try {
         // TryStart:
-        //     result = body.call(ctx, p[]);
+        //     result = body(ctx, []);
         // TryEnd:
         //     if (finalizer != null)
-        //         finalizer.call(ctx, [])
+        //         finalizer(ctx, [])
         //     goto done
         // CatchStart:
         // } catch (Throwable caught) {
         //     if (typecheck(type[i], caught)) {
-        //         result = handler[i].call(ctx, [caught])
+        //         result = handler[i](ctx, [caught])
         //         goto CatchEnd
         //     }
         //     throw caught
         // CatchEnd:
         //     if (finalizer != null)
-        //         finalizer.call(ctx, [])
+        //         finalizer(ctx, [])
         //     goto done
         // FinalStart:
         // } finally (caught) {
         //     if (finalizer != null)
-        //         finalizer.call(ctx, [])
+        //         finalizer(ctx, [])
         //     throw caught
         // }
         // done:
@@ -1135,120 +1082,103 @@ public class BytecodeCompiler {
         // Try-Catch: TryStart, TryEnd, CatchStart, Throwable
         // Try-Catch: TryStart, TryEnd, FinalStart, any
         // Try-Catch: CatchStart, CatchEnd, FinalStart, any
-  
-        Label tryStart   = new Label(), tryEnd    = new Label();
-        Label catchStart = new Label(), catchEnd  = new Label();
-        Label finalStart = new Label(), done      = new Label();
-  
-        // body is on the stack top
-        mc.label(tryStart)
-          .ALOAD(S_CTX())
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .INVOKEVIRTUAL(Closure.class, "call", Object.class, ELContext.class,
-                         Object[].class)
-          .ASTORE(resultSlot)
-        .label(tryEnd)
-          .ALOAD(finalizerSlot)
-          .IFNULL(done)
-          .ALOAD(finalizerSlot)
-          .ALOAD(S_CTX())
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .INVOKEVIRTUAL(Closure.class, "call", Object.class, ELContext.class,
-                         Object[].class)
-          .POP()
-          .GOTO(done);
-  
-        if (handlerSlots.length != 0) {
-          mc.label(catchStart).ASTORE(caughtSlot);
-          for (int i = 0; i < handlerSlots.length; i++) {
-            Label next = new Label();
-            mc.ALOAD(S_ENV())             // if (!typecheck) goto next
-              .ALOAD(typeSlots[i])
-              .CHECKCAST(String.class)
-              .ALOAD(caughtSlot)
-              .INVOKESTATIC(TypedClosure.class, "typecheck", Boolean.TYPE,
-                            EvaluationContext.class, String.class, Object.class)
-              .IFEQ(next)               // no match, try next handler
-              .ALOAD(handlerSlots[i])   // result = handler.call(ctx, [caught])
-              .ALOAD(S_CTX())
-              .ICONST_1()
-              .ANEWARRAY(Object.class)
-              .DUP()
-              .ICONST_0()
-              .ALOAD(caughtSlot)
-              .AASTORE()
-              .INVOKEVIRTUAL(Closure.class, "call", Object.class, ELContext.class,
-                             Object[].class)
-              .ASTORE(resultSlot)
-              .GOTO(catchEnd)
-            .label(next);
-          }
-  
-          // Rethrow if no handler match
-          mc.ALOAD(caughtSlot).ATHROW();
-  
-          mc.label(catchEnd)
-            .ALOAD(finalizerSlot)
-            .IFNULL(done)
-            .ALOAD(finalizerSlot)
-            .ALOAD(S_CTX())
-            .ICONST_0()
-            .ANEWARRAY(Object.class)
-            .INVOKEVIRTUAL(Closure.class, "call", Object.class, ELContext.class,
-                           Object[].class)
-            .POP()
-            .GOTO(done);
+
+        var desc = (IRFunction.TryDescriptor)fn.getConstant(v.poolIndex());
+        int tmp = TMP_SLOT();
+        int resultSlot = tmp++, caughtSlot = tmp;
+
+        Label tryStart = new Label(), tryEnd = new Label();
+        Label catchStart = null, catchEnd = null;
+        Label finallyStart = null;
+        Label done = new Label();
+
+        mc.label(tryStart);
+        emitDirectCall(desc.body());
+        mc.ASTORE(resultSlot);
+        mc.label(tryEnd);
+        if (desc.finalizer() != null) {
+          emitDirectCall(desc.finalizer());
+          mc.POP();
         }
+        mc.GOTO(done);
+
+        if (desc.handlers().length != 0) {
+          boolean catchAll = false;
+          catchStart = new Label();
+          catchEnd = new Label();
+
+          mc.label(catchStart);
+          mc.ASTORE(caughtSlot);
+
+          for (int i = 0; i < desc.handlers().length; i++) {
+            if (desc.types()[i] != null) {
+              Label next = new Label();
+              mc.ALOAD(S_ENV())
+                .LDC(desc.types()[i])
+                .ALOAD(caughtSlot)
+                .INVOKESTATIC(TypedClosure.class, "typecheck", Boolean.TYPE,
+                              EvaluationContext.class, String.class, Object.class)
+                .IFEQ(next);
+              emitDirectCall(desc.handlers()[i], caughtSlot);
+              mc.ASTORE(resultSlot);
+              mc.GOTO(catchEnd);
+              mc.label(next);
+            } else {
+              emitDirectCall(desc.handlers()[i], caughtSlot);
+              mc.ASTORE(resultSlot);
+              catchAll = true;
+              break;
+            }
+          }
+
+          // Rethrow if no handler match
+          if (!catchAll)
+            mc.ALOAD(caughtSlot).ATHROW();
+
+          mc.label(catchEnd);
+          if (desc.finalizer() != null) {
+            emitDirectCall(desc.finalizer());
+            mc.POP();
+          }
+          mc.GOTO(done);
+        }
+
+        // finally { finalizer(ctx, []) }
+        if (desc.finalizer() != null) {
+          mc.label(finallyStart = new Label());
+          emitDirectCall(desc.finalizer());
+          mc.POP();
+          mc.ATHROW();
+        }
+
+        mc.label(done)
+          .ALOAD(resultSlot);
   
-        // finally { if (finalize != null) finalizer.call(ctx, []) }
-        Label finalDone = new Label();
-        mc.label(finalStart)
-          .ASTORE(caughtSlot)
-          .ALOAD(finalizerSlot)
-          .IFNULL(finalDone)
-          .ALOAD(finalizerSlot)
-          .ALOAD(S_CTX())
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .INVOKEVIRTUAL(Closure.class, "call", Object.class, ELContext.class,
-                         Object[].class)
-          .POP()
-        .label(finalDone)
-          .ALOAD(caughtSlot)
-          .ATHROW();
-  
-        mc.label(done);
-        mc.ALOAD(resultSlot);
-  
-        if (handlerSlots.length != 0) {
-          mc.TryCatchBlock(tryStart, tryEnd, catchStart,Throwable.class);
-          mc.TryCatchBlock(tryStart, tryEnd, finalStart, (String)null);
-          mc.TryCatchBlock(catchStart, catchEnd, finalStart, (String)null);
+        if (desc.handlers().length != 0) {
+          mc.TryCatchBlock(tryStart, tryEnd, catchStart, Throwable.class);
+          if (finallyStart != null) {
+            mc.TryCatchBlock(tryStart, tryEnd, finallyStart, (String)null);
+            mc.TryCatchBlock(catchStart, catchEnd, finallyStart, (String)null);
+          }
         } else {
-          mc.TryCatchBlock(tryStart, tryEnd, finalStart, (String)null);
+          assert finallyStart != null;
+          mc.TryCatchBlock(tryStart, tryEnd, finallyStart, (String)null);
         }
       }
   
       case SYNCHRONIZED -> {
+        IRFunction body = (IRFunction)fn.getConstant(v.poolIndex());
         int tmp = TMP_SLOT();
-        int lockSlot = tmp++, bodySlot = tmp++, resultSlot = tmp;
+        int lockSlot = tmp++, resultSlot = tmp;
         Label tryStart = new Label(), tryEnd = new Label();
         Label catchAll = new Label(), done = new Label();
   
-        mc.ASTORE(bodySlot)
-          .DUP()
+        mc.DUP()
           .ASTORE(lockSlot)
-          .MONITORENTER()
-        .label(tryStart)
-          .ALOAD(bodySlot)
-          .ALOAD(S_CTX())
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .INVOKEVIRTUAL(Closure.class, "call", Object.class, ELContext.class,
-                         Object[].class)
-          .ASTORE(resultSlot)
+          .MONITORENTER();
+        mc.label(tryStart);
+        emitDirectCall(body);
+        mc.ASTORE(resultSlot)
           .ALOAD(lockSlot)
           .MONITOREXIT()
         .label(tryEnd)
@@ -1582,11 +1512,9 @@ public class BytecodeCompiler {
           .INVOKEVIRTUAL(EvaluationContext.class, "declarePrefix", Void.TYPE,
                          String.class, String.class);
   
-      case TRAMPOLINE -> {
-        // Ignored trampoline.
-        mc.ACONST_NULL();
-      }
-  
+      case TRAMPOLINE ->
+        mc.ACONST_NULL(); // Ignored trampoline.
+
       default -> throw new CompilationError(
         _T(IR_BC_UNHANDLED_OPCODE, v.opcode(), Opcode.name(v.opcode())));
       }
@@ -1735,6 +1663,35 @@ public class BytecodeCompiler {
       } else {
         mc.BOX(Boolean.TYPE);
       }
+    }
+
+    private void emitDirectCall(IRFunction fn) {
+      if (!fn.isStatic())
+        mc.THIS();
+      mc.ALOAD(S_ENV())
+        .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
+                       EvaluationContext.class)
+        .ACONST_NULL()
+        .invoke(fn.isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL,
+                currentClassName, fn.internalName, Object.class,
+                EvaluationContext.class, Object[].class);
+    }
+
+    private void emitDirectCall(IRFunction fn, int arg) {
+      if (!fn.isStatic())
+        mc.THIS();
+      mc.ALOAD(S_ENV())
+        .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
+                       EvaluationContext.class)
+        .ICONST_1()
+        .ANEWARRAY(Object.class)
+        .DUP()
+        .ICONST_0()
+        .ALOAD(arg)
+        .AASTORE()
+        .invoke(fn.isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL,
+                currentClassName, fn.internalName, Object.class,
+                EvaluationContext.class, Object[].class);
     }
   }
 

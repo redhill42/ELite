@@ -361,26 +361,11 @@ public class IRInterpreter {
       }
 
       case TRY: {
-        // Pop closures: top → finally, handlerN..., handler1, body → bottom
-        IRClosure body;
-        String[] types = null;
-        IRClosure[] handlers = null;
-        IRClosure finalizer;
-
-        finalizer = (IRClosure)pop();
-        if (cnt > 0) {
-          types = new String[cnt];
-          handlers = new IRClosure[cnt];
-          for (int i = cnt - 1; i >= 0; i--) {
-            handlers[i] = (IRClosure)pop();
-            types[i] = (String)pop();
-          }
-        }
-        body = (IRClosure)pop();
-
+        var desc = (IRFunction.TryDescriptor)constantPool[idx];
         Object result;
+
         try {
-          result = new IRInterpreter(evalContext, body.function).execute(null);
+          result = new IRInterpreter(evalContext, desc.body()).execute(null);
         } catch (RuntimeException | Error ex) {
           Throwable t = ex;
           if (ex instanceof EvaluationException) {
@@ -389,31 +374,29 @@ public class IRInterpreter {
               t = ex;
           }
 
-          IRClosure handler = null;
-          if (handlers != null) {
-            for (int i = 0; i < handlers.length; i++) {
-              if (types[i] != null) {
-                if (TypedClosure.typecheck(evalContext, types[i], t)) {
-                  handler = handlers[i];
-                  break;
-                }
-              } else {
-                handler = handlers[i];
+          IRFunction handler = null;
+          for (int i = 0; i < desc.handlers().length; i++) {
+            if (desc.types()[i] != null) {
+              if (TypedClosure.typecheck(evalContext, desc.types()[i], t)) {
+                handler = desc.handlers()[i];
                 break;
               }
+            } else {
+              handler = desc.handlers()[i];
+              break;
             }
           }
 
           if (handler != null) {
-            result = new IRInterpreter(evalContext, handler.function)
+            result = new IRInterpreter(evalContext, handler)
               .execute(new Object[]{t});
           } else {
             // Rethrow exception
             throw ex;
           }
         } finally {
-          if (finalizer != null) {
-            new IRInterpreter(evalContext, finalizer.function).execute(null);
+          if (desc.finalizer() != null) {
+            new IRInterpreter(evalContext, desc.finalizer()).execute(null);
           }
         }
 
@@ -433,10 +416,10 @@ public class IRInterpreter {
       }
 
       case SYNCHRONIZED: {
-        IRClosure body = (IRClosure)pop();
+        IRFunction body = (IRFunction)constantPool[idx];
         Object lock = pop();
         synchronized (lock) {
-          push(new IRInterpreter(evalContext, body.function).execute(null));
+          push(new IRInterpreter(evalContext, body).execute(null));
         }
         break;
       }

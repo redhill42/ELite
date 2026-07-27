@@ -304,12 +304,12 @@ final class IREmitter {
     return emit(RETURN, 0);
   }
 
-  public IREmitter emitTry(int handlerCount) {
-    return emit(TRY, handlerCount);
+  public IREmitter emitTry(IRFunction.TryDescriptor desc) {
+    return emit(TRY, 0, builder.putConstant(desc));
   }
 
-  public IREmitter emitSynchronized() {
-    return emit(SYNCHRONIZED, 0);
+  public IREmitter emitSynchronized(IRFunction body) {
+    return emit(SYNCHRONIZED, 0, builder.putConstant(body));
   }
 
   public IREmitter emitThrow() {
