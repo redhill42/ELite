@@ -30,6 +30,10 @@ class CommandOptions {
                hidden = true)
     public boolean dumpIR = false;
 
+    @Parameter(names = "--dump-bc", description = "dump bytecode",
+               hidden = true)
+    public boolean dumpBC = false;
+
     @Parameter(names = "-O", description = "optimization level",
                validateWith = OptLevelValidator.class)
     public int optLevel = 2;
@@ -41,7 +45,7 @@ class CommandOptions {
     public List<String> args = new ArrayList<>();
 
     public boolean hasDump() {
-        return dumpAST || dumpIR;
+        return dumpAST || dumpIR || dumpBC;
     }
 
     public static class OptLevelValidator implements IParameterValidator {

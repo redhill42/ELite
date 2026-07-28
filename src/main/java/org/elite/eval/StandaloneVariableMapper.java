@@ -56,7 +56,7 @@ public class StandaloneVariableMapper extends VariableMapperImpl {
 
   private static class LiteralWriter extends LiteralClosure {
     LiteralWriter(OutputStream out) {
-      super(new PrintWriter(out), true);
+      super(new PrintWriter(out, true));
     }
 
     public void setValue(ELContext elctx, Object value) {

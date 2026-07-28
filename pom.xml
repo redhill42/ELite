@@ -65,6 +65,7 @@
                   <include>cglib:cglib</include>
                   <include>org.ow2.asm:asm</include>
                   <include>org.ow2.asm:asm-commons</include>
+                  <include>org.ow2.asm:asm-util</include>
                 </includes>
               </artifactSet>
               <relocations>
@@ -129,6 +130,11 @@
     <dependency>
       <groupId>org.ow2.asm</groupId>
       <artifactId>asm</artifactId>
+      <version>9.9.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm-util</artifactId>
       <version>9.9.1</version>
     </dependency>
     <dependency>

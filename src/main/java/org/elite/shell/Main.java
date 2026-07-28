@@ -291,15 +291,23 @@ public class Main
         int count = 0;
         if (options.dumpAST) count++;
         if (options.dumpIR)  count++;
+        if (options.dumpBC)  count++;
 
         int emitted = 0;
         if (options.dumpAST) {
             CommandProvider.dump_ast(shellContext, source);
-            if (++emitted < count)System.out.print(DUMP_SEPARATOR);
+            if (++emitted < count)
+                System.out.print(DUMP_SEPARATOR);
         }
         if (options.dumpIR) {
             CommandProvider.dump(shellContext, source);
-            if (++emitted < count)System.out.print(DUMP_SEPARATOR);
+            if (++emitted < count)
+                System.out.print(DUMP_SEPARATOR);
+        }
+        if (options.dumpBC) {
+            CommandProvider.dump_bc(shellContext, source);
+            if (++emitted < count)
+                System.out.print(DUMP_SEPARATOR);
         }
     }
 
