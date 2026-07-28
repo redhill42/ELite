@@ -663,7 +663,7 @@ public abstract class ELNode implements Serializable
                 assert argc >= nvars;
 
                 Object lastArg = (argc == nvars+1) ? args[nvars].getValue(elctx) : null;
-                if (lastArg != null && (lastArg instanceof VarArgList)) {
+                if (lastArg instanceof VarArgList) {
                     // The last argument is a variable argument list, no more
                     // work to do for this case.
                 } else {
@@ -701,47 +701,10 @@ public abstract class ELNode implements Serializable
         }
     }
 
-    /**
-     * Block - a special form of lambda expression.
-     */
-    public static class BLOCK extends LAMBDA {
-        public BLOCK(int pos, String file, ELNode body) {
-            super(pos, file, new DEFINE[0], body);
-        }
-
-        public Object invoke(EvaluationContext context, Closure[] args) {
-            ELContext elctx = context.getELContext();
-            Frame frame = StackTrace.addFrame(elctx, name, file, pos);
-
-            // force to evaluate argument values
-            for (Closure c : args) {
-                c.getValue(elctx);
-            }
-
-            try {
-                EvaluationContext env = context.pushContext();
-
-                // set local variables
-                if (args.length == 1) {
-                    env.setVariable("$", args[0]);
-                } else if (args.length > 1) {
-                    env.setVariable("$", new LiteralClosure(new VarArgList(elctx, args, 0)));
-                }
-
-                // invoke body
-                return body.pos(frame).getValue(env);
-            } catch (Control.Return ret) {
-                return ret.getResult();
-            } finally {
-                StackTrace.removeFrame(elctx);
-            }
-        }
-    }
-
     public static class VarArgList extends AbstractList<Object> {
-        private ELContext context;
-        private Closure[] args;
-        private int begin;
+        private final ELContext context;
+        private final Closure[] args;
+        private final int begin;
 
         private transient VarArgKeys keys;
 
@@ -813,8 +776,8 @@ public abstract class ELNode implements Serializable
     }
 
     private static class VarArgKeys extends AbstractList<String> {
-        private Closure[] args;
-        private int begin;
+        private final Closure[] args;
+        private final int begin;
 
         VarArgKeys(Closure[] args, int begin) {
             this.args = args;

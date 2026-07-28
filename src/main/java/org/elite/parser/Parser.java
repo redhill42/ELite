@@ -1460,7 +1460,7 @@ public class Parser extends Scanner
             if (body.args.length == 0) {
                 // we cannot determine whether the procedure has no arguments
                 // or arguments ignored, so create block in this case
-                return new ELNode.BLOCK(p, filename, body);
+                return translateBlock(p, body);
             } else {
                 // Create variable list based on patterns
                 ELNode.DEFINE[] vars = new ELNode.DEFINE[body.args.length];
@@ -1515,7 +1515,7 @@ public class Parser extends Scanner
         close_scope();
 
         if (block) {
-            return new ELNode.BLOCK(p, filename, body);
+            return translateBlock(p, body);
         } else {
             return translateLambda(p, null, null, pats, varargs, body);
         }
@@ -1573,6 +1573,31 @@ public class Parser extends Scanner
         }
 
         return new ELNode.LAMBDA(p, filename, name, type, vars, varargs, body);
+    }
+
+    private ELNode.LAMBDA translateBlock(int p, ELNode body) {
+        // Scan body to find implicit argument use.
+        boolean[] implicitArg = new boolean[1];
+        body.accept(new DefaultVisitor() {
+            public void visit(ELNode.IDENT e) {
+                if (e.id.equals("$"))
+                    implicitArg[0] = true;
+            }
+            public void visit(ELNode.LAMBDA e) {
+                // Don't dive into inner lambda.
+            }
+            public void visit(ELNode.CLASSDEF e) {
+                // Don't dive into class definition.
+            }
+        });
+
+        if (!implicitArg[0])
+            return new ELNode.LAMBDA(p, filename, EMPTY_DEFS, body);
+        else
+            return new ELNode.LAMBDA(p, filename,
+                                     new ELNode.DEFINE[] {
+                                       new ELNode.DEFINE(p, "$")
+                                     }, body);
     }
 
     private ELNode parseProcedureDefinition(String name, String rtype, ELNode.METASET meta) {
