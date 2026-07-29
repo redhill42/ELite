@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import module math:elite.lang.MathLib;
+import module elite.lang.MathLib as math;
 
 /**
  * Represents an immutable complex number.

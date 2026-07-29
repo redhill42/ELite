@@ -43,6 +43,7 @@ import javax.el.ELResolver;
 import javax.xml.XMLConstants;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.*;
@@ -279,11 +280,57 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.ACCESS node) {
+    if (node.index instanceof ELNode.STRINGVAL key) {
+      if (node.right instanceof ELNode.IDENT base && base.symbol != null &&
+          base.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
+        for (ELNode.DEFINE def : cdef.cvars) {
+          if (def.symbol.isPublic() && def.symbol.isStatic()) {
+            current.emitGetStatic(cdef.symbol.clazz, key.value);
+            return;
+          }
+        }
+      } else {
+        String baseClassName = getBaseClassName(node.right);
+        if (baseClassName != null) {
+          Class<?> baseClass = resolveClassAtCompileTime(baseClassName);
+          if (baseClass != null && tryBuildGetStatic(baseClass, key.value))
+            return;
+        }
+      }
+    }
+
     build(node.right);
     build(node.index);
     current.emitPushCtx();
     emitInvokeMethod(Runtime.class, "loadProperty", Object.class, Object.class,
                      ELContext.class);
+  }
+
+  private boolean tryBuildGetStatic(Class<?> cls, String name) {
+    try {
+      Field field = cls.getField(name);
+      int mods = field.getModifiers();
+      if (Modifier.isPublic(mods) && Modifier.isStatic(mods)) {
+        if (Modifier.isFinal(mods)) {
+          try {
+            Object value = field.get(null);
+            if (value == null || value instanceof Boolean ||
+                value instanceof Byte || value instanceof Short ||
+                value instanceof Character || value instanceof Integer ||
+                value instanceof Long || value instanceof Float ||
+                value instanceof Double || value instanceof String) {
+              buildConst(value);
+              return true;
+            }
+          } catch (IllegalArgumentException | IllegalAccessException ex) {
+            // fallthrough
+          }
+        }
+        current.emitGetStatic(field);
+        return true;
+      }
+    } catch (NoSuchFieldException | SecurityException ex) { /* fallthrough */ }
+    return false;
   }
 
   public void visit(ELNode.IDENT node) {
@@ -3603,9 +3650,10 @@ public class IRBuilder extends ELNode.Visitor {
   private void buildConst(Object value) {
     if (value == null)
       current.emitPushNull();
-    else {
+    else if (value instanceof Boolean)
+      buildConst((Boolean)value);
+    else
       current.emitPushConst(value);
-    }
   }
 
   private void buildConst(Boolean value) {

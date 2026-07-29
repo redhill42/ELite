@@ -34,6 +34,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -1415,6 +1416,10 @@ public class BytecodeCompiler {
         Object field = fn.getConstant(v.poolIndex());
         if (field instanceof IRClass.Field f) {
           mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
+        } else if (field instanceof Field f) {
+          mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
+          if (f.getType().isPrimitive())
+            mc.BOX(f.getType());
         } else {
           mc.GETSTATIC(currentClassName, (String)field, Object.class);
         }
@@ -1423,12 +1428,28 @@ public class BytecodeCompiler {
       case PUTSTATIC -> {
         Object field = fn.getConstant(v.poolIndex());
         String className, fieldName;
+        Class<?> type;
+
         if (field instanceof IRClass.Field f) {
           className = f.clazz().internalName;
           fieldName = f.field();
+          type = Object.class;
+        } else if (field instanceof Field f) {
+          className = f.getDeclaringClass().getName();
+          fieldName = f.getName();
+          type = f.getType();
+          if (type != Object.class) {
+            mc.ALOAD(S_CTX())
+              .SWAP()
+              .LDC(Type.getType(TypeCoercion.getBoxedType(type)))
+              .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
+                            ELContext.class, Object.class, Class.class)
+              .UNBOX(type);
+          }
         } else {
           className = currentClassName;
           fieldName = (String)field;
+          type = Object.class;
         }
 
         InstructionView next = peekNext(v);
@@ -1436,7 +1457,7 @@ public class BytecodeCompiler {
           mc.DUP();
         else
           v.advance(); // no DUP, eat POP
-        mc.PUTSTATIC(className, fieldName, Object.class);
+        mc.PUTSTATIC(className, fieldName, type);
       }
   
       case CHECKCAST -> {

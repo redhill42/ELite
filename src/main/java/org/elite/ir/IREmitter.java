@@ -18,6 +18,7 @@ package org.elite.ir;
 
 import org.elite.eval.EvaluationContext;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 import static org.elite.ir.IRFormat.*;
@@ -424,11 +425,19 @@ final class IREmitter {
     return emit(GETSTATIC, 0, builder.putConstant(field));
   }
 
+  public IREmitter emitGetStatic(Field field) {
+    return emit(GETSTATIC, 0, builder.putConstant(field));
+  }
+
   public IREmitter emitPutStatic(IRClass clazz, String field) {
     return emit(PUTSTATIC, 0, builder.putConstant(new IRClass.Field(clazz, field)));
   }
 
   public IREmitter emitPutStatic(String field) {
+    return emit(PUTSTATIC, 0, builder.putConstant(field));
+  }
+
+  public IREmitter emitPutStatic(Field field) {
     return emit(PUTSTATIC, 0, builder.putConstant(field));
   }
 
