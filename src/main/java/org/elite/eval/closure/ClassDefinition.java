@@ -126,7 +126,7 @@ public class ClassDefinition extends AnnotatedClosure
             }
 
             if (basecls instanceof ClassDefinition) {
-                // Recurisively initialize base class
+                // Recursively initialize base class
                 ClassDefinition base = (ClassDefinition)basecls;
                 if (base.isFinal())
                     throw new EvaluationException(elctx, _T(EL_SUBCLASS_FINAL, cdef.base));
@@ -451,20 +451,21 @@ public class ClassDefinition extends AnnotatedClosure
                 vmap.put("hashCode", new HashCodeProc(thisObj));
         }
 
-        // If a class defines equals and < procedures then this class
-        // is a Comparable object. The compareTo method of Comparable
-        // interface is implemented using equals and < procedures.
-        if (vmap.containsKey("equals") && vmap.containsKey("<")) {
-            if (!vmap.containsKey("compareTo")) {
-                thisObj.addInterface(Comparable.class);
-                vmap.put("compareTo", new CompareToProc(thisObj));
-            }
+        // If a class defines <=> procedure then this class is a
+        // Comparable object. compareTo forwards to the <=> procedure.
+        // Otherwise, if equals and < are defined, compareTo uses
+        // equals and < procedures.
+        if (!vmap.containsKey("compareTo") &&
+            (vmap.containsKey("<=>") ||
+             (vmap.containsKey("equals") && vmap.containsKey("<")))) {
+            thisObj.addInterface(Comparable.class);
+            vmap.put("compareTo", new CompareToProc(thisObj));
         }
     }
 
     private static class InitProc extends AbstractClosure {
-        private ThisObject obj;
-        private Closure init;
+        private final ThisObject obj;
+        private final Closure init;
 
         InitProc(ThisObject obj, Closure init) {
             this.obj = obj;
@@ -571,7 +572,7 @@ public class ClassDefinition extends AnnotatedClosure
     }
 
     private static class ToStringProc extends AbstractClosure {
-        private ThisObject thiz;
+        private final ThisObject thiz;
 
         ToStringProc(ThisObject obj) {
             thiz = obj;
@@ -616,7 +617,7 @@ public class ClassDefinition extends AnnotatedClosure
     }
 
     private static class EqualsProc extends AbstractClosure {
-        private ThisObject thiz;
+        private final ThisObject thiz;
 
         EqualsProc(ThisObject obj) {
             this.thiz = obj;
@@ -660,7 +661,7 @@ public class ClassDefinition extends AnnotatedClosure
     }
 
     private static class HashCodeProc extends AbstractClosure {
-        private ThisObject thiz;
+        private final ThisObject thiz;
 
         HashCodeProc(ThisObject obj) {
             thiz = obj;
@@ -694,19 +695,23 @@ public class ClassDefinition extends AnnotatedClosure
     }
 
     private static class CompareToProc extends AbstractClosure {
-        private ThisObject thiz;
+        private final ThisObject thiz;
 
         CompareToProc(ThisObject obj) {
             thiz = obj;
         }
-        
+
         public Object invoke(ELContext elctx, Closure[] args) {
-            if (TypeCoercion.coerceToBoolean(thiz.invokePublic(elctx, "equals", args))) {
-                return 0;
-            } else if (TypeCoercion.coerceToBoolean(thiz.invokePublic(elctx, "<", args))) {
-                return -1;
+            if (thiz.getClosureMap().containsKey("<=>")) {
+                return thiz.invokePublic(elctx, "<=>", args);
             } else {
-                return 1;
+                if (TypeCoercion.coerceToBoolean(thiz.invokePublic(elctx, "equals", args))) {
+                    return 0;
+                } else if (TypeCoercion.coerceToBoolean(thiz.invokePublic(elctx, "<", args))) {
+                    return -1;
+                } else {
+                    return 1;
+                }
             }
         }
 

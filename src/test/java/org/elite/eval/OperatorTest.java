@@ -124,4 +124,51 @@ class OperatorTest extends EliteTestBase {
         // The transform operator ->
         assertEquals(11L, evalL("5 -> double -> addOne"));
     }
+
+    // ---- Spaceship operator ----
+
+    @Test
+    void spaceshipLessThan() {
+        assertEquals(-1L, evalL("3 <=> 5"));
+    }
+
+    @Test
+    void spaceshipEqual() {
+        assertEquals(0L, evalL("5 <=> 5"));
+    }
+
+    @Test
+    void spaceshipGreaterThan() {
+        assertEquals(1L, evalL("7 <=> 5"));
+    }
+
+    @Test
+    void spaceshipString() {
+        // String.compareTo returns the difference between characters,
+        // not just -1/0/1.
+        assertTrue(evalL("\"abc\" <=> \"abd\"") < 0);
+        assertEquals(0L, evalL("\"hello\" <=> \"hello\""));
+        assertTrue(evalL("\"xyz\" <=> \"abc\"") > 0);
+    }
+
+    @Test
+    void spaceshipNonComparableThrows() {
+        assertEvalThrows("[1,2,3] <=> [4,5,6]");
+    }
+
+    // ---- Spaceship precedence (CMP_PREC=115, between ORD_PREC=110 and SHIFT_PREC=120) ----
+
+    @Test
+    void spaceshipBindsTighterThanComparison() {
+        // CMP_PREC=115 > ORD_PREC=110
+        // 5 < 3 <=> 7 = 5 < (3 <=> 7) = 5 < -1 = false
+        assertEquals(false, eval("5 < 3 <=> 7"));
+    }
+
+    @Test
+    void spaceshipBindsLooserThanShift() {
+        // CMP_PREC=115 < SHIFT_PREC=120
+        // 3 <=> 7 << 1 = 3 <=> (7 << 1) = 3 <=> 14 = -1
+        assertEquals(-1L, evalL("3 <=> 7 << 1"));
+    }
 }

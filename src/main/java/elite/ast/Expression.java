@@ -220,7 +220,7 @@ public abstract class Expression
      * @param right the right operand
      * @return the bitwise AND expression
      */
-    @Expando(name="^&", scope=OPERATOR)
+    @Expando(name="`&", scope=OPERATOR)
     public static Expression __bitand__(Object left, Object right) {
         return BITWISE_AND(left, right);
     }
@@ -242,7 +242,7 @@ public abstract class Expression
      * @param right the right operand
      * @return the bitwise AND expression
      */
-    @Expando(name="^|", scope=OPERATOR)
+    @Expando(name="`|", scope=OPERATOR)
     public static Expression __bitor__(Object left, Object right) {
         return BITWISE_OR(left, right);
     }
@@ -785,23 +785,23 @@ public abstract class Expression
 
     /**
      * Creates a RangeExpression.
-     * @param begin the begin value in the range
+     * @param start the start value in the range
      * @param next the next value in the range
      * @param end the end value in the range
      */
-    public static Expression RANGE(Object begin, Object next, Object end) {
-        return new RangeExpression(arg(begin),
+    public static Expression RANGE(Object start, Object next, Object end) {
+        return new RangeExpression(arg(start),
                                    next==null ? null : arg(next),
                                    end==null ? null : arg(end));
     }
     
     /**
      * Creates a RangeExpression.
-     * @param begin the begin value in the range
+     * @param start the start value in the range
      * @param end the end value in the range
      */
-    public static Expression RANGE(Object begin, Object end) {
-        return new RangeExpression(arg(begin), null, arg(end));
+    public static Expression RANGE(Object start, Object end) {
+        return new RangeExpression(arg(start), null, arg(end));
     }
 
     /**
@@ -859,6 +859,16 @@ public abstract class Expression
     @Expando(name="-", scope=OPERATOR)
     public static Expression __sub__(Object left, Object right) {
         return SUBTRACT(left, right);
+    }
+
+    /**
+     * Creates a BinaryExpression that represents a three-way comparison.
+     * @param left the left operand
+     * @param right the right operand
+     * @return the spaceship expression
+     */
+    public static Expression THREE_WAP_COMPARISON(Object left, Object right) {
+        return new BinaryExpression(ExpressionType.THREE_WAY_COMPARISON, arg(left), arg(right));
     }
 
     /**
@@ -925,12 +935,12 @@ public abstract class Expression
 
     /**
      * Overloaded operator to create a BinaryExpression that represents
-     * an bitwise xor operation.
+     * a bitwise xor operation.
      * @param left the left operand
      * @param right the right operand
      * @return the arithmetic subtraction expression
      */
-    @Expando(name="^^", scope=OPERATOR)
+    @Expando(name="`^", scope=OPERATOR)
     public static Expression __xor__(Object left, Object right) {
         return XOR(left, right);
     }

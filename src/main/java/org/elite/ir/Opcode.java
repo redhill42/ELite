@@ -58,16 +58,17 @@ public final class Opcode {
   public static final int USHR              = 0x1F;
   public static final int EQ                = 0x20;
   public static final int NE                = 0x21;
-  public static final int LT                = 0x22;
-  public static final int LE                = 0x23;
-  public static final int GT                = 0x24;
-  public static final int GE                = 0x25;
-  public static final int IDEQ              = 0x26;
-  public static final int IDNE              = 0x27;
-  public static final int IN                = 0x28;
-  public static final int INSTANCEOF        = 0x29;
-  public static final int EMPTY             = 0x2A;
-  public static final int NOT               = 0x2B;
+  public static final int IDEQ              = 0x22;
+  public static final int IDNE              = 0x23;
+  public static final int LT                = 0x24;
+  public static final int LE                = 0x25;
+  public static final int GT                = 0x26;
+  public static final int GE                = 0x27;
+  public static final int CMP               = 0x28;
+  public static final int IN                = 0x29;
+  public static final int INSTANCEOF        = 0x2A;
+  public static final int EMPTY             = 0x2B;
+  public static final int NOT               = 0x2C;
 
   // ── Control flow ──
   public static final int JUMP              = 0x30;
@@ -154,12 +155,13 @@ public final class Opcode {
       case USHR           -> "USHR";
       case EQ             -> "EQ";
       case NE             -> "NE";
+      case IDEQ           -> "IDEQ";
+      case IDNE           -> "IDNE";
       case LT             -> "LT";
       case LE             -> "LE";
       case GT             -> "GT";
       case GE             -> "GE";
-      case IDEQ           -> "IDEQ";
-      case IDNE           -> "IDNE";
+      case CMP            -> "CMP";
       case IN             -> "IN";
       case INSTANCEOF     -> "INSTANCEOF";
       case EMPTY          -> "EMPTY";

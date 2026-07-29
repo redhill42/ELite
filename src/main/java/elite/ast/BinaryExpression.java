@@ -105,6 +105,8 @@ public class BinaryExpression extends Expression
             return new ELNode.SHR(pos, lhs, rhs);
         case SUBTRACT:
             return new ELNode.SUB(pos, lhs, rhs);
+        case THREE_WAY_COMPARISON:
+            return new ELNode.CMP(pos, lhs, rhs);
         case UNSIGNED_RIGHT_SHIFT:
             return new ELNode.USHR(pos, lhs, rhs);
         case XOR:

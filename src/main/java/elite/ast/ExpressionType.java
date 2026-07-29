@@ -46,7 +46,7 @@ public enum ExpressionType
 
     /** A node that represents a concatenation operation. */
     CAT("~", SHIFT_PREC),
-    
+
     /** A node that represents a null coalescing operation. */
     COALESCE("??", COALESCE_PREC),
 
@@ -163,6 +163,9 @@ public enum ExpressionType
 
     /** A node that represents arithmetic subtraction operation. */
     SUBTRACT("-", ADD_PREC),
+
+    /** A node that represents a three-way comparison. */
+    THREE_WAY_COMPARISON("<=>", CMP_PREC),
 
     /** A node that represents tuple expression. */
     TUPLE,

@@ -230,7 +230,8 @@ public class IRInterpreter {
       case LT:
       case LE:
       case GT:
-      case GE: {
+      case GE:
+      case CMP: {
         // Delegate to Runtime for type-resolved arithmetic (shared with
         // bytecode path)
         Object rhs = pop();
@@ -253,6 +254,7 @@ public class IRInterpreter {
           case LE     -> Builtin.__le__(elctx, lhs, rhs);
           case GT     -> Builtin.__gt__(elctx, lhs, rhs);
           case GE     -> Builtin.__ge__(elctx, lhs, rhs);
+          case CMP    -> Builtin.__cmp__(elctx, lhs, rhs);
           case BITAND -> Builtin.__bitand__(elctx, lhs, rhs);
           case BITOR  -> Builtin.__bitor__(elctx, lhs, rhs);
           case XOR    -> Builtin.__xor__(elctx, lhs, rhs);

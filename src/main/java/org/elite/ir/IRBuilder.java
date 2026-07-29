@@ -1448,12 +1448,13 @@ public class IRBuilder extends ELNode.Visitor {
   public void visit(ELNode.XOR node)    { buildBinaryOp(node); }
   public void visit(ELNode.EQ node)     { buildBinaryOp(node); }
   public void visit(ELNode.NE node)     { buildBinaryOp(node); }
+  public void visit(ELNode.IDEQ node)   { buildBinaryOp(node); }
+  public void visit(ELNode.IDNE node)   { buildBinaryOp(node); }
   public void visit(ELNode.LT node)     { buildBinaryOp(node); }
   public void visit(ELNode.LE node)     { buildBinaryOp(node); }
   public void visit(ELNode.GT node)     { buildBinaryOp(node); }
   public void visit(ELNode.GE node)     { buildBinaryOp(node); }
-  public void visit(ELNode.IDEQ node)   { buildBinaryOp(node); }
-  public void visit(ELNode.IDNE node)   { buildBinaryOp(node); }
+  public void visit(ELNode.CMP node)    { buildBinaryOp(node); }
 
   public void visit(ELNode.POS node)    { /* nop */ }
   public void visit(ELNode.NEG node)    { buildUnaryOp(node); }
@@ -1484,12 +1485,13 @@ public class IRBuilder extends ELNode.Visitor {
     case Token.XOR    -> current.emitXor();
     case Token.EQ     -> current.emitEq();
     case Token.NE     -> current.emitNe();
+    case Token.IDEQ   -> current.emitIdEq();
+    case Token.IDNE   -> current.emitIdNe();
     case Token.LT     -> current.emitLt();
     case Token.LE     -> current.emitLe();
     case Token.GT     -> current.emitGt();
     case Token.GE     -> current.emitGe();
-    case Token.IDEQ   -> current.emitIdEq();
-    case Token.IDNE   -> current.emitIdNe();
+    case Token.CMP    -> current.emitCmp();
     default -> throw new UnsupportedOperationException();
     }
   }

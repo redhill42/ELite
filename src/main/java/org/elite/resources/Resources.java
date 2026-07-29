@@ -121,6 +121,7 @@ public final class Resources
     public static final String EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER = "EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER";
     public static final String EL_CLASS_NOT_FOUND = "EL_CLASS_NOT_FOUND";
     public static final String EL_NOT_A_CLASS = "EL_NOT_A_CLASS";
+    public static final String EL_NOT_COMPARABLE = "EL_NOT_COMPARABLE";
 
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";
     public static final String JSPRT_UNSUPPORTED_EVAL_TYPE = "JSPRT_UNSUPPORTED_EVAL_TYPE";

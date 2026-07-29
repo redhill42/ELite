@@ -99,12 +99,13 @@ class ConstantFolder extends TreeTransformer {
         if (e instanceof ELNode.USHR)     return new ELNode.USHR(e.pos, left, right);
         if (e instanceof ELNode.EQ)       return new ELNode.EQ(e.pos, left, right);
         if (e instanceof ELNode.NE)       return new ELNode.NE(e.pos, left, right);
+        if (e instanceof ELNode.IDEQ)     return new ELNode.IDEQ(e.pos, left, right);
+        if (e instanceof ELNode.IDNE)     return new ELNode.IDNE(e.pos, left, right);
         if (e instanceof ELNode.LT)       return new ELNode.LT(e.pos, left, right);
         if (e instanceof ELNode.LE)       return new ELNode.LE(e.pos, left, right);
         if (e instanceof ELNode.GT)       return new ELNode.GT(e.pos, left, right);
         if (e instanceof ELNode.GE)       return new ELNode.GE(e.pos, left, right);
-        if (e instanceof ELNode.IDEQ)     return new ELNode.IDEQ(e.pos, left, right);
-        if (e instanceof ELNode.IDNE)     return new ELNode.IDNE(e.pos, left, right);
+        if (e instanceof ELNode.CMP)      return new ELNode.CMP(e.pos, left, right);
         if (e instanceof ELNode.AND)      return new ELNode.AND(e.pos, left, right);
         if (e instanceof ELNode.OR)       return new ELNode.OR(e.pos, left, right);
         if (e instanceof ELNode.CAT)      return new ELNode.CAT(e.pos, left, right);
@@ -148,6 +149,10 @@ class ConstantFolder extends TreeTransformer {
     public void visit(ELNode.SHR  e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.USHR e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
 
+    // ---- Three-way Comparison ----
+
+    public void visit(ELNode.CMP e) { result = foldBinaryArithmetic(e, transform(e.left), transform(e.right)); }
+    
     // ---- Comparison (result is Boolean) ----
 
     private ELNode foldBinaryComparison(ELNode.Binary e, ELNode left, ELNode right) {
@@ -166,12 +171,12 @@ class ConstantFolder extends TreeTransformer {
 
     public void visit(ELNode.EQ  e)  { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.NE  e)  { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
+    public void visit(ELNode.IDEQ e) { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
+    public void visit(ELNode.IDNE e) { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.LT  e)  { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.LE  e)  { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.GT  e)  { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
     public void visit(ELNode.GE  e)  { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
-    public void visit(ELNode.IDEQ e) { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
-    public void visit(ELNode.IDNE e) { result = foldBinaryComparison(e, transform(e.left), transform(e.right)); }
 
     // ---- Logical ----
 

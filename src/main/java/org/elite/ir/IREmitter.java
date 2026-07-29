@@ -227,6 +227,14 @@ final class IREmitter {
     return emit(NE, kind, 0);
   }
 
+  public IREmitter emitIdEq() {
+    return emit(IDEQ, 0);
+  }
+
+  public IREmitter emitIdNe() {
+    return emit(IDNE, 0);
+  }
+
   public IREmitter emitLt() {
     return emit(LT, K_DYNAMIC, 0);
   }
@@ -247,12 +255,8 @@ final class IREmitter {
     return emit(GE, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitIdEq() {
-    return emit(IDEQ, 0);
-  }
-
-  public IREmitter emitIdNe() {
-    return emit(IDNE, 0);
+  public IREmitter emitCmp() {
+    return emit(CMP, K_DYNAMIC, 0);
   }
 
   public IREmitter emitIn() {

@@ -264,7 +264,7 @@ final class PeepholeOpt {
     // Simple constant folder.
     case ADD, SUB, MUL, DIV, IDIV, REM, POW, CAT,
          BITAND, BITOR, XOR, SHL, SHR, USHR,
-         EQ, NE, IDEQ, IDNE, LT, LE, GT, GE:
+         EQ, NE, IDEQ, IDNE, LT, LE, GT, GE, CMP:
       try {
         if (code.size() >= 3) {
           int i1 = code.get(last - 2);
@@ -410,6 +410,7 @@ final class PeepholeOpt {
       case LE     -> Builtin.__le__(elctx, c1, c2);
       case GT     -> Builtin.__gt__(elctx, c1, c2);
       case GE     -> Builtin.__ge__(elctx, c1, c2);
+      case CMP    -> Builtin.__cmp__(elctx, c1, c2);
       default -> throw new AssertionError();
     };
   }

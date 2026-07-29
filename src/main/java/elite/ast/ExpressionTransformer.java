@@ -205,6 +205,12 @@ final class ExpressionTransformer extends ELNode.Visitor
                                       transform(e.right));
     }
 
+    public void visit(ELNode.CMP e) {
+        result = new BinaryExpression(ExpressionType.THREE_WAY_COMPARISON,
+                                      transform(e.left),
+                                      transform(e.right));
+    }
+
     public void visit(ELNode.IN e) {
         result = new BinaryExpression(ExpressionType.IN, 
                                       transform(e.left),

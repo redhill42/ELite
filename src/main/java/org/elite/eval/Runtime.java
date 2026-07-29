@@ -407,6 +407,10 @@ public final class Runtime {
     return Builtin.__ge__(elctx, lhs, rhs);
   }
 
+  public static Object __cmp__(Object lhs, Object rhs, ELContext elctx) {
+    return Builtin.__cmp__(elctx, lhs, rhs);
+  }
+
   public static boolean __in__(Object lhs, Object rhs, ELContext elctx) {
     return Builtin.__in__(elctx, lhs, rhs);
   }

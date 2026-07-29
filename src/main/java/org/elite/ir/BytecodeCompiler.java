@@ -225,8 +225,13 @@ public class BytecodeCompiler {
 
     boolean isComparable = false;
     if (!interfaces.contains("java.lang.Comparable") &&
-        (vmap.containsKey("equals") || vmap.containsKey("==")) &&
-        vmap.containsKey("<")) {
+        vmap.containsKey("<=>") ||
+        ((vmap.containsKey("equals") || vmap.containsKey("==")) &&
+         vmap.containsKey("<"))) {
+      // If a class defines <=> procedure then this class is a Comparable
+      // object. The compareTo method of Comparable interface forwards to the
+      // <=> procedure.
+      //
       // If a class defines equals and < procedure then this class is a
       // Comparable object. The compareTo method of Comparable interface is
       // implemented using equals and < procedure.
@@ -498,42 +503,66 @@ public class BytecodeCompiler {
 
     // Generate compareTo method.
     if (isComparable) {
-      IRFunction less = vmap.get("<");
-      assert less != null;
-      Label b1 = new Label(), b2 = new Label(), exit = new Label();
+      if (vmap.containsKey("<=>")) {
+        // Delegate compareTo to the <=> procedure.
+        IRFunction threeWay = vmap.get("<=>");
+        cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
+          .THIS()
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ICONST_1()
+          .ANEWARRAY(Object.class)
+          .DUP()
+          .ICONST_0()
+          .ALOAD(1)
+          .CHECKCAST(className)
+          .AASTORE()
+          .INVOKEVIRTUAL(className, threeWay.internalName, Object.class,
+                         EvaluationContext.class, Object[].class)
+          .UNBOX(Integer.TYPE)
+          .IRETURN()
+          .end();
+      } else {
+        IRFunction less = vmap.get("<");
+        assert less != null;
+        Label b1 = new Label(), b2 = new Label(), exit = new Label();
 
-      cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
-        .THIS()
-        .ALOAD(1)
-        .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-        .IFEQ(b1)
-        .ICONST_0()
-        .GOTO(exit)
-      .label(b1)
-        .THIS()
-        .NEW(EvaluationContext.class)
-        .DUP()
-        .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-        .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                       ELContext.class)
-        .ICONST_1()
-        .ANEWARRAY(Object.class)
-        .DUP()
-        .ICONST_0()
-        .ALOAD(1)
-        .CHECKCAST(className)
-        .AASTORE()
-        .INVOKEVIRTUAL(className, less.internalName, Object.class,
-                       EvaluationContext.class, Object[].class)
-        .UNBOX(Boolean.TYPE)
-        .IFEQ(b2)
-        .ICONST_M1()
-        .GOTO(exit)
-      .label(b2)
-        .ICONST_1()
-      .label(exit)
-        .IRETURN()
-        .end();
+        cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
+          .THIS()
+          .ALOAD(1)
+          .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+          .IFEQ(b1)
+          .ICONST_0()
+          .GOTO(exit)
+        .label(b1)
+          .THIS()
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ICONST_1()
+          .ANEWARRAY(Object.class)
+          .DUP()
+          .ICONST_0()
+          .ALOAD(1)
+          .CHECKCAST(className)
+          .AASTORE()
+          .INVOKEVIRTUAL(className, less.internalName, Object.class,
+                         EvaluationContext.class, Object[].class)
+          .UNBOX(Boolean.TYPE)
+          .IFEQ(b2)
+          .ICONST_M1()
+          .GOTO(exit)
+        .label(b2)
+          .ICONST_1()
+        .label(exit)
+          .IRETURN()
+          .end();
+      }
     }
 
     consumer.acceptClass(className, cc.end());
@@ -655,6 +684,7 @@ public class BytecodeCompiler {
       case "<="  -> "__le__";
       case ">"   -> "__gt__";
       case ">="  -> "__ge__";
+      case "<=>" -> "__cmp__";
       case "=="  -> "__eq__";
       case "!="  -> "__ne__";
       case "+="  -> "__add_assign__";
@@ -1009,6 +1039,7 @@ public class BytecodeCompiler {
       case LE     -> emitBinary(v, "__le__",     Boolean.TYPE);
       case GT     -> emitBinary(v, "__gt__",     Boolean.TYPE);
       case GE     -> emitBinary(v, "__ge__",     Boolean.TYPE);
+      case CMP    -> emitBinary(v, "__cmp__",    Object.class);
       case IN     -> emitBinary(v, "__in__",     Boolean.TYPE);
       case EMPTY  -> emitUnary (v, "__empty__",  Boolean.TYPE);
   

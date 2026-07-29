@@ -2778,7 +2778,7 @@ public abstract class ELNode implements Serializable {
         lhs = TypeCoercion.coerce(elctx, lhs, rhs.getClass());
         return ((Comparable)lhs).compareTo(rhs);
       } else {
-        throw runtimeError(elctx, "Operands not comparable");
+        throw runtimeError(elctx, _T(EL_NOT_COMPARABLE));
       }
     }
 

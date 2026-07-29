@@ -121,15 +121,12 @@ public final class CommandProvider {
     ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
     ELProgram program = new Parser(elctx, script).parse();
     program.setStandalone(true);
-    BytecodeCompiler.compile(program.compile(elctx), "ELiteProgram",
-                             new Dumper(), program.getImports());
+    BytecodeCompiler.compile(
+      program.compile(elctx), "ELiteProgram", new Dumper(),
+      shellContext.isInteractive() ? null : program.getImports());
   }
 
-  private static class Dumper extends Textifier implements BytecodeConsumer {
-    Dumper() {
-      super(Opcodes.ASM9);
-    }
-
+  private static class Dumper implements BytecodeConsumer {
     @Override
     public void acceptProgram(String name, byte[] bc) {
       dumpBytecode(bc);
@@ -143,13 +140,19 @@ public final class CommandProvider {
     private void dumpBytecode(byte[] bc) {
       ClassReader cr = new ClassReader(bc);
       TraceClassVisitor trace = new TraceClassVisitor(
-        null, this, new PrintWriter(System.out));
+        null, new CustomTextifier(), new PrintWriter(System.out));
       cr.accept(trace, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+    }
+  }
+
+  private static class CustomTextifier extends Textifier {
+    CustomTextifier() {
+      super(Opcodes.ASM9);
     }
 
     @Override
     protected Textifier createTextifier() {
-      return new Dumper();
+      return new CustomTextifier();
     }
 
     @Override
