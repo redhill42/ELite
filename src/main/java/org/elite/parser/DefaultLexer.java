@@ -834,6 +834,7 @@ public class DefaultLexer extends Lexer
         shared.addOperator("++", INC, -1);
         shared.addOperator("<", LT, -1);
         shared.addOperator("<=", LE, -1);
+        shared.addOperator("<=>", CMP, -1);
         shared.addOperator("<-", IN, -1);
         shared.addOperator("<<", SHL, -1);
         shared.addOperator("<<=", ASSIGNOP, SHL);

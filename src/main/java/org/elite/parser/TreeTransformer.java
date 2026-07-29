@@ -378,6 +378,15 @@ public class TreeTransformer extends ELNode.Visitor
             result = new ELNode.GE(e.pos, left, right);
     }
 
+    public void visit(ELNode.CMP e) {
+        ELNode left = transform(e.left);
+        ELNode right = transform(e.right);
+        if (left == e.left && right == e.right)
+            result = e;
+        else
+            result = new ELNode.CMP(e.pos, left, right);
+    }
+
     public void visit(ELNode.INSTANCEOF e) {
         ELNode right = transform(e.right);
         ELNode type = transform(e.type);

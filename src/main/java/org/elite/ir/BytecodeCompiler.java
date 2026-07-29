@@ -550,53 +550,58 @@ public class BytecodeCompiler {
       cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
     }
 
-    Label fail = new Label();
-    Label noResult = new Label();
-    if (!cases.isEmpty()) {
-      int[] keys = new int[cases.size()];
-      Label[] labels = new Label[cases.size()];
-      int i = 0;
-      for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
-        keys[i] = entry.getKey();
-        labels[i] = new Label();
-        i++;
-      }
+    if (cases.isEmpty()) {
+      mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
+        .ARETURN()
+        .end();
+      return;
+    }
 
-      if (cases.size() > 1) {
-        mc.ALOAD(2)
-          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .SWITCH(keys, labels, noResult, 5);
-      }
+    Label fail = new Label(), noResult = new Label();
+    int[] keys = new int[cases.size()];
+    Label[] labels = new Label[cases.size()];
 
-      i = 0;
-      for (List<ELNode.DEFINE> defs : cases.values()) {
-        mc.label(labels[i++]);
-        for (int j = 0; j < defs.size(); j++) {
-          ELNode.DEFINE def = defs.get(j);
-          ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
-          Label next = j == defs.size() - 1 ? noResult : new Label();
-          String methodName = proc.symbol.func.internalName;
-          mc.LDC(def.id)
-            .ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-            .IFEQ(next)
-            .ALOAD(3)
-            .ARRAYLENGTH()
-            .PUSH(proc.vars.length)
-            .IF_ICMPNE(fail)
-            .THIS()
-            .ALOAD(1)
-            .ALOAD(3);
-          if (def.symbol.isStatic())
-            mc.INVOKESTATIC(clazz.internalName, methodName, Object.class,
-                            EvaluationContext.class, Object[].class);
-          else
-            mc.INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
-                             EvaluationContext.class, Object[].class);
-          mc.ARETURN();
-          if (j != defs.size() - 1)
-            mc.label(next);
-        }
+    int i = 0;
+    for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
+      keys[i] = entry.getKey();
+      labels[i] = new Label();
+      i++;
+    }
+
+    if (cases.size() > 1) {
+      mc.ALOAD(2)
+        .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+        .SWITCH(keys, labels, noResult, 5);
+    }
+
+    i = 0;
+    for (List<ELNode.DEFINE> defs : cases.values()) {
+      mc.label(labels[i++]);
+      for (int j = 0; j < defs.size(); j++) {
+        ELNode.DEFINE def = defs.get(j);
+        ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
+        Label next = j == defs.size() - 1 ? noResult : new Label();
+        String methodName = proc.symbol.func.internalName;
+        mc.LDC(def.id)
+          .ALOAD(2)
+          .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+          .IFEQ(next)
+          .ALOAD(3)
+          .ARRAYLENGTH()
+          .PUSH(proc.vars.length)
+          .IF_ICMPNE(fail)
+          .THIS()
+          .ALOAD(1)
+          .ALOAD(3);
+        if (def.symbol.isStatic())
+          mc.INVOKESTATIC(clazz.internalName, methodName, Object.class,
+                          EvaluationContext.class, Object[].class);
+        else
+          mc.INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
+                           EvaluationContext.class, Object[].class);
+        mc.ARETURN();
+        if (j != defs.size() - 1)
+          mc.label(next);
       }
     }
 

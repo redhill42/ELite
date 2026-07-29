@@ -42,6 +42,7 @@ import org.elite.eval.seq.MappendSeq;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 import org.elite.resolver.MethodResolver;
+import org.elite.util.Utils;
 import javax.el.ELContext;
 import javax.el.ELException;
 import javax.el.ELResolver;
@@ -1073,19 +1074,17 @@ public final class Builtin {
     } else if (base instanceof Set) {
       return map_set(elctx, (Set<Object>)base, proc);
     } else {
-      try {
-        Method method = base.getClass().getMethod("map", Function.class);
-        int mod = method.getModifiers();
-        if (Modifier.isPublic(mod) && !Modifier.isStatic(mod) &&
-            !Modifier.isAbstract(mod))
+      Method method = findMethod(base, "map", Function.class);
+      if (method != null) {
+        try {
           return method.invoke(base, (Function<Object, Object>)x ->
             proc.call(elctx, x));
-      } catch (NoSuchMethodException | IllegalAccessException ex) {
-        // fallthrough
-      } catch (InvocationTargetException ex) {
-        throw new EvaluationException(elctx, ex.getTargetException());
+        } catch (IllegalAccessException ex) {
+          // fallthrough
+        } catch (InvocationTargetException ex) {
+          throw new EvaluationException(elctx, ex.getTargetException());
+        }
       }
-
       return MappedSeq.make(coerceToSeq(base), proc);
     }
   }
@@ -1190,19 +1189,17 @@ public final class Builtin {
     } else if (base instanceof Set) {
       return filter_set(elctx, (Set<Object>)base, pred);
     } else {
-      try {
-        Method method = base.getClass().getMethod("filter", Predicate.class);
-        int mod = method.getModifiers();
-        if (Modifier.isPublic(mod) && !Modifier.isStatic(mod) &&
-            !Modifier.isAbstract(mod))
-          return method.invoke(base, (Predicate<Object>)x -> coerceToBoolean(
-            pred.call(elctx, x)));
-      } catch (NoSuchMethodException | IllegalAccessException ex) {
-        // fallthrough
-      } catch (InvocationTargetException ex) {
-        throw new EvaluationException(elctx, ex.getTargetException());
+      Method method = findMethod(base, "filter", Predicate.class);
+      if (method != null) {
+        try {
+          return method.invoke(base, (Predicate<Object>)x ->
+            coerceToBoolean(pred.call(elctx, x)));
+        } catch (IllegalAccessException ex) {
+          // fallthrough
+        } catch (InvocationTargetException ex) {
+          throw new EvaluationException(elctx, ex.getTargetException());
+        }
       }
-
       return FilteredSeq.make(coerceToSeq(base), pred);
     }
   }
@@ -2360,14 +2357,15 @@ public final class Builtin {
   private static final ELNode.SHL     __SHL__    = new ELNode.SHL(-1, null, null);
   private static final ELNode.SHR     __SHR__    = new ELNode.SHR(-1, null, null);
   private static final ELNode.USHR    __USHR__   = new ELNode.USHR(-1, null, null);
-  private static final ELNode.LT      __LT__     = new ELNode.LT(-1, null, null);
-  private static final ELNode.LE      __LE__     = new ELNode.LE(-1, null, null);
-  private static final ELNode.GT      __GT__     = new ELNode.GT(-1, null, null);
-  private static final ELNode.GE      __GE__     = new ELNode.GE(-1, null, null);
   private static final ELNode.EQ      __EQ__     = new ELNode.EQ(-1, null, null);
   private static final ELNode.NE      __NE__     = new ELNode.NE(-1, null, null);
   private static final ELNode.IDEQ    __IDEQ__   = new ELNode.IDEQ(-1, null, null);
   private static final ELNode.IDNE    __IDNE__   = new ELNode.IDNE(-1, null, null);
+  private static final ELNode.LT      __LT__     = new ELNode.LT(-1, null, null);
+  private static final ELNode.LE      __LE__     = new ELNode.LE(-1, null, null);
+  private static final ELNode.GT      __GT__     = new ELNode.GT(-1, null, null);
+  private static final ELNode.GE      __GE__     = new ELNode.GE(-1, null, null);
+  private static final ELNode.CMP     __CMP__    = new ELNode.CMP(-1, null, null);
   private static final ELNode.EMPTY   __EMPTY__  = new ELNode.EMPTY(-1, null);
   private static final ELNode.IN      __IN__     = new ELNode.IN(-1, null, null, false);
 
@@ -2460,6 +2458,26 @@ public final class Builtin {
     return x != null ? x : y.getValue(elctx);
   }
 
+  @Expando(name = "==", scope = GLOBAL)
+  public static boolean __eq__(ELContext elctx, Object x, Object y) {
+    return (Boolean)__EQ__.getValue(elctx, x, y);
+  }
+
+  @Expando(name = "!=", scope = GLOBAL)
+  public static boolean __ne__(ELContext elctx, Object x, Object y) {
+    return (Boolean)__NE__.getValue(elctx, x, y);
+  }
+
+  @Expando(name = "===", scope = GLOBAL)
+  public static boolean __ideq__(ELContext elctx, Object x, Object y) {
+    return (Boolean)__IDEQ__.getValue(elctx, x, y);
+  }
+
+  @Expando(name = "!==", scope = GLOBAL)
+  public static boolean __idne__(ELContext elctx, Object x, Object y) {
+    return (Boolean)__IDNE__.getValue(elctx, x, y);
+  }
+
   @Expando(name = "<", scope = GLOBAL)
   public static boolean __lt__(ELContext elctx, Object x, Object y) {
     return (Boolean)__LT__.getValue(elctx, x, y);
@@ -2480,24 +2498,9 @@ public final class Builtin {
     return (Boolean)__GE__.getValue(elctx, x, y);
   }
 
-  @Expando(name = "==", scope = GLOBAL)
-  public static boolean __eq__(ELContext elctx, Object x, Object y) {
-    return (Boolean)__EQ__.getValue(elctx, x, y);
-  }
-
-  @Expando(name = "!=", scope = GLOBAL)
-  public static boolean __ne__(ELContext elctx, Object x, Object y) {
-    return (Boolean)__NE__.getValue(elctx, x, y);
-  }
-
-  @Expando(name = "===", scope = GLOBAL)
-  public static boolean __ideq__(ELContext elctx, Object x, Object y) {
-    return (Boolean)__IDEQ__.getValue(elctx, x, y);
-  }
-
-  @Expando(name = "!==", scope = GLOBAL)
-  public static boolean __idne__(ELContext elctx, Object x, Object y) {
-    return (Boolean)__IDNE__.getValue(elctx, x, y);
+  @Expando(name = "<=>", scope = GLOBAL)
+  public static int __cmp__(ELContext elctx, Object x, Object y) {
+    return (Integer)__CMP__.getValue(elctx, x, y);
   }
 
   @Expando(name = "!", scope = GLOBAL)
@@ -2717,6 +2720,29 @@ public final class Builtin {
       }
     }
     return Locale.getDefault();
+  }
+
+  private static Method findMethod(Object obj, String name, Class<?>... types) {
+    Set<Class<?>> classes = new HashSet<>();
+    Class<?> current = obj.getClass();
+    while (current != null && current != Object.class) {
+      classes.add(current);
+      Collections.addAll(classes, current.getInterfaces());
+      current = current.getSuperclass();
+    }
+
+    for (Class<?> clazz : classes) {
+      try {
+        Method method = clazz.getMethod(name, types);
+        int mods = method.getModifiers();
+        if (Modifier.isPublic(mods) && !Modifier.isStatic(mods) &&
+            method.canAccess(obj))
+          return method;
+      } catch (NoSuchMethodException e) {
+        continue;
+      }
+    }
+    return null;
   }
 
   private static class ArrayAsList extends AbstractList<Object>

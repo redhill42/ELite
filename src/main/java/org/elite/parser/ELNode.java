@@ -112,6 +112,7 @@ public abstract class ELNode implements Serializable {
     BITAND_PREC     = 90,
     EQ_PREC         = 100,
     ORD_PREC        = 110,
+    CMP_PREC        = 115,
     SHIFT_PREC      = 120,
     ADD_PREC        = 130,
     MUL_PREC        = 140,
@@ -150,6 +151,7 @@ public abstract class ELNode implements Serializable {
     opIdentifiers[Token.LE] = "<=";
     opIdentifiers[Token.GT] = ">";
     opIdentifiers[Token.GE] = ">=";
+    opIdentifiers[Token.CMP] = "<=>";
   }
 
   ELNode(int op, int pos) {
@@ -2617,6 +2619,7 @@ public abstract class ELNode implements Serializable {
   /**
    * Binary comparison expression.
    */
+  @SuppressWarnings("all") // FIXME: for Comparable
   public static abstract class Comparison extends Binary {
     Comparison(int op, int pos, ELNode left, ELNode right) {
       super(op, pos, left, right);
@@ -2688,6 +2691,7 @@ public abstract class ELNode implements Serializable {
   /**
    * Less than comparison expression.
    */
+  @SuppressWarnings("all") // FIXME: for Comparable
   public static class LT extends Comparison {
     public LT(int pos, ELNode left, ELNode right) {
       super(Token.LT, pos, left, right);
@@ -2705,6 +2709,7 @@ public abstract class ELNode implements Serializable {
   /**
    * Less or equal than comparison expression
    */
+  @SuppressWarnings("all") // FIXME: for Comparable
   public static class LE extends Comparison {
     public LE(int pos, ELNode left, ELNode right) {
       super(Token.LE, pos, left, right);
@@ -2722,6 +2727,7 @@ public abstract class ELNode implements Serializable {
   /**
    * Greater than comparison expression.
    */
+  @SuppressWarnings("all") // FIXME: for Comparable
   public static class GT extends Comparison {
     public GT(int pos, ELNode left, ELNode right) {
       super(Token.GT, pos, left, right);
@@ -2739,6 +2745,7 @@ public abstract class ELNode implements Serializable {
   /**
    * Greater than or equal to comparison expression.
    */
+  @SuppressWarnings("all") // FIXME: for Comparable
   public static class GE extends Comparison {
     public GE(int pos, ELNode left, ELNode right) {
       super(Token.GE, pos, left, right);
@@ -2753,6 +2760,37 @@ public abstract class ELNode implements Serializable {
     }
   }
 
+  public static class CMP extends Binary {
+    public CMP(int pos, ELNode left, ELNode right) {
+      super(Token.CMP, pos, left, right);
+    }
+
+    public int precedence() {
+      return CMP_PREC;
+    }
+
+    @SuppressWarnings("all")
+    protected Object evaluate(ELContext elctx, Object lhs, Object rhs) {
+      if (lhs instanceof Comparable) {
+        rhs = TypeCoercion.coerce(elctx, rhs, lhs.getClass());
+        return ((Comparable)lhs).compareTo(rhs);
+      } else if (rhs instanceof Comparable) {
+        lhs = TypeCoercion.coerce(elctx, lhs, rhs.getClass());
+        return ((Comparable)lhs).compareTo(rhs);
+      } else {
+        throw runtimeError(elctx, "Operands not comparable");
+      }
+    }
+
+    public Class<?> getType(EvaluationContext context) {
+      return Integer.class;
+    }
+
+    public void accept(Visitor v) {
+      v.visit(this);
+    }
+  }
+
   /**
    * INSTANCEOF expression.
    */
@@ -2760,14 +2798,14 @@ public abstract class ELNode implements Serializable {
     public final ELNode type;
     public final boolean negative;
 
-    public int precedence() {
-      return ORD_PREC;
-    }
-
     public INSTANCEOF(int pos, ELNode right, ELNode type, boolean negative) {
       super(Token.INSTANCEOF, pos, right);
       this.type = type;
       this.negative = negative;
+    }
+
+    public int precedence() {
+      return ORD_PREC;
     }
 
     public String getTypeName() {
@@ -6132,6 +6170,7 @@ public abstract class ELNode implements Serializable {
       public void visit(LE e)           { visitNode(e); }
       public void visit(GT e)           { visitNode(e); }
       public void visit(GE e)           { visitNode(e); }
+      public void visit(CMP e)          { visitNode(e); }
       public void visit(INSTANCEOF e)   { visitNode(e); }
       public void visit(IN e)           { visitNode(e); }
       public void visit(CAT e)          { visitNode(e); }

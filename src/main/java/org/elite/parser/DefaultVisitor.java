@@ -99,6 +99,7 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.LE e)       { visitBinary(e); }
     public void visit(ELNode.GT e)       { visitBinary(e); }
     public void visit(ELNode.GE e)       { visitBinary(e); }
+    public void visit(ELNode.CMP e)      { visitBinary(e); }
     public void visit(ELNode.IN e)       { visitBinary(e); }
     public void visit(ELNode.CAT e)      { visitBinary(e); }
     public void visit(ELNode.ADD e)      { visitBinary(e); }

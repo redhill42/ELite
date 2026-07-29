@@ -354,14 +354,15 @@ public class Parser extends Scanner {
       case SHR:
       case USHR:
       case COALESCE:
-      case LT:
-      case LE:
-      case GT:
-      case GE:
       case EQ:
       case NE:
       case IDEQ:
       case IDNE:
+      case LT:
+      case LE:
+      case GT:
+      case GE:
+      case CMP:
       case NOT:
       case AND:
       case OR:
@@ -657,14 +658,6 @@ public class Parser extends Scanner {
       return new ELNode.REM(scan(), e, parseTerm());
     case POW:
       return new ELNode.POW(scan(), e, parseTerm());
-    case LT:
-      return new ELNode.LT(scan(), e, parseTerm());
-    case LE:
-      return new ELNode.LE(scan(), e, parseTerm());
-    case GT:
-      return new ELNode.GT(scan(), e, parseTerm());
-    case GE:
-      return new ELNode.GE(scan(), e, parseTerm());
     case EQ:
       return new ELNode.EQ(scan(), e, parseTerm());
     case NE:
@@ -673,6 +666,16 @@ public class Parser extends Scanner {
       return new ELNode.IDEQ(scan(), e, parseTerm());
     case IDNE:
       return new ELNode.IDNE(scan(), e, parseTerm());
+    case LT:
+      return new ELNode.LT(scan(), e, parseTerm());
+    case LE:
+      return new ELNode.LE(scan(), e, parseTerm());
+    case GT:
+      return new ELNode.GT(scan(), e, parseTerm());
+    case GE:
+      return new ELNode.GE(scan(), e, parseTerm());
+    case CMP:
+      return new ELNode.CMP(scan(), e, parseTerm());
     case AND:
       return new ELNode.AND(scan(), e, parseTerm());
     case OR:
@@ -2452,6 +2455,7 @@ public class Parser extends Scanner {
     case LE:
     case GT:
     case GE:
+    case CMP:
       opname = operator.name;
       scan();
       break;
