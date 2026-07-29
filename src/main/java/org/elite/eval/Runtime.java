@@ -132,8 +132,12 @@ public final class Runtime {
     String name = TypeCoercion.coerceToString(key);
 
     // Route to compiled elite class.
-    if (base instanceof DynamicDispatcher disp)
-      return disp.__invoke__(env, name, args);
+    if (base instanceof DynamicDispatcher disp) {
+      Object result = disp.__invoke__(env, name, args);
+      if (result == NO_RESULT)
+        throw reportMethodNotFound(elctx, base, name, null);
+      return result;
+    }
 
     Closure[] callArgs = ELEngine.getCallArgs(args);
 

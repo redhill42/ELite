@@ -1646,7 +1646,10 @@ public abstract class ELNode implements Serializable {
           }
 
           // invoke expando operator procedure
-          return disp.__invoke__(new EvaluationContext(elctx), opname, rhs);
+          result = disp.__invoke__(new EvaluationContext(elctx), opname, rhs);
+          if (result != NO_RESULT) {
+            return result;
+          }
         } else if (lhs instanceof ClosureObject) {
           // invoke static operator procedure
           ClassDefinition cdef = ((ClosureObject)lhs).get_class();

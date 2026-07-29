@@ -7,6 +7,7 @@ import elite.lang.annotation.Expando;
 import elite.lang.annotation.ExpandoScope;
 import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.ELEngine;
+import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.ExternalImports;
@@ -38,6 +39,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -213,16 +215,28 @@ public class BytecodeCompiler {
     String baseName = clazz.base instanceof IRClass
                       ? ((IRClass)clazz.base).internalName
                       : ((Class<?>)clazz.base).getName();
-    String[] interfaces = new String[1 + (clazz.interfaces != null
-                                          ? clazz.interfaces.length : 0)];
-    if (clazz.interfaces != null)
-      for (int i = 0; i < clazz.interfaces.length; i++)
-        interfaces[i] = clazz.interfaces[i].getName();
-    interfaces[interfaces.length - 1] = DynamicDispatcher.class.getName();
+
+    List<String> interfaces = new ArrayList<>();
+    interfaces.add(DynamicDispatcher.class.getName());
+    if (clazz.interfaces != null) {
+      for (Class<?> i : clazz.interfaces)
+        interfaces.add(i.getName());
+    }
+
+    boolean isComparable = false;
+    if (!interfaces.contains("java.lang.Comparable") &&
+        (vmap.containsKey("equals") || vmap.containsKey("==")) &&
+        vmap.containsKey("<")) {
+      // If a class defines equals and < procedure then this class is a
+      // Comparable object. The compareTo method of Comparable interface is
+      // implemented using equals and < procedure.
+      isComparable = true;
+      interfaces.add("java.lang.Comparable");
+    }
 
     ClassAssembly cc = new ClassAssembly(
       (clazz.node.symbol.isStatic() ? ACC_STATIC : 0) | ACC_PUBLIC | ACC_SUPER,
-      className, baseName, interfaces);
+      className, baseName, interfaces.toArray(new String[0]));
 
     if (clazz.node.file != null) {
       String filename = clazz.node.file;
@@ -482,6 +496,46 @@ public class BytecodeCompiler {
       }
     }
 
+    // Generate compareTo method.
+    if (isComparable) {
+      IRFunction less = vmap.get("<");
+      assert less != null;
+      Label b1 = new Label(), b2 = new Label(), exit = new Label();
+
+      cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
+        .THIS()
+        .ALOAD(1)
+        .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+        .IFEQ(b1)
+        .ICONST_0()
+        .GOTO(exit)
+      .label(b1)
+        .THIS()
+        .NEW(EvaluationContext.class)
+        .DUP()
+        .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+        .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                       ELContext.class)
+        .ICONST_1()
+        .ANEWARRAY(Object.class)
+        .DUP()
+        .ICONST_0()
+        .ALOAD(1)
+        .CHECKCAST(className)
+        .AASTORE()
+        .INVOKEVIRTUAL(className, less.internalName, Object.class,
+                       EvaluationContext.class, Object[].class)
+        .UNBOX(Boolean.TYPE)
+        .IFEQ(b2)
+        .ICONST_M1()
+        .GOTO(exit)
+      .label(b2)
+        .ICONST_1()
+      .label(exit)
+        .IRETURN()
+        .end();
+    }
+
     consumer.acceptClass(className, cc.end());
   }
 
@@ -497,6 +551,7 @@ public class BytecodeCompiler {
     }
 
     Label fail = new Label();
+    Label noResult = new Label();
     if (!cases.isEmpty()) {
       int[] keys = new int[cases.size()];
       Label[] labels = new Label[cases.size()];
@@ -510,7 +565,7 @@ public class BytecodeCompiler {
       if (cases.size() > 1) {
         mc.ALOAD(2)
           .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .SWITCH(keys, labels, fail, 5);
+          .SWITCH(keys, labels, noResult, 5);
       }
 
       i = 0;
@@ -519,7 +574,7 @@ public class BytecodeCompiler {
         for (int j = 0; j < defs.size(); j++) {
           ELNode.DEFINE def = defs.get(j);
           ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
-          Label next = j == defs.size() - 1 ? fail : new Label();
+          Label next = j == defs.size() - 1 ? noResult : new Label();
           String methodName = proc.symbol.func.internalName;
           mc.LDC(def.id)
             .ALOAD(2)
@@ -544,6 +599,10 @@ public class BytecodeCompiler {
         }
       }
     }
+
+    mc.label(noResult)
+      .GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
+      .ARETURN();
 
     mc.label(fail)
       .NEW(EvaluationException.class)
