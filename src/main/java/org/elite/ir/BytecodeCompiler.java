@@ -39,7 +39,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -113,8 +112,32 @@ public class BytecodeCompiler {
     }
 
     // Map elite class to Java class.
-    for (IRClass c : program.classes())
+    for (IRClass c : program.classes()) {
       c.internalName = ProgramClassName + "$" + c.internalName;
+
+      Map<IRFunction, ELNode.DEFINE> fmap = new HashMap<>();
+      for (ELNode.DEFINE var : c.node.cvars) {
+        if (var.expr instanceof ELNode.LAMBDA fn)
+          fmap.put(fn.symbol.func, var);
+      }
+      for (ELNode.DEFINE var : c.node.ivars) {
+        if (var.expr instanceof ELNode.LAMBDA fn)
+          fmap.put(fn.symbol.func, var);
+      }
+
+      for (IRFunction f : c.functions()) {
+        ELNode.DEFINE def = fmap.get(f);
+        if (def == null) {
+          f.internalName = "__lambda$" +
+                           ((isJavaIdentifier(f.name())) ? f.name() : "") +
+                           "$" + idx++;
+        } else if (f.name().equals(c.name)) {
+          f.internalName = "__init__";
+        } else {
+          f.internalName = mangle(def.id);
+        }
+      }
+    }
 
     // Create program class.
     ClassAssembly cc = new ClassAssembly(ACC_PUBLIC | ACC_FINAL | ACC_SUPER,
@@ -188,26 +211,10 @@ public class BytecodeCompiler {
         fmap.put(fn.symbol.func, var);
       }
     }
-
     for (ELNode.DEFINE var : clazz.node.ivars) {
       if (var.expr instanceof ELNode.LAMBDA fn) {
         fmap.put(fn.symbol.func, var);
         vmap.put(var.id, fn.symbol.func);
-      }
-    }
-
-    // Map member function to Java method.
-    int idx = 0;
-    for (IRFunction fn : clazz.functions()) {
-      ELNode.DEFINE def = fmap.get(fn);
-      if (def == null) {
-        fn.internalName = "__lambda$" +
-                          ((isJavaIdentifier(fn.name())) ? fn.name() : "") +
-                          "$" + idx++;
-      } else if (fn.name().equals(clazz.name)) {
-        fn.internalName = "__init__";
-      } else {
-        fn.internalName = mangle(def.id);
       }
     }
 
@@ -239,9 +246,13 @@ public class BytecodeCompiler {
       interfaces.add("java.lang.Comparable");
     }
 
-    ClassAssembly cc = new ClassAssembly(
-      (clazz.node.symbol.isStatic() ? ACC_STATIC : 0) | ACC_PUBLIC | ACC_SUPER,
-      className, baseName, interfaces.toArray(new String[0]));
+    ELNode.METASET meta = clazz.node.symbol.def.meta;
+    int access = meta == null ? 0 : meta.modifiers;
+    if ((access & ACC_PRIVATE) == 0)
+      access |= ACC_PUBLIC;
+    ClassAssembly cc = new ClassAssembly(access | ACC_SUPER, className,
+                                         baseName,
+                                         interfaces.toArray(new String[0]));
 
     if (clazz.node.file != null) {
       String filename = clazz.node.file;
@@ -254,17 +265,29 @@ public class BytecodeCompiler {
     // Add static and instance fields.
     for (ELNode.DEFINE var : clazz.node.cvars) {
       if (!(var.expr instanceof ELNode.LAMBDA) &&
-          !(var.expr instanceof ELNode.CLASSDEF))
-        cc.addField(ACC_PUBLIC | ACC_STATIC, var.id, Object.class);
+          !(var.expr instanceof ELNode.CLASSDEF)) {
+        access = var.meta == null ? ACC_PUBLIC : var.meta.modifiers;
+        if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
+          access |= ACC_PUBLIC;
+        cc.addField(access | ACC_STATIC, var.id, Object.class);
+      }
     }
     if (clazz.node.vars != null) {
-      for (ELNode.DEFINE var : clazz.node.vars)
-        cc.addField(ACC_PUBLIC, var.id, Object.class);
+      for (ELNode.DEFINE var : clazz.node.vars) {
+        access = var.meta == null ? ACC_PUBLIC : var.meta.modifiers;
+        if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
+          access |= ACC_PUBLIC;
+        cc.addField(access, var.id, Object.class);
+      }
     }
     for (ELNode.DEFINE var : clazz.node.ivars) {
       if (!(var.expr instanceof ELNode.LAMBDA) &&
-          !(var.expr instanceof ELNode.CLASSDEF))
-        cc.addField(ACC_PUBLIC, var.id, Object.class);
+          !(var.expr instanceof ELNode.CLASSDEF)) {
+        access = var.meta == null ? 0 : var.meta.modifiers;
+        if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
+          access |= ACC_PUBLIC;
+        cc.addField(access, var.id, Object.class);
+      }
     }
 
     // Constructor.
@@ -307,21 +330,10 @@ public class BytecodeCompiler {
                           def.id.equals("hashCode")))
         continue; // generated differently
 
-      int mods = 0;
-      if (def != null) {
-        if (def.symbol.isPrivate())
-          mods |= ACC_PRIVATE;
-        else if (def.symbol.isProtected())
-          mods |= ACC_PROTECTED;
-        else
-          mods |= ACC_PUBLIC;
-        if (def.symbol.isAbstract())
-          mods |= ACC_ABSTRACT;
-      }
-      if (def != null && def.symbol.isStatic())
-        mods |= ACC_STATIC;
-
-      mc = cc.newMethod(mods, fn.internalName, Object.class,
+      access = def != null && def.meta != null ? def.meta.modifiers : 0;
+      if ((access & (ACC_PRIVATE | ACC_PROTECTED)) == 0)
+        access |= ACC_PUBLIC;
+      mc = cc.newMethod(access, fn.internalName, Object.class,
                         EvaluationContext.class, Object[].class);
 
       // Add annotation for operator procedure.
@@ -336,8 +348,8 @@ public class BytecodeCompiler {
           .end();
       }
 
-      if ((mods & ACC_ABSTRACT) == 0) {
-        new FunctionCompiler(fn, className, (mods & ACC_STATIC) != 0,
+      if ((access & ACC_ABSTRACT) == 0) {
+        new FunctionCompiler(fn, className, (access & ACC_STATIC) != 0,
                              Object.class, mc).compile();
       }
     }
@@ -572,7 +584,7 @@ public class BytecodeCompiler {
                                    MethodAssembly mc) {
     TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
     for (ELNode.DEFINE def : vars) {
-      if (!(def.expr instanceof ELNode.LAMBDA) ||
+      if (!(def.expr instanceof ELNode.LAMBDA) || !def.symbol.isPublic() ||
           def.id.equals(clazz.name) || def.id.equals("toString") ||
           def.id.equals("equals") || def.id.equals("hashCode"))
         continue;
@@ -971,6 +983,8 @@ public class BytecodeCompiler {
           mc.LDC(value);
         } else if (value instanceof Class) {
           mc.LDC(Type.getType((Class<?>)value));
+        } else if (value instanceof IRClass irc) {
+          mc.LDC(Type.getType(AsmType.toDescriptor(irc.internalName)));
         } else if (value instanceof Symbol) {
           mc.LDC(((Symbol)value).getName())
             .INVOKESTATIC(Symbol.class, "valueOf", Symbol.class, String.class);
@@ -1350,11 +1364,13 @@ public class BytecodeCompiler {
       case INVOKE_DIRECT -> {
         // Invoke function method, the argument list is on stack top.
         IRFunction f = (IRFunction)fn.getConstant(v.poolIndex());
+        String ownerName = f.owner() != null ? f.owner().internalName
+                                             : currentClassName;
         if (f.isStatic()) {
-          mc.INVOKESTATIC(currentClassName, f.internalName, Object.class,
+          mc.INVOKESTATIC(ownerName, f.internalName, Object.class,
                           EvaluationContext.class, Object[].class);
         } else {
-          mc.INVOKEVIRTUAL(currentClassName, f.internalName, Object.class,
+          mc.INVOKEVIRTUAL(ownerName, f.internalName, Object.class,
                            EvaluationContext.class, Object[].class);
         }
       }

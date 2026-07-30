@@ -2594,7 +2594,7 @@ public class Parser extends Scanner {
       int illegal = var.meta.modifiers & ~mask;
       if (illegal != 0) {
         throw parseError(var.pos,
-                         _T(EL_INVALID_MODIFIER, modifierNames(illegal)));
+                         _T(EL_INVALID_MODIFIER, Modifier.toString(illegal)));
       }
 
       if (var.expr instanceof ELNode.CLASSDEF) {
@@ -2632,7 +2632,7 @@ public class Parser extends Scanner {
       int illegal = mod & ~mask;
       if (illegal != 0) {
         throw parseError(var.pos,
-                         _T(EL_INVALID_MODIFIER, modifierNames(illegal)));
+                         _T(EL_INVALID_MODIFIER, Modifier.toString(illegal)));
       }
 
       if (var.expr instanceof ELNode.CLASSDEF) {
@@ -2647,28 +2647,9 @@ public class Parser extends Scanner {
   private void checkDisjoint(int pos, int mod, int set1, int set2) {
     if ((mod & set1) != 0 && (mod & set2) != 0) {
       throw parseError(pos, _T(EL_INVALID_MODIFIER_COMBINATION,
-                               modifierNames(mod & set1),
-                               modifierNames(mod & set2)));
+                               Modifier.toString(mod & set1),
+                               Modifier.toString(mod & set2)));
     }
-  }
-
-  private String modifierNames(int mod) {
-    StringBuilder buf = new StringBuilder();
-    if ((mod & Modifier.PUBLIC) != 0)
-      buf.append("public ");
-    if ((mod & Modifier.PROTECTED) != 0)
-      buf.append("protected ");
-    if ((mod & Modifier.PRIVATE) != 0)
-      buf.append("private ");
-    if ((mod & Modifier.STATIC) != 0)
-      buf.append("static ");
-    if ((mod & Modifier.FINAL) != 0)
-      buf.append("final ");
-    if ((mod & Modifier.ABSTRACT) != 0)
-      buf.append("abstract ");
-    if ((mod & Modifier.SYNCHRONIZED) != 0)
-      buf.append("synchronized ");
-    return buf.toString().trim();
   }
 
   private ELNode parseMetaExpression() {
