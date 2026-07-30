@@ -1477,6 +1477,35 @@ public abstract class ELNode implements Serializable {
     }
   }
 
+  /**
+   * The transform expression (x->f). A syntax sugar for lambda application
+   * (f(x)).
+   * <p>
+   * XFORM is a temporal node only used for precedence order. It eventually
+   * transformed to APPLY node after parsing.
+   */
+  public static class XFORM extends Binary {
+    public XFORM(int pos, ELNode left, ELNode right) {
+      super(Token.XFORM, pos, left, right);
+    }
+
+    public int precedence() {
+      return POSTFIX_PREC;
+    }
+
+    public Object getValue(EvaluationContext context) {
+      throw new UnsupportedOperationException();
+    }
+
+    public Class<?> getType(EvaluationContext context) {
+      throw new UnsupportedOperationException();
+    }
+
+    public void accept(Visitor v) {
+      v.visit(this);
+    }
+  }
+
   // optimize for closure array allocation
   private static final AtomicReference<Closure[]> op_args = new AtomicReference<>();
   private static final AtomicReference<Closure[]> op_args2 = new AtomicReference<>();
@@ -6148,6 +6177,7 @@ public abstract class ELNode implements Serializable {
       public void visit(IDENT e)        { visitNode(e); }
       public void visit(ACCESS e)       { visitNode(e); }
       public void visit(APPLY e)        { visitNode(e); }
+      public void visit(XFORM e)        { visitNode(e); }
       public void visit(PREFIX e)       { visitNode(e); }
       public void visit(INFIX e)        { visitNode(e); }
       public void visit(ASSIGN e)       { visitNode(e); }

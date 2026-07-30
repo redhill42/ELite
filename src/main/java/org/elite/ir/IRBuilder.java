@@ -1859,8 +1859,8 @@ public class IRBuilder extends ELNode.Visitor {
       buildStoreVariable(ident);
     else if (target instanceof ELNode.ACCESS access)
       buildStoreProperty(access);
-    else // could not happen, parser doesn't allow increment/decrement on other expression
-      throw new UnsupportedOperationException("Invalid increment/decrement");
+    else
+      throw reportError(target.pos, _T(EL_READONLY_EXPRESSION));
 
     // If preincrement, stack top is the return value, otherwise pop and
     // keep duped value on top.

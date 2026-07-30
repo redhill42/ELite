@@ -556,16 +556,11 @@ public class Parser extends Scanner {
       return parseApplyExpression(scan(), e);
 
     case XFORM:
-      // x->f is syntax sugar of f(x)
-      if (e instanceof ELNode.TUPLE t)
-        return new ELNode.APPLY(scan(), parseTerm(), t.elems, null);
-      return new ELNode.APPLY(scan(), parseTerm(), new ELNode[]{e}, null);
+      return new ELNode.XFORM(scan(), e, parseTerm());
 
     case INC:
-      expect_lvalue(e, true);
       return new ELNode.INC(scan(), e, false);
     case DEC:
-      expect_lvalue(e, true);
       return new ELNode.DEC(scan(), e, false);
 
     case INSTANCEOF:

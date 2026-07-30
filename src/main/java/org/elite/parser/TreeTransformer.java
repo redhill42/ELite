@@ -178,6 +178,15 @@ public class TreeTransformer extends ELNode.Visitor
             result = new ELNode.APPLY(e.pos, right, args, e.keys);
     }
 
+    public void visit(ELNode.XFORM e) {
+        ELNode left = transform(e.left);
+        ELNode right = transform(e.right);
+        if (left instanceof ELNode.TUPLE t)
+            result = new ELNode.APPLY(e.pos, right, t.elems, null);
+        else
+            result = new ELNode.APPLY(e.pos, right, new ELNode[]{left}, null);
+    }
+
     public void visit(ELNode.ASSIGN e) {
         ELNode left = transform(e.left);
         ELNode right = transform(e.right);

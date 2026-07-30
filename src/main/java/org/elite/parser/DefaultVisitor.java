@@ -65,6 +65,11 @@ public class DefaultVisitor extends ELNode.Visitor
         scan(e.args);
     }
 
+    public void visit(ELNode.XFORM e) {
+        scan(e.left);
+        scan(e.right);
+    }
+
     public void visit(ELNode.COND e) {
         scan(e.cond);
         scan(e.left);

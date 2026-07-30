@@ -61,6 +61,15 @@ final class ExpressionTransformer extends ELNode.Visitor
         result = new ApplyExpression(transform(e.right), transform(e.args));
     }
 
+    public void visit(ELNode.XFORM e) {
+        Expression left = transform(e.left);
+        Expression right = transform(e.right);
+        if (left instanceof TupleExpression t)
+            result = new ApplyExpression(right, t.elements);
+        else
+            result = new ApplyExpression(right, new Expression[]{left});
+    }
+
     public void visit(ELNode.NEW e) {
         result = new NewExpression(e.getClassName(), transform(e.args));
     }
