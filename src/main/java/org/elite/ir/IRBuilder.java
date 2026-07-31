@@ -2551,6 +2551,13 @@ public class IRBuilder extends ELNode.Visitor {
         return new Cons(h, (Seq)t);
     }
 
+    String className = getBaseClassName(node);
+    if (className != null) {
+      Class<?> c = resolveClassAtCompileTime(className);
+      if (c != null)
+        return c;
+    }
+
     throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
   }
 
