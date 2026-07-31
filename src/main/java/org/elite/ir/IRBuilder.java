@@ -1028,8 +1028,16 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private Method resolveInstanceMethod(ELNode base, String name) {
-    Class<?> cls = Object.class; // TODO: infer base type
-    var mc = MethodResolver.getInstance(elctx).resolveMethod(cls, name);
+    Class<?> baseClass = null;
+    if (base instanceof ELNode.Constant) {
+      Object value = base.getValue(null);
+      if (value != null)
+        baseClass = value.getClass();
+    }
+    if (baseClass == null)
+      return null;
+
+    var mc = MethodResolver.getInstance(elctx).resolveMethod(baseClass, name);
     if (mc == null)
       return null;
     return mc.getJavaMethod();

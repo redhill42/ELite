@@ -22,7 +22,6 @@ import org.elite.eval.Control;
 import org.elite.eval.DelegatingELContext;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
-import org.elite.eval.EvaluationException;
 import org.elite.eval.Ranges;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.VariableMapperImpl;
@@ -42,7 +41,6 @@ import org.elite.eval.seq.MappendSeq;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 import org.elite.resolver.MethodResolver;
-import org.elite.util.Utils;
 import javax.el.ELContext;
 import javax.el.ELException;
 import javax.el.ELResolver;
@@ -53,16 +51,11 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.Writer;
 import java.lang.reflect.Array;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -1074,17 +1067,6 @@ public final class Builtin {
     } else if (base instanceof Set) {
       return map_set(elctx, (Set<Object>)base, proc);
     } else {
-      Method method = findMethod(base, "map", Function.class);
-      if (method != null) {
-        try {
-          return method.invoke(base, (Function<Object, Object>)x ->
-            proc.call(elctx, x));
-        } catch (IllegalAccessException ex) {
-          // fallthrough
-        } catch (InvocationTargetException ex) {
-          throw new EvaluationException(elctx, ex.getTargetException());
-        }
-      }
       return MappedSeq.make(coerceToSeq(base), proc);
     }
   }
@@ -1189,17 +1171,6 @@ public final class Builtin {
     } else if (base instanceof Set) {
       return filter_set(elctx, (Set<Object>)base, pred);
     } else {
-      Method method = findMethod(base, "filter", Predicate.class);
-      if (method != null) {
-        try {
-          return method.invoke(base, (Predicate<Object>)x ->
-            coerceToBoolean(pred.call(elctx, x)));
-        } catch (IllegalAccessException ex) {
-          // fallthrough
-        } catch (InvocationTargetException ex) {
-          throw new EvaluationException(elctx, ex.getTargetException());
-        }
-      }
       return FilteredSeq.make(coerceToSeq(base), pred);
     }
   }
@@ -2720,29 +2691,6 @@ public final class Builtin {
       }
     }
     return Locale.getDefault();
-  }
-
-  private static Method findMethod(Object obj, String name, Class<?>... types) {
-    Set<Class<?>> classes = new HashSet<>();
-    Class<?> current = obj.getClass();
-    while (current != null && current != Object.class) {
-      classes.add(current);
-      Collections.addAll(classes, current.getInterfaces());
-      current = current.getSuperclass();
-    }
-
-    for (Class<?> clazz : classes) {
-      try {
-        Method method = clazz.getMethod(name, types);
-        int mods = method.getModifiers();
-        if (Modifier.isPublic(mods) && !Modifier.isStatic(mods) &&
-            method.canAccess(obj))
-          return method;
-      } catch (NoSuchMethodException e) {
-        continue;
-      }
-    }
-    return null;
   }
 
   private static class ArrayAsList extends AbstractList<Object>

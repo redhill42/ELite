@@ -327,7 +327,13 @@ public final class ELEngine {
    */
   public static Object invokeMethod(ELContext elctx, Object base, Method method,
                                     Closure[] args) {
-    if (DynamicDispatcher.class.isAssignableFrom(method.getDeclaringClass())) {
+    Class<?>[] types = method.getParameterTypes();
+    int nargs = types.length;
+
+    if (DynamicDispatcher.class.isAssignableFrom(method.getDeclaringClass()) &&
+        nargs == 2 &&
+        types[0] == EvaluationContext.class &&
+        types[1] == Object[].class) {
       try {
         return method.invoke(base, new EvaluationContext(elctx),
                              getArgValues(elctx, args));
@@ -338,8 +344,6 @@ public final class ELEngine {
       }
     }
 
-    Class<?>[] types = method.getParameterTypes();
-    int nargs = types.length;
     Object[] values = new Object[nargs];
     int iarg = 0;
     int ivarg = 0;

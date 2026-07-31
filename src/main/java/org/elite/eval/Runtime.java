@@ -134,9 +134,8 @@ public final class Runtime {
     // Route to compiled elite class.
     if (base instanceof DynamicDispatcher disp) {
       Object result = disp.__invoke__(env, name, args);
-      if (result == NO_RESULT)
-        throw reportMethodNotFound(elctx, base, name, null);
-      return result;
+      if (result != NO_RESULT)
+        return result;
     }
 
     Closure[] callArgs = ELEngine.getCallArgs(args);
