@@ -130,4 +130,23 @@ class ClassTest extends EliteTestBase {
         exec("c.increment()");
         assertEquals(6L, evalL("c.n"));
     }
+
+    @Test
+    void lambdaNestedInInstanceProcedure() {
+        assertEquals(10L, evalL("""
+            class Foo(x) {
+              foo(a)(b)(c) => a + b + c + x;
+            }
+            Foo(1).foo(2)(3)(4)"""));
+    }
+
+    @Test
+    void lambdaNestedInStaticMethod() {
+        assertEquals(10L, evalL("""
+            class Foo {
+              static x = 1;
+              static foo(a)(b)(c) => a + b + c + x;
+            }
+            Foo.foo(2)(3)(4)"""));
+    }
 }

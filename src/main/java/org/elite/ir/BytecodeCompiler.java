@@ -333,6 +333,8 @@ public class BytecodeCompiler {
       access = def != null && def.meta != null ? def.meta.modifiers : 0;
       if ((access & (ACC_PRIVATE | ACC_PROTECTED)) == 0)
         access |= ACC_PUBLIC;
+      if (def == null && fn.isStatic())
+        access |= ACC_STATIC;
       mc = cc.newMethod(access, fn.internalName, Object.class,
                         EvaluationContext.class, Object[].class);
 
@@ -1349,7 +1351,7 @@ public class BytecodeCompiler {
         String closureName = compileClosure(closure);
         mc.NEW(closureName)
           .DUP();
-        if (fn.owner() != null) {
+        if (closure.owner() != null && !closure.isStatic()) {
           mc.ALOAD(S_ENV())
             .THIS()
             .INVOKESPECIAL(closureName, "<init>", AsmType.toMethodDescriptor(
@@ -1674,7 +1676,7 @@ public class BytecodeCompiler {
       }
 
       MethodAssembly mc;
-      if (fn.owner() != null) {
+      if (closure.owner() != null && !closure.isStatic()) {
         cc.addField(ACC_PRIVATE, "$this", AsmType.toDescriptor(currentClassName));
         mc = cc.newMethod(ACC_PUBLIC, "<init>", AsmType.toMethodDescriptor(
           "V", EvaluationContext.class.getName(), currentClassName), null);
@@ -1734,14 +1736,16 @@ public class BytecodeCompiler {
       // }
       mc = cc.newMethod(ACC_PROTECTED, "execute", Object.class,
                         EvaluationContext.class, Object[].class);
-      if (fn.owner() != null) {
+      String ownerName = closure.owner() != null ? closure.owner().internalName
+                                                 : currentClassName;
+      if (closure.owner() != null && !closure.isStatic()) {
         mc.THIS()
-          .GETFIELD(name, "$this", AsmType.toDescriptor(currentClassName))
+          .GETFIELD(name, "$this", AsmType.toDescriptor(ownerName))
           .ALOAD(1)
           .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
                          EvaluationContext.class)
           .ALOAD(2)
-          .INVOKEVIRTUAL(currentClassName, closure.internalName, Object.class,
+          .INVOKEVIRTUAL(ownerName, closure.internalName, Object.class,
                          EvaluationContext.class, Object[].class)
           .ARETURN()
           .end();
@@ -1750,7 +1754,7 @@ public class BytecodeCompiler {
           .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
                          EvaluationContext.class)
           .ALOAD(2)
-          .INVOKESTATIC(currentClassName, closure.internalName, Object.class,
+          .INVOKESTATIC(ownerName, closure.internalName, Object.class,
                         EvaluationContext.class, Object[].class)
           .ARETURN()
           .end();

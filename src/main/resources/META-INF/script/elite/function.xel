@@ -223,12 +223,12 @@ abstract class Function
     public __call__(args...) {
         define vars = getVariables();
         define env = {};
-        for (i in [0..*args.length]) {
+        for (i in [0..<args.length]) {
             define key = args.keys[i];
             if (key != null) {
                 env[key] = args[i];
             } else {
-                for (j in [0..*vars.length]) {
+                for (j in [0..<vars.length]) {
                     define var = vars[j].symbol.name;
                     if (!env.containsKey(var)) {
                         env[var] = args[i];
@@ -753,7 +753,7 @@ class Polynomial extends Function
             } else if (_size == 0) {
                 return new Object[0];
             } else {
-                return _variables[0..*_size];
+                return _variables[0..<_size];
             }
         }
 
@@ -765,10 +765,9 @@ class Polynomial extends Function
          *         this term does not hold the specified variable.
          */
         public getPower(v) {
-            for (define i,x in _variables) {
-                if (v == x) {
+            for (i, x in _variables) {
+                if (v == x)
                     return _powers[i];
-                }
             }
             return 0;
         }
@@ -787,7 +786,7 @@ class Polynomial extends Function
             define thatSize = that._size;
             define result = new Term(thisSize + thatSize);
             result._size = 0;
-            for (define i = 0, j = 0;;) {
+            for (let i = 0, j = 0;;) {
                 define left = (i < thisSize) ? this._variables[i] : null;
                 define right = (j < thatSize) ? that._variables[j] : null;
                 if (left == null) {
@@ -830,7 +829,7 @@ class Polynomial extends Function
             define thatSize = that._size;
             define result = new Term(Math.max(thisSize, thatSize));
             result._size = 0;
-            for (define i = 0, j = 0;;) {
+            for (let i = 0, j = 0;;) {
                 define left = (i < thisSize) ? this._variables[i] : null;
                 define right = (j < thatSize) ? that._variables[j] : null;
                 if (left == null) {
@@ -877,7 +876,7 @@ class Polynomial extends Function
                 return false;
             if (this._size != that._size)
                 return false;
-            for (define i in [0..*_size]) {
+            for (i in [0..<_size]) {
                 if (_variables[i] != that._variables[i] || _powers[i] != that._powers[i])
                     return false;
             }
@@ -892,7 +891,7 @@ class Polynomial extends Function
         public hashCode() {
             if (this._hash == 0) {
                 define h = 0;
-                for (define i in [0..*size]) {
+                for (i in [0..<size]) {
                     h += _variables[i].hashCode() * _powers[i];
                 }
                 this._hash = h;
@@ -907,7 +906,7 @@ class Polynomial extends Function
          */
         public toString() {
             define buf = new StringBuilder();
-            for (define i in [0..*_size]) {
+            for (i in [0..<_size]) {
                 buf << _variables[i].symbol.name;
                 if (_powers[i] != 1)
                     buf << _powers[i];
@@ -920,7 +919,7 @@ class Polynomial extends Function
          */
         public compareTo(that) {
             define n = Math.min(this._size, that._size);
-            for (define i in [0..*n]) {
+            for (i in [0..<n]) {
                 define cmp = this._variables[i].symbol.compareTo(that._variables[i].symbol);
                 if (cmp != 0)
                     return cmp;
@@ -939,7 +938,7 @@ class Polynomial extends Function
          */
         public evaluate(env) {
             define result = null;
-            for (define i in [0..*_size]) {
+            for (i in [0..<_size]) {
                 define v = _variables[i];
                 define n = _powers[i];
                 if (n > 0) {
@@ -1024,7 +1023,7 @@ class Polynomial extends Function
      */
     public getOrder(v) {
         define order = 0;
-        for (define term in _term2coef.keySet()) {
+        for (term in _term2coef.keySet()) {
             define power = term.getPower(v);
             if (power > order)
                 order = power;
@@ -1042,7 +1041,7 @@ class Polynomial extends Function
     public getLeadingTerm(v) {
         define term = null;
         define order = 0;
-        for (define t in _term2coef.keySet()) {
+        for (t in _term2coef.keySet()) {
             define power = t.getPower(v);
             if (power != 0 && (term == null || power > order)) {
                 term = t;
@@ -1059,7 +1058,7 @@ class Polynomial extends Function
      */
     public __neg__() {
         define result = new Polynomial();
-        for (define term,coef in _term2coef) {
+        for ({key:term, value:coef} in _term2coef) {
             result._term2coef[term] = -coef;
         }
         return result;
@@ -1133,8 +1132,8 @@ class Polynomial extends Function
 
         if (that is Polynomial) {
             define result = new Polynomial();
-            for (define t1,c1 in this._term2coef) {
-                for (define t2,c2 in that._term2coef) {
+            for ({key:t1, value:c1} in this._term2coef) {
+                for ({key:t2, value:c2} in that._term2coef) {
                     define t = t1.times(t2);
                     define c = c1*c2;
                     define prev = result.getCoefficient(t);
@@ -1200,7 +1199,7 @@ class Polynomial extends Function
                 return (self, Constant.ZERO);
             } else {
                 define q = new Polynomial();
-                for (define t,c in _term2coef) {
+                for ({key:t, value:c} in _term2coef) {
                     q._term2coef[t] = c / cst;
                 }
                 return (q, Constant.ZERO);
@@ -1210,7 +1209,7 @@ class Polynomial extends Function
         define div_term(term, var, coef) {
             define q = null, r = null;
             define order = term.getPower(var);
-            for (define t,c in this._term2coef) {
+            for ({key:t, value:c} in this._term2coef) {
                 if (t.getPower(var) >= order) {
                     if (!(coef is Number and coef == 1))
                         c = c / coef;
@@ -1282,7 +1281,7 @@ class Polynomial extends Function
 
             // calculate termorary result of q * divisor
             r._term2coef.clear();
-            for (define t2,c2 in that._term2coef) {
+            for ({key:t2, value:c2} in that._term2coef) {
                 r._term2coef[t2.times(t)] = c2 * c;
             }
 
@@ -1317,7 +1316,7 @@ class Polynomial extends Function
 
         // find the GCD of integer coefficients.
         define g = null;
-        for (define t,c in a._term2coef) {
+        for ({key:t, value:c} in a._term2coef) {
             if (c is Integer or c is Long or c is java.math.BigInteger or c is Rational) {
                 g = (g == null) ? c : sys.gcd(g, c);
             } else {
@@ -1326,7 +1325,7 @@ class Polynomial extends Function
             }
         }
         if (g != null && g != 1) {
-            for (define e in a._term2coef) {
+            for (e in a._term2coef) {
                 e.setValue(e.value / g);
             }
         }
@@ -1348,7 +1347,7 @@ class Polynomial extends Function
                 throw "This polynomial is not monovariate";
             define v = vars[0];
             define result = null;
-            for (define term,coef in this._term2coef) {
+            for ({key:term, value:coef} in this._term2coef) {
                 define cst = Constant.valueOf(coef);
                 define power = term.getPower(v);
                 if (power > 0) {
@@ -1368,7 +1367,7 @@ class Polynomial extends Function
         if (this.getOrder(v) > 0) {
             define result = null;
             define vt = Term.valueOf(v, 1);
-            for (define term,coef in this._term2coef) {
+            for ({key:term, value:coef} in this._term2coef) {
                 define power = term.getPower(v);
                 if (power > 0) {
                     define p = valueOf(coef*power, term.divide(vt));
@@ -1384,7 +1383,7 @@ class Polynomial extends Function
     public integrate(v::Variable) {
         define result = null;
         define vt = Term.valueOf(v, 1);
-        for (define term,coef in this._term2coef) {
+        for ({key:term, value:coef} in this._term2coef) {
             define power = term.getPower(v);
             define p = valueOf(coef/(power+1), term.times(vt));
             result = (result != null) ? result + p : p;
@@ -1397,7 +1396,7 @@ class Polynomial extends Function
             // We multiply all terms togethers, the resulting product
             // will hold all variables (powers are always positive).
             define product = null;
-            for (define term in _term2coef.keySet()) {
+            for (term in _term2coef.keySet()) {
                 product = (product != null) ? product.times(term) : term;
             }
             _variables = product.getVariables().asList();
@@ -1407,7 +1406,7 @@ class Polynomial extends Function
 
     public evaluate(env) {
         define sum = null;
-        for (define term,coef in _term2coef) {
+        for ({key:term, value:coef} in _term2coef) {
             define termValue = term.evaluate(env);
             define value = (termValue != null) ? termValue * coef : coef;
             sum = (sum == null) ? value : sum + value;
@@ -1418,7 +1417,7 @@ class Polynomial extends Function
     public toString() {
         define sb = new StringBuilder();
         define first = true;
-        for (define term,coef in _term2coef) {
+        for ({key:term, value:coef} in _term2coef) {
             if (coef is Integer or coef is Long) {
                 if (coef == 1) {
                     if (!first) sb << " + ";

@@ -513,6 +513,17 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (ident.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
+          // If the class defines "valueOf" static member procedure, use the
+          // procedure to initialize the new instance.
+          for (ELNode.DEFINE def : cdef.cvars) {
+            if (def.id.equals("valueOf") && def.symbol.isPublic() &&
+                def.expr instanceof ELNode.LAMBDA fn) {
+              ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
+              buildDirectCall(fn.symbol, args);
+              return;
+            }
+          }
+
           IRClass clazz = cdef.symbol.clazz;
           ELNode[] args = getCallArgs(node.pos, clazz.init_proc, node.args,
                                       node.keys);
@@ -578,7 +589,7 @@ public class IRBuilder extends ELNode.Visitor {
           if (ident.symbol != null &&
               ident.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
             for (ELNode.DEFINE def : cdef.cvars) {
-              if (def.symbol.isPublic() && def.symbol.isStatic() &&
+              if (def.id.equals(key.value) && def.symbol.isPublic() &&
                   def.expr instanceof ELNode.LAMBDA fn) {
                 ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
                 buildDirectCall(fn.symbol, args);
@@ -2455,8 +2466,13 @@ public class IRBuilder extends ELNode.Visitor {
       func = node.symbol.func;
     else {
       // For anonymous lambda, use a pseudo Symbol to store IRFunction skeleton
-      // so call-site can emit direct call.
-      func = new IRFunction("<lambda>", node.vars.length);
+      // so call-site can emit direct call. The owner is used to generate inner
+      // closure class if the lambda is defined by an instance procedure.
+      IRClass owner = currentScope.enclosingClass();
+      int modifiers = Modifier.PUBLIC;
+      if (owner == null || currentScope.isStaticScope())
+        modifiers |= Modifier.STATIC;
+      func = new IRFunction(owner, "<lambda>", node.vars.length, modifiers);
       ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, node);
       node.symbol = new SymbolTable.Symbol(node.scope, tmpdef);
       node.symbol.func = func;

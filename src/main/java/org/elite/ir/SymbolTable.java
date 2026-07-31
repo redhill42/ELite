@@ -56,6 +56,16 @@ public class SymbolTable {
     public boolean isAbstract() {
       return def.meta != null && Modifier.isAbstract(def.meta.modifiers);
     }
+
+    public boolean isConstructor() {
+      if (def.expr instanceof ELNode.CLASSDEF)
+        return true;
+      if (def.expr instanceof ELNode.LAMBDA) {
+        IRClass irc = scope.enclosingClass();
+        return irc != null && def.id.equals(irc.name);
+      }
+      return false;
+    }
   }
 
   /**

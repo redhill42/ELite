@@ -102,11 +102,15 @@ public final class SymbolTableBuilder {
 
       if (e.expr instanceof ELNode.LAMBDA fn) {
         // Create a IRFunction skeleton.
-        IRClass owner = null;
-        int modifiers = Modifier.PUBLIC | Modifier.STATIC;
+        IRClass owner;
+        int modifiers = Modifier.PUBLIC;
         if (enclosingScope != null && enclosingScope.isClassScope()) {
           owner = enclosingScope.fresh.symbol.clazz;
           modifiers = e.meta != null ? e.meta.modifiers : Modifier.PUBLIC;
+        } else {
+          owner = table.currentScope().enclosingClass();
+          if (owner == null || table.currentScope().isStaticScope())
+            modifiers |= Modifier.STATIC;
         }
         sym.func = new IRFunction(owner, e.id, fn.vars.length, modifiers);
         fn.symbol = sym;
@@ -471,7 +475,7 @@ public final class SymbolTableBuilder {
       // Check if the symbol is a class member variable.
       if (sym.scope.isClassScope()) {
         // The instance member can only be accessed by instance procedure.
-        if (!sym.isStatic() && scope.isStaticScope()) {
+        if (scope.isStaticScope() && !sym.isStatic() && !sym.isConstructor()) {
           table.addError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER,
                                  sym.name));
           return false;
