@@ -41,18 +41,23 @@ public class SymbolTable {
              (!Modifier.isPrivate(def.meta.modifiers) &&
               !Modifier.isProtected(def.meta.modifiers));
     }
+
     public boolean isPrivate() {
       return def.meta != null && Modifier.isPrivate(def.meta.modifiers);
     }
+
     public boolean isProtected() {
       return def.meta != null && Modifier.isProtected(def.meta.modifiers);
     }
+
     public boolean isStatic() {
       return def.meta != null && Modifier.isStatic(def.meta.modifiers);
     }
+
     public boolean isFinal() {
       return def.meta != null && Modifier.isFinal(def.meta.modifiers);
     }
+
     public boolean isAbstract() {
       return def.meta != null && Modifier.isAbstract(def.meta.modifiers);
     }
@@ -72,18 +77,18 @@ public class SymbolTable {
    * A single scope layer holding name -> symbol mappings.
    */
   public static class Scope {
-    final Scope parent; // chained to direct enclosing scope
-    final int depth;    // nesting depth (0 = root)
-    final ELNode fresh; // a fresh scope, may be a lambda or classdef
+    final Scope parent;    // chained to direct enclosing scope
+    final int depth;       // nesting depth (0 = root)
+    final ELNode frontier; // the frontier of the scope, lambda or class
     final Map<String, Symbol> symbols = new LinkedHashMap<>();
-    int nextSlot;       // currently allocated slots
-    int maxSlots;       // max slot index used across this scope and all nested
-                        // sub-scopes
+    int nextSlot;          // currently allocated slots
+    int maxSlots;          // max slot index used across this scope and all
+                           // nested sub-scopes
 
-    Scope(Scope parent, int depth, ELNode fresh, int startSlot) {
-      this.parent = parent;
-      this.depth = depth;
-      this.fresh = fresh;
+    Scope(Scope parent, int depth, ELNode frontier, int startSlot) {
+      this.parent   = parent;
+      this.depth    = depth;
+      this.frontier = frontier;
       this.nextSlot = startSlot;
       this.maxSlots = startSlot;
     }
@@ -132,7 +137,7 @@ public class SymbolTable {
 
     Scope enclosingScope() {
       for (Scope s = this; s != null; s = s.parent) {
-        if (s.fresh != null)
+        if (s.frontier != null)
           return s;
       }
       return null;
@@ -140,7 +145,7 @@ public class SymbolTable {
 
     Scope enclosingClassScope() {
       for (Scope s = this; s != null; s = s.parent) {
-        if (s.fresh instanceof ELNode.CLASSDEF)
+        if (s.frontier instanceof ELNode.CLASSDEF)
           return s;
       }
       return null;
@@ -148,18 +153,18 @@ public class SymbolTable {
 
     IRClass enclosingClass() {
       for (Scope s = this; s != null; s = s.parent) {
-        if (s.fresh instanceof ELNode.CLASSDEF)
-          return s.fresh.symbol.clazz;
+        if (s.frontier instanceof ELNode.CLASSDEF)
+          return s.frontier.symbol.clazz;
       }
       return null;
     }
 
     boolean isClassScope() {
-      return fresh instanceof ELNode.CLASSDEF;
+      return frontier instanceof ELNode.CLASSDEF;
     }
 
     boolean isLambdaScope() {
-      return fresh instanceof ELNode.LAMBDA;
+      return frontier instanceof ELNode.LAMBDA;
     }
 
     boolean isMemberProcedureScope() {
@@ -170,20 +175,20 @@ public class SymbolTable {
     boolean isStaticMemberProcedureScope() {
       Scope s = enclosingScope();
       return s != null && s.isLambdaScope() && s.parent.isClassScope() &&
-             s.fresh.symbol.isStatic();
+             s.frontier.symbol.isStatic();
     }
 
     boolean isInstanceMemberProcedureScope() {
       Scope s = enclosingScope();
       return s != null && s.isLambdaScope() && s.parent.isClassScope() &&
-             !s.fresh.symbol.isStatic();
+             !s.frontier.symbol.isStatic();
     }
 
     boolean isStaticScope() {
       Scope s = enclosingScope();
       while (s != null) {
         if (s.isLambdaScope() && s.parent.isClassScope() &&
-            s.fresh.symbol.isStatic())
+            s.frontier.symbol.isStatic())
           return true;
         s = s.parent;
       }
@@ -213,7 +218,7 @@ public class SymbolTable {
   void leaveScope() {
     assert current != null;
     Scope parent = current.parent;
-    if (parent != null && current.fresh == null)
+    if (parent != null && current.frontier == null)
       parent.maxSlots = Math.max(parent.maxSlots, current.maxSlots);
     current = parent;
   }

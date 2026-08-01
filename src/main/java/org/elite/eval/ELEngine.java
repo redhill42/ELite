@@ -668,6 +668,13 @@ public final class ELEngine {
           elctx, _T(EL_ABSTRACT_CLASS, cls.getName()));
       }
 
+      if (DynamicDispatcher.class.isAssignableFrom(cls)) {
+        Constructor<?> cons = cls.getConstructor(EvaluationContext.class,
+                                                 Object[].class);
+        return cons.newInstance(new EvaluationContext(elctx),
+                                getArgValues(elctx, args));
+      }
+
       if (args.length == 0) {
         return cls.newInstance();
       }

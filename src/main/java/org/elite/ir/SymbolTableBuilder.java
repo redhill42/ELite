@@ -105,7 +105,7 @@ public final class SymbolTableBuilder {
         IRClass owner;
         int modifiers = Modifier.PUBLIC;
         if (enclosingScope != null && enclosingScope.isClassScope()) {
-          owner = enclosingScope.fresh.symbol.clazz;
+          owner = enclosingScope.frontier.symbol.clazz;
           modifiers = e.meta != null ? e.meta.modifiers : Modifier.PUBLIC;
         } else {
           owner = table.currentScope().enclosingClass();

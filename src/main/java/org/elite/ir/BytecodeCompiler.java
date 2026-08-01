@@ -1,3 +1,18 @@
+/*
+ * Copyright 2006-2026 Daniel Yuan.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.elite.ir;
 
 import elite.lang.Closure;
@@ -5,6 +20,7 @@ import elite.lang.Seq;
 import elite.lang.Symbol;
 import elite.lang.annotation.Expando;
 import elite.lang.annotation.ExpandoScope;
+import org.elite.eval.DelegatingELContext;
 import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELUtils;
@@ -143,15 +159,7 @@ public class BytecodeCompiler {
     // Create program class.
     ClassAssembly cc = new ClassAssembly(ACC_PUBLIC | ACC_FINAL | ACC_SUPER,
                                          ProgramClassName, Object.class, null);
-
-    if (program.entry().debugInfo() != null &&
-        program.entry().debugInfo().file() != null) {
-      String filename = program.entry().debugInfo().file();
-      int sep = filename.lastIndexOf('/');
-      if (sep != -1)
-        filename = filename.substring(sep + 1);
-      cc.getImpl().visitSource(filename, null);
-    }
+    attachSource(cc, program.entry().debugInfo());
 
     // Default constructor.
     cc.newMethod(ACC_PRIVATE, "<init>", "()V", null)
@@ -179,6 +187,19 @@ public class BytecodeCompiler {
 
     // Produce the final compiled program.
     consumer.acceptProgram(ProgramClassName, cc.end());
+  }
+
+  private static void attachSource(ClassAssembly cc, DebugInfo debug) {
+    attachSource(cc, debug != null ? debug.file() : null);
+  }
+
+  private static void attachSource(ClassAssembly cc, String filename) {
+    if (filename != null) {
+      int sep = filename.lastIndexOf('/');
+      if (sep != -1)
+        filename = filename.substring(sep + 1);
+      cc.getImpl().visitSource(filename, null);
+    }
   }
 
   private static boolean isJavaIdentifier(String name) {
@@ -458,14 +479,11 @@ public class BytecodeCompiler {
       ClassAssembly cc = new ClassAssembly(access | ACC_SUPER, className,
                                            baseName,
                                            interfaces.toArray(new String[0]));
+      attachSource(cc, clazz.node.file);
 
-      if (clazz.node.file != null) {
-        String filename = clazz.node.file;
-        int sep = filename.lastIndexOf('/');
-        if (sep != -1)
-          filename = filename.substring(sep + 1);
-        cc.getImpl().visitSource(filename, null);
-      }
+      // Add $context field to save the ELContext for methods invoked without an
+      // evaluation context, such as interface methods or Object methods.
+      cc.addField(ACC_PRIVATE, "$context", ELContext.class);
 
       // Add static and instance fields.
       for (ELNode.DEFINE var : clazz.node.cvars) {
@@ -509,6 +527,10 @@ public class BytecodeCompiler {
         mc.THIS()
           .INVOKESPECIAL((Class<?>)clazz.base, "<init>", Void.TYPE, NO_ARGS);
       }
+      mc.THIS()
+        .ALOAD(1)
+        .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
+        .PUTFIELD(className, "$context", ELContext.class);
       new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
 
       // Class initializer.
@@ -572,6 +594,9 @@ public class BytecodeCompiler {
 
       // Implement PropertyResolvable interface.
       compilePropertyResolvableMethods(cc);
+
+      // Compile override methods derived from base class and interfaces.
+      compileOverrideMethods(cc);
 
       // Generate toString method.
       if (vmap.containsKey("toString") || clazz.node.vars != null) {
@@ -944,6 +969,95 @@ public class BytecodeCompiler {
         .end();
     }
 
+    private record MethodRecord(String name, Class<?>[] paramTypes) {
+      MethodRecord(Method m) {
+        this(m.getName(), m.getParameterTypes());
+      }
+    }
+
+    private void compileOverrideMethods(ClassAssembly cc) {
+      Map<MethodRecord, Method> methods = new HashMap<>();
+      collectOverrideMethods(methods);
+      if (methods.isEmpty())
+        return;
+
+      for (Method m : methods.values()) {
+        IRFunction fn = vmap.get(m.getName());
+        if (fn != null && fn.paramCount() == m.getParameterCount()) {
+          MethodAssembly mc = cc.newMethod(ACC_PUBLIC, m);
+          Class<?>[] paramTypes = m.getParameterTypes();
+          Class<?> returnType = m.getReturnType();
+          int ctxSlot = paramTypes.length + 1; // this, params..., ctx
+
+          mc.THIS()
+            .GETFIELD(className, "$context", ELContext.class)
+            .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                          ELContext.class);
+          if (returnType != Void.TYPE && returnType != Object.class)
+            mc.DUP(); // for TypeCoersion.corce
+          mc.ASTORE(ctxSlot);
+
+          mc.THIS()
+            .NEW(EvaluationContext.class)
+            .DUP()
+            .ALOAD(ctxSlot)
+            .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                           ELContext.class)
+
+            .PUSH(paramTypes.length)
+            .ANEWARRAY(Object.class);
+          for (int i = 0; i < paramTypes.length; i++) {
+            mc.DUP()
+              .PUSH(i)
+              .XLOAD(i + 1, paramTypes[i])
+              .BOX(paramTypes[i])
+              .AASTORE();
+          }
+
+          mc.INVOKEVIRTUAL(className, m.getName(), Object.class,
+                           EvaluationContext.class, Object[].class);
+          if (returnType == Void.TYPE) {
+            mc.POP().RETURN();
+          } else if (returnType == Object.class) {
+            mc.ARETURN();
+          } else {
+            mc.LDC(Type.getType(TypeCoercion.getBoxedType(returnType)))
+              .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
+                            ELContext.class, Object.class, Class.class)
+              .UNBOX(returnType)
+              .XRETURN(returnType);
+          }
+          mc.end();
+        }
+      }
+    }
+
+    private void collectOverrideMethods(Map<MethodRecord, Method> methods) {
+      if (clazz.base instanceof Class && clazz.base != Object.class) {
+        for (Method m : ((Class<?>)clazz.base).getMethods()) {
+          int modifiers = m.getModifiers();
+          if ((Modifier.isPublic(modifiers) ||
+               Modifier.isProtected(modifiers)) &&
+              !Modifier.isStatic(modifiers) && !Modifier.isFinal(modifiers) &&
+              m.getDeclaringClass() != Object.class) {
+            methods.put(new MethodRecord(m), m);
+          }
+        }
+      }
+
+      if (clazz.interfaces != null) {
+        for (Class<?> iface : clazz.interfaces) {
+          for (Method m : iface.getMethods()) {
+            int modifiers = m.getModifiers();
+            if ((Modifier.isPublic(modifiers) ||
+                 Modifier.isProtected(modifiers)) &&
+                !Modifier.isStatic(modifiers))
+              methods.put(new MethodRecord(m), m);
+          }
+        }
+      }
+    }
+
     private void compileToStringMethod(ClassAssembly cc) {
       MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "toString", String.class);
 
@@ -951,7 +1065,10 @@ public class BytecodeCompiler {
       if (fn != null) {
         mc.NEW(EvaluationContext.class)
           .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .THIS()
+          .GETFIELD(className, "$context", ELContext.class)
+          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ASTORE(1)
@@ -1007,7 +1124,10 @@ public class BytecodeCompiler {
       if (vmap.containsKey("equals") && !vmap.containsKey("==")) {
         mc.NEW(EvaluationContext.class)
           .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .THIS()
+          .GETFIELD(className, "$context", ELContext.class)
+          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ASTORE(1)
@@ -1059,7 +1179,10 @@ public class BytecodeCompiler {
       if (fn != null) {
         mc.NEW(EvaluationContext.class)
           .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .THIS()
+          .GETFIELD(className, "$context", ELContext.class)
+          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ASTORE(1)
@@ -1099,7 +1222,10 @@ public class BytecodeCompiler {
           .THIS()
           .NEW(EvaluationContext.class)
           .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .THIS()
+          .GETFIELD(className, "$context", ELContext.class)
+          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ICONST_1()
@@ -1130,7 +1256,10 @@ public class BytecodeCompiler {
           .THIS()
           .NEW(EvaluationContext.class)
           .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .THIS()
+          .GETFIELD(className, "$context", ELContext.class)
+          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ICONST_1()
@@ -1958,14 +2087,7 @@ public class BytecodeCompiler {
 
       ClassAssembly cc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
                                            IRCompiledClosure.class, null);
-
-      if (closure.debugInfo() != null && closure.debugInfo().file() != null) {
-        String filename = closure.debugInfo().file();
-        int sep = filename.lastIndexOf('/');
-        if (sep != -1)
-          filename = filename.substring(sep + 1);
-        cc.getImpl().visitSource(filename, null);
-      }
+      attachSource(cc, closure.debugInfo());
 
       MethodAssembly mc;
       if (closure.owner() != null && !closure.isStatic()) {

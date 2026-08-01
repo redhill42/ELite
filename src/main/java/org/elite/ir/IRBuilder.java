@@ -57,10 +57,9 @@ import static org.elite.resources.Resources.*;
  * Converts an ELNode expression tree into IR form with explicit jump-based
  * control flow.
  *
- * <p>Design rule: every basic block MUST end with a terminator (JUMP,
- * RETURN, or
- * conditional JUMP followed by unconditional JUMP). No block falls through to
- * the next block in memory. This ensures correctness regardless of block ID
+ * <p>Design rule: every basic block MUST end with a terminator (JUMP, RETURN,
+ * or conditional JUMP followed by unconditional JUMP). No block falls through
+ * to the next block in memory. This ensures correctness regardless of block ID
  * order.
  */
 public class IRBuilder extends ELNode.Visitor {
@@ -69,7 +68,7 @@ public class IRBuilder extends ELNode.Visitor {
   private final ELContext elctx;
 
   // The compiled IRProgram.
-  IRProgram program;
+  private final IRProgram program;
 
   // The IRFunction to build.
   private final IRFunction func;
@@ -114,8 +113,8 @@ public class IRBuilder extends ELNode.Visitor {
   private int exitBlock = -1;
 
   // ── Constant pool (maybe shared with parent builder) ──
-  private Map<Object, Integer> constIndex = new HashMap<>();
-  private List<Object> constants = new ArrayList<>();
+  private final List<Object> constants;
+  private final Map<Object, Integer> constIndex;
 
   // ── Loop stack ──
   private record LoopTargets(int continueBlock, int breakBlock) {}
@@ -140,6 +139,8 @@ public class IRBuilder extends ELNode.Visitor {
     this.peephole = new PeepholeOpt(elctx, this);
     this.current = new IREmitter(this);
     this.currentScope = scope;
+    this.constants = new ArrayList<>();
+    this.constIndex = new HashMap<>();
   }
 
   /**
@@ -148,9 +149,9 @@ public class IRBuilder extends ELNode.Visitor {
    */
   private IRBuilder(IRBuilder parent, IRFunction func, SymbolTable.Scope scope) {
     assert (parent != null);
+    this.elctx = parent.elctx;
     this.program = parent.program;
     this.func = func;
-    this.elctx = parent.elctx;
     this.peephole = parent.peephole;
     this.current = new IREmitter(this);
     this.currentScope = scope;
@@ -189,8 +190,8 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private ParseException reportError(int pos, String message) {
-    return new ParseException(currentFile, Position.line(pos), Position.column(pos),
-                              message);
+    return new ParseException(currentFile, Position.line(pos),
+                              Position.column(pos), message);
   }
 
   // ============ MAIN DISPATCH ============
@@ -207,8 +208,7 @@ public class IRBuilder extends ELNode.Visitor {
       if (!(node instanceof ELNode.LAMBDA) &&
           !(node instanceof ELNode.CLASSDEF) &&
           node.scope.hasCaptures()) {
-        // We need to set up new evaluation context if any variables
-        // captured in this scope.
+        // Set up new evaluation context if any variables captured in this scope.
         current.emitEnterScope();
         node.accept(this);
         current.emitLeaveScope();
@@ -278,6 +278,29 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.SYMBOL node) {
     buildConst(node.value);
+  }
+
+  public void visit(ELNode.DEFINE node) {
+    // All DEFINE nodes should carry a symbol annotation. Missing expr or symbol
+    // can happen only on pattern or lambda parameters which are handled by
+    // pattern or lambda compilation.  For normal definition they should always
+    // present.
+    assert node.expr != null && node.symbol != null;
+
+    // CLASS nodes (from import): push the raw Class constant
+    if (node.expr instanceof ELNode.CLASS c) {
+      buildConst(loadClassAtCompileTime(node.pos, c.name));
+    } else {
+      build(node.expr);
+    }
+
+    // Define global or local variable according to it's captured flag.
+    if (node.symbol.captured) {
+      current.emitDefineGlobal(node.id);
+      current.emitPushNull();
+    } else {
+      current.emitStoreVar(node.symbol.slot);
+    }
   }
 
   public void visit(ELNode.IDENT node) {
@@ -513,24 +536,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (ident.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
-          // If the class defines "valueOf" static member procedure, use the
-          // procedure to initialize the new instance.
-          for (ELNode.DEFINE def : cdef.cvars) {
-            if (def.id.equals("valueOf") && def.symbol.isPublic() &&
-                def.expr instanceof ELNode.LAMBDA fn) {
-              ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
-              buildDirectCall(fn.symbol, args);
-              return;
-            }
-          }
-
-          IRClass clazz = cdef.symbol.clazz;
-          ELNode[] args = getCallArgs(node.pos, clazz.init_proc, node.args,
-                                      node.keys);
-          current.emitNew(clazz);
-          current.emitPushEnv();
-          buildCallArgs(clazz.init_proc, args);
-          current.emitConstructor(clazz);
+          buildClassCall(node.pos, cdef.symbol.clazz, node.args, node.keys);
           return;
         }
 
@@ -603,7 +609,7 @@ public class IRBuilder extends ELNode.Visitor {
           return;
       }
 
-      // resolve method at runtime
+      // Resolve method at runtime.
       current.emitPushEnv();
       build(acc.right);
       build(acc.index);
@@ -628,7 +634,7 @@ public class IRBuilder extends ELNode.Visitor {
       return;
     }
 
-    // evaluate base and generate dynamic call
+    // Evaluate base and generate dynamic call.
     buildTuple(node.args);
     emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
                      Object.class, Object[].class);
@@ -669,7 +675,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (argc < nvars && hasDefaults) {
-      // pad with default values
+      // Pad with default values.
       xargs = new ELNode[nvars];
     } else if (varargs ? (argc < nvars - 1) : (argc != nvars)) {
       throw reportError(pos, _T(EL_FN_BAD_ARG_COUNT, name, nvars, argc));
@@ -708,7 +714,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
       }
 
-      // Assign default values
+      // Assign default values.
       for (; j < xargs.length; j++) {
         if (xargs[j] == null) {
           if (vars[j].expr == null)
@@ -742,6 +748,30 @@ public class IRBuilder extends ELNode.Visitor {
       buildTuple(args, nvars, args.length - nvars);
       current.emitStoreArray(nvars, Object.class);
     }
+  }
+
+  private void buildClassCall(int pos, IRClass irc, ELNode... args) {
+    buildClassCall(pos, irc, args, null);
+  }
+
+  private void buildClassCall(int pos, IRClass irc, ELNode[] args,
+                              String[] keys) {
+    // If the class defines "valueOf" static member procedure, use the procedure
+    // to initialize the new instance.
+    for (ELNode.DEFINE def : irc.node.cvars) {
+      if (def.id.equals("valueOf") && def.symbol.isPublic() &&
+          def.expr instanceof ELNode.LAMBDA fn) {
+        args = getCallArgs(pos, fn, args, keys);
+        buildDirectCall(fn.symbol, args);
+        return;
+      }
+    }
+
+    args = getCallArgs(pos, irc.init_proc, args, keys);
+    current.emitNew(irc);
+    current.emitPushEnv();
+    buildCallArgs(irc.init_proc, args);
+    current.emitConstructor(irc);
   }
 
   private void buildTailCall(ELNode.LAMBDA lambda, ELNode[] args) {
@@ -940,10 +970,10 @@ public class IRBuilder extends ELNode.Visitor {
   private boolean isEligibleToInline(SymbolTable.Symbol sym) {
     if (ELProgram.OPT_LEVEL == 0)
       return false;
-    if (((ELNode.LAMBDA)sym.def.expr).varargs)
-      return false; // FIXME: handle varargs
     if (sym.func.isDeclaration())
       return false;
+    if (((ELNode.LAMBDA)sym.def.expr).varargs)
+      return false; // FIXME: handle varargs
 
     // Check @inline metadata.
     boolean forceInline = false;
@@ -1700,6 +1730,9 @@ public class IRBuilder extends ELNode.Visitor {
     if (node.oper.symbol != null) {
       if (node.oper.symbol.func != null) {
         buildDirectCall(node.oper.symbol, node.right);
+      } else if (node.oper.symbol.def.expr instanceof ELNode.IDENT var &&
+                 var.symbol != null && var.symbol.clazz != null) {
+        buildClassCall(node.pos, var.symbol.clazz, node.right);
       } else {
         current.emitPushCtx();
         build(node.oper);
@@ -1720,6 +1753,9 @@ public class IRBuilder extends ELNode.Visitor {
     if (node.oper.symbol != null) {
       if (node.oper.symbol.func != null) {
         buildDirectCall(node.oper.symbol, node.left, node.right);
+      } else if (node.oper.symbol.def.expr instanceof ELNode.IDENT var &&
+                 var.symbol != null && var.symbol.clazz != null) {
+        buildClassCall(node.pos, var.symbol.clazz, node.left, node.right);
       } else {
         current.emitPushCtx();
         build(node.oper);
@@ -1991,29 +2027,6 @@ public class IRBuilder extends ELNode.Visitor {
     // Tuple elements still on stack, build a tuple as return value
     current.emitNewTuple(lhs.elems.length);
     rhsSlot.release();
-  }
-
-  public void visit(ELNode.DEFINE node) {
-    // All DEFINE nodes should carry a symbol annotation. Missing expr or symbol
-    // can happen only on pattern or lambda parameters which are handled by
-    // pattern or lambda compilation.  For normal definition they should always
-    // present.
-    assert node.expr != null && node.symbol != null;
-
-    // CLASS nodes (from import): push the raw Class constant
-    if (node.expr instanceof ELNode.CLASS c) {
-      buildConst(loadClassAtCompileTime(node.pos, c.name));
-    } else {
-      build(node.expr);
-    }
-
-    // Define global or local variable according to it's captured flag.
-    if (node.symbol.captured) {
-      current.emitDefineGlobal(node.id);
-      current.emitPushNull();
-    } else {
-      current.emitStoreVar(node.symbol.slot);
-    }
   }
 
   public void visit(ELNode.EXPR node) {
@@ -2405,10 +2418,16 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private void emitReturn() {
+  private void emitReturn(boolean returnVoid) {
     if (exitBlock != -1)
       startBlock(exitBlock);
-    current.emitReturn();
+    if (returnVoid) {
+      current.emitPop();
+      current.emitPushNull();
+      current.emitReturn();
+    } else {
+      current.emitReturn();
+    }
   }
 
   public void visit(ELNode.THROW node) {
@@ -2506,10 +2525,12 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     nested.buildTail(node.body);
-    nested.emitReturn();
 
-    IRFunction fn = nested.finish();
-    return fn.withDefaults(getDefaultValues(node.vars));
+    // Returns null for void function. Other return type has no meaning in
+    // current implementation where we lacks type inferrer.
+    nested.emitReturn("void".equals(node.rtype));
+
+    return nested.finish().withDefaults(getDefaultValues(node.vars));
   }
 
   /**
@@ -2573,7 +2594,6 @@ public class IRBuilder extends ELNode.Visitor {
     // Retrieve IRClass skeleton that created at SymbolTableBuilder.
     IRClass clazz = node.symbol.clazz;
     assert clazz != null;
-
     program.add(clazz);
 
     // Determine the base class. The base class must exist at compile time.
@@ -2613,7 +2633,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (!node.symbol.isStatic()) {
       SymbolTable.Scope outerScope = node.scope.parent.enclosingScope();
       if (outerScope != null && outerScope.isClassScope())
-        clazz.outer = outerScope.fresh.symbol.clazz;
+        clazz.outer = outerScope.frontier.symbol.clazz;
     }
 
     // Recursively build nested classes.
@@ -2707,7 +2727,7 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       if (c.guards == null) {
-        // no guards, evaluate the single body
+        // No guards, evaluate the single body.
         assert c.bodies != null && c.bodies.length == 1;
         buildTail(c.bodies[0]);
         current.emitJump(exitBlock);
@@ -2733,13 +2753,13 @@ public class IRBuilder extends ELNode.Visitor {
         }
       }
 
-      // Leave the case scope
+      // Leave the case scope.
       if (c.scope.hasCaptures())
         current.emitLeaveScope();
       currentScope = prevScope;
     }
 
-    // Default block
+    // Default block.
     startBlock(nextCase[node.alts.length]);
     if (node.deflt != null) {
       buildTail(node.deflt);
@@ -2763,13 +2783,13 @@ public class IRBuilder extends ELNode.Visitor {
    */
   private void buildMatchPattern(Slot argSlot, ELNode pat, int failBlock) {
     if (pat instanceof ELNode.DEFINE def) {
-      // Type check if annotated
+      // Type check if annotated.
       if (def.type != null) {
         emitInstanceOf(def.type);
         current.emitJumpIfFalse(failBlock);
       }
 
-      // As-pattern check
+      // As-pattern check.
       if (def.expr != null) {
         if (def.type != null)
           argSlot.load();
@@ -2777,7 +2797,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitJumpIfFalse(failBlock);
       }
 
-      // Wildcard: always matches
+      // Wildcard: always matches.
       if ("_".equals(def.id)) {
         current.emitPop();
         current.emitPushTrue();
@@ -3115,7 +3135,7 @@ public class IRBuilder extends ELNode.Visitor {
       return;
     }
 
-    // Should not reach here
+    // Should not reach here.
     throw new UnsupportedOperationException();
   }
 
@@ -3939,10 +3959,10 @@ public class IRBuilder extends ELNode.Visitor {
         b.current.emitPop();
       }
       b.build(exps.get(exps.size() - 1));
-      b.emitReturn();
+      b.emitReturn(false);
     } else {
       b.current.emitPushNull();
-      b.emitReturn();
+      b.emitReturn(false);
     }
 
     b.finish();
