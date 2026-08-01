@@ -192,750 +192,7 @@ public class BytecodeCompiler {
     return true;
   }
 
-  private void compileFunction(ClassAssembly cc, IRFunction f) {
-    // The function method:
-    // public static Object execute$func$0(
-    //    EvaluationContext env, Object[] args)
-    MethodAssembly mc = cc.newMethod(
-      ACC_PUBLIC | ACC_STATIC | ACC_FINAL, f.internalName, Object.class,
-      EvaluationContext.class, Object[].class);
-
-    new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
-  }
-
-  private void compileClass(IRClass clazz) {
-    Map<IRFunction, ELNode.DEFINE> fmap = new HashMap<>();
-    Map<String, IRFunction> vmap = new HashMap<>();
-
-    for (ELNode.DEFINE var : clazz.node.cvars) {
-      if (var.expr instanceof ELNode.LAMBDA fn) {
-        fmap.put(fn.symbol.func, var);
-      }
-    }
-    for (ELNode.DEFINE var : clazz.node.ivars) {
-      if (var.expr instanceof ELNode.LAMBDA fn) {
-        fmap.put(fn.symbol.func, var);
-        vmap.put(var.id, fn.symbol.func);
-      }
-    }
-
-    String className = clazz.internalName;
-    String baseName = clazz.base instanceof IRClass
-                      ? ((IRClass)clazz.base).internalName
-                      : ((Class<?>)clazz.base).getName();
-
-    List<String> interfaces = new ArrayList<>();
-    interfaces.add(DynamicDispatcher.class.getName());
-    interfaces.add(PropertyResolvable.class.getName());
-    if (clazz.interfaces != null) {
-      for (Class<?> i : clazz.interfaces)
-        interfaces.add(i.getName());
-    }
-
-    boolean isComparable = false;
-    if (!interfaces.contains("java.lang.Comparable") &&
-        vmap.containsKey("<=>") ||
-        ((vmap.containsKey("equals") || vmap.containsKey("==")) &&
-         vmap.containsKey("<"))) {
-      // If a class defines <=> procedure then this class is a Comparable
-      // object. The compareTo method of Comparable interface forwards to the
-      // <=> procedure.
-      //
-      // If a class defines equals and < procedure then this class is a
-      // Comparable object. The compareTo method of Comparable interface is
-      // implemented using equals and < procedure.
-      isComparable = true;
-      interfaces.add("java.lang.Comparable");
-    }
-
-    ELNode.METASET meta = clazz.node.symbol.def.meta;
-    int access = meta == null ? 0 : meta.modifiers;
-    if ((access & ACC_PRIVATE) == 0)
-      access |= ACC_PUBLIC;
-    ClassAssembly cc = new ClassAssembly(access | ACC_SUPER, className,
-                                         baseName,
-                                         interfaces.toArray(new String[0]));
-
-    if (clazz.node.file != null) {
-      String filename = clazz.node.file;
-      int sep = filename.lastIndexOf('/');
-      if (sep != -1)
-        filename = filename.substring(sep + 1);
-      cc.getImpl().visitSource(filename, null);
-    }
-
-    // Add static and instance fields.
-    for (ELNode.DEFINE var : clazz.node.cvars) {
-      if (!(var.expr instanceof ELNode.LAMBDA) &&
-          !(var.expr instanceof ELNode.CLASSDEF)) {
-        access = var.meta == null ? ACC_PUBLIC : var.meta.modifiers;
-        if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
-          access |= ACC_PUBLIC;
-        cc.addField(access | ACC_STATIC, var.id, Object.class);
-      }
-    }
-    if (clazz.node.vars != null) {
-      for (ELNode.DEFINE var : clazz.node.vars) {
-        access = var.meta == null ? ACC_PUBLIC : var.meta.modifiers;
-        if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
-          access |= ACC_PUBLIC;
-        cc.addField(access, var.id, Object.class);
-      }
-    }
-    for (ELNode.DEFINE var : clazz.node.ivars) {
-      if (!(var.expr instanceof ELNode.LAMBDA) &&
-          !(var.expr instanceof ELNode.CLASSDEF)) {
-        access = var.meta == null ? 0 : var.meta.modifiers;
-        if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
-          access |= ACC_PUBLIC;
-        cc.addField(access, var.id, Object.class);
-      }
-    }
-
-    // Constructor.
-    IRFunction initFunc = clazz.init_proc.symbol.func;
-    MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
-      EvaluationContext.class, Object[].class);
-    if (clazz.base instanceof IRClass) {
-      mc.THIS()
-        .ALOAD(1)
-        .ALOAD(2)
-        .INVOKESPECIAL(((IRClass)clazz.base).internalName, "<init>", Void.TYPE,
-                       EvaluationContext.class, Object[].class);
-    } else {
-      mc.THIS()
-        .INVOKESPECIAL((Class<?>)clazz.base, "<init>", Void.TYPE, NO_ARGS);
-    }
-    new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
-
-    // Class initializer.
-    if (clazz.clinit_proc != null) {
-      IRFunction clinitFunc = clazz.clinit_proc.symbol.func;
-      mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", Void.TYPE);
-      mc.NEW(EvaluationContext.class)
-        .DUP()
-        .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-        .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                       ELContext.class)
-        .ASTORE(0)
-        .ICONST_0()
-        .ANEWARRAY(Object.class)
-        .ASTORE(1);
-      new FunctionCompiler(clinitFunc, className, true, Void.TYPE, mc).compile();
-    }
-
-    // Generate member functions.
-    for (IRFunction fn : clazz.functions()) {
-      ELNode.DEFINE def = fmap.get(fn);
-      if (def != null && (def.id.equals("toString") ||
-                          def.id.equals("equals") ||
-                          def.id.equals("hashCode")))
-        continue; // generated differently
-
-      access = def != null && def.meta != null ? def.meta.modifiers : 0;
-      if ((access & (ACC_PRIVATE | ACC_PROTECTED)) == 0)
-        access |= ACC_PUBLIC;
-      if (def == null && fn.isStatic())
-        access |= ACC_STATIC;
-      mc = cc.newMethod(access, fn.internalName, Object.class,
-                        EvaluationContext.class, Object[].class);
-
-      // Add annotation for operator procedure.
-      if (!isJavaIdentifier(fn.name())) {
-        mc.ANNOTATION(Expando.class, true)
-          .ARRAY("name")
-            .FIELD(null, fn.name())
-            .end()
-          .ARRAY("scope")
-            .ENUM(null, ExpandoScope.class, "OPERATOR")
-            .end()
-          .end();
-      }
-
-      if ((access & ACC_ABSTRACT) == 0) {
-        new FunctionCompiler(fn, className, (access & ACC_STATIC) != 0,
-                             Object.class, mc).compile();
-      }
-    }
-
-    // Implement DynamicDispatcher interface.
-    mc = cc.newMethod(ACC_PUBLIC, "__invoke__", Object.class,
-                      EvaluationContext.class, String.class, Object[].class);
-    compileInvokeMethod(clazz, clazz.node.ivars, mc);
-
-    mc = cc.newMethod(ACC_PUBLIC, "__invokeStatic__", Object.class,
-                      EvaluationContext.class, String.class, Object[].class);
-    compileInvokeMethod(clazz, clazz.node.cvars, mc);
-
-    // Implement PropertyResolvable interface.
-    compilePropertyResolvableMethods(clazz, cc);
-
-    // Generate toString method.
-    if (vmap.containsKey("toString") || clazz.node.vars != null) {
-      mc = cc.newMethod(ACC_PUBLIC, "toString", String.class);
-
-      IRFunction fn = vmap.get("toString");
-      if (fn != null) {
-        mc.NEW(EvaluationContext.class)
-          .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ASTORE(1)
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .ASTORE(2);
-        new FunctionCompiler(fn, className, false, String.class, mc)
-          .compile();
-      } else {
-        mc.NEW_INSTANCE(StringBuilder.class)
-          .LDC(clazz.name + "(")
-          .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
-                         String.class);
-
-        assert clazz.node.vars != null;
-        for (int i = 0; i < clazz.node.vars.length; i++) {
-          Label b1 = new Label(), b2 = new Label();
-          if (i > 0) {
-            mc.LDC(", ")
-              .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
-                             String.class);
-          }
-          mc.THIS()
-            .GETFIELD(className, clazz.node.vars[i].id, Object.class)
-            .DUP()
-            .INSTANCEOF(String.class)
-            .IFEQ(b1)
-            .CHECKCAST(String.class)
-            .INVOKESTATIC(TypeCoercion.class, "escape", StringBuilder.class,
-                          StringBuilder.class, String.class)
-            .GOTO(b2)
-          .label(b1)
-            .INVOKESTATIC(TypeCoercion.class, "coerceToString", String.class,
-                          Object.class)
-            .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
-                           String.class)
-          .label(b2);
-        }
-
-        mc.LDC(")")
-          .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
-                         String.class)
-          .INVOKEVIRTUAL(StringBuilder.class, "toString", String.class)
-          .ARETURN()
-          .end();
-      }
-    }
-
-    // Generate equals method.
-    if (vmap.containsKey("equals") || vmap.containsKey("==") ||
-        clazz.node.vars != null) {
-      mc = cc.newMethod(ACC_PUBLIC, "equals", Boolean.TYPE, Object.class);
-
-      if (vmap.containsKey("equals") && !vmap.containsKey("==")) {
-        mc.NEW(EvaluationContext.class)
-          .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ASTORE(1)
-          .ICONST_1()
-          .ANEWARRAY(Object.class)
-          .DUP()
-          .ICONST_0()
-          .ALOAD(1)
-          .AASTORE()
-          .ASTORE(2);
-
-        IRFunction fn = vmap.getOrDefault("equals", vmap.get("=="));
-        new FunctionCompiler(fn, className, false, Boolean.TYPE, mc)
-          .compile();
-      } else {
-        Label exit = new Label();
-        mc.ALOAD(1)
-          .INSTANCEOF(className)
-          .IFEQ(exit)
-          .ALOAD(1)
-          .CHECKCAST(className)
-          .ASTORE(2);
-
-        assert clazz.node.vars != null;
-        for (ELNode.DEFINE var : clazz.node.vars) {
-          mc.THIS()
-            .GETFIELD(className, var.id, Object.class)
-            .ALOAD(2)
-            .GETFIELD(className, var.id, Object.class)
-            .INVOKESTATIC(Objects.class, "equals", Boolean.TYPE, Object.class,
-                          Object.class)
-            .IFEQ(exit);
-        }
-
-        mc.TRUE()
-          .IRETURN();
-
-        mc.label(exit)
-          .FALSE()
-          .IRETURN()
-          .end();
-      }
-    }
-
-    // Generate hashCode method.
-    if (vmap.containsKey("hashCode") || clazz.node.vars != null) {
-      mc = cc.newMethod(ACC_PUBLIC, "hashCode", Integer.TYPE);
-
-      IRFunction fn = vmap.get("hashCode");
-      if (fn != null) {
-        mc.NEW(EvaluationContext.class)
-          .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ASTORE(1)
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .ASTORE(2);
-        new FunctionCompiler(fn, className, false, Integer.TYPE, mc)
-          .compile();
-      } else {
-        assert clazz.node.vars != null;
-        mc.ICONST_1();
-        for (ELNode.DEFINE var : clazz.node.vars) {
-          Label b1 = new Label(), b2 = new Label();
-          mc.PUSH(31)
-            .IMUL()
-            .THIS()
-            .GETFIELD(className, var.id, Object.class)
-            .DUP()
-            .IFNONNULL(b1)
-            .POP()
-            .ICONST_0()
-            .GOTO(b2)
-          .label(b1)
-            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .label(b2)
-            .IADD();
-        }
-        mc.IRETURN().end();
-      }
-    }
-
-    // Generate compareTo method.
-    if (isComparable) {
-      if (vmap.containsKey("<=>")) {
-        // Delegate compareTo to the <=> procedure.
-        IRFunction threeWay = vmap.get("<=>");
-        cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
-          .THIS()
-          .NEW(EvaluationContext.class)
-          .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ICONST_1()
-          .ANEWARRAY(Object.class)
-          .DUP()
-          .ICONST_0()
-          .ALOAD(1)
-          .CHECKCAST(className)
-          .AASTORE()
-          .INVOKEVIRTUAL(className, threeWay.internalName, Object.class,
-                         EvaluationContext.class, Object[].class)
-          .UNBOX(Integer.TYPE)
-          .IRETURN()
-          .end();
-      } else {
-        IRFunction less = vmap.get("<");
-        assert less != null;
-        Label b1 = new Label(), b2 = new Label(), exit = new Label();
-
-        cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
-          .THIS()
-          .ALOAD(1)
-          .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-          .IFEQ(b1)
-          .ICONST_0()
-          .GOTO(exit)
-        .label(b1)
-          .THIS()
-          .NEW(EvaluationContext.class)
-          .DUP()
-          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ICONST_1()
-          .ANEWARRAY(Object.class)
-          .DUP()
-          .ICONST_0()
-          .ALOAD(1)
-          .CHECKCAST(className)
-          .AASTORE()
-          .INVOKEVIRTUAL(className, less.internalName, Object.class,
-                         EvaluationContext.class, Object[].class)
-          .UNBOX(Boolean.TYPE)
-          .IFEQ(b2)
-          .ICONST_M1()
-          .GOTO(exit)
-        .label(b2)
-          .ICONST_1()
-        .label(exit)
-          .IRETURN()
-          .end();
-      }
-    }
-
-    consumer.acceptClass(className, cc.end());
-  }
-
-  private void compileInvokeMethod(IRClass clazz, ELNode.DEFINE[] vars,
-                                   MethodAssembly mc) {
-    TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
-    for (ELNode.DEFINE def : vars) {
-      if (!(def.expr instanceof ELNode.LAMBDA) || !def.symbol.isPublic() ||
-          def.id.equals(clazz.name) || def.id.equals("toString") ||
-          def.id.equals("equals") || def.id.equals("hashCode"))
-        continue;
-      cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
-    }
-
-    if (cases.isEmpty()) {
-      mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
-        .ARETURN()
-        .end();
-      return;
-    }
-
-    Label fail = new Label(), noResult = new Label();
-    int[] keys = new int[cases.size()];
-    Label[] labels = new Label[cases.size()];
-
-    int i = 0;
-    for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
-      keys[i] = entry.getKey();
-      labels[i] = new Label();
-      i++;
-    }
-
-    if (cases.size() > 1) {
-      mc.ALOAD(2)
-        .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-        .SWITCH(keys, labels, noResult, 5);
-    }
-
-    i = 0;
-    for (List<ELNode.DEFINE> defs : cases.values()) {
-      mc.label(labels[i++]);
-      for (int j = 0; j < defs.size(); j++) {
-        ELNode.DEFINE def = defs.get(j);
-        ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
-        Label next = j == defs.size() - 1 ? noResult : new Label();
-        String methodName = proc.symbol.func.internalName;
-        mc.LDC(def.id)
-          .ALOAD(2)
-          .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-          .IFEQ(next)
-          .ALOAD(3)
-          .ARRAYLENGTH()
-          .PUSH(proc.vars.length)
-          .IF_ICMPNE(fail)
-          .THIS()
-          .ALOAD(1)
-          .ALOAD(3);
-        if (def.symbol.isStatic())
-          mc.INVOKESTATIC(clazz.internalName, methodName, Object.class,
-                          EvaluationContext.class, Object[].class);
-        else
-          mc.INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
-                           EvaluationContext.class, Object[].class);
-        mc.ARETURN();
-        if (j != defs.size() - 1)
-          mc.label(next);
-      }
-    }
-
-    mc.label(noResult)
-      .GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
-      .ARETURN();
-
-    mc.label(fail)
-      .NEW(EvaluationException.class)
-      .DUP()
-      .ALOAD(1)
-      .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
-      .LDC(EL_METHOD_NOT_FOUND)
-      .ICONST_2()
-      .ANEWARRAY(Object.class)
-      .DUP()
-      .ICONST_0()
-      .LDC(clazz.name)
-      .AASTORE()
-      .DUP()
-      .ICONST_1()
-      .ALOAD(2)
-      .AASTORE()
-      .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
-                    Object[].class)
-      .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                     ELContext.class, String.class)
-      .ATHROW()
-      .end();
-  }
-
-  record Property(String name, String getter, String setter) {}
-
-  private void compilePropertyResolvableMethods(IRClass clazz, ClassAssembly cc) {
-    Map<String, Property> properties = new HashMap<>();
-
-    // Collect getters.
-    for (ELNode.DEFINE def : clazz.node.ivars) {
-      if (def.expr instanceof ELNode.LAMBDA fn &&
-          fn.vars.length == 0 && !fn.varargs) {
-        if (def.id.length() > 3 && def.id.startsWith("get") &&
-            Character.isUpperCase(def.id.charAt(3))) {
-          String name = decapitalize(def.id.substring(3));
-          properties.put(name, new Property(name, def.id, null));
-        } else if (def.id.length() > 2 && def.id.startsWith("is") &&
-                   Character.isUpperCase(def.id.charAt(2))) {
-          String name = decapitalize(def.id.substring(2));
-          properties.put(name, new Property(name, def.id, null));
-        }
-      }
-    }
-
-    // Collect setters.
-    for (ELNode.DEFINE def : clazz.node.ivars) {
-      if (def.expr instanceof ELNode.LAMBDA fn &&
-          fn.vars.length == 1 && !fn.varargs &&
-          def.id.length() > 3 && def.id.startsWith("set") &&
-          Character.isUpperCase(def.id.charAt(3))) {
-        String name = decapitalize(def.id.substring(3));
-        properties.compute(name, (k, v) ->
-          v == null ? new Property(name, null, def.id)
-                    : new Property(name, v.getter(), def.id));
-      }
-    }
-
-    // Create cases for properties.
-    TreeMap<Integer, List<Property>> cases = new TreeMap<>();
-    for (Property p : properties.values())
-      cases.computeIfAbsent(p.name.hashCode(), x -> new ArrayList<>()).add(p);
-
-    MethodAssembly mc;
-
-    // Object getValue(ELContext elctx, Object property)
-    mc = cc.newMethod(ACC_PUBLIC, "getValue", Object.class, ELContext.class,
-                      Object.class);
-    if (cases.isEmpty()) {
-      mc.ACONST_NULL()
-        .ARETURN()
-        .end();
-    } else {
-      int[] keys = new int[cases.size()];
-      Label[] labels = new Label[cases.size()];
-      Label exit = new Label();
-      Label fail = null;
-
-      int i = 0;
-      for (int hash : cases.keySet()) {
-        keys[i] = hash;
-        labels[i] = new Label();
-        i++;
-      }
-
-      mc.ALOAD(2)
-        .INSTANCEOF(String.class)
-        .IFEQ(exit)
-        .NEW(EvaluationContext.class)
-        .DUP()
-        .ALOAD(1)
-        .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                       ELContext.class)
-        .ASTORE(3);
-
-      if (cases.size() > 1) {
-        mc.ALOAD(2)
-          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .SWITCH(keys, labels, exit, 5);
-      }
-
-      i = 0;
-      for (List<Property> props : cases.values()) {
-        mc.label(labels[i++]);
-        for (int j = 0; j < props.size(); j++) {
-          Property prop = props.get(j);
-          Label next = j == props.size() - 1 ? exit : new Label();
-          mc.LDC(prop.name)
-            .ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-            .IFEQ(next);
-          if (prop.getter == null) {
-            if (fail == null)
-              fail = new Label();
-            mc.GOTO(fail);
-          } else {
-            mc.THIS()
-              .ALOAD(3)
-              .ICONST_0()
-              .ANEWARRAY(Object.class)
-              .INVOKEVIRTUAL(clazz.internalName, prop.getter, Object.class,
-                             EvaluationContext.class, Object[].class)
-              .ALOAD(1)
-              .ICONST_1()
-              .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved", Void.TYPE,
-                             Boolean.TYPE)
-              .ARETURN();
-          }
-          if (j != props.size() - 1)
-            mc.label(next);
-        }
-      }
-
-      if (fail != null) {
-        mc.label(fail)
-          .NEW(EvaluationException.class)
-          .DUP()
-          .ALOAD(1)
-          .LDC(EL_PROPERTY_NOT_READABLE)
-          .ICONST_2()
-          .ANEWARRAY(Object.class)
-          .DUP()
-          .ICONST_0()
-          .LDC(clazz.name)
-          .AASTORE()
-          .DUP()
-          .ICONST_1()
-          .ALOAD(2)
-          .AASTORE()
-          .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
-                        Object[].class)
-          .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                         ELContext.class, String.class)
-          .ATHROW();
-      }
-
-      mc.label(exit)
-        .ACONST_NULL()
-        .ARETURN()
-        .end();
-    }
-
-    // void setValue(ELContext elctx, Object property, Object value);
-    mc = cc.newMethod(ACC_PUBLIC, "setValue", Void.TYPE, ELContext.class,
-                      Object.class, Object.class);
-    if (cases.isEmpty()) {
-      mc.RETURN()
-        .end();
-    } else {
-      int[] keys = new int[cases.size()];
-      Label[] labels = new Label[cases.size()];
-      Label exit = new Label();
-      Label fail = null;
-
-      int i = 0;
-      for (int hash : cases.keySet()) {
-        keys[i] = hash;
-        labels[i] = new Label();
-        i++;
-      }
-
-      mc.ALOAD(2)
-        .INSTANCEOF(String.class)
-        .IFEQ(exit)
-        .NEW(EvaluationContext.class)
-        .DUP()
-        .ALOAD(1)
-        .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                       ELContext.class)
-        .ASTORE(4);
-
-      if (cases.size() > 1) {
-        mc.ALOAD(2)
-          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .SWITCH(keys, labels, exit, 5);
-      }
-
-      i = 0;
-      for (List<Property> props : cases.values()) {
-        mc.label(labels[i++]);
-        for (int j = 0; j < props.size(); j++) {
-          Property prop = props.get(j);
-          Label next = j == props.size() - 1 ? exit : new Label();
-          mc.LDC(prop.name)
-            .ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-            .IFEQ(next);
-          if (prop.setter == null) {
-            if (fail == null)
-              fail = new Label();
-            mc.GOTO(fail);
-          } else {
-            mc.THIS()
-              .ALOAD(4)
-              .ICONST_1()
-              .ANEWARRAY(Object.class)
-              .DUP()
-              .ICONST_0()
-              .ALOAD(3)
-              .AASTORE()
-              .INVOKEVIRTUAL(clazz.internalName, prop.setter, Object.class,
-                             EvaluationContext.class, Object[].class)
-              .POP()
-              .ALOAD(1)
-              .ICONST_1()
-              .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved", Void.TYPE,
-                             Boolean.TYPE)
-              .RETURN();
-          }
-          if (j != props.size() - 1)
-            mc.label(next);
-        }
-      }
-
-      if (fail != null) {
-        mc.label(fail)
-          .NEW(EvaluationException.class)
-          .DUP()
-          .ALOAD(1)
-          .LDC(EL_PROPERTY_NOT_WRITABLE)
-          .ICONST_2()
-          .ANEWARRAY(Object.class)
-          .DUP()
-          .ICONST_0()
-          .LDC(clazz.name)
-          .AASTORE()
-          .DUP()
-          .ICONST_1()
-          .ALOAD(2)
-          .AASTORE()
-          .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
-                        Object[].class)
-          .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                         ELContext.class, String.class).ATHROW();
-      }
-
-      mc.label(exit)
-        .RETURN()
-        .end();
-    }
-
-    // Class getType(ELContext elctx, Object property)
-    // Not used, simply return Object.class
-    cc.newMethod(ACC_PUBLIC, "getType", Class.class, ELContext.class,
-                 Object.class)
-      .LDC(Type.getType(Object.class))
-      .ARETURN()
-      .end();
-
-    // boolean isReadOnly(ELContext elctx, Object property)
-    // Not used, simply return false.
-    cc.newMethod(ACC_PUBLIC, "isReadOnly", Boolean.TYPE, ELContext.class,
-                 Object.class)
-      .ICONST_0()
-      .IRETURN()
-      .end();
-  }
-
-  private String mangle(String id) {
+  private static String mangle(String id) {
     if (isJavaIdentifier(id))
       return id;
 
@@ -986,6 +243,21 @@ public class BytecodeCompiler {
         yield sb.toString();
       }
     };
+  }
+
+  private void compileFunction(ClassAssembly cc, IRFunction f) {
+    // The function method:
+    // public static Object execute$func$0(
+    //    EvaluationContext env, Object[] args)
+    MethodAssembly mc = cc.newMethod(
+      ACC_PUBLIC | ACC_STATIC | ACC_FINAL, f.internalName, Object.class,
+      EvaluationContext.class, Object[].class);
+
+    new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
+  }
+
+  private void compileClass(IRClass clazz) {
+    new ClassCompiler(clazz).compile();
   }
 
   private void compileConstantPool(ClassAssembly cc) {
@@ -1123,7 +395,768 @@ public class BytecodeCompiler {
   }
 
   /*--------------------------------------------------------------------------*/
-  
+
+  /**
+   * Inner class for class compilation.
+   */
+  private class ClassCompiler {
+    private final IRClass clazz;
+    private final String className;
+    private final Map<String, IRFunction> vmap = new HashMap<>();
+
+    ClassCompiler(IRClass clazz) {
+      this.clazz = clazz;
+      this.className = clazz.internalName;
+    }
+
+    void compile() {
+      Map<IRFunction, ELNode.DEFINE> fmap = new HashMap<>();
+      for (ELNode.DEFINE var : clazz.node.cvars) {
+        if (var.expr instanceof ELNode.LAMBDA fn) {
+          fmap.put(fn.symbol.func, var);
+        }
+      }
+      for (ELNode.DEFINE var : clazz.node.ivars) {
+        if (var.expr instanceof ELNode.LAMBDA fn) {
+          fmap.put(fn.symbol.func, var);
+          vmap.put(var.id, fn.symbol.func);
+        }
+      }
+
+      String baseName = clazz.base instanceof IRClass
+                        ? ((IRClass)clazz.base).internalName
+                        : ((Class<?>)clazz.base).getName();
+
+      List<String> interfaces = new ArrayList<>();
+      interfaces.add(DynamicDispatcher.class.getName());
+      interfaces.add(PropertyResolvable.class.getName());
+      if (clazz.interfaces != null) {
+        for (Class<?> i : clazz.interfaces)
+          interfaces.add(i.getName());
+      }
+
+      boolean isComparable = false;
+      if (!interfaces.contains("java.lang.Comparable") &&
+          vmap.containsKey("<=>") ||
+          ((vmap.containsKey("equals") || vmap.containsKey("==")) &&
+           vmap.containsKey("<"))) {
+        // If a class defines <=> procedure then this class is a Comparable
+        // object. The compareTo method of Comparable interface forwards to the
+        // <=> procedure.
+        //
+        // If a class defines equals and < procedure then this class is a
+        // Comparable object. The compareTo method of Comparable interface is
+        // implemented using equals and < procedure.
+        isComparable = true;
+        interfaces.add("java.lang.Comparable");
+      }
+
+      ELNode.METASET meta = clazz.node.symbol.def.meta;
+      int access = meta == null ? 0 : meta.modifiers;
+      if ((access & ACC_PRIVATE) == 0)
+        access |= ACC_PUBLIC;
+      ClassAssembly cc = new ClassAssembly(access | ACC_SUPER, className,
+                                           baseName,
+                                           interfaces.toArray(new String[0]));
+
+      if (clazz.node.file != null) {
+        String filename = clazz.node.file;
+        int sep = filename.lastIndexOf('/');
+        if (sep != -1)
+          filename = filename.substring(sep + 1);
+        cc.getImpl().visitSource(filename, null);
+      }
+
+      // Add static and instance fields.
+      for (ELNode.DEFINE var : clazz.node.cvars) {
+        if (!(var.expr instanceof ELNode.LAMBDA) &&
+            !(var.expr instanceof ELNode.CLASSDEF)) {
+          access = var.meta == null ? ACC_PUBLIC : var.meta.modifiers;
+          if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
+            access |= ACC_PUBLIC;
+          cc.addField(access | ACC_STATIC, var.id, Object.class);
+        }
+      }
+      if (clazz.node.vars != null) {
+        for (ELNode.DEFINE var : clazz.node.vars) {
+          access = var.meta == null ? ACC_PUBLIC : var.meta.modifiers;
+          if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
+            access |= ACC_PUBLIC;
+          cc.addField(access, var.id, Object.class);
+        }
+      }
+      for (ELNode.DEFINE var : clazz.node.ivars) {
+        if (!(var.expr instanceof ELNode.LAMBDA) &&
+            !(var.expr instanceof ELNode.CLASSDEF)) {
+          access = var.meta == null ? 0 : var.meta.modifiers;
+          if ((access & (ACC_PRIVATE|ACC_PROTECTED)) == 0)
+            access |= ACC_PUBLIC;
+          cc.addField(access, var.id, Object.class);
+        }
+      }
+
+      // Constructor.
+      IRFunction initFunc = clazz.init_proc.symbol.func;
+      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
+                                       EvaluationContext.class, Object[].class);
+      if (clazz.base instanceof IRClass) {
+        mc.THIS()
+          .ALOAD(1)
+          .ALOAD(2)
+          .INVOKESPECIAL(((IRClass)clazz.base).internalName, "<init>", Void.TYPE,
+                         EvaluationContext.class, Object[].class);
+      } else {
+        mc.THIS()
+          .INVOKESPECIAL((Class<?>)clazz.base, "<init>", Void.TYPE, NO_ARGS);
+      }
+      new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
+
+      // Class initializer.
+      if (clazz.clinit_proc != null) {
+        IRFunction clinitFunc = clazz.clinit_proc.symbol.func;
+        mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", Void.TYPE);
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(0)
+          .ICONST_0()
+          .ANEWARRAY(Object.class)
+          .ASTORE(1);
+        new FunctionCompiler(clinitFunc, className, true, Void.TYPE, mc).compile();
+      }
+
+      // Generate member functions.
+      for (IRFunction fn : clazz.functions()) {
+        ELNode.DEFINE def = fmap.get(fn);
+        if (def != null && (def.id.equals("toString") ||
+                            def.id.equals("equals") ||
+                            def.id.equals("hashCode")))
+          continue; // generated differently
+
+        access = def != null && def.meta != null ? def.meta.modifiers : 0;
+        if ((access & (ACC_PRIVATE | ACC_PROTECTED)) == 0)
+          access |= ACC_PUBLIC;
+        if (def == null && fn.isStatic())
+          access |= ACC_STATIC;
+        mc = cc.newMethod(access, fn.internalName, Object.class,
+                          EvaluationContext.class, Object[].class);
+
+        // Add annotation for operator procedure.
+        if (!isJavaIdentifier(fn.name())) {
+          mc.ANNOTATION(Expando.class, true)
+            .ARRAY("name")
+            .FIELD(null, fn.name())
+            .end()
+            .ARRAY("scope")
+            .ENUM(null, ExpandoScope.class, "OPERATOR")
+            .end()
+            .end();
+        }
+
+        if ((access & ACC_ABSTRACT) == 0) {
+          new FunctionCompiler(fn, className, (access & ACC_STATIC) != 0,
+                               Object.class, mc).compile();
+        }
+      }
+
+      // Implement DynamicDispatcher interface.
+      mc = cc.newMethod(ACC_PUBLIC, "__invoke__", Object.class,
+                        EvaluationContext.class, String.class, Object[].class);
+      compileInvokeMethod(clazz.node.ivars, mc);
+
+      mc = cc.newMethod(ACC_PUBLIC, "__invokeStatic__", Object.class,
+                        EvaluationContext.class, String.class, Object[].class);
+      compileInvokeMethod(clazz.node.cvars, mc);
+
+      // Implement PropertyResolvable interface.
+      compilePropertyResolvableMethods(cc);
+
+      // Generate toString method.
+      if (vmap.containsKey("toString") || clazz.node.vars != null) {
+        compileToStringMethod(cc);
+      }
+
+      // Generate equals method.
+      if (vmap.containsKey("equals") || vmap.containsKey("==") ||
+          clazz.node.vars != null) {
+        compileEqualsMethod(cc);
+      }
+
+      // Generate hashCode method.
+      if (vmap.containsKey("hashCode") || clazz.node.vars != null) {
+        compileHashCodeMethod(cc);
+      }
+
+      // Generate compareTo method.
+      if (isComparable) {
+        compileCompareToMethod(cc);
+      }
+
+      consumer.acceptClass(className, cc.end());
+    }
+
+    private void compileInvokeMethod(ELNode.DEFINE[] vars, MethodAssembly mc) {
+      TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
+      for (ELNode.DEFINE def : vars) {
+        if (!(def.expr instanceof ELNode.LAMBDA) || !def.symbol.isPublic() ||
+            def.id.equals(clazz.name) || def.id.equals("toString") ||
+            def.id.equals("equals") || def.id.equals("hashCode"))
+          continue;
+        cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
+      }
+
+      if (cases.isEmpty()) {
+        mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
+          .ARETURN()
+          .end();
+        return;
+      }
+
+      Label fail = new Label(), noResult = new Label();
+      int[] keys = new int[cases.size()];
+      Label[] labels = new Label[cases.size()];
+
+      int i = 0;
+      for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
+        keys[i] = entry.getKey();
+        labels[i] = new Label();
+        i++;
+      }
+
+      if (cases.size() > 1) {
+        mc.ALOAD(2)
+          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+          .SWITCH(keys, labels, noResult, 5);
+      }
+
+      i = 0;
+      for (List<ELNode.DEFINE> defs : cases.values()) {
+        mc.label(labels[i++]);
+        for (int j = 0; j < defs.size(); j++) {
+          ELNode.DEFINE def = defs.get(j);
+          ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
+          Label next = j == defs.size() - 1 ? noResult : new Label();
+          String methodName = proc.symbol.func.internalName;
+          mc.LDC(def.id)
+            .ALOAD(2)
+            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+            .IFEQ(next)
+            .ALOAD(3)
+            .ARRAYLENGTH()
+            .PUSH(proc.vars.length)
+            .IF_ICMPNE(fail)
+            .THIS()
+            .ALOAD(1)
+            .ALOAD(3);
+          if (def.symbol.isStatic())
+            mc.INVOKESTATIC(clazz.internalName, methodName, Object.class,
+                            EvaluationContext.class, Object[].class);
+          else
+            mc.INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
+                             EvaluationContext.class, Object[].class);
+          mc.ARETURN();
+          if (j != defs.size() - 1)
+            mc.label(next);
+        }
+      }
+
+      mc.label(noResult)
+        .GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
+        .ARETURN();
+
+      mc.label(fail)
+        .NEW(EvaluationException.class)
+        .DUP()
+        .ALOAD(1)
+        .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
+        .LDC(EL_METHOD_NOT_FOUND)
+        .ICONST_2()
+        .ANEWARRAY(Object.class)
+        .DUP()
+        .ICONST_0()
+        .LDC(clazz.name)
+        .AASTORE()
+        .DUP()
+        .ICONST_1()
+        .ALOAD(2)
+        .AASTORE()
+        .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
+                      Object[].class)
+        .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
+                       ELContext.class, String.class)
+        .ATHROW()
+        .end();
+    }
+
+    private record Property(String name, String getter, String setter) {}
+
+    private void compilePropertyResolvableMethods(ClassAssembly cc) {
+      Map<String, Property> properties = new HashMap<>();
+
+      // Collect getters.
+      for (ELNode.DEFINE def : clazz.node.ivars) {
+        if (def.expr instanceof ELNode.LAMBDA fn &&
+            fn.vars.length == 0 && !fn.varargs) {
+          if (def.id.length() > 3 && def.id.startsWith("get") &&
+              Character.isUpperCase(def.id.charAt(3))) {
+            String name = decapitalize(def.id.substring(3));
+            properties.put(name, new Property(name, def.id, null));
+          } else if (def.id.length() > 2 && def.id.startsWith("is") &&
+                     Character.isUpperCase(def.id.charAt(2))) {
+            String name = decapitalize(def.id.substring(2));
+            properties.put(name, new Property(name, def.id, null));
+          }
+        }
+      }
+
+      // Collect setters.
+      for (ELNode.DEFINE def : clazz.node.ivars) {
+        if (def.expr instanceof ELNode.LAMBDA fn &&
+            fn.vars.length == 1 && !fn.varargs &&
+            def.id.length() > 3 && def.id.startsWith("set") &&
+            Character.isUpperCase(def.id.charAt(3))) {
+          String name = decapitalize(def.id.substring(3));
+          properties.compute(name, (k, v) ->
+            v == null ? new Property(name, null, def.id)
+                      : new Property(name, v.getter, def.id));
+        }
+      }
+
+      // Create cases for properties.
+      TreeMap<Integer, List<Property>> cases = new TreeMap<>();
+      for (Property p : properties.values())
+        cases.computeIfAbsent(p.name.hashCode(), x -> new ArrayList<>()).add(p);
+
+      MethodAssembly mc;
+
+      // Object getValue(ELContext elctx, Object property)
+      mc = cc.newMethod(ACC_PUBLIC, "getValue", Object.class, ELContext.class,
+                        Object.class);
+      if (cases.isEmpty()) {
+        mc.ACONST_NULL()
+          .ARETURN()
+          .end();
+      } else {
+        int[] keys = new int[cases.size()];
+        Label[] labels = new Label[cases.size()];
+        Label exit = new Label();
+        Label fail = null;
+
+        int i = 0;
+        for (int hash : cases.keySet()) {
+          keys[i] = hash;
+          labels[i] = new Label();
+          i++;
+        }
+
+        mc.ALOAD(2)
+          .INSTANCEOF(String.class)
+          .IFEQ(exit)
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .ALOAD(1)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(3);
+
+        if (cases.size() > 1) {
+          mc.ALOAD(2)
+            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+            .SWITCH(keys, labels, exit, 5);
+        }
+
+        i = 0;
+        for (List<Property> props : cases.values()) {
+          mc.label(labels[i++]);
+          for (int j = 0; j < props.size(); j++) {
+            Property prop = props.get(j);
+            Label next = j == props.size() - 1 ? exit : new Label();
+            mc.LDC(prop.name)
+              .ALOAD(2)
+              .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+              .IFEQ(next);
+            if (prop.getter == null) {
+              if (fail == null)
+                fail = new Label();
+              mc.GOTO(fail);
+            } else {
+              mc.THIS()
+                .ALOAD(3)
+                .ICONST_0()
+                .ANEWARRAY(Object.class)
+                .INVOKEVIRTUAL(clazz.internalName, prop.getter, Object.class,
+                               EvaluationContext.class, Object[].class)
+                .ALOAD(1)
+                .ICONST_1()
+                .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved",
+                               Void.TYPE, Boolean.TYPE)
+                .ARETURN();
+            }
+            if (j != props.size() - 1)
+              mc.label(next);
+          }
+        }
+
+        if (fail != null) {
+          mc.label(fail)
+            .NEW(EvaluationException.class)
+            .DUP()
+            .ALOAD(1)
+            .LDC(EL_PROPERTY_NOT_READABLE)
+            .ICONST_2()
+            .ANEWARRAY(Object.class)
+            .DUP()
+            .ICONST_0()
+            .LDC(clazz.name)
+            .AASTORE()
+            .DUP()
+            .ICONST_1()
+            .ALOAD(2)
+            .AASTORE()
+            .INVOKESTATIC(Resources.class, "getText", String.class,
+                          String.class, Object[].class)
+            .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
+                           ELContext.class, String.class)
+            .ATHROW();
+        }
+
+        mc.label(exit)
+          .ACONST_NULL()
+          .ARETURN()
+          .end();
+      }
+
+      // void setValue(ELContext elctx, Object property, Object value);
+      mc = cc.newMethod(ACC_PUBLIC, "setValue", Void.TYPE, ELContext.class,
+                        Object.class, Object.class);
+      if (cases.isEmpty()) {
+        mc.RETURN()
+          .end();
+      } else {
+        int[] keys = new int[cases.size()];
+        Label[] labels = new Label[cases.size()];
+        Label exit = new Label();
+        Label fail = null;
+
+        int i = 0;
+        for (int hash : cases.keySet()) {
+          keys[i] = hash;
+          labels[i] = new Label();
+          i++;
+        }
+
+        mc.ALOAD(2)
+          .INSTANCEOF(String.class)
+          .IFEQ(exit)
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .ALOAD(1)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(4);
+
+        if (cases.size() > 1) {
+          mc.ALOAD(2)
+            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+            .SWITCH(keys, labels, exit, 5);
+        }
+
+        i = 0;
+        for (List<Property> props : cases.values()) {
+          mc.label(labels[i++]);
+          for (int j = 0; j < props.size(); j++) {
+            Property prop = props.get(j);
+            Label next = j == props.size() - 1 ? exit : new Label();
+            mc.LDC(prop.name)
+              .ALOAD(2)
+              .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+              .IFEQ(next);
+            if (prop.setter == null) {
+              if (fail == null)
+                fail = new Label();
+              mc.GOTO(fail);
+            } else {
+              mc.THIS()
+                .ALOAD(4)
+                .ICONST_1()
+                .ANEWARRAY(Object.class)
+                .DUP()
+                .ICONST_0()
+                .ALOAD(3)
+                .AASTORE()
+                .INVOKEVIRTUAL(clazz.internalName, prop.setter, Object.class,
+                               EvaluationContext.class, Object[].class)
+                .POP()
+                .ALOAD(1)
+                .ICONST_1()
+                .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved",
+                               Void.TYPE, Boolean.TYPE)
+                .RETURN();
+            }
+            if (j != props.size() - 1)
+              mc.label(next);
+          }
+        }
+
+        if (fail != null) {
+          mc.label(fail)
+            .NEW(EvaluationException.class)
+            .DUP()
+            .ALOAD(1)
+            .LDC(EL_PROPERTY_NOT_WRITABLE)
+            .ICONST_2()
+            .ANEWARRAY(Object.class)
+            .DUP()
+            .ICONST_0()
+            .LDC(clazz.name)
+            .AASTORE()
+            .DUP()
+            .ICONST_1()
+            .ALOAD(2)
+            .AASTORE()
+            .INVOKESTATIC(Resources.class, "getText", String.class,
+                          String.class, Object[].class)
+            .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
+                           ELContext.class, String.class).ATHROW();
+        }
+
+        mc.label(exit)
+          .RETURN()
+          .end();
+      }
+
+      // Class getType(ELContext elctx, Object property)
+      // Not used, simply return Object.class
+      cc.newMethod(ACC_PUBLIC, "getType", Class.class, ELContext.class,
+                   Object.class)
+        .LDC(Type.getType(Object.class))
+        .ARETURN()
+        .end();
+
+      // boolean isReadOnly(ELContext elctx, Object property)
+      // Not used, simply return false.
+      cc.newMethod(ACC_PUBLIC, "isReadOnly", Boolean.TYPE, ELContext.class,
+                   Object.class)
+        .ICONST_0()
+        .IRETURN()
+        .end();
+    }
+
+    private void compileToStringMethod(ClassAssembly cc) {
+      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "toString", String.class);
+
+      IRFunction fn = vmap.get("toString");
+      if (fn != null) {
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(1)
+          .ICONST_0()
+          .ANEWARRAY(Object.class)
+          .ASTORE(2);
+        new FunctionCompiler(fn, className, false, String.class, mc)
+          .compile();
+      } else {
+        mc.NEW_INSTANCE(StringBuilder.class)
+          .LDC(clazz.name + "(")
+          .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                         String.class);
+
+        assert clazz.node.vars != null;
+        for (int i = 0; i < clazz.node.vars.length; i++) {
+          Label b1 = new Label(), b2 = new Label();
+          if (i > 0) {
+            mc.LDC(", ")
+              .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                             String.class);
+          }
+          mc.THIS()
+            .GETFIELD(className, clazz.node.vars[i].id, Object.class)
+            .DUP()
+            .INSTANCEOF(String.class)
+            .IFEQ(b1)
+            .CHECKCAST(String.class)
+            .INVOKESTATIC(TypeCoercion.class, "escape", StringBuilder.class,
+                          StringBuilder.class, String.class)
+            .GOTO(b2)
+            .label(b1)
+            .INVOKESTATIC(TypeCoercion.class, "coerceToString", String.class,
+                          Object.class)
+            .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                           String.class)
+            .label(b2);
+        }
+
+        mc.LDC(")")
+          .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
+                         String.class)
+          .INVOKEVIRTUAL(StringBuilder.class, "toString", String.class)
+          .ARETURN()
+          .end();
+      }
+    }
+
+    private void compileEqualsMethod(ClassAssembly cc) {
+      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "equals", Boolean.TYPE,
+                                       Object.class);
+
+      if (vmap.containsKey("equals") && !vmap.containsKey("==")) {
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(1)
+          .ICONST_1()
+          .ANEWARRAY(Object.class)
+          .DUP()
+          .ICONST_0()
+          .ALOAD(1)
+          .AASTORE()
+          .ASTORE(2);
+
+        IRFunction fn = vmap.getOrDefault("equals", vmap.get("=="));
+        new FunctionCompiler(fn, className, false, Boolean.TYPE, mc)
+          .compile();
+      } else {
+        Label exit = new Label();
+        mc.ALOAD(1)
+          .INSTANCEOF(className)
+          .IFEQ(exit)
+          .ALOAD(1)
+          .CHECKCAST(className)
+          .ASTORE(2);
+
+        assert clazz.node.vars != null;
+        for (ELNode.DEFINE var : clazz.node.vars) {
+          mc.THIS()
+            .GETFIELD(className, var.id, Object.class)
+            .ALOAD(2)
+            .GETFIELD(className, var.id, Object.class)
+            .INVOKESTATIC(Objects.class, "equals", Boolean.TYPE, Object.class,
+                          Object.class)
+            .IFEQ(exit);
+        }
+
+        mc.TRUE()
+          .IRETURN();
+
+        mc.label(exit)
+          .FALSE()
+          .IRETURN()
+          .end();
+      }
+    }
+
+    private void compileHashCodeMethod(ClassAssembly cc) {
+      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "hashCode", Integer.TYPE);
+
+      IRFunction fn = vmap.get("hashCode");
+      if (fn != null) {
+        mc.NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ASTORE(1)
+          .ICONST_0()
+          .ANEWARRAY(Object.class)
+          .ASTORE(2);
+        new FunctionCompiler(fn, className, false, Integer.TYPE, mc)
+          .compile();
+      } else {
+        assert clazz.node.vars != null;
+        mc.ICONST_1();
+        for (ELNode.DEFINE var : clazz.node.vars) {
+          Label b1 = new Label(), b2 = new Label();
+          mc.PUSH(31)
+            .IMUL()
+            .THIS()
+            .GETFIELD(className, var.id, Object.class)
+            .DUP()
+            .IFNONNULL(b1)
+            .POP()
+            .ICONST_0()
+            .GOTO(b2)
+            .label(b1)
+            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
+            .label(b2)
+            .IADD();
+        }
+        mc.IRETURN().end();
+      }
+    }
+
+    private void compileCompareToMethod(ClassAssembly cc) {
+      if (vmap.containsKey("<=>")) {
+        // Delegate compareTo to the <=> procedure.
+        IRFunction threeWay = vmap.get("<=>");
+        cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
+          .THIS()
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ICONST_1()
+          .ANEWARRAY(Object.class)
+          .DUP()
+          .ICONST_0()
+          .ALOAD(1)
+          .CHECKCAST(className)
+          .AASTORE()
+          .INVOKEVIRTUAL(className, threeWay.internalName, Object.class,
+                         EvaluationContext.class, Object[].class)
+          .UNBOX(Integer.TYPE)
+          .IRETURN()
+          .end();
+      } else {
+        IRFunction less = vmap.get("<");
+        assert less != null;
+        Label b1 = new Label(), b2 = new Label(), exit = new Label();
+
+        cc.newMethod(ACC_PUBLIC, "compareTo", Integer.TYPE, Object.class)
+          .THIS()
+          .ALOAD(1)
+          .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
+          .IFEQ(b1)
+          .ICONST_0()
+          .GOTO(exit)
+          .label(b1)
+          .THIS()
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ICONST_1()
+          .ANEWARRAY(Object.class)
+          .DUP()
+          .ICONST_0()
+          .ALOAD(1)
+          .CHECKCAST(className)
+          .AASTORE()
+          .INVOKEVIRTUAL(className, less.internalName, Object.class,
+                         EvaluationContext.class, Object[].class)
+          .UNBOX(Boolean.TYPE)
+          .IFEQ(b2)
+          .ICONST_M1()
+          .GOTO(exit)
+          .label(b2)
+          .ICONST_1()
+          .label(exit)
+          .IRETURN()
+          .end();
+      }
+    }
+  }
+
+  /*--------------------------------------------------------------------------*/
+
   /**
    * Inner class for function compilation.
    */
