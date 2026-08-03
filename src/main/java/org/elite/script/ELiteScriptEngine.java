@@ -43,7 +43,6 @@ import org.elite.eval.EvaluationException;
 import org.elite.eval.ELUtils;
 import org.elite.eval.closure.ClosureObject;
 import org.elite.ir.BytecodeCompiler;
-import org.elite.ir.IRFunction;
 import org.elite.ir.IRProgram;
 import org.elite.parser.Parser;
 import org.elite.parser.ParseException;
@@ -193,13 +192,7 @@ class ELiteScriptEngine extends AbstractScriptEngine
             case 0:  // AST — correctness baseline
                 return new ASTCompiledScript(this, program);
 
-            case 1: { // IR interpreter — for IR verification
-                ELContext elctx = getELContext(getContext());
-                IRFunction fn = program.compile(elctx).entry();
-                return new IRCompiledScript(this, fn);
-            }
-
-            case 2: case 3: default: { // Bytecode — no fallback to interpreter
+            default: { // Bytecode
                 ELContext elctx = getELContext(getContext());
                 IRProgram irProg = program.compile(elctx);
                 var cf = BytecodeCompiler.compile(irProg, loader);

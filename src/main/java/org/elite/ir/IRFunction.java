@@ -26,8 +26,7 @@ import java.lang.reflect.Modifier;
  * a list of basic block start offsets, a constant pool for literals, and
  * variable/source metadata.
  *
- * <p>This is the unit of execution for the {@link IRInterpreter} and the unit
- * of compilation for the JVM bytecode backend.
+ * <p>This is the unit of compilation for the JVM bytecode backend.
  */
 public class IRFunction {
 

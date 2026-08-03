@@ -2703,9 +2703,8 @@ public class IRBuilder extends ELNode.Visitor {
     // Build instance init proc.
     buildLambda(clazz.init_proc);
 
-    // Emit TRAMPOLINE to make IRInterpreter happy. Ignored by
-    // BytecodeCompiler.
-    current.emit(TRAMPOLINE, 0, putConstant(node));
+    // Ignored by BytecodeCompiler.
+    current.emitPushNull();
   }
 
   // ── Pattern matching ──

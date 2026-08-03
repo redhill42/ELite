@@ -2132,8 +2132,6 @@ public class BytecodeCompiler {
           .INVOKEVIRTUAL(EvaluationContext.class, "declarePrefix", Void.TYPE,
                          String.class, String.class);
   
-      case TRAMPOLINE ->
-        mc.ACONST_NULL(); // Ignored trampoline.
 
       default -> throw new CompilationError(
         _T(IR_BC_UNHANDLED_OPCODE, v.opcode(), Opcode.name(v.opcode())));

@@ -103,7 +103,7 @@ final class IRPrinter {
          Opcode.INVOKE_DIRECT, Opcode.INVOKE_METHOD, Opcode.NEW,
          Opcode.CONSTRUCTOR, Opcode.GETFIELD, Opcode.PUTFIELD,
          Opcode.GETSTATIC, Opcode.PUTSTATIC, Opcode.CHECKCAST, Opcode.BOX,
-         Opcode.UNBOX, Opcode.DECLARE_NS, Opcode.TRAMPOLINE ->
+         Opcode.UNBOX, Opcode.DECLARE_NS ->
       formatConstPool(sb, constants, v.poolIndex());
 
     case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,

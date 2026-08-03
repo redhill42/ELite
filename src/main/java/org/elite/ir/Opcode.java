@@ -117,10 +117,6 @@ public final class Opcode {
   public static final int NEW_TUPLE         = 0x63;
   public static final int DECLARE_NS        = 0x64;
 
-  // ── Trampoline ──
-  /** Evaluate an AST node directly (for features not yet compiled to IR). */
-  public static final int TRAMPOLINE        = 0x7F;
-
   /** Human-readable name for debugging. */
   public static String name(int op) {
     return switch (op) {
@@ -208,8 +204,6 @@ public final class Opcode {
       case NIL            -> "NIL";
       case NEW_TUPLE      -> "NEW_TUPLE";
       case DECLARE_NS     -> "DECLARE_NS";
-
-      case TRAMPOLINE     -> "TRAMPOLINE";
 
       default             -> "UNKNOWN(" + op + ")";
     };
