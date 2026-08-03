@@ -74,6 +74,7 @@ import static org.objectweb.asm.Opcodes.ACC_PROTECTED;
 import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
 import static org.objectweb.asm.Opcodes.ACC_STATIC;
 import static org.objectweb.asm.Opcodes.ACC_SUPER;
+import static org.objectweb.asm.Opcodes.ACC_TRANSIENT;
 
 public class BytecodeCompiler {
 
@@ -483,7 +484,7 @@ public class BytecodeCompiler {
 
       // Add $context field to save the ELContext for methods invoked without an
       // evaluation context, such as interface methods or Object methods.
-      cc.addField(ACC_PRIVATE, "$context", ELContext.class);
+      cc.addField(ACC_PRIVATE | ACC_TRANSIENT, "$context", ELContext.class);
 
       // Add static and instance fields.
       for (ELNode.DEFINE var : clazz.node.cvars) {
@@ -569,11 +570,11 @@ public class BytecodeCompiler {
         if (!isJavaIdentifier(fn.name())) {
           mc.ANNOTATION(Expando.class, true)
             .ARRAY("name")
-            .FIELD(null, fn.name())
-            .end()
+              .FIELD(null, fn.name())
+              .end()
             .ARRAY("scope")
-            .ENUM(null, ExpandoScope.class, "OPERATOR")
-            .end()
+              .ENUM(null, ExpandoScope.class, "OPERATOR")
+              .end()
             .end();
         }
 
@@ -586,11 +587,11 @@ public class BytecodeCompiler {
       // Implement DynamicDispatcher interface.
       mc = cc.newMethod(ACC_PUBLIC, "__invoke__", Object.class,
                         EvaluationContext.class, String.class, Object[].class);
-      compileInvokeMethod(clazz.node.ivars, mc);
+      compileInvokeMethod(clazz.node.ivars, "__invoke__", mc);
 
       mc = cc.newMethod(ACC_PUBLIC, "__invokeStatic__", Object.class,
                         EvaluationContext.class, String.class, Object[].class);
-      compileInvokeMethod(clazz.node.cvars, mc);
+      compileInvokeMethod(clazz.node.cvars, "__invokeStatic__", mc);
 
       // Implement PropertyResolvable interface.
       compilePropertyResolvableMethods(cc);
@@ -622,7 +623,8 @@ public class BytecodeCompiler {
       consumer.acceptClass(className, cc.end());
     }
 
-    private void compileInvokeMethod(ELNode.DEFINE[] vars, MethodAssembly mc) {
+    private void compileInvokeMethod(ELNode.DEFINE[] vars, String invokeName,
+                                     MethodAssembly mc) {
       TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
       for (ELNode.DEFINE def : vars) {
         if (!(def.expr instanceof ELNode.LAMBDA) || !def.symbol.isPublic() ||
@@ -633,9 +635,20 @@ public class BytecodeCompiler {
       }
 
       if (cases.isEmpty()) {
-        mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
-          .ARETURN()
-          .end();
+        if (clazz.base instanceof IRClass base) {
+          mc.THIS()
+            .ALOAD(1)
+            .ALOAD(2)
+            .ALOAD(3)
+            .INVOKESPECIAL(base.internalName, invokeName, Object.class,
+                           EvaluationContext.class, String.class, Object[].class)
+            .ARETURN()
+            .end();
+        } else {
+          mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
+            .ARETURN()
+            .end();
+        }
         return;
       }
 
@@ -644,7 +657,7 @@ public class BytecodeCompiler {
       Label[] labels = new Label[cases.size()];
 
       int i = 0;
-      for (Map.Entry<Integer, List<ELNode.DEFINE>> entry : cases.entrySet()) {
+      for (var entry : cases.entrySet()) {
         keys[i] = entry.getKey();
         labels[i] = new Label();
         i++;
@@ -687,9 +700,19 @@ public class BytecodeCompiler {
         }
       }
 
-      mc.label(noResult)
-        .GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
-        .ARETURN();
+      mc.label(noResult);
+      if (clazz.base instanceof IRClass base) {
+        mc.THIS()
+          .ALOAD(1)
+          .ALOAD(2)
+          .ALOAD(3)
+          .INVOKESPECIAL(base.internalName, invokeName, Object.class,
+                         EvaluationContext.class, String.class, Object[].class)
+          .ARETURN();
+      } else {
+        mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
+          .ARETURN();
+      }
 
       mc.label(fail)
         .NEW(EvaluationException.class)
@@ -757,12 +780,22 @@ public class BytecodeCompiler {
       MethodAssembly mc;
 
       // Object getValue(ELContext elctx, Object property)
-      mc = cc.newMethod(ACC_PUBLIC, "getValue", Object.class, ELContext.class,
-                        Object.class);
+      mc = cc.newMethod(ACC_PUBLIC, "getValue", Object.class,
+                        ELContext.class, Object.class);
       if (cases.isEmpty()) {
-        mc.ACONST_NULL()
-          .ARETURN()
-          .end();
+        if (clazz.base instanceof IRClass base) {
+          mc.THIS()
+            .ALOAD(1)
+            .ALOAD(2)
+            .INVOKESPECIAL(base.internalName, "getValue", Object.class,
+                           ELContext.class, Object.class)
+            .ARETURN()
+            .end();
+        } else {
+          mc.ACONST_NULL()
+            .ARETURN()
+            .end();
+        }
       } else {
         int[] keys = new int[cases.size()];
         Label[] labels = new Label[cases.size()];
@@ -847,18 +880,39 @@ public class BytecodeCompiler {
             .ATHROW();
         }
 
-        mc.label(exit)
-          .ACONST_NULL()
-          .ARETURN()
-          .end();
+        mc.label(exit);
+        if (clazz.base instanceof IRClass base) {
+          mc.THIS()
+            .ALOAD(1)
+            .ALOAD(2)
+            .INVOKESPECIAL(base.internalName, "getValue", Object.class,
+                           ELContext.class, Object.class)
+            .ARETURN()
+            .end();
+        } else {
+          mc.ACONST_NULL()
+            .ARETURN()
+            .end();
+        }
       }
 
       // void setValue(ELContext elctx, Object property, Object value);
-      mc = cc.newMethod(ACC_PUBLIC, "setValue", Void.TYPE, ELContext.class,
-                        Object.class, Object.class);
+      mc = cc.newMethod(ACC_PUBLIC, "setValue", Void.TYPE,
+                        ELContext.class, Object.class, Object.class);
       if (cases.isEmpty()) {
-        mc.RETURN()
-          .end();
+        if (clazz.base instanceof IRClass base) {
+          mc.THIS()
+            .ALOAD(1)
+            .ALOAD(2)
+            .ALOAD(3)
+            .INVOKESPECIAL(base.internalName, "setValue", Void.TYPE,
+                           ELContext.class, Object.class, Object.class)
+            .RETURN()
+            .end();
+        } else {
+          mc.RETURN()
+            .end();
+        }
       } else {
         int[] keys = new int[cases.size()];
         Label[] labels = new Label[cases.size()];
@@ -915,7 +969,7 @@ public class BytecodeCompiler {
                                EvaluationContext.class, Object[].class)
                 .POP()
                 .ALOAD(1)
-                .ICONST_1()
+                .TRUE()
                 .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved",
                                Void.TYPE, Boolean.TYPE)
                 .RETURN();
@@ -947,9 +1001,20 @@ public class BytecodeCompiler {
                            ELContext.class, String.class).ATHROW();
         }
 
-        mc.label(exit)
-          .RETURN()
-          .end();
+        mc.label(exit);
+        if (clazz.base instanceof IRClass base) {
+          mc.THIS()
+            .ALOAD(1)
+            .ALOAD(2)
+            .ALOAD(3)
+            .INVOKESPECIAL(base.internalName, "setValue", Void.TYPE,
+                           ELContext.class, Object.class, Object.class)
+            .RETURN()
+            .end();
+        } else {
+          mc.RETURN()
+            .end();
+        }
       }
 
       // Class getType(ELContext elctx, Object property)
@@ -1465,7 +1530,7 @@ public class BytecodeCompiler {
       case CAT    -> emitBinary(v, "__cat__",    Object.class);
       case BITAND -> emitBinary(v, "__bitand__", Object.class);
       case BITOR  -> emitBinary(v, "__bitor__",  Object.class);
-      case BITNOT -> emitUnary (v, "__bitand__", Object.class);
+      case BITNOT -> emitUnary (v, "__bitnot__", Object.class);
       case XOR    -> emitBinary(v, "__xor__",    Object.class);
       case SHL    -> emitBinary(v, "__shl__",    Object.class);
       case SHR    -> emitBinary(v, "__shr__",    Object.class);

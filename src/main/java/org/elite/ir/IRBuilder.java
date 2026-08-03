@@ -102,15 +102,15 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  // Peephole optimizer.
-  private final PeepholeOpt peephole;
-
   // ── Block management
   private final List<Block> blocks = new ArrayList<>();
   private final IREmitter current;
   private int currentBlockId = 0;
   private int nextBlockId = 1;  // 0 is the initial block
   private int exitBlock = -1;
+
+  // Peephole optimizer.
+  private final PeepholeOpt peephole;
 
   // ── Constant pool (maybe shared with parent builder) ──
   private final List<Object> constants;
@@ -277,6 +277,10 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.SYMBOL node) {
+    buildConst(node.value);
+  }
+
+  public void visit(ELNode.CONST node) {
     buildConst(node.value);
   }
 
@@ -628,7 +632,7 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPop();
       current.emitPop();
 
-      // One-shot lambda call.
+      // One-shot lambda call. Let may be inlined to eliminate runtime overhead.
       ELNode[] args = getCallArgs(node.pos, lam, node.args, node.keys);
       buildDirectCall(lam.symbol, args);
       return;
@@ -2701,7 +2705,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Emit TRAMPOLINE to make IRInterpreter happy. Ignored by
     // BytecodeCompiler.
-    buildTrampoline(node);
+    current.emit(TRAMPOLINE, 0, putConstant(node));
   }
 
   // ── Pattern matching ──
@@ -3317,17 +3321,8 @@ public class IRBuilder extends ELNode.Visitor {
     return cons;
   }
 
-  public void visit(ELNode.CONST node) {
-    buildConst(node.value);
-  }
-
   public void visitNode(ELNode node) {
-    // Default fallback.
-    buildTrampoline(node);
-  }
-
-  private void buildTrampoline(ELNode node) {
-    current.emit(TRAMPOLINE, 0, putConstant(node));
+    throw reportError(node.pos, "Unknown node type");
   }
 
   // ── Block management ──
