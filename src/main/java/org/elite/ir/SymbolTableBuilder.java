@@ -134,6 +134,7 @@ public final class SymbolTableBuilder {
         } else {
           param.symbol = table.define(param);
         }
+        scan(param.expr);
       }
 
       // Lambda has its own evaluation context, no need to create redundant

@@ -2580,6 +2580,38 @@ public class IRBuilder extends ELNode.Visitor {
         return new Cons(h, (Seq)t);
     }
 
+    if (node instanceof ELNode.IDENT var && var.symbol != null &&
+        var.symbol.clazz != null) {
+      return var.symbol.clazz;
+    }
+
+    if (node instanceof ELNode.ACCESS acc &&
+        acc.index instanceof ELNode.STRINGVAL key) {
+      if (acc.right instanceof ELNode.IDENT base &&
+          base.symbol != null && base.symbol.clazz != null) {
+        for (ELNode.DEFINE def : base.symbol.clazz.node.cvars) {
+          if (def.symbol.isPublic() &&
+              !(def.symbol.def.expr instanceof ELNode.LAMBDA) &&
+              !(def.symbol.def.expr instanceof ELNode.CLASSDEF)) {
+            return new IRClass.Field(base.symbol.clazz, key.value);
+          }
+        }
+      }
+
+      String className = getBaseClassName(acc.right);
+      if (className != null) {
+        Class<?> c = resolveClassAtCompileTime(className);
+        if (c != null) {
+          try {
+            Field f = c.getField(key.value);
+            if (Modifier.isPublic(f.getModifiers()) &&
+                Modifier.isStatic(f.getModifiers()))
+              return f;
+          } catch (NoSuchFieldException e) { /* fallthrough */ }
+        }
+      }
+    }
+
     String className = getBaseClassName(node);
     if (className != null) {
       Class<?> c = resolveClassAtCompileTime(className);

@@ -2126,11 +2126,17 @@ public class BytecodeCompiler {
             mc.BOX(value);
           } else if (value instanceof String) {
             mc.LDC(value);
-          } else if (value instanceof Class) {
-            mc.LDC(Type.getType((Class<?>)value));
           } else if (value instanceof Symbol) {
             mc.LDC(((Symbol)value).getName())
               .INVOKESTATIC(Symbol.class, "valueOf", Symbol.class, String.class);
+          } else if (value instanceof Class) {
+            mc.LDC(Type.getType((Class<?>)value));
+          } else if (value instanceof IRClass c) {
+            mc.LDC(Type.getType(AsmType.toDescriptor(c.internalName)));
+          } else if (value instanceof Field f) {
+            mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
+          } else if (value instanceof IRClass.Field f) {
+            mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
           } else {
             // Load constant from constant pool.
             loadConstant(mc, value);
