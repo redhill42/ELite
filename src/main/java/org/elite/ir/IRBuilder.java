@@ -760,6 +760,11 @@ public class IRBuilder extends ELNode.Visitor {
 
   private void buildClassCall(int pos, IRClass irc, ELNode[] args,
                               String[] keys) {
+    if (irc.isSingleton()) {
+      current.emitGetStatic(irc, "$singleton");
+      return;
+    }
+
     // If the class defines "valueOf" static member procedure, use the procedure
     // to initialize the new instance.
     for (ELNode.DEFINE def : irc.node.cvars) {
@@ -3234,12 +3239,16 @@ public class IRBuilder extends ELNode.Visitor {
     if (node.base instanceof ELNode.IDENT var && var.symbol != null) {
       if (var.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
         IRClass clazz = cdef.symbol.clazz;
-        ELNode[] args = getCallArgs(node.pos, clazz.init_proc, node.args,
-                                    node.keys);
-        current.emitNew(clazz);
-        current.emitPushEnv();
-        buildCallArgs(clazz.init_proc, args);
-        current.emitConstructor(clazz);
+        if (clazz.isSingleton()) {
+          current.emitGetStatic(clazz, "$singleton");
+        } else {
+          ELNode[] args = getCallArgs(node.pos, clazz.init_proc, node.args,
+                                      node.keys);
+          current.emitNew(clazz);
+          current.emitPushEnv();
+          buildCallArgs(clazz.init_proc, args);
+          current.emitConstructor(clazz);
+        }
         return;
       }
 

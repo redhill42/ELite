@@ -2150,7 +2150,7 @@ public class Parser extends Scanner {
     if (token == CLASSDEF) {
       defs.add(parseClassDefinition(scan(), meta));
     } else if (isMetaDataPresent(meta, "data")) {
-      defs.addAll(parseDataDefinition(meta));
+      defs.addAll(parseDataDefinition(adjoin(meta, Modifier.STATIC)));
     } else {
       do {
         ELNode.DEFINE e = parseSingleDefinition(meta);
@@ -2501,6 +2501,22 @@ public class Parser extends Scanner {
     ELNode.DEFINE cdef;
     List<ELNode.DEFINE> defs = new ArrayList<>();
     int p = pos;
+    boolean immutable = true;
+
+    if (meta.metadata != null) {
+      for (ELNode.METADATA md : meta.metadata) {
+        if (md.type.equals("data")) {
+          for (int i = 0; i < md.keys.length; i++) {
+            if (md.keys[i].equals("value") &&
+                md.values[i] instanceof ELNode.IDENT ident &&
+                ident.id.equals("mutable")) {
+              immutable = false;
+              break;
+            }
+          }
+        }
+      }
+    }
 
     String base = scanQName();
     expect(IDENT);
@@ -2515,7 +2531,10 @@ public class Parser extends Scanner {
       if (scan(LPAREN)) {
         if (token != RPAREN) {
           do {
-            vars.add(checkMember(parseClassicParameter(), vars));
+            ELNode.DEFINE var = checkMember(parseClassicParameter(), vars);
+            if (immutable)
+              var.meta = adjoin(var.meta, Modifier.FINAL);
+            vars.add(var);
           } while (scan(COMMA));
         }
         expect(RPAREN);

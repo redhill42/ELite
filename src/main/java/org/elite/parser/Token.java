@@ -183,7 +183,8 @@ public final class Token {
   public static final int MM_CLASS
     = Modifier.PUBLIC
     | Modifier.FINAL
-    | Modifier.ABSTRACT;
+    | Modifier.ABSTRACT
+    | Modifier.STATIC;
   public static final int MM_MEMBER
     = Modifier.PUBLIC
     | Modifier.PRIVATE

@@ -81,6 +81,18 @@ public class IRClass {
     return functions;
   }
 
+  public boolean isSingleton() {
+    if (node.symbol.def.meta == null)
+      return false;
+
+    for (ELNode.METADATA meta : node.symbol.def.meta.metadata) {
+      if (meta.type.equals("Singleton"))
+        return true;
+    }
+
+    return false;
+  }
+
   public String dump() {
     return IRPrinter.dumpIR(this);
   }

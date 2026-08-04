@@ -516,7 +516,8 @@ public class BytecodeCompiler {
 
       // Constructor.
       IRFunction initFunc = clazz.init_proc.symbol.func;
-      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
+      access = clazz.isSingleton() ? ACC_PRIVATE : ACC_PUBLIC;
+      MethodAssembly mc = cc.newMethod(access, "<init>", Void.TYPE,
                                        EvaluationContext.class, Object[].class);
       if (clazz.base instanceof IRClass) {
         mc.THIS()
@@ -535,19 +536,38 @@ public class BytecodeCompiler {
       new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
 
       // Class initializer.
-      if (clazz.clinit_proc != null) {
-        IRFunction clinitFunc = clazz.clinit_proc.symbol.func;
+      if (clazz.clinit_proc != null || clazz.isSingleton()) {
         mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", Void.TYPE);
         mc.NEW(EvaluationContext.class)
           .DUP()
           .INVOKESTATIC(ELEngine.class, "getCurrentELContext", ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
-          .ASTORE(0)
-          .ICONST_0()
-          .ANEWARRAY(Object.class)
-          .ASTORE(1);
-        new FunctionCompiler(clinitFunc, className, true, Void.TYPE, mc).compile();
+          .ASTORE(0);
+
+        if (clazz.isSingleton()) {
+          cc.addField(ACC_PUBLIC | ACC_STATIC | ACC_FINAL, "$singleton",
+                      Object.class);
+          mc.NEW(className)
+            .DUP()
+            .ALOAD(0)
+            .ACONST_NULL()
+            .INVOKESPECIAL(className, "<init>", Void.TYPE,
+                           EvaluationContext.class, Object[].class)
+            .PUTSTATIC(className, "$singleton", Object.class);
+        }
+
+        if (clazz.clinit_proc != null) {
+          IRFunction clinitFunc = clazz.clinit_proc.symbol.func;
+          mc.ICONST_0()
+            .ANEWARRAY(Object.class)
+            .ASTORE(1);
+          new FunctionCompiler(clinitFunc, className, true, Void.TYPE, mc)
+            .compile();
+        } else {
+          mc.RETURN();
+          mc.end();
+        }
       }
 
       // Generate member functions.
