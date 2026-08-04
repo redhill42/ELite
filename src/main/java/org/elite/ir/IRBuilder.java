@@ -2655,15 +2655,25 @@ public class IRBuilder extends ELNode.Visitor {
       assert node.base == null;
       base = Object.class;
     }
-    clazz.base = base;
 
     // Resolve interfaces.
+    Class<?>[] interfaces;
     if (node.ifaces != null) {
-      Class<?>[] interfaces = new Class<?>[node.ifaces.length];
+      interfaces = new Class<?>[node.ifaces.length];
       for (int i = 0; i < interfaces.length; i++)
         interfaces[i] = loadClassAtCompileTime(node.pos, node.ifaces[i]);
-      clazz.interfaces = interfaces;
+    } else {
+      interfaces = new Class<?>[0];
     }
+
+    if (base instanceof Class<?> c && c.isInterface()) {
+      interfaces = Arrays.copyOf(interfaces, interfaces.length + 1);
+      interfaces[interfaces.length - 1] = c;
+      base = Object.class;
+    }
+
+    clazz.base = base;
+    clazz.interfaces = interfaces;
 
     // Determine the outer class.
     if (!node.symbol.isStatic()) {

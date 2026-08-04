@@ -794,17 +794,6 @@ public class TreeTransformer extends ELNode.Visitor
             result = new ELNode.NEW(e.pos, base, args, e.keys, props);
     }
 
-    public void visit(ELNode.NEWOBJ e) {
-        ELNode base = transform(e.base);
-        String id = transform(e.id);
-        ELNode.DEFINE[] cvars = transform(e.cvars);
-        ELNode.DEFINE[] ivars = transform(e.ivars);
-        if (base == e.base && id == e.id && cvars == e.cvars && ivars == e.ivars)
-            result = e;
-        else
-            result = new ELNode.NEWOBJ(e.pos, e.file, base, id, cvars, ivars);
-    }
-
     public void visit(ELNode.METADATA e) {
         String type = transform(e.type);
         String[] keys = transform(e.keys);

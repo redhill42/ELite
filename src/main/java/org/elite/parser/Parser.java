@@ -899,7 +899,7 @@ public class Parser extends Scanner {
           body = tmp;
         }
 
-        return new ELNode.NEWOBJ(p, filename, cls, clstag, body);
+        return translateNewObject(p, cls, clstag, body);
       }
     }
 
@@ -928,8 +928,18 @@ public class Parser extends Scanner {
       String clstag = clstag();
       ELNode.DEFINE[] body = parseClassBody();
       close_scope();
-      return new ELNode.NEWOBJ(p, filename, cls, clstag, body);
+      return translateNewObject(p, cls, clstag, body);
     }
+  }
+
+  private ELNode translateNewObject(int p, ELNode cls, String clstag,
+                                    ELNode.DEFINE[] body) {
+    ELNode.CLASSDEF cdef = new ELNode.CLASSDEF(p, filename, clstag, cls, null,
+                                               null, body);
+    ELNode.DEFINE def = new ELNode.DEFINE(p, clstag, null, null, cdef);
+    ELNode.NEW newObj = new ELNode.NEW(p, new ELNode.IDENT(p, clstag),
+                                       EMPTY_EXPS, null, null);
+    return new ELNode.COMPOUND(p, new ELNode[]{def, newObj});
   }
 
   private void parseNamedArguments(List<ELNode> args, List<String> keys) {

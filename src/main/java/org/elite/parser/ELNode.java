@@ -6040,39 +6040,6 @@ public abstract class ELNode implements Serializable {
     }
   }
 
-  /**
-   * New object expression.
-   */
-  public static class NEWOBJ extends CLASSDEF {
-    public NEWOBJ(int pos, String file, ELNode base, String tag,
-                  DEFINE[] body) {
-      super(pos, file, tag, base, null, null, body);
-    }
-
-    public NEWOBJ(int pos, String file, ELNode base, String tag, DEFINE[] cvars,
-                  DEFINE[] ivars) {
-      super(pos, file, tag, base, null, null, cvars, ivars);
-    }
-
-    public Object getValue(EvaluationContext context) {
-      ClassDefinition cdef = new ClassDefinition(context, this);
-      return cdef._new(context.getELContext());
-    }
-
-    public Class<?> getType(EvaluationContext context) {
-      Object cls = ELEngine.resolveClass(context, getClassName());
-      if (cls instanceof Class) {
-        return (Class<?>)cls;
-      } else {
-        return Object.class;
-      }
-    }
-
-    public void accept(Visitor v) {
-      v.visit(this);
-    }
-  }
-
   public static class METADATA extends ELNode {
     public final String type;
     public final String[] keys;
@@ -6251,7 +6218,6 @@ public abstract class ELNode implements Serializable {
       public void visit(AST e)          { visitNode(e); }
       public void visit(XML e)          { visitNode(e); }
       public void visit(NEW e)          { visitNode(e); }
-      public void visit(NEWOBJ e)       { visitNode(e); }
       public void visit(METADATA e)     { visitNode(e); }
       public void visit(METASET e)      { visitNode(e); }
 

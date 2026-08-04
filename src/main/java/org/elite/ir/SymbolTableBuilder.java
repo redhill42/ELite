@@ -63,21 +63,6 @@ public final class SymbolTableBuilder {
     record Undefined(ELNode.IDENT var, SymbolTable.Scope scope, boolean call) {}
     List<Undefined> undefined = new ArrayList<>();
 
-    // FIXME: mark all variables captured in trampolined.
-    ELNode.Visitor trampolineFixup = new DefaultVisitor() {
-      public void visit(ELNode.IDENT var) {
-        if (var.symbol != null && !var.symbol.captured) {
-          for (SymbolTable.Scope s = table.currentScope().parent;
-               s != null; s = s.parent) {
-            if (s == var.symbol.scope) {
-              var.symbol.captured = true;
-              return;
-            }
-          }
-        }
-      }
-    };
-
     BuilderVisitor(SymbolTable table) {
       this.table = table;
       this.enclosingScope = null;
@@ -265,13 +250,6 @@ public final class SymbolTableBuilder {
                                                 initFunc);
       scan(initDef);
       return initFunc;
-    }
-
-    public void visit(ELNode.NEWOBJ e) {
-      table.enterScope(e);
-      super.visit(e);
-      e.accept(trampolineFixup);
-      table.leaveScope();
     }
 
     public void visit(ELNode.IDENT e) {

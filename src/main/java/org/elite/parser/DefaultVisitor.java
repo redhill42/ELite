@@ -262,12 +262,6 @@ public class DefaultVisitor extends ELNode.Visitor
         scan(e.props);
     }
 
-    public void visit(ELNode.NEWOBJ e) {
-        scan(e.vars);
-        scan(e.cvars);
-        scan(e.ivars);
-    }
-
     public void visit(ELNode.METADATA e) {
         scan(e.values);
     }
