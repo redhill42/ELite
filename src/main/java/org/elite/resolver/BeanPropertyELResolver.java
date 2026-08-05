@@ -243,6 +243,9 @@ public class BeanPropertyELResolver extends ELResolver
             // If field present and accessible then set the field value.
             Field field = getBeanField(base.getClass(), property);
             if (field != null) {
+                if (Modifier.isFinal(field.getModifiers()))
+                    throw new PropertyNotWritableException(
+                        base.getClass().getName() + "." + property);
                 value = TypeCoercion.coerce(context, value, field.getType());
                 setFieldValue(field, base, value);
                 context.setPropertyResolved(true);

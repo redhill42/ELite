@@ -452,9 +452,12 @@ public final class SymbolTableBuilder {
     private boolean checkAccess(int pos, SymbolTable.Symbol sym,
                                 SymbolTable.Scope scope) {
       // Check if the symbol is a class member variable.
-      if (sym.scope.isClassScope()) {
+      if (sym.scope.isClassScope() &&
+          (scope.isStaticScope() ||
+           (scope.enclosingClassScope() != sym.scope &&
+            scope.enclosingClass().node.symbol.isStatic()))) {
         // The instance member can only be accessed by instance procedure.
-        if (scope.isStaticScope() && !sym.isStatic() && !sym.isConstructor()) {
+        if (!sym.isStatic() && !sym.isConstructor()) {
           table.addError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER,
                                  sym.name));
           return false;

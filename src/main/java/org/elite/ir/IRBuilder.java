@@ -311,15 +311,42 @@ public class IRBuilder extends ELNode.Visitor {
     if (node.symbol != null &&
         node.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
       buildConst(cdef.symbol.clazz);
-    } else if (isMemberVariable(node)) {
-      if (node.id.equals("this"))
-        current.emitPushThis();
-      else if (node.symbol.def.expr instanceof ELNode.LAMBDA fn)
-        current.emitClosure(fn.symbol.func);
-      else if (node.symbol.isStatic())
-        current.emitGetStatic(node.id);
-      else
-        current.emitGetField(node.id);
+    } else if (node.symbol != null && node.symbol.scope.isClassScope()) {
+      IRClass currentClass = currentScope.enclosingClass();
+      IRClass ownerClass = node.symbol.scope.frontier.symbol.clazz;
+      if (ownerClass == currentClass) {
+        // If the variable defined in a class scope, and current enclosing scope
+        // (it must be a lambda scope) is directly enclosed in this class scope,
+        // then the variable is referencing the class' instance variable.
+        if (node.id.equals("this"))
+          current.emitPushThis();
+        else if (node.symbol.def.expr instanceof ELNode.LAMBDA) {
+          IRFunction fn = node.symbol.func;
+          fn.owner().closures.add(fn);
+          current.emitClosure(fn);
+        } else if (node.symbol.isStatic())
+          current.emitGetStatic(node.id);
+        else {
+          current.emitGetField(node.id);
+        }
+      } else {
+        if (node.symbol.def.expr instanceof ELNode.LAMBDA) {
+          IRFunction fn = node.symbol.func;
+          fn.owner().closures.add(fn);
+          current.emitClosure(fn);
+        } else if (node.symbol.isStatic()) {
+          current.emitGetStatic(ownerClass, node.id);
+        } else {
+          IRClass outer = currentClass.outer;
+          current.emitPushThis();
+          current.emitGetField(currentClass, "$outer");
+          while (outer != ownerClass) {
+            current.emitGetField(outer, "$outer");
+            outer = outer.outer;
+          }
+          current.emitGetField(ownerClass, node.id);
+        }
+      }
     } else if (node.symbol == null || node.symbol.captured) {
       current.emitPushGlobal(node.id);
     } else {
@@ -332,18 +359,40 @@ public class IRBuilder extends ELNode.Visitor {
         node.symbol.def.expr instanceof ELNode.CLASSDEF)
       throw reportError(node.pos, _T(EL_READONLY_EXPRESSION));
 
-    if (isMemberVariable(node)) {
-      IRClass clazz = currentScope.enclosingClass();
-      // FIXME: should disable assign to final fields except from <init> or
-      //  <clinit> procedures.
-      if (node.id.equals("this") ||
-          node.symbol.def.expr instanceof ELNode.LAMBDA)
-        throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE, clazz.name,
-                                       node.id));
-      if (node.symbol.isStatic())
-        current.emitPutStatic(node.id);
-      else
-        current.emitPutField(node.id);
+    if (node.symbol != null && node.symbol.scope.isClassScope()) {
+      IRClass currentClass = currentScope.enclosingClass();
+      IRClass ownerClass = node.symbol.scope.frontier.symbol.clazz;
+      if (ownerClass == currentClass) {
+        if (node.id.equals("this") || node.symbol.func != null)
+          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
+                                         currentClass.name, node.id));
+        if (node.symbol.isFinal() &&
+            !func.name().equals("<init>") && !func.name().equals("<clinit>"))
+          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
+                                         currentClass.name, node.id));
+
+        if (node.symbol.isStatic())
+          current.emitPutStatic(node.id);
+        else
+          current.emitPutField(node.id);
+      } else {
+        if (node.symbol.isFinal() || node.symbol.func != null)
+          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
+                                         currentClass.name, node.id));
+
+        if (node.symbol.isStatic())
+          current.emitPutStatic(ownerClass, node.id);
+        else {
+          IRClass outer = currentClass.outer;
+          current.emitPushThis();
+          current.emitGetField(currentClass, "$outer");
+          while (outer != ownerClass) {
+            current.emitGetField(outer, "$outer");
+            outer = outer.outer;
+          }
+          current.emitPutField(ownerClass, node.id);
+        }
+      }
     } else if (node.symbol == null || node.symbol.captured) {
       current.emitStoreGlobal(node.id);
     } else {
@@ -392,6 +441,25 @@ public class IRBuilder extends ELNode.Visitor {
             }
           }
         }
+      }
+
+      SymbolTable.Symbol outerSym = getOuterClassMember(node.right, key);
+      if (outerSym != null) {
+        if (outerSym.func != null) {
+          IRFunction fn = outerSym.func;
+          fn.owner().closures.add(fn);
+          current.emitClosure(fn);
+        } else {
+          IRClass outerClass = outerSym.scope.enclosingClass();
+          IRClass currentClass = currentScope.enclosingClass();
+          current.emitPushThis();
+          while (currentClass != outerClass) {
+            current.emitGetField(currentClass, "$outer");
+            currentClass = currentClass.outer;
+          }
+          current.emitGetField(outerClass, key);
+        }
+        return;
       }
 
       String baseClassName = getBaseClassName(node.right);
@@ -455,6 +523,23 @@ public class IRBuilder extends ELNode.Visitor {
         }
       }
 
+      SymbolTable.Symbol outerSym = getOuterClassMember(node.right, key);
+      if (outerSym != null) {
+        if (outerSym.func != null || outerSym.isFinal())
+          throw reportError(node.pos,
+                            _T(EL_PROPERTY_NOT_WRITABLE, outerSym.name, key));
+
+        IRClass outerClass = outerSym.scope.enclosingClass();
+        IRClass currentClass = currentScope.enclosingClass();
+        current.emitPushThis();
+        while (currentClass != outerClass) {
+          current.emitGetField(currentClass, "$outer");
+          currentClass = currentClass.outer;
+        }
+        current.emitPutField(outerClass, key);
+        return;
+      }
+
       String baseClassName = getBaseClassName(node.right);
       if (baseClassName != null) {
         Class<?> baseClass = resolveClassAtCompileTime(baseClassName);
@@ -468,6 +553,36 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitPushCtx();
     emitInvokeMethod(Runtime.class, "storeProperty", Object.class, Object.class,
                      Object.class, ELContext.class);
+  }
+
+  private SymbolTable.Symbol getOuterClassMember(ELNode node, String key) {
+    if (node instanceof ELNode.ACCESS acc &&
+        acc.right instanceof ELNode.IDENT base &&
+        base.symbol != null && base.symbol.clazz != null &&
+        acc.index instanceof ELNode.STRINGVAL str &&
+        str.value.equals("this")) {
+      // Special case for access outer class member.
+      IRClass outerClass = base.symbol.clazz;
+      IRClass currentClass = currentScope.enclosingClass();
+      for (IRClass c = currentClass; c != outerClass; c = c.outer) {
+        if (c == null)
+          throw reportError(node.pos, base.id + " is not an outer class of " +
+                                      "current class");
+      }
+
+      Optional<ELNode.DEFINE> var =
+        Stream.concat(outerClass.node.vars != null
+                        ? Arrays.stream(outerClass.node.vars)
+                        : Stream.empty(),
+                      Arrays.stream(outerClass.node.ivars))
+          .filter(def -> def.id.equals(key))
+          .findFirst();
+      if (var.isEmpty())
+        throw reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, outerClass.name,
+                                       key));
+      return var.get().symbol;
+    }
+    return null;
   }
 
   private boolean tryBuildGetStatic(Class<?> cls, String name) {
@@ -509,18 +624,6 @@ public class IRBuilder extends ELNode.Visitor {
       }
     } catch (NoSuchFieldException | SecurityException ex) { /* fallthrough */ }
     return false;
-  }
-
-  private boolean isMemberVariable(ELNode node) {
-    if (!(node instanceof ELNode.IDENT))
-      return false;
-
-    // If the variable defined in a class scope, and current enclosing scope
-    // (it must be a lambda scope) is directly enclosed in this class scope,
-    // then the variable is referencing the class' instance variable.
-    SymbolTable.Symbol symbol = node.symbol;
-    return symbol != null && symbol.scope.isClassScope() &&
-           currentScope.enclosingClassScope() == symbol.scope;
   }
 
   public void visit(ELNode.APPLY node) {
@@ -573,7 +676,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     if (base instanceof ELNode.ACCESS acc) {
       // Try to resolve direct method for known Java types.
-      if (acc.index instanceof ELNode.STRINGVAL key) {
+      if (acc.index instanceof ELNode.STRINGVAL) {
+        String key = ((ELNode.STRINGVAL)acc.index).value;
         if (acc.right instanceof ELNode.IDENT ident) {
           if (ident.id.equals("this")) {
             SymbolTable.Scope classScope = currentScope.enclosingClassScope();
@@ -583,8 +687,7 @@ public class IRBuilder extends ELNode.Visitor {
 
             IRClass irc = currentScope.enclosingClass();
             for (ELNode.DEFINE def : irc.node.ivars) {
-              if (def.id.equals(key.value) &&
-                  def.expr instanceof ELNode.LAMBDA fn) {
+              if (def.id.equals(key) && def.expr instanceof ELNode.LAMBDA fn) {
                 ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
                 if (inTailPosition && fn.symbol.func == this.func) {
                   buildTailCall(fn, args);
@@ -599,7 +702,7 @@ public class IRBuilder extends ELNode.Visitor {
           if (ident.symbol != null &&
               ident.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
             for (ELNode.DEFINE def : cdef.cvars) {
-              if (def.id.equals(key.value) && def.symbol.isPublic() &&
+              if (def.id.equals(key) && def.symbol.isPublic() &&
                   def.expr instanceof ELNode.LAMBDA fn) {
                 ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
                 buildDirectCall(fn.symbol, args);
@@ -609,7 +712,19 @@ public class IRBuilder extends ELNode.Visitor {
           }
         }
 
-        if (tryBuildDirectMethodCall(acc.right, key.value, node.args))
+        SymbolTable.Symbol outerSym = getOuterClassMember(acc.right, key);
+        if (outerSym != null) {
+          if (outerSym.def.expr instanceof ELNode.LAMBDA fn) {
+            ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
+            buildDirectCall(fn.symbol, args);
+            return;
+          } else {
+            throw reportError(node.pos,
+                              _T(EL_METHOD_NOT_FOUND, outerSym.clazz.name, key));
+          }
+        }
+
+        if (tryBuildDirectMethodCall(acc.right, key, node.args))
           return;
       }
 
@@ -809,6 +924,23 @@ public class IRBuilder extends ELNode.Visitor {
   private void buildDirectCall(SymbolTable.Symbol sym, ELNode... args) {
     IRFunction fn = sym.func;
     ELNode.LAMBDA lambda = (ELNode.LAMBDA)sym.def.expr;
+
+    if (sym.scope.isClassScope() && !sym.isStatic()) {
+      IRClass currentClass = currentScope.enclosingClass();
+      IRClass ownerClass = sym.scope.enclosingClass();
+      if (currentClass != ownerClass) {
+        current.emitPushThis();
+        while (currentClass != ownerClass) {
+          current.emitGetField(currentClass, "$outer");
+          currentClass = currentClass.outer;
+        }
+        current.emitPushEnv();
+        emitInvokeMethod(EvaluationContext.class, "pushContext");
+        buildCallArgs(lambda, args);
+        current.emitInvokeDirect(sym.func);
+        return;
+      }
+    }
 
     if (!isEligibleToInline(sym)) {
       if (fn.owner() != null && !fn.isStatic())
@@ -2682,9 +2814,9 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Determine the outer class.
     if (!node.symbol.isStatic()) {
-      SymbolTable.Scope outerScope = node.scope.parent.enclosingScope();
-      if (outerScope != null && outerScope.isClassScope())
-        clazz.outer = outerScope.frontier.symbol.clazz;
+      clazz.outer = node.scope.parent.enclosingClass();
+      if (clazz.outer != null)
+        clazz.outer.inners.add(clazz);
     }
 
     // Recursively build nested classes.

@@ -63,6 +63,10 @@ public class IRClass {
   /** Enclosing class (for nested / inner classes). */
   public IRClass outer;
 
+  /** Inner classes and captured closures. */
+  public final List<IRClass> inners = new ArrayList<>();
+  public final List<IRFunction> closures = new ArrayList<>();
+
   /** The class and instance initialize procedure. */
   public ELNode.LAMBDA init_proc;
   public ELNode.LAMBDA clinit_proc;

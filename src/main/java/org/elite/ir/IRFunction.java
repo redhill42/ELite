@@ -51,11 +51,6 @@ public class IRFunction {
   public String internalName;
 
   /**
-   * Closure class name used by BytecodeCompiler.
-   */
-  public String closureName;
-
-  /**
    * Single contiguous code array for all blocks.
    */
   private int[] code;
