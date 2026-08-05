@@ -72,6 +72,10 @@ public class IRClass {
   public ELNode.LAMBDA clinit_proc;
   private final List<IRFunction> functions = new ArrayList<>();
 
+  /** Arguments to call super constructor. */
+  public ELNode[] super_args = new ELNode[0];
+  public String[] super_keys = null;
+
   public IRClass(String name, ELNode.CLASSDEF node) {
     this.name = name;
     this.node = node;

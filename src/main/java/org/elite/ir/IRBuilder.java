@@ -630,6 +630,9 @@ public class IRBuilder extends ELNode.Visitor {
     ELNode base = node.right;
 
     if (base instanceof ELNode.IDENT ident) {
+      if (ident.id.equals("super"))
+        throw reportError(node.pos, _T(EL_DANGLING_SUPER));
+
       if (ident.symbol != null) {
         if (ident.symbol.func != null) {
           ELNode.LAMBDA lambda = (ELNode.LAMBDA)ident.symbol.def.expr;
@@ -2257,10 +2260,8 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitJump(exit);
 
     startBlock(body);
-    if (!(node.body instanceof ELNode.NULL)) {
-      build(node.body);
-      current.emitPop();
-    }
+    build(node.body);
+    current.emitPop();
     current.emitJump(cont);
 
     startBlock(cont);
@@ -2585,8 +2586,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.TRY node) {
     // Compile try body (zero-param closure).
-    IRFunction body = buildLambda((ELNode.LAMBDA)node.body);
-    program.add(body);
+    IRFunction body = buildScopedLambda((ELNode.LAMBDA)node.body);
 
     // Handlers: each handler is a DEFINE(id = exception var, expr = body).
     int count = node.handlers != null ? node.handlers.length : 0;
@@ -2594,15 +2594,13 @@ public class IRBuilder extends ELNode.Visitor {
     String[] types = new String[count];
     for (int i = 0; i < count; i++) {
       types[i] = node.types[i];
-      handlers[i] = buildLambda((ELNode.LAMBDA)node.handlers[i]);
-      program.add(handlers[i]);
+      handlers[i] = buildScopedLambda((ELNode.LAMBDA)node.handlers[i]);
     }
 
     // Finally (optional, zero-param closure).
     IRFunction finalizer = null;
     if (node.finalizer != null) {
-      finalizer = buildLambda((ELNode.LAMBDA)node.finalizer);
-      program.add(finalizer);
+      finalizer = buildScopedLambda((ELNode.LAMBDA)node.finalizer);
     }
 
     // Construct the TryDescriptor.
@@ -2611,24 +2609,31 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.SYNCHRONIZED node) {
-    IRFunction body = buildLambda((ELNode.LAMBDA)node.body);
-    program.add(body);
-
+    IRFunction body = buildScopedLambda((ELNode.LAMBDA)node.body);
     build(node.exp);
     current.emitSynchronized(body);
   }
 
   public void visit(ELNode.LAMBDA node) {
+    IRFunction func = buildScopedLambda(node);
+    current.emitClosure(func);
+  }
+
+  private IRFunction buildScopedLambda(ELNode.LAMBDA node) {
     IRFunction func = buildLambda(node);
     IRClass enclosingClass = currentScope.enclosingClass();
     if (enclosingClass != null)
       enclosingClass.add(func);
     else
       program.add(func);
-    current.emitClosure(func);
+    return func;
   }
 
   private IRFunction buildLambda(ELNode.LAMBDA node) {
+    return buildLambda(node, null);
+  }
+
+  private IRFunction buildLambda(ELNode.LAMBDA node, IRClass initClass) {
     IRFunction func;
     if (node.symbol != null)
       func = node.symbol.func;
@@ -2656,6 +2661,17 @@ public class IRBuilder extends ELNode.Visitor {
     // Temp vars allocated via allocLocalVar will then start above the max
     // pre-allocated slot, avoiding collisions.
     nested.reserveSlots(node.scope.maxSlots);
+
+    if (initClass != null) {
+      IRClass superClass = (IRClass)initClass.base;
+      nested.current.emitPushThis();
+      nested.current.emitPushEnv();
+      ELNode[] args = nested.getCallArgs(node.pos, superClass.init_proc,
+                                         initClass.super_args,
+                                         initClass.super_keys);
+      nested.buildCallArgs(superClass.init_proc, args);
+      nested.current.emitConstructor(superClass);
+    }
 
     for (ELNode.DEFINE var : node.vars) {
       // Define global for captured lamba parameters.
@@ -2797,8 +2813,11 @@ public class IRBuilder extends ELNode.Visitor {
     Class<?>[] interfaces;
     if (node.ifaces != null) {
       interfaces = new Class<?>[node.ifaces.length];
-      for (int i = 0; i < interfaces.length; i++)
+      for (int i = 0; i < interfaces.length; i++) {
         interfaces[i] = loadClassAtCompileTime(node.pos, node.ifaces[i]);
+        if (!interfaces[i].isInterface())
+          throw reportError(node.pos, node.ifaces[i] + " is not an interface");
+      }
     } else {
       interfaces = new Class<?>[0];
     }
@@ -2848,7 +2867,11 @@ public class IRBuilder extends ELNode.Visitor {
       buildLambda(clazz.clinit_proc);
 
     // Build instance init proc.
-    buildLambda(clazz.init_proc);
+    if (clazz.base instanceof IRClass) {
+      buildLambda(clazz.init_proc, clazz);
+    } else {
+      buildLambda(clazz.init_proc);
+    }
 
     // Ignored by BytecodeCompiler.
     current.emitPushNull();

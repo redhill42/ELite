@@ -905,7 +905,7 @@ public abstract class ELNode implements Serializable {
     public final String[] ifaces;   // java interface names
     public final DEFINE[] vars;     // initial variables
     public final DEFINE[] cvars;    // class variables
-    public final DEFINE[] ivars;    // instance variables
+    public       DEFINE[] ivars;    // instance variables
 
     public CLASSDEF(int pos, String file, String id, ELNode base,
                     String[] ifaces, DEFINE[] vars, DEFINE[] cvars,

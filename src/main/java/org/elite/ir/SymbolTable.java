@@ -109,12 +109,16 @@ public class SymbolTable {
       return false;
     }
 
+    Symbol get(String name) {
+      return symbols.get(name);
+    }
+
     void put(String name, Symbol sym) {
       symbols.put(name, sym);
     }
 
-    Symbol get(String name) {
-      return symbols.get(name);
+    void remove(String name) {
+      symbols.remove(name);
     }
 
     Symbol lookup(String name) {
@@ -243,6 +247,10 @@ public class SymbolTable {
 
     current.put(def.id, sym);
     return sym;
+  }
+
+  void undef(Symbol sym) {
+    current.remove(sym.name);
   }
 
   void skipSlot() {

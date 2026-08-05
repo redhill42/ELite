@@ -155,8 +155,6 @@ public class BytecodeCompiler {
           f.internalName = "__lambda$" +
                            ((isJavaIdentifier(f.name())) ? f.name() : "") +
                            "$" + idx++;
-        } else if (f.name().equals(c.name)) {
-          f.internalName = "__init__";
         } else {
           f.internalName = mangle(def.id);
         }
@@ -440,11 +438,27 @@ public class BytecodeCompiler {
   private class ClassCompiler {
     private final IRClass clazz;
     private final String className;
+    private final String rootBaseClass;
     private final Map<String, IRFunction> vmap = new HashMap<>();
 
     ClassCompiler(IRClass clazz) {
       this.clazz = clazz;
       this.className = clazz.internalName;
+
+      // Find the root base class. We will put some shared fields in this root
+      // base class.
+      if (clazz.base instanceof IRClass) {
+        for (IRClass c = clazz; ; ) {
+          if (c.base instanceof IRClass) {
+            c = (IRClass)c.base;
+          } else {
+            rootBaseClass = c.internalName;
+            break;
+          }
+        }
+      } else {
+        rootBaseClass = className;
+      }
     }
 
     void compile() {
@@ -505,10 +519,6 @@ public class BytecodeCompiler {
       for (IRFunction closure : clazz.closures)
         cc.getImpl().visitNestMember(AsmType.toInternalName(getClosureName(closure)));
 
-      // Add $context field to save the ELContext for methods invoked without an
-      // evaluation context, such as interface methods or Object methods.
-      cc.addField(ACC_PRIVATE | ACC_TRANSIENT, "$context", ELContext.class);
-
       // Add static and instance fields.
       for (ELNode.DEFINE var : clazz.node.cvars) {
         if (!(var.expr instanceof ELNode.LAMBDA) &&
@@ -557,21 +567,24 @@ public class BytecodeCompiler {
                           Object[].class);
       }
 
-      if (clazz.base instanceof IRClass) {
-        mc.THIS()
-          .ALOAD(1)
-          .ALOAD(2)
-          .INVOKESPECIAL(((IRClass)clazz.base).internalName, "<init>", Void.TYPE,
-                         EvaluationContext.class, Object[].class);
-      } else {
+      if (clazz.base instanceof Class) {
+        // FIXME: invoke super constructor of Java base class.
         mc.THIS()
           .INVOKESPECIAL((Class<?>)clazz.base, "<init>", Void.TYPE, NO_ARGS);
       }
 
-      mc.THIS()
-        .ALOAD(1)
-        .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
-        .PUTFIELD(className, "$context", ELContext.class);
+      if (className.equals(rootBaseClass)) {
+        // Add $context field to save the ELContext for methods invoked without
+        // an evaluation context, such as interface methods or Object methods.
+        cc.addField(ACC_PROTECTED | ACC_FINAL | ACC_TRANSIENT, "$context",
+                    ELContext.class);
+        mc.THIS()
+          .ALOAD(1)
+          .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
+                         ELContext.class)
+          .PUTFIELD(className, "$context", ELContext.class);
+      }
+
       new FunctionCompiler(initFunc, className, false, Void.TYPE, mc).compile();
 
       // Class initializer.
@@ -1114,7 +1127,7 @@ public class BytecodeCompiler {
           int ctxSlot = paramTypes.length + 1; // this, params..., ctx
 
           mc.THIS()
-            .GETFIELD(className, "$context", ELContext.class)
+            .GETFIELD(rootBaseClass, "$context", ELContext.class)
             .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                           ELContext.class);
           if (returnType != Void.TYPE && returnType != Object.class)
@@ -1190,7 +1203,7 @@ public class BytecodeCompiler {
         mc.NEW(EvaluationContext.class)
           .DUP()
           .THIS()
-          .GETFIELD(className, "$context", ELContext.class)
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
           .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                         ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
@@ -1248,7 +1261,7 @@ public class BytecodeCompiler {
         mc.NEW(EvaluationContext.class)
           .DUP()
           .THIS()
-          .GETFIELD(className, "$context", ELContext.class)
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
           .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                         ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
@@ -1302,7 +1315,7 @@ public class BytecodeCompiler {
         mc.NEW(EvaluationContext.class)
           .DUP()
           .THIS()
-          .GETFIELD(className, "$context", ELContext.class)
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
           .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                         ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
@@ -1344,7 +1357,7 @@ public class BytecodeCompiler {
           .NEW(EvaluationContext.class)
           .DUP()
           .THIS()
-          .GETFIELD(className, "$context", ELContext.class)
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
           .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                         ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
@@ -1378,7 +1391,7 @@ public class BytecodeCompiler {
           .NEW(EvaluationContext.class)
           .DUP()
           .THIS()
-          .GETFIELD(className, "$context", ELContext.class)
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
           .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                         ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
@@ -1973,7 +1986,7 @@ public class BytecodeCompiler {
                            cons.getParameterTypes());
         }
       }
-  
+
       case NEW_ARRAY -> {
         Class<?> c = (Class<?>)fn.getConstant(v.poolIndex());
         mc.PUSH(v.count());

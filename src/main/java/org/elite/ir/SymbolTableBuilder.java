@@ -92,6 +92,11 @@ public final class SymbolTableBuilder {
         if (enclosingScope != null && enclosingScope.isClassScope()) {
           owner = enclosingScope.frontier.symbol.clazz;
           modifiers = e.meta != null ? e.meta.modifiers : Modifier.PUBLIC;
+          if (e.id.equals(owner.name)) {
+            // Remove constructor from symbol table because it is conflict
+            // with class definition, but keep symbol for IRFunction skeleton.
+            table.undef(sym);
+          }
         } else {
           owner = table.currentScope().enclosingClass();
           if (owner == null || table.currentScope().isStaticScope())
@@ -201,10 +206,17 @@ public final class SymbolTableBuilder {
         Collections.addAll(initVars, e.vars);
       Collections.addAll(initVars, e.ivars);
 
-      ELNode.DEFINE initProc = null;
-      for (ELNode.DEFINE ivar : e.ivars) {
-        if (ivar.id.equals(e.id) && ivar.expr instanceof ELNode.LAMBDA fn) {
-          initProc = ivar;
+      ELNode.LAMBDA initProc = null;
+      for (int i = 0; i < e.ivars.length; i++) {
+        ELNode.DEFINE ivar = e.ivars[i];
+        if (ivar.id.equals(e.id) && ivar.expr instanceof ELNode.LAMBDA init) {
+          initProc = init;
+
+          // Remove the init proc.
+          ELNode.DEFINE[] ivars = new ELNode.DEFINE[e.ivars.length - 1];
+          System.arraycopy(e.ivars, 0, ivars, 0, i);
+          System.arraycopy(e.ivars, i + 1, ivars, i, ivars.length - i);
+          e.ivars = ivars;
           break;
         }
       }
@@ -216,7 +228,7 @@ public final class SymbolTableBuilder {
                                            null, null, var.expr));
         }
       } else if (initProc != null) {
-        initParams.addAll(Arrays.asList(((ELNode.LAMBDA)initProc.expr).vars));
+        initParams.addAll(Arrays.asList(initProc.vars));
       }
 
       List<ELNode> initBody = new ArrayList<>();
@@ -235,17 +247,28 @@ public final class SymbolTableBuilder {
       }
 
       if (initProc != null) {
-        ELNode.DEFINE[] params = ((ELNode.LAMBDA)initProc.expr).vars;
-        ELNode.IDENT[] args = new ELNode.IDENT[params.length];
-        for (int i = 0; i < args.length; i++)
-          args[i] = new ELNode.IDENT(e.pos, params[i].id);
-        initBody.add(new ELNode.APPLY(
-          e.pos, new ELNode.IDENT(e.pos, initProc.id), args, null));
+        ELNode firstNode = initProc.body;
+        if (firstNode instanceof ELNode.COMPOUND comp)
+          firstNode = comp.exps[0];
+        if (firstNode instanceof ELNode.APPLY app &&
+            app.right instanceof ELNode.IDENT ident &&
+            ident.id.equals("super")) {
+          if (initProc.body instanceof ELNode.COMPOUND comp) {
+            ELNode[] exps = new ELNode[comp.exps.length - 1];
+            System.arraycopy(comp.exps, 1, exps, 0, exps.length);
+            initBody.add(new ELNode.COMPOUND(comp.pos, exps));
+          }
+          e.symbol.clazz.super_args = app.args;
+          e.symbol.clazz.super_keys = app.keys;
+        } else {
+          initBody.add(initProc.body);
+        }
       }
 
       ELNode.LAMBDA initFunc = new ELNode.LAMBDA(
         e.pos, e.file, "<init>", null, initParams.toArray(new ELNode.DEFINE[0]),
-        false, new ELNode.COMPOUND(e.pos, initBody.toArray(new ELNode[0])));
+        initProc != null && initProc.varargs,
+        new ELNode.COMPOUND(e.pos, initBody.toArray(new ELNode[0])));
       ELNode.DEFINE initDef = new ELNode.DEFINE(e.pos, "<init>", null, null,
                                                 initFunc);
       scan(initDef);
