@@ -481,7 +481,6 @@ public class BytecodeCompiler {
 
       List<String> interfaces = new ArrayList<>();
       interfaces.add(DynamicDispatcher.class.getName());
-      interfaces.add(PropertyResolvable.class.getName());
       if (clazz.interfaces != null) {
         for (Class<?> i : clazz.interfaces)
           interfaces.add(i.getName());
@@ -657,13 +656,8 @@ public class BytecodeCompiler {
       }
 
       // Implement DynamicDispatcher interface.
-      mc = cc.newMethod(ACC_PUBLIC, "__invoke__", Object.class,
-                        EvaluationContext.class, String.class, Object[].class);
-      compileInvokeMethod(clazz.node.ivars, "__invoke__", mc);
-
-      mc = cc.newMethod(ACC_PUBLIC, "__invokeStatic__", Object.class,
-                        EvaluationContext.class, String.class, Object[].class);
-      compileInvokeMethod(clazz.node.cvars, "__invokeStatic__", mc);
+      compileInvokeMethod(cc, "__invoke__", clazz.node.ivars);
+      compileInvokeMethod(cc, "__invokeStatic__", clazz.node.cvars);
 
       // Implement PropertyResolvable interface.
       compilePropertyResolvableMethods(cc);
@@ -695,16 +689,23 @@ public class BytecodeCompiler {
       consumer.acceptClass(className, cc.end());
     }
 
-    private void compileInvokeMethod(ELNode.DEFINE[] vars, String invokeName,
-                                     MethodAssembly mc) {
+    private void compileInvokeMethod(ClassAssembly cc, String invokeName,
+                                     ELNode.DEFINE[] vars) {
       TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
       for (ELNode.DEFINE def : vars) {
         if (!(def.expr instanceof ELNode.LAMBDA) || !def.symbol.isPublic() ||
-            def.id.equals(clazz.name) || def.id.equals("toString") ||
-            def.id.equals("equals") || def.id.equals("hashCode"))
+            def.id.equals("toString") || def.id.equals("equals") ||
+            def.id.equals("hashCode"))
           continue;
         cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
       }
+
+      if (cases.isEmpty() && !(clazz.base instanceof IRClass))
+        return;
+
+      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, invokeName, Object.class,
+                                       EvaluationContext.class, String.class,
+                                       Object[].class);
 
       if (cases.isEmpty()) {
         if (clazz.base instanceof IRClass base) {
@@ -850,6 +851,12 @@ public class BytecodeCompiler {
         cases.computeIfAbsent(p.name.hashCode(), x -> new ArrayList<>()).add(p);
 
       MethodAssembly mc;
+
+      if (cases.isEmpty() && !(clazz.base instanceof IRClass)) {
+        // No property to resolve, don't generate PropertyResolvable methods and
+        // rely on interface defaults to return default value.
+        return;
+      }
 
       // Object getValue(ELContext elctx, Object property)
       mc = cc.newMethod(ACC_PUBLIC, "getValue", Object.class,
@@ -1088,22 +1095,6 @@ public class BytecodeCompiler {
             .end();
         }
       }
-
-      // Class getType(ELContext elctx, Object property)
-      // Not used, simply return Object.class
-      cc.newMethod(ACC_PUBLIC, "getType", Class.class, ELContext.class,
-                   Object.class)
-        .LDC(Type.getType(Object.class))
-        .ARETURN()
-        .end();
-
-      // boolean isReadOnly(ELContext elctx, Object property)
-      // Not used, simply return false.
-      cc.newMethod(ACC_PUBLIC, "isReadOnly", Boolean.TYPE, ELContext.class,
-                   Object.class)
-        .ICONST_0()
-        .IRETURN()
-        .end();
     }
 
     private record MethodRecord(String name, Class<?>[] paramTypes) {

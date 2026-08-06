@@ -15,12 +15,66 @@
  */
 package org.elite.eval;
 
+import javax.el.ELContext;
+import static org.elite.eval.ELUtils.NO_RESULT;
+
 /**
- * The DynamicDispatcher used for compiled elite class to dispatch member
+ * The DynamicDispatcher is used for compiled elite class to dispatch member
  * procedures.
  */
-public interface DynamicDispatcher {
-  Object __invoke__(EvaluationContext env, String name, Object... args);
+public interface DynamicDispatcher extends PropertyResolvable {
+  /**
+   * Invoke an instance member procedure by name.
+   */
+  default Object
+  __invoke__(EvaluationContext env, String name, Object... args) {
+    return NO_RESULT;
+  }
 
-  Object __invokeStatic__(EvaluationContext env, String name, Object... args);
+  /**
+   * Invoke a static member procedure by name.
+   */
+  default Object
+  __invokeStatic__(EvaluationContext env, String name, Object... args) {
+    return NO_RESULT;
+  }
+
+  // -- Default implementation of PropertyResolvable is doing nothing.
+
+  /**
+   * {@inheritDoc}
+   * <p>
+   * If no property to resolve for dispatcher, return null and keep
+   * propertyResolved in ELContext unchanged.
+   */
+  default Object getValue(ELContext elctx, Object property) {
+    return null;
+  }
+
+  /**
+   * {@inheritDoc}
+   * <p>
+   * If no property to resolve for dispatcher, return and keep propertyResolved
+   * in ELContext unchanged.
+   */
+  default void setValue(ELContext elctx, Object property, Object value) {
+  }
+
+  /**
+   * {@inheritDoc}
+   * <p>
+   * This method is unused for XEL. Simply return Object.class.
+   */
+  default Class<?> getType(ELContext elctx, Object property) {
+    return Object.class;
+  }
+
+  /**
+   * {@inheritDoc}
+   * <p>
+   * This method is unused for XEL. Simply return false.
+   */
+  default boolean isReadOnly(ELContext elctx, Object property) {
+    return false;
+  }
 }
