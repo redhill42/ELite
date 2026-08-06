@@ -1538,8 +1538,11 @@ public class BytecodeCompiler {
           }
         } else if (value instanceof String) {
           mc.LDC(value);
-        } else if (value instanceof Class) {
-          mc.LDC(Type.getType((Class<?>)value));
+        } else if (value instanceof Class<?> c) {
+          if (c.isPrimitive())
+            mc.GETSTATIC(TypeCoercion.getBoxedType(c), "TYPE", Class.class);
+          else
+            mc.LDC(Type.getType(c));
         } else if (value instanceof IRClass irc) {
           mc.LDC(Type.getType(AsmType.toDescriptor(irc.internalName)));
         } else if (value instanceof Symbol) {

@@ -454,6 +454,20 @@ public abstract class ELNode implements Serializable {
     throw new EvaluationException(elctx, msg, cause);
   }
 
+  /**
+   * A helper method to get full class name from access chain.
+   */
+  private static String getFullClassName(ELNode node) {
+    StringBuilder buf = new StringBuilder();
+    while (node instanceof ACCESS acc) {
+      buf.insert(0, ((STRINGVAL)acc.index).value);
+      buf.insert(0, '.');
+      node = acc.right;
+    }
+    buf.insert(0, ((IDENT)node).id);
+    return buf.toString();
+  }
+
   public String dump() {
     return ASTDumper.dump(this);
   }
@@ -940,9 +954,7 @@ public abstract class ELNode implements Serializable {
     }
 
     public String getClassName() {
-      return base == null ? null :
-             base instanceof STRINGVAL ? ((STRINGVAL)base).value
-                                       : ((IDENT)base).id;
+      return base == null ? null : getFullClassName(base);
     }
 
     private static boolean isStatic(ELNode.DEFINE def) {
@@ -2838,8 +2850,7 @@ public abstract class ELNode implements Serializable {
     }
 
     public String getTypeName() {
-      return type instanceof STRINGVAL ? ((STRINGVAL)type).value
-                                       : ((IDENT)type).id;
+      return getFullClassName(type);
     }
 
     public Object getValue(EvaluationContext context) {
@@ -5912,8 +5923,7 @@ public abstract class ELNode implements Serializable {
     }
 
     public String getClassName() {
-      return base instanceof STRINGVAL ? ((STRINGVAL)base).value
-                                       : ((IDENT)base).id;
+      return getFullClassName(base);
     }
 
     public Object getValue(EvaluationContext context) {

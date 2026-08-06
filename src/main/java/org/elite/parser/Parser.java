@@ -568,15 +568,15 @@ public class Parser extends Scanner {
         int p = scan();
         if (token == NOT && idValue != null) { // "is not"
           return new ELNode.INSTANCEOF(
-            scan(), e, class_literal(p, parseClassLiteral(false)), true);
+            scan(), e, class_node(p, parseClassLiteral(false)), true);
         } else {
           return new ELNode.INSTANCEOF(
-            p, e, class_literal(p, parseClassLiteral(false)), false);
+            p, e, class_node(p, parseClassLiteral(false)), false);
         }
       } else {
         int p = scan();
         return new ELNode.INSTANCEOF(
-          p, e, class_literal(p, parseClassLiteral(false)), false);
+          p, e, class_node(p, parseClassLiteral(false)), false);
       }
 
     case IN:
@@ -590,7 +590,7 @@ public class Parser extends Scanner {
       int p = scan();
       if (scan(INSTANCEOF)) {
         return new ELNode.INSTANCEOF(
-          p, e, class_literal(p, parseClassLiteral(false)), true);
+          p, e, class_node(p, parseClassLiteral(false)), true);
       } else if (scan(IN)) {
         return new ELNode.IN(p, e, parseTerm(), true);
       } else if (token == EOI) {
@@ -846,7 +846,7 @@ public class Parser extends Scanner {
    */
   private ELNode parseNewExpression(int p) {
     String clsName = parseClassLiteral(false);
-    ELNode cls = class_literal(p, clsName);
+    ELNode cls = class_node(p, clsName);
 
     if (token == LPAREN) {
       String[] keys;
@@ -1378,12 +1378,15 @@ public class Parser extends Scanner {
     return buf.toString();
   }
 
-  private ELNode class_literal(int pos, String name) {
+  private ELNode class_node(int pos, String name) {
     if (name == null)
       return null;
-    if (name.indexOf('.') != -1)
-      return new ELNode.STRINGVAL(pos, name);
-    return new ELNode.IDENT(pos, name);
+    String[] splits = name.split("\\.");
+    ELNode result = new ELNode.IDENT(pos, splits[0]);
+    for (int i = 1; i < splits.length; i++)
+      result = new ELNode.ACCESS(pos, result,
+                                 new ELNode.STRINGVAL(pos, splits[i]));
+    return result;
   }
 
   private String parseTypeNameOpt() {
@@ -2335,7 +2338,7 @@ public class Parser extends Scanner {
       body = EMPTY_DEFS;
     }
 
-    cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_literal(p, base),
+    cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_node(p, base),
                                     ifaces, vars, body);
     return cdef;
   }
@@ -2556,7 +2559,7 @@ public class Parser extends Scanner {
         body = EMPTY_DEFS;
       }
 
-      cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_literal(p, base),
+      cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_node(p, base),
                                       null, to_def_a(vars), body);
       defs.add(cdef);
     } while (scan(BAR));
@@ -2587,7 +2590,7 @@ public class Parser extends Scanner {
     }
 
     cdef = new_symbol(p, base, null, adjoin(meta, Modifier.ABSTRACT));
-    cdef.expr = new ELNode.CLASSDEF(p, filename, base, class_literal(p, basecls),
+    cdef.expr = new ELNode.CLASSDEF(p, filename, base, class_node(p, basecls),
                                     baseifs, null, basebody);
     defs.add(0, cdef);
 

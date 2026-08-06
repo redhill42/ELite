@@ -123,6 +123,7 @@ public final class Resources
     public static final String EL_NOT_A_CLASS = "EL_NOT_A_CLASS";
     public static final String EL_NOT_COMPARABLE = "EL_NOT_COMPARABLE";
     public static final String EL_DANGLING_SUPER = "EL_DANGLING_SUPER";
+    public static final String EL_ILLEGAL_ACCESS  = "EL_ILLEGAL_ACCESS";
 
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";
     public static final String JSPRT_UNSUPPORTED_EVAL_TYPE = "JSPRT_UNSUPPORTED_EVAL_TYPE";
