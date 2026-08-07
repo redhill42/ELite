@@ -377,6 +377,10 @@ final class IREmitter {
     return emit(INVOKE_METHOD, 0, builder.putConstant(method));
   }
 
+  public IREmitter emitInvokeDynamic(DynamicBootstrap.IndyDescriptor desc) {
+    return emit(INVOKE_DYNAMIC, 0, builder.putConstant(desc));
+  }
+
   public IREmitter emitNew(Class<?> c) {
     return emit(NEW, 0, builder.putConstant(c));
   }

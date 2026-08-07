@@ -546,7 +546,7 @@ public class AsmType {
    * @return the descriptor corresponding to the given argument and return
    * types.
    */
-  public static String getMethodDescritpor(final Class<?> returnType,
+  public static String getMethodDescriptor(final Class<?> returnType,
                                            final Class<?>... argumentTypes) {
     StringBuilder buf = new StringBuilder();
     buf.append('(');

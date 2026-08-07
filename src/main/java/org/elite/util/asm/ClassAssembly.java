@@ -119,7 +119,7 @@ public class ClassAssembly {
   public MethodAssembly newMethod(int access, String name, Class<?> returnType,
                                   Class<?>[] argumentTypes,
                                   Class<?>[] exceptionTypes) {
-    String desc = AsmType.getMethodDescritpor(returnType, argumentTypes);
+    String desc = AsmType.getMethodDescriptor(returnType, argumentTypes);
     String[] exceptions = AsmType.toInternalName(exceptionTypes);
 
     MethodVisitor mv = impl.visitMethod(access, name, desc, null, exceptions);

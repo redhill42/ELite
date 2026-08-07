@@ -102,7 +102,8 @@ public final class SymbolTableBuilder {
           if (owner == null || table.currentScope().isStaticScope())
             modifiers |= Modifier.STATIC;
         }
-        sym.func = new IRFunction(owner, e.id, fn.vars.length, modifiers);
+        sym.func = new IRFunction(owner, e.id, fn.vars.length,
+                                  fn.varargs, modifiers);
         fn.symbol = sym;
       } else if (e.expr instanceof ELNode.CLASSDEF cdef) {
         // Create a IRClass skeleton.

@@ -94,13 +94,13 @@ public final class Runtime {
     return value;
   }
 
-  public static Object loadProperty(Object base, Object key, ELContext c) {
-    return ELNode.ACCESS.getValue(c, base, key);
+  public static Object getValue(ELContext elctx, Object obj, Object key) {
+    return ELNode.ACCESS.getValue(elctx, obj, key);
   }
 
-  public static Object storeProperty(Object value, Object base, Object key,
-                                     ELContext c) {
-    ELNode.ACCESS.setValue(c, base, key, value);
+  public static Object setValue(Object value, Object obj, Object key,
+                                ELContext elctx) {
+    ELNode.ACCESS.setValue(elctx, obj, key, value);
     return value;
   }
 
@@ -141,7 +141,7 @@ public final class Runtime {
     Closure[] callArgs = ELEngine.getCallArgs(args);
 
     if (base == GlobalScope.SINGLETON) {
-      Object target = loadProperty(base, key, elctx);
+      Object target = getValue(elctx, base, key);
       try {
         return ELEngine.invokeTarget(elctx, target, callArgs);
       } catch (MethodNotFoundException e) {

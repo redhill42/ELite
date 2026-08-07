@@ -28,7 +28,6 @@ import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.ExternalImports;
 import org.elite.eval.Frame;
-import org.elite.eval.PropertyResolvable;
 import org.elite.eval.Runtime;
 import org.elite.eval.StackTrace;
 import org.elite.eval.StandaloneVariableMapper;
@@ -45,6 +44,7 @@ import org.elite.util.asm.ClassAssembly;
 import org.elite.util.asm.MethodAssembly;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Type;
 import javax.el.ELContext;
 import javax.el.VariableMapper;
@@ -65,6 +65,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.elite.ir.DynamicBootstrap.IndyDescriptor;
 
 import static org.elite.eval.ELUtils.*;
 import static org.elite.ir.Opcode.*;
@@ -636,6 +638,13 @@ public class BytecodeCompiler {
           access |= ACC_STATIC;
         mc = cc.newMethod(access, fn.internalName, Object.class,
                           EvaluationContext.class, Object[].class);
+
+        // Add annotation for member attributes.
+        mc.ANNOTATION(Member.class, true)
+          .FIELD("name", fn.name())
+          .FIELD("arity", fn.paramCount())
+          .FIELD("varargs", fn.isVarArgs())
+          .end();
 
         // Add annotation for operator procedure.
         if (!isJavaIdentifier(fn.name())) {
@@ -1944,14 +1953,25 @@ public class BytecodeCompiler {
           mc.INVOKEVIRTUAL(m.getDeclaringClass(), m.getName(), m.getReturnType(),
                            m.getParameterTypes());
         }
-  
+
         if (m.getReturnType() == Boolean.TYPE)
           emitJumpAfterCond(v);
         else if (m.getReturnType().isPrimitive() &&
                  m.getReturnType() != Void.TYPE)
           mc.BOX(m.getReturnType());
       }
-  
+
+      case INVOKE_DYNAMIC -> {
+        IndyDescriptor desc = (IndyDescriptor)fn.getConstant(v.poolIndex());
+        Handle handle = new Handle(
+          Opcodes.H_INVOKESTATIC, AsmType.toInternalName(DynamicBootstrap.class),
+          desc.bootstrap(),
+          "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+          false);
+        mc.INVOKEDYNAMIC(handle, desc.name(),
+                         AsmType.getMethodDescriptor(desc.rtype(), desc.ptypes()));
+      }
+
       case NEW -> {
         Object cls = fn.getConstant(v.poolIndex());
         if (cls instanceof IRClass irc) {

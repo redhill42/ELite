@@ -100,8 +100,8 @@ final class IRPrinter {
 
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
-         Opcode.INVOKE_DIRECT, Opcode.INVOKE_METHOD, Opcode.NEW,
-         Opcode.CONSTRUCTOR, Opcode.GETFIELD, Opcode.PUTFIELD,
+         Opcode.INVOKE_DIRECT, Opcode.INVOKE_DYNAMIC, Opcode.INVOKE_METHOD,
+         Opcode.NEW, Opcode.CONSTRUCTOR, Opcode.GETFIELD, Opcode.PUTFIELD,
          Opcode.GETSTATIC, Opcode.PUTSTATIC, Opcode.CHECKCAST, Opcode.BOX,
          Opcode.UNBOX, Opcode.DECLARE_NS ->
       formatConstPool(sb, constants, v.poolIndex());

@@ -9,6 +9,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Constructor;
 
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Label;
 import static org.objectweb.asm.Opcodes.*;
@@ -320,7 +321,7 @@ public class MethodAssembly {
     impl.visitMethodInsn(opcode,
                          AsmType.toInternalName(owner),
                          name,
-                         AsmType.getMethodDescritpor(returnType, argumentTypes));
+                         AsmType.getMethodDescriptor(returnType, argumentTypes));
     return this;
   }
 
@@ -330,7 +331,7 @@ public class MethodAssembly {
     impl.visitMethodInsn(opcode,
                          AsmType.toInternalName(owner),
                          name,
-                         AsmType.getMethodDescritpor(returnType, argumentTypes));
+                         AsmType.getMethodDescriptor(returnType, argumentTypes));
     return this;
   }
 
@@ -424,7 +425,21 @@ public class MethodAssembly {
     impl.visitMethodInsn(INVOKESPECIAL,
                          AsmType.toInternalName(owner),
                          "<init>",
-                         AsmType.getMethodDescritpor(Void.TYPE, cons.getParameterTypes()));
+                         AsmType.getMethodDescriptor(Void.TYPE, cons.getParameterTypes()));
+    return this;
+  }
+
+  /**
+   * Emit an invokedynamic instruction.
+   *
+   * @param bootstrapMethod the bootstrap method handle
+   * @param name            the method name (used as key for dynamic dispatch)
+   * @param descriptor      the call site method descriptor
+   * @param bootstrapArgs   static arguments for the bootstrap method
+   */
+  public MethodAssembly INVOKEDYNAMIC(Handle bootstrapMethod, String name,
+                                       String descriptor, Object... bootstrapArgs) {
+    impl.visitInvokeDynamicInsn(name, descriptor, bootstrapMethod, bootstrapArgs);
     return this;
   }
 

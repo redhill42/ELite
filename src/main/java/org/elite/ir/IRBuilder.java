@@ -41,6 +41,7 @@ import org.elite.resources.Resources;
 import javax.el.ELContext;
 import javax.el.ELResolver;
 import javax.xml.XMLConstants;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -51,6 +52,7 @@ import java.util.stream.Stream;
 
 import static org.elite.ir.SymbolTable.Symbol;
 import static org.elite.ir.SymbolTable.Scope;
+import static org.elite.ir.DynamicBootstrap.IndyDescriptor;
 
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
@@ -571,11 +573,23 @@ public class IRBuilder extends ELNode.Visitor {
         return;
     }
 
-    build(node.right);
-    build(node.index);
-    current.emitPushCtx();
-    emitInvokeMethod(Runtime.class, "loadProperty", Object.class, Object.class,
-                     ELContext.class);
+    buildGetValueIndy(node.right, node.index);
+  }
+
+  private void buildGetValueIndy(ELNode target, ELNode index) {
+    if (index instanceof ELNode.STRINGVAL) {
+      current.emitPushEnv();
+      build(target);
+      current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+        ((ELNode.STRINGVAL)index).value, "getValueBootstrap",
+        Object.class, EvaluationContext.class, Object.class));
+    } else {
+      current.emitPushCtx();
+      build(target);
+      build(index);
+      emitInvokeMethod(Runtime.class, "getValue", ELContext.class, Object.class,
+                       Object.class);
+    }
   }
 
   private void buildStoreProperty(ELNode.ACCESS node) {
@@ -670,12 +684,22 @@ public class IRBuilder extends ELNode.Visitor {
         return;
     }
 
-    // Set object property at runtime.
-    build(node.right);
-    build(node.index);
-    current.emitPushCtx();
-    emitInvokeMethod(Runtime.class, "storeProperty", Object.class, Object.class,
-                     Object.class, ELContext.class);
+    // Set object property at runtime. Note that parameter order is reversed
+    // because value is pushed first to stack.
+    if (node.index instanceof ELNode.STRINGVAL) {
+      current.emitDup();
+      build(node.right);
+      current.emitPushEnv();
+      current.emitInvokeDynamic(new IndyDescriptor(
+        ((ELNode.STRINGVAL)node.index).value, "setValueBootstrap",
+        void.class, Object.class, Object.class, EvaluationContext.class));
+    } else {
+      build(node.right);
+      build(node.index);
+      current.emitPushCtx();
+      emitInvokeMethod(Runtime.class, "setValue", Object.class,
+                       Object.class, Object.class, ELContext.class);
+    }
   }
 
   private IRClass resolveIRClass(ELNode node) {
@@ -2839,7 +2863,8 @@ public class IRBuilder extends ELNode.Visitor {
       int modifiers = Modifier.PUBLIC;
       if (owner == null || currentScope.isStaticScope())
         modifiers |= Modifier.STATIC;
-      func = new IRFunction(owner, "<lambda>", node.vars.length, modifiers);
+      func = new IRFunction(owner, "<lambda>", node.vars.length,
+                            node.varargs, modifiers);
       ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, node);
       node.symbol = new Symbol(node.scope, tmpdef);
       node.symbol.func = func;
@@ -3374,7 +3399,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (pat instanceof ELNode.RANGE) {
-      current.emitPop(); // we will re-push arg after build tuple
+      current.emitPop(); // Re-push arg after build tuple
       build(pat);
       argSlot.load();
       emitInvokeMethod(List.class, "contains", Object.class);
@@ -3382,13 +3407,15 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (pat instanceof ELNode.MAP map) {
+      current.emitPop(); // Re-push arg for each property.
       Slot tmpSlot = null;
       for (int i = 0; i < map.keys.length; i++) {
         assert map.keys[i] instanceof ELNode.STRINGVAL;
-        buildConst(((ELNode.STRINGVAL)map.keys[i]).value);
-        current.emitPushCtx();
-        emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
-                         Object.class, ELContext.class);
+        current.emitPushEnv();
+        argSlot.load();
+        current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+          ((ELNode.STRINGVAL)map.keys[i]).value, "getValueBootstrap",
+          Object.class, EvaluationContext.class, Object.class));
         if (!isSimplePattern(map.values[i])) {
           if (tmpSlot == null)
             tmpSlot = new Slot();
@@ -3432,11 +3459,11 @@ public class IRBuilder extends ELNode.Visitor {
         if (data.keys != null) {
           // Matches for object properties.
           for (int i = 0; i < argc; i++) {
+            current.emitPushEnv();
             argSlot.load();
-            buildConst(data.keys[i]);
-            current.emitPushCtx();
-            emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
-                             Object.class, ELContext.class);
+            current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+              data.keys[i], "getValueBootstrap", Object.class,
+              EvaluationContext.class, Object.class));
             if (!isSimplePattern(args[i])) {
               if (tmpSlot == null)
                 tmpSlot = new Slot();
@@ -3503,11 +3530,11 @@ public class IRBuilder extends ELNode.Visitor {
 
         Slot tmpSlot = null;
         for (int i = 0; i < argc; i++) {
+          current.emitPushEnv();
           argSlot.load();
-          buildConst(slots[i]);
-          current.emitPushCtx();
-          emitInvokeMethod(Runtime.class, "loadProperty", Object.class,
-                           Object.class, ELContext.class);
+          current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+            slots[i], "getValueBootstrap", Object.class,
+            EvaluationContext.class, Object.class));
           if (!isSimplePattern(args[i])) {
             if (tmpSlot == null)
               tmpSlot = new Slot();
@@ -4305,7 +4332,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   public static IRFunction compile(ELContext elctx, ELNode node) {
     SymbolTable symTable = SymbolTableBuilder.build(node);
-    IRFunction func = new IRFunction("<expr>", 0);
+    IRFunction func = new IRFunction("<expr>", 0, false);
     IRBuilder b = new IRBuilder(elctx, new IRProgram(null), func,
                                 symTable.currentScope());
     b.build(node);
@@ -4320,7 +4347,7 @@ public class IRBuilder extends ELNode.Visitor {
     List<ELNode> defs = program.getDefinitions();
     List<ELNode> exps = program.getExpressions();
 
-    IRFunction func = new IRFunction("<program>", 0);
+    IRFunction func = new IRFunction("<program>", 0, false);
     IRProgram output = new IRProgram(func);
     IRBuilder b = new IRBuilder(elctx, output, func, symTable.currentScope());
     b.setFile(program.getFilename());

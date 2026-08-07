@@ -95,6 +95,9 @@ public final class Opcode {
   // ── Direct Call ──
   public static final int INVOKE_DIRECT     = 0x45;
 
+  // ── Dynamic Dispatch ──
+  public static final int INVOKE_DYNAMIC    = 0x46;
+
   // ── Java Interop ──
   public static final int INVOKE_METHOD     = 0x50;
   public static final int NEW               = 0x51;
@@ -185,6 +188,7 @@ public final class Opcode {
       case CLOSURE        -> "CLOSURE";
 
       case INVOKE_DIRECT  -> "INVOKE_DIRECT";
+      case INVOKE_DYNAMIC -> "INVOKE_DYNAMIC";
       case INVOKE_METHOD  -> "INVOKE_METHOD";
       case NEW            -> "NEW";
       case CONSTRUCTOR    -> "CONSTRUCTOR";
