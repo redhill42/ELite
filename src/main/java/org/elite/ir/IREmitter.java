@@ -16,7 +16,6 @@
 
 package org.elite.ir;
 
-import org.elite.eval.EvaluationContext;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -309,7 +308,7 @@ final class IREmitter {
     return emit(RETURN, 0);
   }
 
-  public IREmitter emitTry(IRFunction.TryDescriptor desc) {
+  public IREmitter emitTry(Descriptors.Try desc) {
     return emit(TRY, 0, builder.putConstant(desc));
   }
 
@@ -377,7 +376,7 @@ final class IREmitter {
     return emit(INVOKE_METHOD, 0, builder.putConstant(method));
   }
 
-  public IREmitter emitInvokeDynamic(DynamicBootstrap.IndyDescriptor desc) {
+  public IREmitter emitInvokeDynamic(Descriptors.Indy desc) {
     return emit(INVOKE_DYNAMIC, 0, builder.putConstant(desc));
   }
 
@@ -410,7 +409,8 @@ final class IREmitter {
   }
 
   public IREmitter emitGetField(IRClass clazz, String field) {
-    return emit(GETFIELD, 0, builder.putConstant(new IRClass.Field(clazz, field)));
+    return emit(GETFIELD, 0, builder.putConstant(
+      new Descriptors.Field(clazz, field)));
   }
 
   public IREmitter emitGetField(String field) {
@@ -418,7 +418,8 @@ final class IREmitter {
   }
 
   public IREmitter emitPutField(IRClass clazz, String field) {
-    return emit(PUTFIELD, 0, builder.putConstant(new IRClass.Field(clazz, field)));
+    return emit(PUTFIELD, 0, builder.putConstant(
+      new Descriptors.Field(clazz, field)));
   }
 
   public IREmitter emitPutField(String field) {
@@ -426,7 +427,8 @@ final class IREmitter {
   }
 
   public IREmitter emitGetStatic(IRClass clazz, String field) {
-    return emit(GETSTATIC, 0, builder.putConstant(new IRClass.Field(clazz, field)));
+    return emit(GETSTATIC, 0, builder.putConstant(
+      new Descriptors.Field(clazz, field)));
   }
 
   public IREmitter emitGetStatic(String field) {
@@ -438,7 +440,8 @@ final class IREmitter {
   }
 
   public IREmitter emitPutStatic(IRClass clazz, String field) {
-    return emit(PUTSTATIC, 0, builder.putConstant(new IRClass.Field(clazz, field)));
+    return emit(PUTSTATIC, 0, builder.putConstant(
+      new Descriptors.Field(clazz, field)));
   }
 
   public IREmitter emitPutStatic(String field) {

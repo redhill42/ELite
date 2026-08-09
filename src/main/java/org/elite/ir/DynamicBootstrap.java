@@ -49,9 +49,6 @@ public final class DynamicBootstrap {
 
   private DynamicBootstrap() {}
 
-  public record IndyDescriptor(String name, String bootstrap, Class<?> rtype,
-                               Class<?>... ptypes) {}
-
   private static final MethodHandle MH_getValue;
   private static final MethodHandle MH_dynamicGetValue;
   private static final MethodHandle MH_setValue;

@@ -41,7 +41,6 @@ import org.elite.resources.Resources;
 import javax.el.ELContext;
 import javax.el.ELResolver;
 import javax.xml.XMLConstants;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -52,7 +51,6 @@ import java.util.stream.Stream;
 
 import static org.elite.ir.SymbolTable.Symbol;
 import static org.elite.ir.SymbolTable.Scope;
-import static org.elite.ir.DynamicBootstrap.IndyDescriptor;
 
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
@@ -580,7 +578,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (index instanceof ELNode.STRINGVAL) {
       current.emitPushEnv();
       build(target);
-      current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+      current.emitInvokeDynamic(new Descriptors.Indy(
         ((ELNode.STRINGVAL)index).value, "getValueBootstrap",
         Object.class, EvaluationContext.class, Object.class));
     } else {
@@ -690,7 +688,7 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitDup();
       build(node.right);
       current.emitPushEnv();
-      current.emitInvokeDynamic(new IndyDescriptor(
+      current.emitInvokeDynamic(new Descriptors.Indy(
         ((ELNode.STRINGVAL)node.index).value, "setValueBootstrap",
         void.class, Object.class, Object.class, EvaluationContext.class));
     } else {
@@ -2822,8 +2820,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // Construct the TryDescriptor.
-    var desc = new IRFunction.TryDescriptor(body, handlers, types, finalizer);
-    current.emitTry(desc);
+    current.emitTry(new Descriptors.Try(body, handlers, types, finalizer));
   }
 
   public void visit(ELNode.SYNCHRONIZED node) {
@@ -2969,7 +2966,7 @@ public class IRBuilder extends ELNode.Visitor {
           if (def.symbol.isPublic() &&
               !(def.symbol.def.expr instanceof ELNode.LAMBDA) &&
               !(def.symbol.def.expr instanceof ELNode.CLASSDEF)) {
-            return new IRClass.Field(base.symbol.clazz, key.value);
+            return new Descriptors.Field(base.symbol.clazz, key.value);
           }
         }
       }
@@ -3413,7 +3410,7 @@ public class IRBuilder extends ELNode.Visitor {
         assert map.keys[i] instanceof ELNode.STRINGVAL;
         current.emitPushEnv();
         argSlot.load();
-        current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+        current.emitInvokeDynamic(new Descriptors.Indy(
           ((ELNode.STRINGVAL)map.keys[i]).value, "getValueBootstrap",
           Object.class, EvaluationContext.class, Object.class));
         if (!isSimplePattern(map.values[i])) {
@@ -3461,7 +3458,7 @@ public class IRBuilder extends ELNode.Visitor {
           for (int i = 0; i < argc; i++) {
             current.emitPushEnv();
             argSlot.load();
-            current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+            current.emitInvokeDynamic(new Descriptors.Indy(
               data.keys[i], "getValueBootstrap", Object.class,
               EvaluationContext.class, Object.class));
             if (!isSimplePattern(args[i])) {
@@ -3532,7 +3529,7 @@ public class IRBuilder extends ELNode.Visitor {
         for (int i = 0; i < argc; i++) {
           current.emitPushEnv();
           argSlot.load();
-          current.emitInvokeDynamic(new DynamicBootstrap.IndyDescriptor(
+          current.emitInvokeDynamic(new Descriptors.Indy(
             slots[i], "getValueBootstrap", Object.class,
             EvaluationContext.class, Object.class));
           if (!isSimplePattern(args[i])) {

@@ -66,8 +66,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.elite.ir.DynamicBootstrap.IndyDescriptor;
-
 import static org.elite.eval.ELUtils.*;
 import static org.elite.ir.Opcode.*;
 import static org.elite.resources.Resources.*;
@@ -1753,7 +1751,7 @@ public class BytecodeCompiler {
         // Try-Catch: TryStart, TryEnd, FinalStart, any
         // Try-Catch: CatchStart, CatchEnd, FinalStart, any
 
-        var desc = (IRFunction.TryDescriptor)fn.getConstant(v.poolIndex());
+        var desc = (Descriptors.Try)fn.getConstant(v.poolIndex());
         int tmp = TMP_SLOT();
         int resultSlot = tmp++, caughtSlot = tmp;
 
@@ -1962,7 +1960,7 @@ public class BytecodeCompiler {
       }
 
       case INVOKE_DYNAMIC -> {
-        IndyDescriptor desc = (IndyDescriptor)fn.getConstant(v.poolIndex());
+        var desc = (Descriptors.Indy)fn.getConstant(v.poolIndex());
         Handle handle = new Handle(
           Opcodes.H_INVOKESTATIC, AsmType.toInternalName(DynamicBootstrap.class),
           desc.bootstrap(),
@@ -2080,7 +2078,7 @@ public class BytecodeCompiler {
   
       case GETFIELD -> {
         Object field = fn.getConstant(v.poolIndex());
-        if (field instanceof IRClass.Field f) {
+        if (field instanceof Descriptors.Field f) {
           if (f.field().equals("$outer")) {
             mc.GETFIELD(f.clazz().internalName, f.field(),
                         AsmType.toDescriptor(f.clazz().outer.internalName));
@@ -2095,7 +2093,7 @@ public class BytecodeCompiler {
       case PUTFIELD -> {
         Object field = fn.getConstant(v.poolIndex());
         String className, fieldName;
-        if (field instanceof IRClass.Field f) {
+        if (field instanceof Descriptors.Field f) {
           className = f.clazz().internalName;
           fieldName = f.field();
           mc.SWAP();
@@ -2115,7 +2113,7 @@ public class BytecodeCompiler {
   
       case GETSTATIC -> {
         Object field = fn.getConstant(v.poolIndex());
-        if (field instanceof IRClass.Field f) {
+        if (field instanceof Descriptors.Field f) {
           mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
         } else if (field instanceof Field f) {
           mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
@@ -2131,7 +2129,7 @@ public class BytecodeCompiler {
         String className, fieldName;
         Class<?> type;
 
-        if (field instanceof IRClass.Field f) {
+        if (field instanceof Descriptors.Field f) {
           className = f.clazz().internalName;
           fieldName = f.field();
           type = Object.class;
@@ -2297,7 +2295,7 @@ public class BytecodeCompiler {
             mc.LDC(Type.getType(AsmType.toDescriptor(c.internalName)));
           } else if (value instanceof Field f) {
             mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
-          } else if (value instanceof IRClass.Field f) {
+          } else if (value instanceof Descriptors.Field f) {
             mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
           } else {
             // Load constant from constant pool.

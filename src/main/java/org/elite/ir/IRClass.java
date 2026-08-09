@@ -37,11 +37,6 @@ import java.util.List;
  */
 public class IRClass {
 
-  /**
-   * A helper class to represent a class field.
-   */
-  record Field(IRClass clazz, String field) {}
-
   /** ELite-level class name (e.g. {@code "Point"}). */
   public final String name;
 

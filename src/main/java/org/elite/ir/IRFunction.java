@@ -30,16 +30,6 @@ import java.lang.reflect.Modifier;
  */
 public class IRFunction {
 
-  /**
-   * The record to describe the try body, handlers, and finalizer.
-   */
-  record TryDescriptor(
-    IRFunction    body,
-    IRFunction[]  handlers,
-    String[]      types,
-    IRFunction    finalizer)
-  {}
-
   private final IRClass owner;
   private final String name;
   private final int paramCount;
