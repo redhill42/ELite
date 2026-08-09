@@ -21,6 +21,7 @@ import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.SystemScope;
+import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TargetMethodClosure;
 import org.elite.resolver.MethodResolver;
@@ -59,6 +60,7 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
   private static final MethodHandle MH_classEquals;
+  private static final MethodHandle MH_coerce;
 
   static {
     try {
@@ -98,6 +100,10 @@ public final class DynamicBootstrap {
       MH_classEquals = lookup.findStatic(
         DynamicBootstrap.class, "classEquals",
         methodType(boolean.class, Object.class, Class.class));
+
+      MH_coerce = lookup.findStatic(
+        TypeCoercion.class, "coerce",
+        methodType(Object.class, Object.class, Class.class));
     } catch (NoSuchMethodException | IllegalAccessException e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -464,8 +470,23 @@ public final class DynamicBootstrap {
 
   private static MethodHandle permuteReceiverAndValue(MethodHandle mh) {
     mh = MethodHandles.permuteArguments(mh, methodType(
-      mh.type().returnType(), mh.type().parameterType(1),
+      mh.type().returnType(),
+      mh.type().parameterType(1),
       mh.type().parameterType(0)), 1, 0);
+
+    // Add coercion filter on the value argument (position 0).
+    // TypeCoercion.coerce(Object, Class) handles conversions that asType can't
+    // (String->int, int->String, etc.). explicitCastArguments bridges the
+    // filter's Object output to the target's possibly-primitive parameter type.
+    Class<?> targetType = mh.type().parameterType(0);
+    if (targetType != Object.class) {
+      MethodHandle filter = MethodHandles.insertArguments(
+        MH_coerce, 1, targetType);
+      filter = MethodHandles.explicitCastArguments(
+        filter, methodType(targetType, Object.class));
+      mh = MethodHandles.filterArguments(mh, 0, filter);
+    }
+
     return MethodHandles.dropArguments(mh, 2, EvaluationContext.class);
   }
 
