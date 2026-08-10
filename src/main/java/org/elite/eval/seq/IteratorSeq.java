@@ -36,6 +36,10 @@ public class IteratorSeq extends DelaySeq
         }
     }
 
+    public static Seq make(Iterable iter) {
+        return make(iter.iterator());
+    }
+
     protected void force(ELContext elctx) {
         if (iter != null) {
             head = iter.next();

@@ -75,6 +75,12 @@ public class Decimal extends Number implements Comparable<Decimal>
 	return new Decimal(big);
     }
 
+    public static Decimal valueOf(BigInteger big)
+        throws ArithmeticException
+    {
+        return new Decimal(new BigDecimal(big));
+    }
+
     public static Decimal valueOf(String s)
 	throws NumberFormatException, ArithmeticException
     {
@@ -542,6 +548,10 @@ public class Decimal extends Number implements Comparable<Decimal>
 	if (cachedBigDecimal == null)
 	    cachedBigDecimal = BigDecimal.valueOf(value, (int)scale);
 	return cachedBigDecimal;
+    }
+
+    public BigInteger toBigInteger() {
+        return toBigDecimal().toBigInteger();
     }
 
     public int intValue() {

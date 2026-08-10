@@ -56,6 +56,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1231,7 +1232,7 @@ public class BytecodeCompiler {
             .INSTANCEOF(String.class)
             .IFEQ(b1)
             .CHECKCAST(String.class)
-            .INVOKESTATIC(TypeCoercion.class, "escape", StringBuilder.class,
+            .INVOKESTATIC(ELUtils.class, "escape", StringBuilder.class,
                           StringBuilder.class, String.class)
             .GOTO(b2)
             .label(b1)
@@ -1962,12 +1963,19 @@ public class BytecodeCompiler {
       case INVOKE_DYNAMIC -> {
         var desc = (Descriptors.Indy)fn.getConstant(v.poolIndex());
         Handle handle = new Handle(
-          Opcodes.H_INVOKESTATIC, AsmType.toInternalName(DynamicBootstrap.class),
-          desc.bootstrap(),
-          "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+          Opcodes.H_INVOKESTATIC,
+          AsmType.toInternalName(desc.bootstrap().getDeclaringClass()),
+          desc.bootstrap().getName(),
+          AsmType.getMethodDescriptor(desc.bootstrap()),
           false);
+        Object[] args = Arrays.copyOf(desc.args(), desc.args().length);
+        for (int i = 0; i < args.length; i++) {
+          if (args[i] instanceof Class)
+            args[i] = Type.getType((Class<?>)args[i]);
+        }
         mc.INVOKEDYNAMIC(handle, desc.name(),
-                         AsmType.getMethodDescriptor(desc.rtype(), desc.ptypes()));
+                         AsmType.getMethodDescriptor(desc.rtype(), desc.ptypes()),
+                         args);
       }
 
       case NEW -> {

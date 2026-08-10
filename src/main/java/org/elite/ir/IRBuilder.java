@@ -41,6 +41,8 @@ import org.elite.resources.Resources;
 import javax.el.ELContext;
 import javax.el.ELResolver;
 import javax.xml.XMLConstants;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -129,6 +131,26 @@ public class IRBuilder extends ELNode.Visitor {
   // ── Debug info ──
   private String currentFile;
   private final Map<Integer, Integer> linePcMapping = new HashMap<>();
+
+  private static final Method getValueBootstrap;
+  private static final Method setValueBootstrap;
+  private static final Method coerceBootstrap;
+
+  static {
+    try {
+      getValueBootstrap = DynamicBootstrap.class.getMethod(
+        "getValueBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
+      setValueBootstrap = DynamicBootstrap.class.getMethod(
+        "setValueBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
+      coerceBootstrap = CoercionBootstrap.class.getMethod(
+        "coerceBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
+    } catch (NoSuchMethodException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
 
   /**
    * Create a top-level builder.  The symbol table must already be built
@@ -579,8 +601,8 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPushEnv();
       build(target);
       current.emitInvokeDynamic(new Descriptors.Indy(
-        ((ELNode.STRINGVAL)index).value, "getValueBootstrap",
-        Object.class, EvaluationContext.class, Object.class));
+        getValueBootstrap, ((ELNode.STRINGVAL)index).value, Object.class,
+        EvaluationContext.class, Object.class));
     } else {
       current.emitPushCtx();
       build(target);
@@ -689,8 +711,8 @@ public class IRBuilder extends ELNode.Visitor {
       build(node.right);
       current.emitPushEnv();
       current.emitInvokeDynamic(new Descriptors.Indy(
-        ((ELNode.STRINGVAL)node.index).value, "setValueBootstrap",
-        void.class, Object.class, Object.class, EvaluationContext.class));
+        setValueBootstrap, ((ELNode.STRINGVAL)node.index).value, void.class,
+        Object.class, Object.class, EvaluationContext.class));
     } else {
       build(node.right);
       build(node.index);
@@ -1505,13 +1527,9 @@ public class IRBuilder extends ELNode.Visitor {
       } else {
         current.emitPushCtx();
         build(args[i]);
-        buildConst(TypeCoercion.getBoxedType(types[iarg]));
-        emitInvokeMethod(TypeCoercion.class, "coerce", ELContext.class,
-                         Object.class, Class.class);
+        buildCoerce(TypeCoercion.getBoxedType(types[iarg]));
         if (types[iarg].isPrimitive())
           current.emitUnbox(types[iarg]);
-        else
-          current.emitCheckCast(types[iarg]);
       }
     }
 
@@ -2399,13 +2417,15 @@ public class IRBuilder extends ELNode.Visitor {
     } else {
       emitNewInstance(StringBuilder.class);
       for (int i = 0; i < node.elems.length; i++) {
-        build(node.elems[i]);
         if (node.elems[i] instanceof ELNode.STRINGVAL ||
             node.elems[i] instanceof ELNode.LITERAL) {
+          build(node.elems[i]);
           emitInvokeMethod(StringBuilder.class, "append", String.class);
         } else {
-          emitInvokeMethod(TypeCoercion.class, "coerceToString", Object.class);
-          emitInvokeMethod(StringBuilder.class, "append", Object.class);
+          current.emitPushCtx();
+          build(node.elems[i]);
+          buildCoerce(String.class);
+          emitInvokeMethod(StringBuilder.class, "append", String.class);
         }
       }
       emitInvokeMethod(StringBuilder.class, "toString");
@@ -3360,8 +3380,9 @@ public class IRBuilder extends ELNode.Visitor {
 
       current.emitInstanceOf(List.class);
       current.emitJumpIfFalse(failBlock);
+      current.emitPushCtx();
       argSlot.load();
-      emitInvokeMethod(TypeCoercion.class, "coerceToSeq", Object.class);
+      buildCoerce(Seq.class);
       seqSlot.store();
       emitInvokeMethod(List.class, "isEmpty");
       current.emitJumpIfTrue(failBlock);
@@ -3411,8 +3432,8 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitPushEnv();
         argSlot.load();
         current.emitInvokeDynamic(new Descriptors.Indy(
-          ((ELNode.STRINGVAL)map.keys[i]).value, "getValueBootstrap",
-          Object.class, EvaluationContext.class, Object.class));
+          getValueBootstrap, ((ELNode.STRINGVAL)map.keys[i]).value, Object.class,
+          EvaluationContext.class, Object.class));
         if (!isSimplePattern(map.values[i])) {
           if (tmpSlot == null)
             tmpSlot = new Slot();
@@ -3459,7 +3480,7 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPushEnv();
             argSlot.load();
             current.emitInvokeDynamic(new Descriptors.Indy(
-              data.keys[i], "getValueBootstrap", Object.class,
+              getValueBootstrap, data.keys[i], Object.class,
               EvaluationContext.class, Object.class));
             if (!isSimplePattern(args[i])) {
               if (tmpSlot == null)
@@ -3530,7 +3551,7 @@ public class IRBuilder extends ELNode.Visitor {
           current.emitPushEnv();
           argSlot.load();
           current.emitInvokeDynamic(new Descriptors.Indy(
-            slots[i], "getValueBootstrap", Object.class,
+            getValueBootstrap, slots[i], Object.class,
             EvaluationContext.class, Object.class));
           if (!isSimplePattern(args[i])) {
             if (tmpSlot == null)
@@ -3658,13 +3679,9 @@ public class IRBuilder extends ELNode.Visitor {
       } else {
         current.emitPushCtx();
         build(args[i]);
-        buildConst(TypeCoercion.getBoxedType(types[i]));
-        emitInvokeMethod(TypeCoercion.class, "coerce", ELContext.class,
-                         Object.class, Class.class);
+        buildCoerce(TypeCoercion.getBoxedType(types[i]));
         if (types[i].isPrimitive())
           current.emitUnbox(types[i]);
-        else
-          current.emitCheckCast(types[i]);
       }
     }
     current.emitConstructor(cons);
@@ -4265,6 +4282,11 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPushTrue();
     else
       current.emitPushFalse();
+  }
+
+  private void buildCoerce(Class<?> type) {
+    current.emitInvokeDynamic(new Descriptors.Indy(
+      coerceBootstrap, "coerce", type, ELContext.class, Object.class));
   }
 
   private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {

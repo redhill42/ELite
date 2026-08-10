@@ -16,6 +16,7 @@
 
 package elite.ast;
 
+import org.elite.eval.ELUtils;
 import org.elite.parser.ELNode;
 import org.elite.eval.TypeCoercion;
 import elite.lang.annotation.Data;
@@ -55,7 +56,7 @@ public class ConstantExpression extends Expression
         if (value == null) {
             return "null";
         } else if (value instanceof String) {
-            return TypeCoercion.escape((String)value);
+            return ELUtils.escape((String)value);
         } else {
             return TypeCoercion.coerceToString(value);
         }

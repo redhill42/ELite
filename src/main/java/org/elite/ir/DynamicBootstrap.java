@@ -16,20 +16,11 @@
 
 package org.elite.ir;
 
-import elite.lang.Closure;
 import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.EvaluationContext;
-import org.elite.eval.EvaluationException;
-import org.elite.eval.SystemScope;
-import org.elite.eval.TypeCoercion;
-import org.elite.eval.closure.MethodClosure;
-import org.elite.eval.closure.TargetMethodClosure;
-import org.elite.resolver.MethodResolver;
+import org.elite.eval.Runtime;
 import org.elite.util.BeanUtils;
 import javax.el.ELContext;
-import javax.el.ELException;
-import javax.el.PropertyNotFoundException;
-import javax.el.PropertyNotWritableException;
 import java.beans.IntrospectionException;
 import java.lang.invoke.CallSite;
 import java.lang.invoke.MethodHandle;
@@ -42,8 +33,8 @@ import java.lang.reflect.Modifier;
 import java.util.Map;
 
 import static java.lang.invoke.MethodType.*;
+import static java.lang.invoke.MethodHandles.*;
 import static org.elite.eval.ELUtils.*;
-import static org.elite.resources.Resources.*;
 
 public final class DynamicBootstrap {
 
@@ -53,11 +44,11 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_dynamicGetValue;
   private static final MethodHandle MH_setValue;
   private static final MethodHandle MH_dynamicSetValue;
-  private static final MethodHandle MH_packArguments;
+  private static final MethodHandle MH_getELContext;
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
   private static final MethodHandle MH_classEquals;
-  private static final MethodHandle MH_coerce;
+  private static final MethodHandle MH_classesEqual;
 
   static {
     try {
@@ -69,9 +60,8 @@ public final class DynamicBootstrap {
                    EvaluationContext.class, Object.class));
 
       MH_dynamicGetValue = lookup.findStatic(
-        DynamicBootstrap.class, "dynamicGetValue",
-        methodType(Object.class, EvaluationContext.class, Object.class,
-                   String.class));
+        Runtime.class, "getValue",
+        methodType(Object.class, ELContext.class, Object.class, Object.class));
 
       MH_setValue = lookup.findStatic(
         DynamicBootstrap.class, "setValue",
@@ -80,13 +70,12 @@ public final class DynamicBootstrap {
                    Object.class, EvaluationContext.class));
 
       MH_dynamicSetValue = lookup.findStatic(
-        DynamicBootstrap.class, "dynamicSetValue",
-        methodType(void.class, Object.class, Object.class, String.class,
-                   EvaluationContext.class));
+        Runtime.class, "setValue",
+        methodType(Object.class, Object.class, Object.class, Object.class,
+                   ELContext.class));
 
-      MH_packArguments = lookup.findStatic(
-        DynamicBootstrap.class, "packArguments",
-        methodType(Object[].class, Object.class));
+      MH_getELContext = lookup.findVirtual(
+        EvaluationContext.class, "getELContext", methodType(ELContext.class));
 
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
@@ -98,9 +87,10 @@ public final class DynamicBootstrap {
         DynamicBootstrap.class, "classEquals",
         methodType(boolean.class, Object.class, Class.class));
 
-      MH_coerce = lookup.findStatic(
-        TypeCoercion.class, "coerce",
-        methodType(Object.class, Object.class, Class.class));
+      MH_classesEqual = lookup.findStatic(
+        DynamicBootstrap.class, "classesEqual",
+        methodType(boolean.class, Object.class, Object.class, Class.class,
+                   Class.class));
     } catch (NoSuchMethodException | IllegalAccessException e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -111,8 +101,8 @@ public final class DynamicBootstrap {
                                            String name,
                                            MethodType callSiteType) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
-    MethodHandle target = MethodHandles.insertArguments(
-      MH_getValue, 0, lookup, cs, name).asType(callSiteType);
+    MethodHandle target = insertArguments(MH_getValue, 0, lookup, cs, name);
+    target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
   }
@@ -131,15 +121,14 @@ public final class DynamicBootstrap {
 
     // Guard condition: obj != null && obj.getClass() == cachedClass
     Class<?> cachedClass = obj == null ? null : obj.getClass();
-    MethodHandle guard = MethodHandles.insertArguments(
-      MH_classEquals, 1, cachedClass);
+    MethodHandle guard = insertArguments(MH_classEquals, 1, cachedClass);
 
     // Adapt to (EvaluationContext, Object)boolean, ignore env.
-    guard = MethodHandles.dropArguments(guard, 0, EvaluationContext.class);
+    guard = dropArguments(guard, 0, EvaluationContext.class);
 
     // Create PIC guard.
     MethodHandle fallback = cs.getTarget();
-    MethodHandle guarded = MethodHandles.guardWithTest(guard, target, fallback);
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
@@ -149,14 +138,13 @@ public final class DynamicBootstrap {
   private static MethodHandle dispatchGetValue(MethodHandles.Lookup lookup,
                                                Object obj, String name) {
     if (obj == null) {
-      MethodHandle mh = MethodHandles.constant(Object.class, null);
-      return MethodHandles.dropArguments(mh, 0, EvaluationContext.class,
-                                         Object.class);
+      MethodHandle mh = constant(Object.class, null);
+      return dropArguments(mh, 0, EvaluationContext.class, Object.class);
     }
 
     if (obj instanceof Map) {
-      MethodHandle mh = MethodHandles.insertArguments(MH_mapGet, 1, name);
-      return MethodHandles.dropArguments(mh, 0, EvaluationContext.class);
+      MethodHandle mh = insertArguments(MH_mapGet, 1, name);
+      return dropArguments(mh, 0, EvaluationContext.class);
     }
 
     if (obj instanceof DynamicDispatcher) {
@@ -166,7 +154,7 @@ public final class DynamicBootstrap {
           Field f = getField(obj.getClass(), name);
           if (f != null) {
             MethodHandle mh = lookup.unreflectGetter(f);
-            return MethodHandles.dropArguments(mh, 0, EvaluationContext.class);
+            return dropArguments(mh, 0, EvaluationContext.class);
           }
         } catch (IllegalAccessException ex) {
           // fallthrough
@@ -202,8 +190,7 @@ public final class DynamicBootstrap {
         Field f = getStaticField(c, name);
         if (f != null) {
           MethodHandle mh = lookup.unreflectGetter(f);
-          return MethodHandles.dropArguments(mh, 0, EvaluationContext.class,
-                                             Object.class);
+          return dropArguments(mh, 0, EvaluationContext.class, Object.class);
         }
       } catch (IllegalAccessException ex) {
         // fallthrough
@@ -215,7 +202,7 @@ public final class DynamicBootstrap {
       Method m = BeanUtils.getReadMethod(obj.getClass(), name);
       if (m != null) {
         MethodHandle mh = lookup.unreflect(m);
-        return MethodHandles.dropArguments(mh, 0, EvaluationContext.class);
+        return dropArguments(mh, 0, EvaluationContext.class);
       }
     } catch (IntrospectionException | IllegalAccessException ex) {
       // fallthrough
@@ -226,14 +213,15 @@ public final class DynamicBootstrap {
       Field f = getField(obj.getClass(), name);
       if (f != null) {
         MethodHandle mh = lookup.unreflectGetter(f);
-        return MethodHandles.dropArguments(mh, 0, EvaluationContext.class);
+        return dropArguments(mh, 0, EvaluationContext.class);
       }
     } catch (IllegalAccessException ex) {
       // fallthrough
     }
 
     // Fallback to dynamic getValue.
-    return MethodHandles.insertArguments(MH_dynamicGetValue, 2, name);
+    MethodHandle fallback = insertArguments(MH_dynamicGetValue, 2, name);
+    return filterArguments(fallback, 0, MH_getELContext);
   }
 
   private static MethodHandle getGetterMethod(MethodHandles.Lookup lookup,
@@ -245,12 +233,12 @@ public final class DynamicBootstrap {
       Member ann = m.getAnnotation(Member.class);
       if (ann != null && ann.arity() == 0 && !ann.varargs()) {
         MethodHandle mh = lookup.unreflect(m);
-        mh = MethodHandles.insertArguments(mh, 2, (Object)new Object[0]);
+        mh = insertArguments(mh, 2, (Object)new Object[0]);
 
         MethodType permuteType = methodType(
           mh.type().returnType(), mh.type().parameterType(1),
           mh.type().parameterType(0));
-        return MethodHandles.permuteArguments(mh, permuteType, 1, 0);
+        return permuteArguments(mh, permuteType, 1, 0);
       }
     }
     return null;
@@ -270,7 +258,7 @@ public final class DynamicBootstrap {
   }
 
   private static Field getField(Class<?> c, String name) {
-    while (c != Object.class) {
+    while (c != null) {
       try {
         Field f = c.getDeclaredField(name);
         return !Modifier.isStatic(f.getModifiers()) ? f : null;
@@ -283,7 +271,7 @@ public final class DynamicBootstrap {
   }
 
   private static Field getStaticField(Class<?> c, String name) {
-    while (c != Object.class) {
+    while (c != null) {
       try {
         Field f = c.getDeclaredField(name);
         return Modifier.isStatic(f.getModifiers()) ? f : null;
@@ -295,62 +283,20 @@ public final class DynamicBootstrap {
     return null;
   }
 
-  private static Object dynamicGetValue(EvaluationContext env, Object obj,
-                                        String name) {
-    ELContext elctx = env.getELContext();
-
-    try {
-      elctx.setPropertyResolved(false);
-      Object value = elctx.getELResolver().getValue(elctx, obj, name);
-      if (elctx.isPropertyResolved())
-        return value;
-    } catch (PropertyNotFoundException ex) {
-      // fallthrough
-    } catch (EvaluationException ex) {
-      throw ex;
-    } catch (ELException ex) {
-      throw new EvaluationException(elctx, ex.getMessage(), ex.getCause());
-    } catch (RuntimeException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
-
-    Closure method = resolveMethod(elctx, obj, name);
-    if (method != null)
-      return method;
-
-    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
-                                            obj.getClass().getName(), name));
-  }
-
-  private static Closure resolveMethod(ELContext elctx, Object base,
-                                       String name) {
-    MethodResolver resolver = MethodResolver.getInstance(elctx);
-    if (base == SystemScope.SINGLETON) {
-      return resolver.resolveSystemMethod(name);
-    } else if (base instanceof Class) {
-      MethodClosure c = resolver.resolveStaticMethod((Class<?>)base, name);
-      if (c != null)
-        return c;
-      c = resolver.resolveMethod((Class<?>)base, name);
-      if (c != null)
-        return c;
-      c = resolver.resolveMethod(Class.class, name);
-      return (c == null) ? null : new TargetMethodClosure(base, c);
-    } else {
-      MethodClosure c = resolver.resolveMethod(base.getClass(), name);
-      return c == null ? null : new TargetMethodClosure(base, c);
-    }
-  }
-
   @SuppressWarnings("unused")
   public static CallSite setValueBootstrap(MethodHandles.Lookup lookup,
                                            String name,
                                            MethodType callSiteType) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
-    MethodHandle target = MethodHandles.insertArguments(
-      MH_setValue, 0, lookup, cs, name).asType(callSiteType);
+    MethodHandle target = insertArguments(MH_setValue, 0, lookup, cs, name);
+    target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
+  }
+
+  private static boolean classesEqual(Object o1, Object o2, Class<?> c1,
+                                      Class<?> c2) {
+    return classEquals(o1, c1) && classEquals(o2, c2);
   }
 
   private static void setValue(MethodHandles.Lookup lookup, MutableCallSite cs,
@@ -358,21 +304,21 @@ public final class DynamicBootstrap {
                                EvaluationContext env)
     throws Throwable
   {
-    MethodHandle target = dispatchSetValue(lookup, name, obj);
+    MethodHandle target = dispatchSetValue(lookup, name, obj, value);
     target = target.asType(cs.type());
 
     // Guard condition: obj != null && obj.getClass() == cachedClass.
-    Class<?> cachedClass = obj == null ? null : obj.getClass();
-    MethodHandle guard = MethodHandles.insertArguments(
-      MH_classEquals, 1, cachedClass);
+    Class<?> receiverClass = obj == null ? null : obj.getClass();
+    Class<?> valueClass = value == null ? null : value.getClass();
+    MethodHandle guard = insertArguments(
+      MH_classesEqual, 2, valueClass, receiverClass);
 
-    // Adapt to (Object, Object, EvaluationContext)boolean, ignore env and value.
-    guard = MethodHandles.dropArguments(guard, 0, Object.class);
-    guard = MethodHandles.dropArguments(guard, 2, EvaluationContext.class);
+    // Adapt to (Object, Object, EvaluationContext)boolean.
+    guard = dropArguments(guard, 2, EvaluationContext.class);
 
     // Create PIC guard.
     MethodHandle fallback = cs.getTarget();
-    MethodHandle guarded = MethodHandles.guardWithTest(guard, target, fallback);
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
@@ -380,19 +326,18 @@ public final class DynamicBootstrap {
   }
 
   private static MethodHandle dispatchSetValue(MethodHandles.Lookup lookup,
-                                               String name, Object obj) {
+                                               String name, Object obj,
+                                               Object value) {
     if (obj == null) {
-      MethodHandle mh = MethodHandles.throwException(
-        void.class, NullPointerException.class);
-      mh = MethodHandles.insertArguments(
-        mh, 0, new NullPointerException());
-      return MethodHandles.dropArguments(
-        mh, 0, Object.class, Object.class, EvaluationContext.class);
+      MethodHandle mh = throwException(void.class, NullPointerException.class);
+      mh = insertArguments(mh, 0, new NullPointerException());
+      return dropArguments(mh, 0, Object.class, Object.class,
+                           EvaluationContext.class);
     }
 
     if (obj instanceof Map) {
-      MethodHandle mh = MethodHandles.insertArguments(MH_mapPut, 1, name);
-      return permuteReceiverAndValue(mh);
+      MethodHandle mh = insertArguments(MH_mapPut, 1, name);
+      return permuteReceiverAndValue(mh, value);
     }
 
     if (obj instanceof DynamicDispatcher) {
@@ -401,7 +346,7 @@ public final class DynamicBootstrap {
         try {
           Field f = getField(obj.getClass(), name);
           if (f != null && !Modifier.isFinal(f.getModifiers()))
-            return permuteReceiverAndValue(lookup.unreflectSetter(f));
+            return permuteReceiverAndValue(lookup.unreflectSetter(f), value);
         } catch (IllegalAccessException e) {
           // fallthrough
         }
@@ -413,8 +358,10 @@ public final class DynamicBootstrap {
         MethodHandle mh = getSetterMethod(lookup, obj.getClass(),
                                           "set" + capitalize(name));
         if (mh != null) {
-          mh = MethodHandles.filterArguments(mh, 2, MH_packArguments);
-          return MethodHandles.permuteArguments(mh, methodType(
+          // Pack value to an Object array, (receiver, env, value)
+          mh = mh.asCollector(Object[].class, 1);
+          // Permute arguments to (value, receiver, env)
+          return permuteArguments(mh, methodType(
             mh.type().returnType(),
             mh.type().parameterType(2),
             mh.type().parameterType(0),
@@ -431,8 +378,8 @@ public final class DynamicBootstrap {
         Field f = getStaticField(c, name);
         if (f != null && !Modifier.isFinal(f.getModifiers())) {
           MethodHandle mh = lookup.unreflectSetter(f);
-          mh = MethodHandles.dropArguments(mh, 0, Object.class);
-          return permuteReceiverAndValue(mh);
+          mh = dropArguments(mh, 0, Object.class);
+          return permuteReceiverAndValue(mh, value);
         }
       } catch (IllegalAccessException e) {
         // fallthrough
@@ -443,7 +390,7 @@ public final class DynamicBootstrap {
     try {
       Method m = BeanUtils.getWriteMethod(obj.getClass(), name);
       if (m != null)
-        return permuteReceiverAndValue(lookup.unreflect(m));
+        return permuteReceiverAndValue(lookup.unreflect(m), value);
     } catch (IntrospectionException | IllegalAccessException e) {
       // fallthrough
     }
@@ -452,24 +399,21 @@ public final class DynamicBootstrap {
     try {
       Field f = getField(obj.getClass(), name);
       if (f != null && !Modifier.isFinal(f.getModifiers()))
-        return permuteReceiverAndValue(lookup.unreflectSetter(f));
+        return permuteReceiverAndValue(lookup.unreflectSetter(f), value);
     } catch (IllegalAccessException ex) {
       // fallthrough
     }
 
     // Fallback to dynamic setValue.
-    return MethodHandles.insertArguments(MH_dynamicSetValue, 2, name);
+    MethodHandle fallback = insertArguments(MH_dynamicSetValue, 2, name);
+    return filterArguments(fallback, 2, MH_getELContext);
   }
 
-  private static Object[] packArguments(Object value) {
-    return new Object[]{value};
-  }
-
-  private static MethodHandle permuteReceiverAndValue(MethodHandle mh) {
-    mh = MethodHandles.permuteArguments(mh, methodType(
-      mh.type().returnType(),
-      mh.type().parameterType(1),
-      mh.type().parameterType(0)), 1, 0);
+  private static MethodHandle permuteReceiverAndValue(MethodHandle mh,
+                                                      Object value) {
+    mh = permuteArguments(mh, methodType(mh.type().returnType(),
+                                         mh.type().parameterType(1),
+                                         mh.type().parameterType(0)), 1, 0);
 
     // Add coercion filter on the value argument (position 0).
     // TypeCoercion.coerce(Object, Class) handles conversions that asType can't
@@ -477,39 +421,12 @@ public final class DynamicBootstrap {
     // filter's Object output to the target's possibly-primitive parameter type.
     Class<?> targetType = mh.type().parameterType(0);
     if (targetType != Object.class) {
-      MethodHandle filter = MethodHandles.insertArguments(
-        MH_coerce, 1, targetType);
-      filter = MethodHandles.explicitCastArguments(
-        filter, methodType(targetType, Object.class));
-      mh = MethodHandles.filterArguments(mh, 0, filter);
+      MethodHandle filter = CoercionBootstrap.dispatchCoerce(value, targetType);
+      filter = insertArguments(filter, 0, (ELContext)null);
+      filter = explicitCastArguments(filter, methodType(targetType, Object.class));
+      mh = filterArguments(mh, 0, filter);
     }
 
-    return MethodHandles.dropArguments(mh, 2, EvaluationContext.class);
-  }
-
-  private static void dynamicSetValue(Object value, Object obj, String name,
-                                      EvaluationContext env) {
-    ELContext elctx = env.getELContext();
-
-    try {
-      elctx.setPropertyResolved(false);
-      elctx.getELResolver().setValue(elctx, obj, name, value);
-      if (elctx.isPropertyResolved())
-        return;
-    } catch (PropertyNotFoundException ex) {
-      // fallthrough
-    } catch (PropertyNotWritableException ex) {
-      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_WRITABLE,
-                                              obj.getClass().getName(), name));
-    } catch (EvaluationException ex) {
-      throw ex;
-    } catch (ELException ex) {
-      throw new EvaluationException(elctx, ex.getMessage(), ex.getCause());
-    } catch (RuntimeException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
-
-    throw new EvaluationException(
-      elctx, _T(EL_PROPERTY_NOT_FOUND, obj.getClass().getName(), name));
+    return dropArguments(mh, 2, EvaluationContext.class);
   }
 }

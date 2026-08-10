@@ -19,6 +19,7 @@ package org.elite.parser;
 import java.util.Map;
 import java.util.HashMap;
 import javax.el.ELException;
+import org.elite.eval.ELUtils;
 import org.elite.eval.TypeCoercion;
 import static org.elite.parser.Token.*;
 import static org.elite.resources.Resources.*;
@@ -95,9 +96,9 @@ public class Scanner implements Cloneable
             tok = stringValue;
             if (tok.length() > 20)
                 tok = tok.substring(0, 20) + "...";
-            tok = TypeCoercion.escape(tok);
+            tok = ELUtils.escape(tok);
         } else if (token == CHARVAL) {
-            tok = TypeCoercion.escape(charValue);
+            tok = ELUtils.escape(charValue);
             if (tok == null) {
                 tok = "#'" + charValue + "'";
             } else {

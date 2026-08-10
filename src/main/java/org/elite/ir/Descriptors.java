@@ -15,6 +15,8 @@
  */
 package org.elite.ir;
 
+import java.lang.reflect.Method;
+
 /**
  * This class defines various descriptors that passed from IRBuilder to
  * BytecodeCompiler via constant pool.
@@ -44,9 +46,14 @@ final class Descriptors {
    * The record to describe an InvokeDynamic.
    */
   record Indy(
-    String        name,
-    String        bootstrap,
-    Class<?>      rtype,
-    Class<?>...   ptypes
-  ) {}
+    Method        bootstrap,  // the bootstrap method
+    String        name,       // the invoke name, may be unused
+    Object[]      args,       // constant arguments passed to bootstrap
+    Class<?>      rtype,      // the invoke return type
+    Class<?>...   ptypes      // the invoke parameter types
+  ) {
+    public Indy(Method bootstrap, String name, Class<?> rtype, Class<?>... ptypes) {
+      this(bootstrap, name, new Object[0], rtype, ptypes);
+    }
+  }
 }

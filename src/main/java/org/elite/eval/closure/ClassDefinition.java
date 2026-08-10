@@ -34,6 +34,7 @@ import javax.el.PropertyNotWritableException;
 
 import elite.lang.Closure;
 import elite.lang.Annotation;
+import org.elite.eval.ELUtils;
 import org.elite.parser.ELNode;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.VariableMapperImpl;
@@ -594,7 +595,7 @@ public class ClassDefinition extends AnnotatedClosure
                 if (i > 0) buf.append(", ");
                 Object value = thiz.get_closure(elctx, vars[i].id).getValue(elctx);
                 if (value instanceof String) {
-                    TypeCoercion.escape(buf, (String)value);
+                    ELUtils.escape(buf, (String)value);
                 } else {
                     buf.append(TypeCoercion.coerceToString(value));
                 }

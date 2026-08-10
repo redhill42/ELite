@@ -123,6 +123,62 @@ public class ELUtils
         }
     }
 
+    public static String escape(String s) {
+        StringBuilder buf = new StringBuilder();
+        escape(buf, s);
+        return buf.toString();
+    }
+
+    public static StringBuilder escape(StringBuilder buf, String s) {
+        boolean escaped = false;
+        for (int i = 0, len = s.length(); i < len; i++) {
+            char c = s.charAt(i);
+            String esc = escape(c);
+            if (esc != null) {
+                if (!escaped) {
+                    buf.append('"');
+                    buf.append(s, 0, i);
+                    escaped = true;
+                }
+                buf.append(esc);
+            } else if (escaped) {
+                buf.append(c);
+            }
+        }
+
+        if (escaped) {
+            buf.append('"');
+        } else {
+            buf.append('\'');
+            buf.append(s);
+            buf.append('\'');
+        }
+        return buf;
+    }
+
+    public static String escape(char c) {
+        switch (c) {
+        case '\r': return "\\r";
+        case '\n': return "\\n";
+        case '\f': return "\\f";
+        case '\b': return "\\b";
+        case '\t': return "\\t";
+        case '\\': return "\\\\";
+        case '\'': return "'";
+        case '"':  return "\\\"";
+
+        case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+            return "\\00" + Integer.toOctalString(c);
+        case 11: case 14: case 15:
+        case 16: case 17: case 18: case 19: case 20: case 21: case 22: case 23:
+        case 24: case 25: case 26: case 27: case 28: case 29: case 30: case 31:
+            return "\\0" + Integer.toOctalString(c);
+
+        default:
+            return null;
+        }
+    }
+
     public static String getMethodDescriptor(Method method) {
         StringBuilder buf = new StringBuilder();
         buf.append('(');

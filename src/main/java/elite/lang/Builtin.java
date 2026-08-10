@@ -21,6 +21,7 @@ import org.elite.eval.CharRanges;
 import org.elite.eval.Control;
 import org.elite.eval.DelegatingELContext;
 import org.elite.eval.ELEngine;
+import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.Ranges;
 import org.elite.eval.TypeCoercion;
@@ -2233,10 +2234,10 @@ public final class Builtin {
       sep = true;
       if (x instanceof String) {
         StringBuilder buf = new StringBuilder();
-        TypeCoercion.escape(buf, (String)x);
+        ELUtils.escape(buf, (String)x);
         out.print(buf);
       } else if (x instanceof Character) {
-        String esc = TypeCoercion.escape((Character)x);
+        String esc = ELUtils.escape((Character)x);
         out.print("#'" + (esc != null ? esc : x) + "'");
       } else {
         print0(out, x);
