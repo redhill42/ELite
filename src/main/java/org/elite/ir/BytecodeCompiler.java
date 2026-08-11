@@ -51,6 +51,9 @@ import javax.el.VariableMapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.lang.invoke.CallSite;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -1597,15 +1600,6 @@ public class BytecodeCompiler {
       case IDIV   -> emitBinary(v, "__idiv__",   Object.class);
       case REM    -> emitBinary(v, "__rem__",    Object.class);
       case POW    -> emitBinary(v, "__pow__",    Object.class);
-      case NEG    -> emitUnary (v, "__neg__",    Object.class);
-      case CAT    -> emitBinary(v, "__cat__",    Object.class);
-      case BITAND -> emitBinary(v, "__bitand__", Object.class);
-      case BITOR  -> emitBinary(v, "__bitor__",  Object.class);
-      case BITNOT -> emitUnary (v, "__bitnot__", Object.class);
-      case XOR    -> emitBinary(v, "__xor__",    Object.class);
-      case SHL    -> emitBinary(v, "__shl__",    Object.class);
-      case SHR    -> emitBinary(v, "__shr__",    Object.class);
-      case USHR   -> emitBinary(v, "__ushr__",   Object.class);
       case EQ     -> emitBinary(v, "__eq__",     Boolean.TYPE);
       case NE     -> emitBinary(v, "__ne__",     Boolean.TYPE);
       case LT     -> emitBinary(v, "__lt__",     Boolean.TYPE);
@@ -1613,7 +1607,16 @@ public class BytecodeCompiler {
       case GT     -> emitBinary(v, "__gt__",     Boolean.TYPE);
       case GE     -> emitBinary(v, "__ge__",     Boolean.TYPE);
       case CMP    -> emitBinary(v, "__cmp__",    Object.class);
+      case BITAND -> emitBinary(v, "__bitand__", Object.class);
+      case BITOR  -> emitBinary(v, "__bitor__",  Object.class);
+      case XOR    -> emitBinary(v, "__xor__",    Object.class);
+      case SHL    -> emitBinary(v, "__shl__",    Object.class);
+      case SHR    -> emitBinary(v, "__shr__",    Object.class);
+      case USHR   -> emitBinary(v, "__ushr__",   Object.class);
+      case CAT    -> emitBinary(v, "__cat__",    Object.class);
       case IN     -> emitBinary(v, "__in__",     Boolean.TYPE);
+      case NEG    -> emitUnary (v, "__neg__",    Object.class);
+      case BITNOT -> emitUnary (v, "__bitnot__", Object.class);
       case EMPTY  -> emitUnary (v, "__empty__",  Boolean.TYPE);
   
       case IDEQ, IDNE -> {
@@ -2360,18 +2363,36 @@ public class BytecodeCompiler {
       return null;
     }
 
+    private static final Handle BINARY_BOOTSTRAP =
+      new Handle(
+        Opcodes.H_INVOKESTATIC, AsmType.toInternalName(OperatorBootstrap.class),
+        "binaryBootstrap",
+        AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
+                                    String.class, MethodType.class),
+        false);
+
+    private static final Handle UNARY_BOOTSTRAP =
+      new Handle(
+        Opcodes.H_INVOKESTATIC, AsmType.toInternalName(OperatorBootstrap.class),
+        "unaryBootstrap",
+        AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
+                                    String.class, MethodType.class),
+        false);
+
     private void emitBinary(InstructionView v, String name, Class<?> returnType) {
-      mc.ALOAD(S_CTX());
-      mc.INVOKESTATIC(Runtime.class, name, returnType,
-                      Object.class, Object.class, ELContext.class);
+      mc.ALOAD(S_ENV());
+      mc.INVOKEDYNAMIC(BINARY_BOOTSTRAP, name,
+        AsmType.getMethodDescriptor(returnType, Object.class, Object.class,
+                                    EvaluationContext.class));
       if (returnType == Boolean.TYPE)
         emitJumpAfterCond(v);
     }
 
     private void emitUnary(InstructionView v, String name, Class<?> returnType) {
-      mc.ALOAD(S_CTX());
-      mc.INVOKESTATIC(Runtime.class, name, returnType,
-                      Object.class, ELContext.class);
+      mc.ALOAD(S_ENV());
+      mc.INVOKEDYNAMIC(UNARY_BOOTSTRAP, name,
+        AsmType.getMethodDescriptor(returnType, Object.class,
+                                    EvaluationContext.class));
       if (returnType == Boolean.TYPE)
         emitJumpAfterCond(v);
     }

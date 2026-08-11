@@ -32,6 +32,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Map;
 
+import static org.elite.ir.BootstrapCommon.*;
 import static java.lang.invoke.MethodType.*;
 import static java.lang.invoke.MethodHandles.*;
 import static org.elite.eval.ELUtils.*;
@@ -40,21 +41,19 @@ public final class DynamicBootstrap {
 
   private DynamicBootstrap() {}
 
-  private static final MethodHandle MH_getValue;
+  private static final MethodHandle MH_getValueDispatcher;
   private static final MethodHandle MH_dynamicGetValue;
-  private static final MethodHandle MH_setValue;
+  private static final MethodHandle MH_setValueDispatcher;
   private static final MethodHandle MH_dynamicSetValue;
-  private static final MethodHandle MH_getELContext;
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
-  private static final MethodHandle MH_classEquals;
-  private static final MethodHandle MH_classesEqual;
 
   static {
     try {
       MethodHandles.Lookup lookup = MethodHandles.lookup();
-      MH_getValue = lookup.findStatic(
-        DynamicBootstrap.class, "getValue",
+
+      MH_getValueDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "getValueDispatcher",
         methodType(Object.class, MethodHandles.Lookup.class,
                    MutableCallSite.class, String.class,
                    EvaluationContext.class, Object.class));
@@ -63,8 +62,8 @@ public final class DynamicBootstrap {
         Runtime.class, "getValue",
         methodType(Object.class, ELContext.class, Object.class, Object.class));
 
-      MH_setValue = lookup.findStatic(
-        DynamicBootstrap.class, "setValue",
+      MH_setValueDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "setValueDispatcher",
         methodType(void.class, MethodHandles.Lookup.class,
                    MutableCallSite.class, String.class, Object.class,
                    Object.class, EvaluationContext.class));
@@ -74,46 +73,34 @@ public final class DynamicBootstrap {
         methodType(Object.class, Object.class, Object.class, Object.class,
                    ELContext.class));
 
-      MH_getELContext = lookup.findVirtual(
-        EvaluationContext.class, "getELContext", methodType(ELContext.class));
-
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
 
       MH_mapPut = lookup.findVirtual(
         Map.class, "put", methodType(Object.class, Object.class, Object.class));
 
-      MH_classEquals = lookup.findStatic(
-        DynamicBootstrap.class, "classEquals",
-        methodType(boolean.class, Object.class, Class.class));
-
-      MH_classesEqual = lookup.findStatic(
-        DynamicBootstrap.class, "classesEqual",
-        methodType(boolean.class, Object.class, Object.class, Class.class,
-                   Class.class));
     } catch (NoSuchMethodException | IllegalAccessException e) {
       throw new ExceptionInInitializerError(e);
     }
   }
+
+  //=------------------------------------------------------------------------=//
 
   @SuppressWarnings("unused")
   public static CallSite getValueBootstrap(MethodHandles.Lookup lookup,
                                            String name,
                                            MethodType callSiteType) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
-    MethodHandle target = insertArguments(MH_getValue, 0, lookup, cs, name);
+    MethodHandle target = insertArguments(MH_getValueDispatcher, 0,
+                                          lookup, cs, name);
     target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
   }
 
-  private static boolean classEquals(Object o, Class<?> c) {
-    return o == null ? c == null : o.getClass() == c;
-  }
-
-  private static Object getValue(MethodHandles.Lookup lookup,
-                                 MutableCallSite cs, String name,
-                                 EvaluationContext env, Object obj)
+  private static Object getValueDispatcher(MethodHandles.Lookup lookup,
+                                           MutableCallSite cs, String name,
+                                           EvaluationContext env, Object obj)
       throws Throwable
   {
     MethodHandle target = dispatchGetValue(lookup, obj, name);
@@ -234,11 +221,7 @@ public final class DynamicBootstrap {
       if (ann != null && ann.arity() == 0 && !ann.varargs()) {
         MethodHandle mh = lookup.unreflect(m);
         mh = insertArguments(mh, 2, (Object)new Object[0]);
-
-        MethodType permuteType = methodType(
-          mh.type().returnType(), mh.type().parameterType(1),
-          mh.type().parameterType(0));
-        return permuteArguments(mh, permuteType, 1, 0);
+        return permuteArguments(mh, 1, 0);
       }
     }
     return null;
@@ -283,25 +266,24 @@ public final class DynamicBootstrap {
     return null;
   }
 
+  //=------------------------------------------------------------------------=//
+
   @SuppressWarnings("unused")
   public static CallSite setValueBootstrap(MethodHandles.Lookup lookup,
                                            String name,
                                            MethodType callSiteType) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
-    MethodHandle target = insertArguments(MH_setValue, 0, lookup, cs, name);
+    MethodHandle target = insertArguments(MH_setValueDispatcher, 0,
+                                          lookup, cs, name);
     target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
   }
 
-  private static boolean classesEqual(Object o1, Object o2, Class<?> c1,
-                                      Class<?> c2) {
-    return classEquals(o1, c1) && classEquals(o2, c2);
-  }
-
-  private static void setValue(MethodHandles.Lookup lookup, MutableCallSite cs,
-                               String name, Object value, Object obj,
-                               EvaluationContext env)
+  private static void setValueDispatcher(MethodHandles.Lookup lookup,
+                                         MutableCallSite cs, String name,
+                                         Object value, Object obj,
+                                         EvaluationContext env)
     throws Throwable
   {
     MethodHandle target = dispatchSetValue(lookup, name, obj, value);
@@ -330,9 +312,9 @@ public final class DynamicBootstrap {
                                                Object value) {
     if (obj == null) {
       MethodHandle mh = throwException(void.class, NullPointerException.class);
-      mh = insertArguments(mh, 0, new NullPointerException());
-      return dropArguments(mh, 0, Object.class, Object.class,
-                           EvaluationContext.class);
+      mh = filterArguments(mh, 0,
+        dropArguments(MH_newNullPointerException, 0, Object.class));
+      return dropArguments(mh, 1, Object.class, EvaluationContext.class);
     }
 
     if (obj instanceof Map) {
@@ -358,14 +340,9 @@ public final class DynamicBootstrap {
         MethodHandle mh = getSetterMethod(lookup, obj.getClass(),
                                           "set" + capitalize(name));
         if (mh != null) {
-          // Pack value to an Object array, (receiver, env, value)
+          // (receiver, env, value) -> (value, receiver, env)
           mh = mh.asCollector(Object[].class, 1);
-          // Permute arguments to (value, receiver, env)
-          return permuteArguments(mh, methodType(
-            mh.type().returnType(),
-            mh.type().parameterType(2),
-            mh.type().parameterType(0),
-            mh.type().parameterType(1)), 1, 2, 0);
+          return permuteArguments(mh, 2, 0, 1);
         }
       } catch (NoSuchMethodException | IllegalAccessException e) {
         // fallthrough
@@ -411,22 +388,8 @@ public final class DynamicBootstrap {
 
   private static MethodHandle permuteReceiverAndValue(MethodHandle mh,
                                                       Object value) {
-    mh = permuteArguments(mh, methodType(mh.type().returnType(),
-                                         mh.type().parameterType(1),
-                                         mh.type().parameterType(0)), 1, 0);
-
-    // Add coercion filter on the value argument (position 0).
-    // TypeCoercion.coerce(Object, Class) handles conversions that asType can't
-    // (String->int, int->String, etc.). explicitCastArguments bridges the
-    // filter's Object output to the target's possibly-primitive parameter type.
-    Class<?> targetType = mh.type().parameterType(0);
-    if (targetType != Object.class) {
-      MethodHandle filter = CoercionBootstrap.dispatchCoerce(value, targetType);
-      filter = insertArguments(filter, 0, (ELContext)null);
-      filter = explicitCastArguments(filter, methodType(targetType, Object.class));
-      mh = filterArguments(mh, 0, filter);
-    }
-
+    mh = permuteArguments(mh, 1, 0);
+    mh = makeCoerce(mh, 0, value);
     return dropArguments(mh, 2, EvaluationContext.class);
   }
 }

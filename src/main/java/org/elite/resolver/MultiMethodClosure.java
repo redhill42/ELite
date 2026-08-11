@@ -52,6 +52,11 @@ class MultiMethodClosure extends JavaMethodClosure
         return name;
     }
 
+    public Method getJavaMethod(ELContext elctx, Object... args) {
+        return ELEngine.resolveMethod(elctx, methods, name,
+                                      ELEngine.getCallArgs(args));
+    }
+
     protected JavaMethodClosure addMethod(Method method) {
         for (Method m : this.methods) {
             if (m.equals(method)) {

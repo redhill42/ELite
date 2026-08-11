@@ -19,7 +19,6 @@ package org.elite.script;
 import org.elite.eval.EvaluationException;
 import org.elite.ir.IRCompiledFunction;
 
-import javax.el.ELException;
 import javax.script.CompiledScript;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
@@ -42,7 +41,7 @@ class BytecodeCompiledScript extends CompiledScript {
             ScriptException ex2 = new ScriptException(ex.getMessage());
             ex2.setStackTrace(ex.getStackTrace());
             throw ex2;
-        } catch (ELException ex) {
+        } catch (RuntimeException ex) {
             throw new ScriptException(ex);
         }
     }

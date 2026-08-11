@@ -55,6 +55,12 @@ class ExpandoMethodClosure extends MethodClosure
         return null;
     }
 
+    public Method getJavaMethod(ELContext elctx, Object... args) {
+        if (delegate instanceof MethodClosure)
+            return ((MethodClosure)delegate).getJavaMethod(elctx, args);
+        return null;
+    }
+
     public int arity(ELContext elctx) {
         return delegate.arity(elctx);
     }
