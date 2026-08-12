@@ -344,8 +344,8 @@ final class IREmitter {
     return emit(DEFINE_GLOBAL, 0, slot);
   }
 
-  public IREmitter emitDefineGlobal(String name) {
-    return emit(DEFINE_GLOBAL, 0, builder.putConstant(name));
+  public IREmitter emitDefineGlobal(String name, boolean readonly) {
+    return emit(DEFINE_GLOBAL, readonly ? 1 : 0, builder.putConstant(name));
   }
 
   public IREmitter emitStoreGlobal(int slot) {

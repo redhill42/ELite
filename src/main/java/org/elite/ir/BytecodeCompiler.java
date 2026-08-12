@@ -1579,9 +1579,11 @@ public class BytecodeCompiler {
   
       case DEFINE_GLOBAL ->
         mc.LDC(fn.getConstant(v.poolIndex()))
+          .PUSH(v.payload())
           .ALOAD(S_ENV())
           .INVOKESTATIC(Runtime.class, "defineGlobal", void.class,
-                        Object.class, String.class, EvaluationContext.class);
+                        Object.class, String.class, Boolean.TYPE,
+                        EvaluationContext.class);
       case PUSH_GLOBAL ->
         mc.LDC(fn.getConstant(v.poolIndex()))
           .ALOAD(S_ENV())

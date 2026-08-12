@@ -3853,9 +3853,10 @@ public class Parser extends Scanner {
           }
 
           ELNode.CLASS c = new ELNode.CLASS(p, name, slots);
-          addToProgram(prog, new ELNode.DEFINE(p, id, null, null, c));
+          ELNode.METASET meta = new ELNode.METASET(pos, Modifier.FINAL);
+          addToProgram(prog, new ELNode.DEFINE(p, id, null, meta, c));
           if (alias != null) {
-            addToProgram(prog, new ELNode.DEFINE(p, alias, null, null, c));
+            addToProgram(prog, new ELNode.DEFINE(p, alias, null, meta, c));
           }
         }
       }

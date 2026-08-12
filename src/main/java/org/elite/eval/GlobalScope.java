@@ -113,8 +113,7 @@ public class GlobalScope implements PropertyDelegate, Serializable
             return;
         }
 
-        elctx.getVariableMapper().setVariable(name, new LiteralClosure(value));
-        elctx.setPropertyResolved(true);
+        throw new PropertyNotFoundException();
     }
 
     public boolean isReadOnly(ELContext elctx, Object property) {

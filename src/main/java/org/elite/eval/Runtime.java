@@ -60,9 +60,9 @@ public final class Runtime {
   private Runtime() {
   }
 
-  public static void defineGlobal(Object value, String name,
+  public static void defineGlobal(Object value, String name, boolean readOnly,
                                   EvaluationContext env) {
-    env.setVariable(name, new LiteralClosure(value));
+    env.setVariable(name, new LiteralClosure(value, readOnly));
   }
 
   public static Object resolveGlobal(String name, EvaluationContext env) {
@@ -123,7 +123,8 @@ public final class Runtime {
         return method;
     }
 
-    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND, obj, key));
+    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
+                                            obj.getClass().getName(), key));
   }
 
   private static Closure resolveMethod(ELContext elctx, Object base,
@@ -148,9 +149,11 @@ public final class Runtime {
 
   public static Object setValue(Object value, Object obj, Object key,
                                 ELContext elctx) {
-    if (obj == null || key == null)
-      throw new EvaluationException(
-        elctx, _T(EL_PROPERTY_NOT_FOUND, obj, key));
+    if (obj == null || key == null) {
+      String objName = obj == null ? "null" : obj.getClass().getName();
+      throw new EvaluationException(elctx,
+                                    _T(EL_PROPERTY_NOT_FOUND, objName, key));
+    }
 
     try {
       elctx.setPropertyResolved(false);
@@ -160,7 +163,8 @@ public final class Runtime {
     } catch (PropertyNotFoundException ex) {
       // fallthrough
     } catch (PropertyNotWritableException ex) {
-      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_WRITABLE, obj, key));
+      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_WRITABLE,
+                                              obj.getClass().getName(), key));
     } catch (EvaluationException ex) {
       throw ex;
     } catch (ELException ex) {
@@ -169,7 +173,8 @@ public final class Runtime {
       throw new EvaluationException(elctx, ex);
     }
 
-    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND, obj, key));
+    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
+                                            obj.getClass().getName(), key));
   }
 
   private static EvaluationException

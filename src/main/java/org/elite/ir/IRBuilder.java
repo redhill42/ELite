@@ -324,7 +324,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Define global or local variable according to it's captured flag.
     if (node.symbol.captured) {
-      current.emitDefineGlobal(node.id);
+      current.emitDefineGlobal(node.id, node.symbol.isFinal() ||
+                                        node.symbol.clazz != null);
       current.emitPushNull();
     } else {
       current.emitStoreVar(node.symbol.slot);
@@ -381,9 +382,8 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildStoreVariable(ELNode.IDENT node) {
-    if (node.symbol != null &&
-        node.symbol.def.expr instanceof ELNode.CLASSDEF)
-      throw reportError(node.pos, _T(EL_READONLY_EXPRESSION));
+    if (node.symbol != null && node.symbol.clazz != null)
+      throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
 
     if (node.symbol != null && node.symbol.scope.isClassScope()) {
       IRClass currentClass = currentScope.enclosingClass();
@@ -421,10 +421,14 @@ public class IRBuilder extends ELNode.Visitor {
       }
     } else if (buildStoreClassMember(node.pos, node.id)) {
       // already done.
-    } else if (node.symbol == null || node.symbol.captured) {
-      current.emitStoreGlobal(node.id);
     } else {
-      current.emitStoreVar(node.symbol.slot);
+      if (node.symbol != null && node.symbol.isFinal())
+        throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
+      if (node.symbol == null || node.symbol.captured) {
+        current.emitStoreGlobal(node.id);
+      } else {
+        current.emitStoreVar(node.symbol.slot);
+      }
     }
   }
 
@@ -591,6 +595,12 @@ public class IRBuilder extends ELNode.Visitor {
       Class<?> baseClass = resolveJavaClass(node.right);
       if (baseClass != null && tryBuildGetStatic(baseClass, key))
         return;
+    }
+
+    Class<?> cls = resolveJavaClass(node);
+    if (cls != null) {
+      buildConst(cls);
+      return;
     }
 
     buildGetValueIndy(node.right, node.index);
@@ -2913,7 +2923,7 @@ public class IRBuilder extends ELNode.Visitor {
       // Define global for captured lamba parameters.
       if (var.symbol != null && var.symbol.captured) {
         nested.current.emitPushVar(var.symbol.slot);
-        nested.current.emitDefineGlobal(var.id);
+        nested.current.emitDefineGlobal(var.id, var.symbol.isFinal());
       }
     }
 
@@ -3213,32 +3223,37 @@ public class IRBuilder extends ELNode.Visitor {
    */
   private void buildMatchPattern(Slot argSlot, ELNode pat, int failBlock) {
     if (pat instanceof ELNode.DEFINE def) {
+      boolean argConsumed = false;
+
       // Type check if annotated.
       if (def.type != null) {
+        argConsumed = true;
         emitInstanceOf(def.type);
         current.emitJumpIfFalse(failBlock);
       }
 
       // As-pattern check.
       if (def.expr != null) {
-        if (def.type != null)
+        if (argConsumed)
           argSlot.load();
+        argConsumed = true;
         buildMatchPattern(argSlot, def.expr, failBlock);
         current.emitJumpIfFalse(failBlock);
       }
 
       // Wildcard: always matches.
       if ("_".equals(def.id)) {
-        current.emitPop();
+        if (!argConsumed)
+          current.emitPop();
         current.emitPushTrue();
         return;
       }
 
       // Variable binding -> bind to new pattern variable.
-      if (def.type != null || def.expr != null)
+      if (argConsumed)
         argSlot.load();
       if (def.symbol.captured)
-        current.emitDefineGlobal(def.id);
+        current.emitDefineGlobal(def.id, def.symbol.isFinal());
       else
         current.emitStoreVarPop(def.symbol.slot);
       current.emitPushTrue();

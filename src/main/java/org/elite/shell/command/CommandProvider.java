@@ -21,6 +21,7 @@ import org.elite.eval.VariableMapperImpl;
 import org.elite.ir.BytecodeCompiler;
 import org.elite.ir.BytecodeConsumer;
 import org.elite.ir.SymbolTableBuilder;
+import org.elite.parser.ParseException;
 import org.elite.parser.Parser;
 import org.elite.resolver.MethodResolver;
 import org.elite.shell.ShellContext;
@@ -71,7 +72,13 @@ public final class CommandProvider {
       String text = readFile(filename, shellContext.getEncoding());
       engine.put(ScriptEngine.FILENAME, filename);
       engine.eval(text);
-    } catch (ScriptException | IOException ex) {
+    } catch (ScriptException ex) {
+      if (ELProgram.OPT_LEVEL == 0 || ex.getCause() instanceof ParseException)
+        System.err.println(ex.getMessage());
+      else
+        ex.printStackTrace();
+      return 1;
+    } catch (IOException ex) {
       System.err.println(ex.getMessage());
       return 1;
     }
