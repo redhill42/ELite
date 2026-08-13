@@ -24,6 +24,8 @@ import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.DataClass;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
+import org.elite.ir.MetaClass;
+import org.elite.ir.MetaMethod;
 import org.elite.parser.ELNode;
 import org.elite.parser.Parser;
 import org.elite.resolver.ArrayELResolver;
@@ -330,10 +332,7 @@ public final class ELEngine {
     Class<?>[] types = method.getParameterTypes();
     int nargs = types.length;
 
-    if (DynamicDispatcher.class.isAssignableFrom(method.getDeclaringClass()) &&
-        nargs == 2 &&
-        types[0] == EvaluationContext.class &&
-        types[1] == Object[].class) {
+    if (method.isAnnotationPresent(MetaMethod.class)) {
       try {
         return method.invoke(base, new EvaluationContext(elctx),
                              getArgValues(elctx, args));
@@ -668,7 +667,7 @@ public final class ELEngine {
           elctx, _T(EL_ABSTRACT_CLASS, cls.getName()));
       }
 
-      if (DynamicDispatcher.class.isAssignableFrom(cls)) {
+      if (cls.isAnnotationPresent(MetaClass.class)) {
         Constructor<?> cons = cls.getConstructor(EvaluationContext.class,
                                                  Object[].class);
         return cons.newInstance(new EvaluationContext(elctx),

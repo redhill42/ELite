@@ -17,8 +17,7 @@
 package org.elite.ir;
 
 import elite.lang.Symbol;
-import org.elite.parser.ELNode;
-
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 /**
@@ -149,41 +148,11 @@ final class IRPrinter {
     if (c instanceof Method m)
       return "<" + m.getDeclaringClass().getSimpleName() + "." + m.getName() +
              ">";
-    if (c instanceof ELNode n)
-      return "<" + formatNode(n) + ">";
+    if (c instanceof Field f)
+      return "<" + f.getDeclaringClass().getSimpleName() + "." + f.getName() +
+             ">";
+    if (c instanceof Descriptors.Indy i)
+      return i.name() + "(" + i.bootstrap().getName() + ")";
     return c.getClass().getSimpleName();
-  }
-
-  /**
-   * Format a trampoline pool entry showing the AST node type and key info.
-   */
-  private static String formatNode(ELNode n) {
-    StringBuilder sb = new StringBuilder();
-    sb.append("<").append(n.getClass().getSimpleName());
-    appendNodeDetails(sb, n);
-    sb.append(">");
-    return sb.toString();
-  }
-
-  /**
-   * Append meaningful details for trampolined ELNode types.
-   */
-  private static void appendNodeDetails(StringBuilder sb, ELNode n) {
-    if (n instanceof ELNode.DEFINE d)
-      sb.append(" ").append(d.id);
-    else if (n instanceof ELNode.IDENT id)
-      sb.append(" ").append(id.id);
-    else if (n instanceof ELNode.APPLY a) {
-      if (a.right instanceof ELNode.ACCESS ac &&
-          ac.index instanceof ELNode.IDENT idx)
-        sb.append(" .").append(idx.id).append("(").append(a.args.length)
-          .append(")");
-      else if (a.right instanceof ELNode.IDENT fn)
-        sb.append(" ").append(fn.id).append("(").append(a.args.length)
-          .append(")");
-    } else if (n instanceof ELNode.ACCESS ac) {
-      if (ac.index instanceof ELNode.IDENT idx)
-        sb.append(" .").append(idx.id);
-    }
   }
 }

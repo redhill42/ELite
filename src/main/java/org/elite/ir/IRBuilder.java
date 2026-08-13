@@ -134,6 +134,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   private static final Method getValueBootstrap;
   private static final Method setValueBootstrap;
+  private static final Method invokeBootstrap;
   private static final Method coerceBootstrap;
 
   static {
@@ -144,6 +145,9 @@ public class IRBuilder extends ELNode.Visitor {
       setValueBootstrap = DynamicBootstrap.class.getMethod(
         "setValueBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
+      invokeBootstrap = DynamicBootstrap.class.getMethod(
+        "invokeBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class, String[].class);
       coerceBootstrap = CoercionBootstrap.class.getMethod(
         "coerceBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
@@ -983,12 +987,31 @@ public class IRBuilder extends ELNode.Visitor {
         return;
 
       // Resolve method at runtime.
-      current.emitPushEnv();
-      build(acc.right);
-      build(acc.index);
-      buildTuple(node.args);
-      emitInvokeMethod(Runtime.class, "invokeMember", EvaluationContext.class,
-                       Object.class, Object.class, Object[].class);
+      if (acc.index instanceof ELNode.STRINGVAL) {
+        current.emitPushEnv();
+        build(acc.right);
+        buildTuple(node.args);
+
+        String[] keys;
+        if (node.keys == null)
+          keys = new String[0];
+        else {
+          keys = new String[node.keys.length];
+          for (int i = 0; i < keys.length; i++)
+            keys[i] = node.keys[i] != null ? node.keys[i] : "";
+        }
+
+        current.emitInvokeDynamic(new Descriptors.Indy(
+          invokeBootstrap, ((ELNode.STRINGVAL)acc.index).value, keys,
+          Object.class, EvaluationContext.class, Object.class, Object[].class));
+      } else {
+        current.emitPushEnv();
+        build(acc.right);
+        build(acc.index);
+        buildTuple(node.args);
+        emitInvokeMethod(Runtime.class, "invoke", EvaluationContext.class,
+                         Object.class, Object.class, Object[].class);
+      }
       return;
     }
 
@@ -1055,22 +1078,15 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // Rearrange named arguments
-    int k = nvars - 1; // index to vararg list
     if (keys != null) {
       for (int i = 0; i < argc; i++) {
         if (keys[i] != null) {
           int j = indexOfVar(keys[i], vars, varargs);
-          if (j == -1) {
-            if (!varargs || k >= argc)
+          if (j == -1)
               throw reportError(pos, _T(EL_UNKNOWN_ARG_NAME, keys[i]));
-            if (xargs == null)
-              xargs = new ELNode[argc];
-            xargs[k++] = args[i];
-          } else {
-            if (xargs == null)
-              xargs = new ELNode[argc];
-            xargs[j] = args[i];
-          }
+          if (xargs == null)
+            xargs = new ELNode[argc];
+          xargs[j] = args[i];
         }
       }
     }
@@ -2129,11 +2145,7 @@ public class IRBuilder extends ELNode.Visitor {
                          Object.class, Object[].class);
       }
     } else {
-      current.emitPushEnv();
-      buildConst(node.oper.id);
-      build(node.right);
-      emitInvokeMethod(Runtime.class, "invokeOperator", EvaluationContext.class,
-                       String.class, Object.class);
+      throw reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
     }
   }
 
@@ -2152,12 +2164,7 @@ public class IRBuilder extends ELNode.Visitor {
                          Object.class, Object[].class);
       }
     } else {
-      current.emitPushEnv();
-      buildConst(node.oper.id);
-      build(node.left);
-      build(node.right);
-      emitInvokeMethod(Runtime.class, "invokeOperator", EvaluationContext.class,
-                       String.class, Object.class, Object.class);
+      throw reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
     }
   }
 

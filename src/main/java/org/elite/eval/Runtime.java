@@ -205,8 +205,8 @@ public final class Runtime {
     return new EvaluationException(elctx, msg);
   }
 
-  public static Object invokeMember(EvaluationContext env, Object base,
-                                    Object key, Object[] args) {
+  public static Object invoke(EvaluationContext env, Object base,
+                              Object key, Object[] args) {
     ELContext elctx = env.getELContext();
     if (base == null)
       return null;
@@ -214,14 +214,6 @@ public final class Runtime {
       throw reportMethodNotFound(elctx, base, null, null);
 
     String name = TypeCoercion.coerceToString(key);
-
-    // Route to compiled elite class.
-    if (base instanceof DynamicDispatcher disp) {
-      Object result = disp.__invoke__(env, name, args);
-      if (result != NO_RESULT)
-        return result;
-    }
-
     Closure[] callArgs = ELEngine.getCallArgs(args);
 
     if (base == GlobalScope.SINGLETON) {
@@ -311,26 +303,6 @@ public final class Runtime {
     return ELEngine.callTarget(elctx, target, args);
   }
 
-  public static Object invokeOperator(EvaluationContext env, String name,
-                                      Object rhs) {
-    if (rhs != null) {
-      ELContext elctx = env.getELContext();
-      Object result = ELNode.Unary.invokeOperator(elctx, name, rhs);
-      if (result != NO_RESULT)
-        return result;
-    }
-    return invokeTarget(env, name, new Object[]{rhs});
-  }
-
-  public static Object invokeOperator(EvaluationContext env, String name,
-                                      Object lhs, Object rhs) {
-    ELContext elctx = env.getELContext();
-    Object result = ELNode.Binary.invokeOperator(elctx, name, lhs, rhs);
-    if (result != NO_RESULT)
-      return result;
-    return invokeTarget(env, name, new Object[]{lhs, rhs});
-  }
-
   public static Object invokeAssignOp(ELContext elctx, Integer op, Object lhs,
                                       Object rhs) {
     String opname = ELNode.opIdentifiers[op];
@@ -400,106 +372,6 @@ public final class Runtime {
     }
 
     return obj;
-  }
-
-  public static Object __add__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__add__(elctx, lhs, rhs);
-  }
-
-  public static Object __sub__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__sub__(elctx, lhs, rhs);
-  }
-
-  public static Object __mul__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__mul__(elctx, lhs, rhs);
-  }
-
-  public static Object __div__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__div__(elctx, lhs, rhs);
-  }
-
-  public static Object __idiv__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__idiv__(elctx, lhs, rhs);
-  }
-
-  public static Object __rem__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__rem__(elctx, lhs, rhs);
-  }
-
-  public static Object __pow__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__pow__(elctx, lhs, rhs);
-  }
-
-  public static Object __neg__(Object lhs, ELContext elctx) {
-    return Builtin.__neg__(elctx, lhs);
-  }
-
-  public static Object __cat__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__cat__(elctx, lhs, rhs);
-  }
-
-  public static Object __bitand__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__bitand__(elctx, lhs, rhs);
-  }
-
-  public static Object __bitor__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__bitor__(elctx, lhs, rhs);
-  }
-
-  public static Object __bitnot__(Object lhs, ELContext elctx) {
-    return Builtin.__bitnot__(elctx, lhs);
-  }
-
-  public static Object __xor__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__xor__(elctx, lhs, rhs);
-  }
-
-  public static Object __shl__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__shl__(elctx, lhs, rhs);
-  }
-
-  public static Object __shr__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__shr__(elctx, lhs, rhs);
-  }
-
-  public static Object __ushr__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__ushr__(elctx, lhs, rhs);
-  }
-
-  public static boolean __eq__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__eq__(elctx, lhs, rhs);
-  }
-
-  public static boolean __ne__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__ne__(elctx, lhs, rhs);
-  }
-
-  public static boolean __lt__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__lt__(elctx, lhs, rhs);
-  }
-
-  public static boolean __le__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__le__(elctx, lhs, rhs);
-  }
-
-  public static boolean __gt__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__gt__(elctx, lhs, rhs);
-  }
-
-  public static boolean __ge__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__ge__(elctx, lhs, rhs);
-  }
-
-  public static Object __cmp__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__cmp__(elctx, lhs, rhs);
-  }
-
-  public static boolean __in__(Object lhs, Object rhs, ELContext elctx) {
-    return Builtin.__in__(elctx, lhs, rhs);
-  }
-
-  public static boolean __empty__(Object lhs, ELContext elctx) {
-    return Builtin.__empty__(elctx, lhs);
   }
 
   public static boolean __instanceof__(Object value, String typename,

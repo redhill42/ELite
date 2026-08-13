@@ -1677,23 +1677,7 @@ public abstract class ELNode implements Serializable {
       Object result;
 
       if (lhs != null) {
-        if (lhs instanceof DynamicDispatcher disp) {
-          MethodResolver resolver = MethodResolver.getInstance(elctx);
-          MethodClosure method;
-
-          // invoke static operator procedure
-          method = resolver.resolveStaticMethod(lhs.getClass(), opname);
-          if (method != null) {
-            return disp.__invokeStatic__(new EvaluationContext(elctx), opname,
-                                         lhs, rhs);
-          }
-
-          // invoke expando operator procedure
-          result = disp.__invoke__(new EvaluationContext(elctx), opname, rhs);
-          if (result != NO_RESULT) {
-            return result;
-          }
-        } else if (lhs instanceof ClosureObject) {
+        if (lhs instanceof ClosureObject) {
           // invoke static operator procedure
           ClassDefinition cdef = ((ClosureObject)lhs).get_class();
           Closure cvar = cdef.getClosure(elctx, opname);
@@ -1737,19 +1721,7 @@ public abstract class ELNode implements Serializable {
 
       // reverse operator resolution
       if (rhs != null) {
-        if (rhs instanceof DynamicDispatcher disp) {
-          MethodResolver resolver = MethodResolver.getInstance(elctx);
-
-          // invoke static operator procedure.
-          if (resolver.resolveStaticMethod(rhs.getClass(), opname) != null) {
-            return disp.__invokeStatic__(new EvaluationContext(elctx), opname,
-                                         lhs, rhs);
-          }
-
-          // invoke expando reverse operator procedure
-          return disp.__invoke__(new EvaluationContext(elctx),
-                                 "?".concat(opname), lhs);
-        } else if (rhs instanceof ClosureObject) {
+        if (rhs instanceof ClosureObject) {
           // invoke static operator procedure
           ClassDefinition cdef = ((ClosureObject)rhs).get_class();
           Closure cvar = cdef.getClosure(elctx, opname);

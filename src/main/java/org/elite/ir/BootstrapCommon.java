@@ -102,4 +102,27 @@ final class BootstrapCommon {
   static boolean classesEqual(Object o1, Object o2, Class<?> c1, Class<?> c2) {
     return classEquals(o1, c1) && classEquals(o2, c2);
   }
+
+  static MethodHandle throwNullPointerException() {
+    MethodHandle mh = throwException(void.class, NullPointerException.class);
+    return filterArguments(mh, 0,
+                           dropArguments(MH_newNullPointerException, 0, EvaluationContext.class));
+  }
+
+  static MethodHandle throwEvaluationException(String message) {
+    MethodHandle ex = filterArguments(
+      MH_newEvaluationException, 0, MH_getELContext);
+    ex = insertArguments(ex, 1, message);
+
+    MethodHandle thrower = throwException(void.class, EvaluationException.class);
+    return filterArguments(thrower, 0, ex);
+  }
+
+  static boolean isELiteClass(Class<?> c) {
+    return c.isAnnotationPresent(MetaClass.class);
+  }
+
+  static boolean isELiteObject(Object obj) {
+    return obj != null && obj.getClass().isAnnotationPresent(MetaClass.class);
+  }
 }

@@ -17,10 +17,11 @@
 package org.elite.resolver;
 
 import elite.lang.Closure;
-import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.closure.NamedClosure;
+import org.elite.ir.MetaClass;
+import org.elite.ir.MetaMethod;
 import org.elite.util.Utils;
 import javax.el.ELContext;
 import javax.el.ELException;
@@ -85,12 +86,12 @@ class SingleMethodClosure extends JavaMethodClosure {
   }
 
   public Object invoke(ELContext elctx, Object base, Closure[] args) {
-    checkArgs(base, args);
+    checkArgs(args);
     return ELEngine.invokeMethod(elctx, base, method, args);
   }
 
   public Object invokeSuper(ELContext elctx, Object base, Closure[] args) {
-    checkArgs(base, args);
+    checkArgs(args);
     return invokeSuper(elctx, method, base, args);
   }
 
@@ -127,17 +128,13 @@ class SingleMethodClosure extends JavaMethodClosure {
     Utils.setAccessible(method);
   }
 
-  private void checkArgs(Object base, Closure[] args) {
+  private void checkArgs(Closure[] args) {
     Class<?>[] types = method.getParameterTypes();
     int nargs = types.length;
     boolean vargs = method.isVarArgs();
 
-    if (base instanceof DynamicDispatcher &&
-        nargs == 2 &&
-        types[0] == EvaluationContext.class &&
-        types[1] == Object[].class) {
+    if (method.isAnnotationPresent(MetaMethod.class))
       return; // self checked
-    }
 
     // cache argument count for quick test
     if (nargs > 0 && types[0] == ELContext.class)

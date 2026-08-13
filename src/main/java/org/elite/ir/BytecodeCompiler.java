@@ -18,14 +18,10 @@ package org.elite.ir;
 import elite.lang.Closure;
 import elite.lang.Seq;
 import elite.lang.Symbol;
-import elite.lang.annotation.Expando;
-import elite.lang.annotation.ExpandoScope;
 import org.elite.eval.DelegatingELContext;
-import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
-import org.elite.eval.EvaluationException;
 import org.elite.eval.ExternalImports;
 import org.elite.eval.Frame;
 import org.elite.eval.Runtime;
@@ -37,7 +33,6 @@ import org.elite.eval.closure.TypedClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
-import org.elite.resources.Resources;
 import org.elite.util.DynamicClassLoader;
 import org.elite.util.asm.AsmType;
 import org.elite.util.asm.ClassAssembly;
@@ -67,7 +62,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.elite.eval.ELUtils.*;
@@ -209,70 +203,6 @@ public class BytecodeCompiler {
         filename = filename.substring(sep + 1);
       cc.getImpl().visitSource(filename, null);
     }
-  }
-
-  private static boolean isJavaIdentifier(String name) {
-    if (name == null || name.isEmpty())
-      return false;
-    if (!Character.isJavaIdentifierStart(name.charAt(0)))
-      return false;
-    for (int i = 1; i < name.length(); i++)
-      if (!Character.isJavaIdentifierPart(name.charAt(i)))
-        return false;
-    return true;
-  }
-
-  private static String mangle(String id) {
-    if (isJavaIdentifier(id))
-      return id;
-
-    return switch (id) {
-      case "+"   -> "__add__";
-      case "-"   -> "__sub__";
-      case "*"   -> "__mul__";
-      case "/"   -> "__div__";
-      case "%"   -> "__rem__";
-      case "^"   -> "__pow__";
-      case "`!"  -> "__bitnot__";
-      case "`|"  -> "__bitor__";
-      case "`&"  -> "__bitand__";
-      case "`^"  -> "__xor__";
-      case "<<"  -> "__shl__";
-      case ">>"  -> "__shr__";
-      case ">>>" -> "__ushr__";
-      case "<"   -> "__lt__";
-      case "<="  -> "__le__";
-      case ">"   -> "__gt__";
-      case ">="  -> "__ge__";
-      case "<=>" -> "__cmp__";
-      case "=="  -> "__eq__";
-      case "!="  -> "__ne__";
-      case "+="  -> "__add_assign__";
-      case "-="  -> "__sub_assign__";
-      case "*="  -> "__mul_assign__";
-      case "/="  -> "__div_assign__";
-      case "%="  -> "__rem_assign__";
-      case "^="  -> "__pow_assign__";
-      case "`|=" -> "__bitor_assign__";
-      case "`&=" -> "__bitand_assign__";
-      case "`^=" -> "__xor_assign__";
-      case "<<=" -> "__shl_assign__";
-      case ">>=" -> "__shr_assign__";
-      case">>>=" -> "__ushr_assign__";
-      default -> {
-        StringBuilder sb = new StringBuilder();
-        sb.append("__");
-        for (int i = 0; i < id.length(); i++) {
-          char c = id.charAt(i);
-          if (Character.isJavaIdentifierPart(c))
-            sb.append(c);
-          else
-            sb.append("$").append(Integer.toHexString(c));
-        }
-        sb.append("__");
-        yield sb.toString();
-      }
-    };
   }
 
   private void compileFunction(ClassAssembly cc, IRFunction f) {
@@ -491,7 +421,6 @@ public class BytecodeCompiler {
                         : ((Class<?>)clazz.base).getName();
 
       List<String> interfaces = new ArrayList<>();
-      interfaces.add(DynamicDispatcher.class.getName());
       if (clazz.interfaces != null) {
         for (Class<?> i : clazz.interfaces)
           interfaces.add(i.getName());
@@ -661,27 +590,11 @@ public class BytecodeCompiler {
           .ARRAY("parameterNames", fn.paramNames())
           .end();
 
-        // Add annotation for operator procedure.
-        if (!isJavaIdentifier(fn.name())) {
-          mc.ANNOTATION(Expando.class, true)
-            .ARRAY("name")
-              .FIELD(null, fn.name())
-              .end()
-            .ARRAY("scope")
-              .ENUM(null, ExpandoScope.class, "OPERATOR")
-              .end()
-            .end();
-        }
-
         if ((access & ACC_ABSTRACT) == 0) {
           new FunctionCompiler(fn, className, (access & ACC_STATIC) != 0,
                                Object.class, mc).compile();
         }
       }
-
-      // Implement DynamicDispatcher interface.
-      compileInvokeMethod(cc, "__invoke__", clazz.node.ivars);
-      compileInvokeMethod(cc, "__invokeStatic__", clazz.node.cvars);
 
       // Compile override methods derived from base class and interfaces.
       compileOverrideMethods(cc);
@@ -708,128 +621,6 @@ public class BytecodeCompiler {
       }
 
       consumer.acceptClass(className, cc.end());
-    }
-
-    private void compileInvokeMethod(ClassAssembly cc, String invokeName,
-                                     ELNode.DEFINE[] vars) {
-      TreeMap<Integer, List<ELNode.DEFINE>> cases = new TreeMap<>();
-      for (ELNode.DEFINE def : vars) {
-        if (!(def.expr instanceof ELNode.LAMBDA) || !def.symbol.isPublic() ||
-            def.id.equals("toString") || def.id.equals("equals") ||
-            def.id.equals("hashCode"))
-          continue;
-        cases.computeIfAbsent(def.id.hashCode(), x -> new ArrayList<>()).add(def);
-      }
-
-      if (cases.isEmpty() && !(clazz.base instanceof IRClass))
-        return;
-
-      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, invokeName, Object.class,
-                                       EvaluationContext.class, String.class,
-                                       Object[].class);
-
-      if (cases.isEmpty()) {
-        if (clazz.base instanceof IRClass base) {
-          mc.THIS()
-            .ALOAD(1)
-            .ALOAD(2)
-            .ALOAD(3)
-            .INVOKESPECIAL(base.internalName, invokeName, Object.class,
-                           EvaluationContext.class, String.class, Object[].class)
-            .ARETURN()
-            .end();
-        } else {
-          mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
-            .ARETURN()
-            .end();
-        }
-        return;
-      }
-
-      Label fail = new Label(), noResult = new Label();
-      int[] keys = new int[cases.size()];
-      Label[] labels = new Label[cases.size()];
-
-      int i = 0;
-      for (var entry : cases.entrySet()) {
-        keys[i] = entry.getKey();
-        labels[i] = new Label();
-        i++;
-      }
-
-      if (cases.size() > 1) {
-        mc.ALOAD(2)
-          .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-          .SWITCH(keys, labels, noResult, 5);
-      }
-
-      i = 0;
-      for (List<ELNode.DEFINE> defs : cases.values()) {
-        mc.label(labels[i++]);
-        for (int j = 0; j < defs.size(); j++) {
-          ELNode.DEFINE def = defs.get(j);
-          ELNode.LAMBDA proc = (ELNode.LAMBDA)def.expr;
-          Label next = j == defs.size() - 1 ? noResult : new Label();
-          String methodName = proc.symbol.func.internalName;
-          mc.LDC(def.id)
-            .ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-            .IFEQ(next)
-            .ALOAD(3)
-            .ARRAYLENGTH()
-            .PUSH(proc.vars.length)
-            .IF_ICMPNE(fail)
-            .THIS()
-            .ALOAD(1)
-            .ALOAD(3);
-          if (def.symbol.isStatic())
-            mc.INVOKESTATIC(clazz.internalName, methodName, Object.class,
-                            EvaluationContext.class, Object[].class);
-          else
-            mc.INVOKEVIRTUAL(clazz.internalName, methodName, Object.class,
-                             EvaluationContext.class, Object[].class);
-          mc.ARETURN();
-          if (j != defs.size() - 1)
-            mc.label(next);
-        }
-      }
-
-      mc.label(noResult);
-      if (clazz.base instanceof IRClass base) {
-        mc.THIS()
-          .ALOAD(1)
-          .ALOAD(2)
-          .ALOAD(3)
-          .INVOKESPECIAL(base.internalName, invokeName, Object.class,
-                         EvaluationContext.class, String.class, Object[].class)
-          .ARETURN();
-      } else {
-        mc.GETSTATIC(ELUtils.class, "NO_RESULT", Object.class)
-          .ARETURN();
-      }
-
-      mc.label(fail)
-        .NEW(EvaluationException.class)
-        .DUP()
-        .ALOAD(1)
-        .INVOKEVIRTUAL(EvaluationContext.class, "getELContext", ELContext.class)
-        .LDC(EL_METHOD_NOT_FOUND)
-        .ICONST_2()
-        .ANEWARRAY(Object.class)
-        .DUP()
-        .ICONST_0()
-        .LDC(clazz.name)
-        .AASTORE()
-        .DUP()
-        .ICONST_1()
-        .ALOAD(2)
-        .AASTORE()
-        .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
-                      Object[].class)
-        .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                       ELContext.class, String.class)
-        .ATHROW()
-        .end();
     }
 
     private record MethodRecord(String name, Class<?>[] paramTypes) {

@@ -179,6 +179,70 @@ public class ELUtils
         }
     }
 
+    public static boolean isJavaIdentifier(String name) {
+        if (name == null || name.isEmpty())
+            return false;
+        if (!Character.isJavaIdentifierStart(name.charAt(0)))
+            return false;
+        for (int i = 1; i < name.length(); i++)
+            if (!Character.isJavaIdentifierPart(name.charAt(i)))
+                return false;
+        return true;
+    }
+
+    public static String mangle(String id) {
+        if (isJavaIdentifier(id))
+            return id;
+
+        return switch (id) {
+            case "+"   -> "__add__";
+            case "-"   -> "__sub__";
+            case "*"   -> "__mul__";
+            case "/"   -> "__div__";
+            case "%"   -> "__rem__";
+            case "^"   -> "__pow__";
+            case "`!"  -> "__bitnot__";
+            case "`|"  -> "__bitor__";
+            case "`&"  -> "__bitand__";
+            case "`^"  -> "__xor__";
+            case "<<"  -> "__shl__";
+            case ">>"  -> "__shr__";
+            case ">>>" -> "__ushr__";
+            case "<"   -> "__lt__";
+            case "<="  -> "__le__";
+            case ">"   -> "__gt__";
+            case ">="  -> "__ge__";
+            case "<=>" -> "__cmp__";
+            case "=="  -> "__eq__";
+            case "!="  -> "__ne__";
+            case "+="  -> "__add_assign__";
+            case "-="  -> "__sub_assign__";
+            case "*="  -> "__mul_assign__";
+            case "/="  -> "__div_assign__";
+            case "%="  -> "__rem_assign__";
+            case "^="  -> "__pow_assign__";
+            case "`|=" -> "__bitor_assign__";
+            case "`&=" -> "__bitand_assign__";
+            case "`^=" -> "__xor_assign__";
+            case "<<=" -> "__shl_assign__";
+            case ">>=" -> "__shr_assign__";
+            case">>>=" -> "__ushr_assign__";
+            default -> {
+                StringBuilder sb = new StringBuilder();
+                sb.append("__");
+                for (int i = 0; i < id.length(); i++) {
+                    char c = id.charAt(i);
+                    if (Character.isJavaIdentifierPart(c))
+                        sb.append(c);
+                    else
+                        sb.append("$").append(Integer.toHexString(c));
+                }
+                sb.append("__");
+                yield sb.toString();
+            }
+        };
+    }
+
     public static String getMethodDescriptor(Method method) {
         StringBuilder buf = new StringBuilder();
         buf.append('(');

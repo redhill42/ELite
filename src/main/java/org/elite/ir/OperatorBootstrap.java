@@ -20,9 +20,7 @@ import elite.lang.Closure;
 import elite.lang.Decimal;
 import elite.lang.Rational;
 import elite.lang.Seq;
-import org.elite.eval.DynamicDispatcher;
 import org.elite.eval.EvaluationContext;
-import org.elite.eval.EvaluationException;
 import org.elite.eval.GlobalScope;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
@@ -749,21 +747,6 @@ public final class OperatorBootstrap {
     return target;
   }
 
-  private static MethodHandle throwNullPointerException() {
-    MethodHandle mh = throwException(void.class, NullPointerException.class);
-    return filterArguments(mh, 0,
-      dropArguments(MH_newNullPointerException, 0, EvaluationContext.class));
-  }
-
-  private static MethodHandle throwEvaluationException(String message) {
-    MethodHandle ex = filterArguments(
-      MH_newEvaluationException, 0, MH_getELContext);
-    ex = insertArguments(ex, 1, message);
-
-    MethodHandle thrower = throwException(void.class, EvaluationException.class);
-    return filterArguments(thrower, 0, ex);
-  }
-
   //=------------------------------------------------------------------------=//
 
   @SuppressWarnings("unused")
@@ -842,7 +825,7 @@ public final class OperatorBootstrap {
                                                      EvaluationContext env,
                                                      String name, String opname,
                                                      Object lhs, Object rhs) {
-    if (lhs instanceof DynamicDispatcher) {
+    if (isELiteObject(lhs)) {
       try {
         // Find the operator method in ELite class.
         //   [static] Object +(EvaluationContext, Object[])
@@ -851,13 +834,13 @@ public final class OperatorBootstrap {
         MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (Modifier.isStatic(m.getModifiers())) {
           if (ann != null && ann.arity() == 2 && !ann.varargs()) {
-            // (env, lhs, rhs) -> (lhs, rhs, env)
+            // (env, [lhs, rhs]) -> (lhs, rhs, env)
             MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 2);
             return permuteArguments(mh, 1, 2, 0);
           }
         } else {
           if (ann != null && ann.arity() == 1 && !ann.varargs()) {
-            // (lhs, env, rhs) -> (lhs, rhs, env)
+            // (lhs, env, [rhs]) -> (lhs, rhs, env)
             MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
             return permuteArguments(mh, 0, 2, 1);
           }
@@ -865,7 +848,7 @@ public final class OperatorBootstrap {
       } catch (NoSuchMethodException | IllegalAccessException e) {
         // fallthrough
       }
-    } else {
+    } else if (lhs != null) {
       ELContext elctx = env.getELContext();
       MethodResolver resolver = MethodResolver.getInstance(elctx);
       MethodClosure mc;
@@ -884,7 +867,7 @@ public final class OperatorBootstrap {
         try {
           MethodHandle mh = lookup.unreflect(m);
           if (m.getParameterTypes()[0] == ELContext.class) {
-            // (elctx, lhs, rhs) -> (lhs, rhs, elctx)
+            // (elctx, lhs, rhs) -> (lhs, rhs, env)
             mh = filterArguments(mh, 0, MH_getELContext);
             mh = permuteArguments(mh, 1, 2, 0);
           } else {
@@ -911,15 +894,113 @@ public final class OperatorBootstrap {
           MethodHandle mh = lookup.unreflect(m);
           if (m.getParameterTypes()[0] == ELContext.class) {
             if (Modifier.isStatic(m.getModifiers())) {
-              // For expando method, (elctx, lhs, rhs)
+              // For expando method, (elctx, lhs, rhs) -> (lhs, rhs, env)
               mh = permuteArguments(mh, 1, 2, 0);
             } else {
-              // For instance method, (lhs, elctx, rhs)
+              // For instance method, (lhs, elctx, rhs) -> (lhs, rhs, env)
               mh = permuteArguments(mh, 0, 2, 1);
             }
             mh = filterArguments(mh, 2, MH_getELContext);
           } else {
+            // (lhs, rhs) -> (lhs, rhs, env)
             mh = dropArguments(mh, 2, EvaluationContext.class);
+          }
+          return makeCoerce(mh, 0, lhs, rhs);
+        } catch (IllegalAccessException e) {
+          // fallthrough
+        }
+      }
+    }
+
+    if (isELiteObject(rhs)) {
+      try {
+        // Find the static operator method in ELite class.
+        //   static Object +(EvaluationContext, Object[])
+        Method m = rhs.getClass()
+          .getMethod(name, EvaluationContext.class, Object[].class);
+        MetaMethod ann = m.getAnnotation(MetaMethod.class);
+        if (Modifier.isStatic(m.getModifiers()) &&
+            ann != null && ann.arity() == 2 && !ann.varargs()) {
+          // (env, [lhs, rhs]) -> (lhs, rhs, env)
+          MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 2);
+          return permuteArguments(mh, 1, 2, 0);
+        }
+      } catch (NoSuchMethodException | IllegalAccessException e) {
+        // fallthrough
+      }
+
+      try {
+        // Find the instance reverse operator procedure.
+        //   Object ?+(EvaluationContext, Object[])
+        Method m = rhs.getClass().getMethod(
+          mangle("?".concat(opname)), EvaluationContext.class, Object[].class);
+        MetaMethod ann = m.getAnnotation(MetaMethod.class);
+        if (!Modifier.isStatic(m.getModifiers()) &&
+            ann != null && ann.arity() == 1 && !ann.varargs()) {
+          // (rhs, env, [lhs]) -> (lhs, rhs, env)
+          MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
+          return permuteArguments(mh, 2, 0, 1);
+        }
+      } catch (NoSuchMethodException | IllegalAccessException e) {
+        // fallthrough
+      }
+    } else if (rhs != null) {
+      ELContext elctx = env.getELContext();
+      MethodResolver resolver = MethodResolver.getInstance(elctx);
+      MethodClosure mc;
+
+      // Invoke static operator on closure object.
+      mc = resolver.resolveStaticMethod(rhs.getClass(), opname);
+      if (mc != null) {
+        Method m = mc.getJavaMethod(elctx, lhs, rhs);
+        if (m == null) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
+                                        opname, rhs.getClass().getName())),
+            0, Object.class, Object.class);
+        }
+
+        try {
+          MethodHandle mh = lookup.unreflect(m);
+          if (m.getParameterTypes()[0] == ELContext.class) {
+            // (elctx, lhs, rhs) -> (lhs, rhs, env)
+            mh = filterArguments(mh, 0, MH_getELContext);
+            mh = permuteArguments(mh, 1, 2, 0);
+          } else {
+            mh = dropArguments(mh, 2, EvaluationContext.class);
+          }
+          return makeCoerce(mh, 0, lhs, rhs);
+        } catch (IllegalAccessException e) {
+          // fallthrough
+        }
+      }
+
+      // Invoke expando reverse operator procedure.
+      mc = resolver.resolveMethod(rhs.getClass(), "?".concat(opname));
+      if (mc != null) {
+        Method m = mc.getJavaMethod(elctx, lhs);
+        if (m == null) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
+                                        opname, rhs.getClass().getName())),
+            0, Object.class, Object.class);
+        }
+
+        try {
+          MethodHandle mh = lookup.unreflect(m);
+          if (m.getParameterTypes()[0] == ELContext.class) {
+            if (Modifier.isStatic(m.getModifiers())) {
+              // For expando method, (elctx, rhs, lhs) -> (lhs, rhs, env)
+              mh = filterArguments(mh, 0, MH_getELContext);
+              mh = permuteArguments(mh, 2, 1, 0);
+            } else {
+              // For instance method, (rhs, elctx, lhs) -> (lhs, rhs, env)
+              mh = permuteArguments(mh, 2, 0, 1);
+            }
+          } else {
+            // (rhs, lhs) -> (rhs, lhs, env) -> (lhs, rhs, env)
+            mh = dropArguments(mh, 2, EvaluationContext.class);
+            mh = permuteArguments(mh, 1, 0, 2);
           }
           return makeCoerce(mh, 0, lhs, rhs);
         } catch (IllegalAccessException e) {
@@ -1305,7 +1386,7 @@ public final class OperatorBootstrap {
       return objectOp;
 
     if (lhs instanceof Number && rhs instanceof Number) {
-      if (lhs instanceof DynamicDispatcher || rhs instanceof DynamicDispatcher)
+      if (isELiteObject(lhs) || isELiteObject(rhs))
         return objectOp;
       if (lhs instanceof BigDecimal || rhs instanceof BigDecimal)
         return commonCoerce(objectOp, BigDecimal.class, lhs, rhs);
@@ -1945,7 +2026,7 @@ public final class OperatorBootstrap {
                                                     EvaluationContext env,
                                                     String name, String opname,
                                                     Object rhs) {
-    if (rhs instanceof DynamicDispatcher) {
+    if (isELiteObject(rhs)) {
       try {
         // Find the operator method in ELite class.
         //   [static] Object __neg__(EvaluationContext, Object[])
@@ -2137,7 +2218,7 @@ public final class OperatorBootstrap {
     if (rhs.getClass().isArray())
       return MH_arrayEmpty;
 
-    if (rhs instanceof DynamicDispatcher) {
+    if (isELiteObject(rhs)) {
       try {
         // Find the isEmpty() instance procedure in ELite class. The procedure
         // must return a boolean value otherwise a ClassCastException will be
