@@ -2891,6 +2891,9 @@ public class IRBuilder extends ELNode.Visitor {
       if (owner == null || currentScope.isStaticScope())
         modifiers |= Modifier.STATIC;
       func = new IRFunction(owner, "<lambda>", node.vars.length,
+                            Arrays.stream(node.vars)
+                              .map(x -> x.id)
+                              .toArray(String[]::new),
                             node.varargs, modifiers);
       ELNode.DEFINE tmpdef = new ELNode.DEFINE(node.pos, "", null, null, node);
       node.symbol = new Symbol(node.scope, tmpdef);
@@ -4366,7 +4369,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   public static IRFunction compile(ELContext elctx, ELNode node) {
     SymbolTable symTable = SymbolTableBuilder.build(node);
-    IRFunction func = new IRFunction("<expr>", 0, false);
+    IRFunction func = new IRFunction("<expr>", 0, new String[0], false);
     IRBuilder b = new IRBuilder(elctx, new IRProgram(null), func,
                                 symTable.currentScope());
     b.build(node);
@@ -4381,7 +4384,7 @@ public class IRBuilder extends ELNode.Visitor {
     List<ELNode> defs = program.getDefinitions();
     List<ELNode> exps = program.getExpressions();
 
-    IRFunction func = new IRFunction("<program>", 0, false);
+    IRFunction func = new IRFunction("<program>", 0, new String[0], false);
     IRProgram output = new IRProgram(func);
     IRBuilder b = new IRBuilder(elctx, output, func, symTable.currentScope());
     b.setFile(program.getFilename());

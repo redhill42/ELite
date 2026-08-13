@@ -103,6 +103,9 @@ public final class SymbolTableBuilder {
             modifiers |= Modifier.STATIC;
         }
         sym.func = new IRFunction(owner, e.id, fn.vars.length,
+                                  Arrays.stream(fn.vars)
+                                    .map(x -> x.id)
+                                    .toArray(String[]::new),
                                   fn.varargs, modifiers);
         fn.symbol = sym;
       } else if (e.expr instanceof ELNode.CLASSDEF cdef) {

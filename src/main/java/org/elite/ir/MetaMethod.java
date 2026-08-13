@@ -21,11 +21,31 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+/**
+ * Annotate an ELite method.
+ */
 @Documented
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Member {
+public @interface MetaMethod {
+  /**
+   * Return the method name.
+   */
   String name();
+
+  /**
+   * Return the number of arguments of the method.
+   */
   int arity();
+
+  /**
+   * {@return {@code true} if this method was declared to take a
+   * variable number of arguments; returns {@code false} otherwise}
+   */
   boolean varargs();
+
+  /**
+   * Return a list of parameter names.
+   */
+  String[] parameterNames();
 }

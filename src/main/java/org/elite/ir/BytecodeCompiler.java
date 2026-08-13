@@ -283,6 +283,13 @@ public class BytecodeCompiler {
       ACC_PUBLIC | ACC_STATIC | ACC_FINAL, f.internalName, Object.class,
       EvaluationContext.class, Object[].class);
 
+    mc.ANNOTATION(MetaMethod.class, true)
+      .FIELD("name", f.name())
+      .FIELD("arity", f.paramCount())
+      .FIELD("varargs", f.isVarArgs())
+      .ARRAY("parameterNames", f.paramNames())
+      .end();
+
     new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
   }
 
@@ -522,6 +529,11 @@ public class BytecodeCompiler {
       for (IRFunction closure : clazz.closures)
         cc.getImpl().visitNestMember(AsmType.toInternalName(getClosureName(closure)));
 
+      // Add annotation for ELite class.
+      cc.ANNOTATION(MetaClass.class, true)
+        .FIELD("name", clazz.name)
+        .end();
+
       // Add static and instance fields.
       for (ELNode.DEFINE var : clazz.node.cvars) {
         if (!(var.expr instanceof ELNode.LAMBDA) &&
@@ -642,10 +654,11 @@ public class BytecodeCompiler {
                           EvaluationContext.class, Object[].class);
 
         // Add annotation for member attributes.
-        mc.ANNOTATION(Member.class, true)
+        mc.ANNOTATION(MetaMethod.class, true)
           .FIELD("name", fn.name())
           .FIELD("arity", fn.paramCount())
           .FIELD("varargs", fn.isVarArgs())
+          .ARRAY("parameterNames", fn.paramNames())
           .end();
 
         // Add annotation for operator procedure.
@@ -669,9 +682,6 @@ public class BytecodeCompiler {
       // Implement DynamicDispatcher interface.
       compileInvokeMethod(cc, "__invoke__", clazz.node.ivars);
       compileInvokeMethod(cc, "__invokeStatic__", clazz.node.cvars);
-
-      // Implement PropertyResolvable interface.
-      compilePropertyResolvableMethods(cc);
 
       // Compile override methods derived from base class and interfaces.
       compileOverrideMethods(cc);
@@ -820,292 +830,6 @@ public class BytecodeCompiler {
                        ELContext.class, String.class)
         .ATHROW()
         .end();
-    }
-
-    private record Property(String name, String getter, String setter) {}
-
-    private void compilePropertyResolvableMethods(ClassAssembly cc) {
-      Map<String, Property> properties = new HashMap<>();
-
-      // Collect getters.
-      for (ELNode.DEFINE def : clazz.node.ivars) {
-        if (def.expr instanceof ELNode.LAMBDA fn &&
-            fn.vars.length == 0 && !fn.varargs) {
-          if (def.id.length() > 3 && def.id.startsWith("get") &&
-              Character.isUpperCase(def.id.charAt(3))) {
-            String name = decapitalize(def.id.substring(3));
-            properties.put(name, new Property(name, def.id, null));
-          } else if (def.id.length() > 2 && def.id.startsWith("is") &&
-                     Character.isUpperCase(def.id.charAt(2))) {
-            String name = decapitalize(def.id.substring(2));
-            properties.put(name, new Property(name, def.id, null));
-          }
-        }
-      }
-
-      // Collect setters.
-      for (ELNode.DEFINE def : clazz.node.ivars) {
-        if (def.expr instanceof ELNode.LAMBDA fn &&
-            fn.vars.length == 1 && !fn.varargs &&
-            def.id.length() > 3 && def.id.startsWith("set") &&
-            Character.isUpperCase(def.id.charAt(3))) {
-          String name = decapitalize(def.id.substring(3));
-          properties.compute(name, (k, v) ->
-            v == null ? new Property(name, null, def.id)
-                      : new Property(name, v.getter, def.id));
-        }
-      }
-
-      // Create cases for properties.
-      TreeMap<Integer, List<Property>> cases = new TreeMap<>();
-      for (Property p : properties.values())
-        cases.computeIfAbsent(p.name.hashCode(), x -> new ArrayList<>()).add(p);
-
-      MethodAssembly mc;
-
-      if (cases.isEmpty() && !(clazz.base instanceof IRClass)) {
-        // No property to resolve, don't generate PropertyResolvable methods and
-        // rely on interface defaults to return default value.
-        return;
-      }
-
-      // Object getValue(ELContext elctx, Object property)
-      mc = cc.newMethod(ACC_PUBLIC, "getValue", Object.class,
-                        ELContext.class, Object.class);
-      if (cases.isEmpty()) {
-        if (clazz.base instanceof IRClass base) {
-          mc.THIS()
-            .ALOAD(1)
-            .ALOAD(2)
-            .INVOKESPECIAL(base.internalName, "getValue", Object.class,
-                           ELContext.class, Object.class)
-            .ARETURN()
-            .end();
-        } else {
-          mc.ACONST_NULL()
-            .ARETURN()
-            .end();
-        }
-      } else {
-        int[] keys = new int[cases.size()];
-        Label[] labels = new Label[cases.size()];
-        Label exit = new Label();
-        Label fail = null;
-
-        int i = 0;
-        for (int hash : cases.keySet()) {
-          keys[i] = hash;
-          labels[i] = new Label();
-          i++;
-        }
-
-        mc.ALOAD(2)
-          .INSTANCEOF(String.class)
-          .IFEQ(exit)
-          .NEW(EvaluationContext.class)
-          .DUP()
-          .ALOAD(1)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ASTORE(3);
-
-        if (cases.size() > 1) {
-          mc.ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-            .SWITCH(keys, labels, exit, 5);
-        }
-
-        i = 0;
-        for (List<Property> props : cases.values()) {
-          mc.label(labels[i++]);
-          for (int j = 0; j < props.size(); j++) {
-            Property prop = props.get(j);
-            Label next = j == props.size() - 1 ? exit : new Label();
-            mc.LDC(prop.name)
-              .ALOAD(2)
-              .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-              .IFEQ(next);
-            if (prop.getter == null) {
-              if (fail == null)
-                fail = new Label();
-              mc.GOTO(fail);
-            } else {
-              mc.THIS()
-                .ALOAD(3)
-                .ICONST_0()
-                .ANEWARRAY(Object.class)
-                .INVOKEVIRTUAL(clazz.internalName, prop.getter, Object.class,
-                               EvaluationContext.class, Object[].class)
-                .ALOAD(1)
-                .ICONST_1()
-                .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved",
-                               Void.TYPE, Boolean.TYPE)
-                .ARETURN();
-            }
-            if (j != props.size() - 1)
-              mc.label(next);
-          }
-        }
-
-        if (fail != null) {
-          mc.label(fail)
-            .NEW(EvaluationException.class)
-            .DUP()
-            .ALOAD(1)
-            .LDC(EL_PROPERTY_NOT_READABLE)
-            .ICONST_2()
-            .ANEWARRAY(Object.class)
-            .DUP()
-            .ICONST_0()
-            .LDC(clazz.name)
-            .AASTORE()
-            .DUP()
-            .ICONST_1()
-            .ALOAD(2)
-            .AASTORE()
-            .INVOKESTATIC(Resources.class, "getText", String.class,
-                          String.class, Object[].class)
-            .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                           ELContext.class, String.class)
-            .ATHROW();
-        }
-
-        mc.label(exit);
-        if (clazz.base instanceof IRClass base) {
-          mc.THIS()
-            .ALOAD(1)
-            .ALOAD(2)
-            .INVOKESPECIAL(base.internalName, "getValue", Object.class,
-                           ELContext.class, Object.class)
-            .ARETURN()
-            .end();
-        } else {
-          mc.ACONST_NULL()
-            .ARETURN()
-            .end();
-        }
-      }
-
-      // void setValue(ELContext elctx, Object property, Object value);
-      mc = cc.newMethod(ACC_PUBLIC, "setValue", Void.TYPE,
-                        ELContext.class, Object.class, Object.class);
-      if (cases.isEmpty()) {
-        if (clazz.base instanceof IRClass base) {
-          mc.THIS()
-            .ALOAD(1)
-            .ALOAD(2)
-            .ALOAD(3)
-            .INVOKESPECIAL(base.internalName, "setValue", Void.TYPE,
-                           ELContext.class, Object.class, Object.class)
-            .RETURN()
-            .end();
-        } else {
-          mc.RETURN()
-            .end();
-        }
-      } else {
-        int[] keys = new int[cases.size()];
-        Label[] labels = new Label[cases.size()];
-        Label exit = new Label();
-        Label fail = null;
-
-        int i = 0;
-        for (int hash : cases.keySet()) {
-          keys[i] = hash;
-          labels[i] = new Label();
-          i++;
-        }
-
-        mc.ALOAD(2)
-          .INSTANCEOF(String.class)
-          .IFEQ(exit)
-          .NEW(EvaluationContext.class)
-          .DUP()
-          .ALOAD(1)
-          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
-                         ELContext.class)
-          .ASTORE(4);
-
-        if (cases.size() > 1) {
-          mc.ALOAD(2)
-            .INVOKEVIRTUAL(Object.class, "hashCode", Integer.TYPE)
-            .SWITCH(keys, labels, exit, 5);
-        }
-
-        i = 0;
-        for (List<Property> props : cases.values()) {
-          mc.label(labels[i++]);
-          for (int j = 0; j < props.size(); j++) {
-            Property prop = props.get(j);
-            Label next = j == props.size() - 1 ? exit : new Label();
-            mc.LDC(prop.name)
-              .ALOAD(2)
-              .INVOKEVIRTUAL(Object.class, "equals", Boolean.TYPE, Object.class)
-              .IFEQ(next);
-            if (prop.setter == null) {
-              if (fail == null)
-                fail = new Label();
-              mc.GOTO(fail);
-            } else {
-              mc.THIS()
-                .ALOAD(4)
-                .ICONST_1()
-                .ANEWARRAY(Object.class)
-                .DUP()
-                .ICONST_0()
-                .ALOAD(3)
-                .AASTORE()
-                .INVOKEVIRTUAL(clazz.internalName, prop.setter, Object.class,
-                               EvaluationContext.class, Object[].class)
-                .POP()
-                .ALOAD(1)
-                .TRUE()
-                .INVOKEVIRTUAL(ELContext.class, "setPropertyResolved",
-                               Void.TYPE, Boolean.TYPE)
-                .RETURN();
-            }
-            if (j != props.size() - 1)
-              mc.label(next);
-          }
-        }
-
-        if (fail != null) {
-          mc.label(fail)
-            .NEW(EvaluationException.class)
-            .DUP()
-            .ALOAD(1)
-            .LDC(EL_PROPERTY_NOT_WRITABLE)
-            .ICONST_2()
-            .ANEWARRAY(Object.class)
-            .DUP()
-            .ICONST_0()
-            .LDC(clazz.name)
-            .AASTORE()
-            .DUP()
-            .ICONST_1()
-            .ALOAD(2)
-            .AASTORE()
-            .INVOKESTATIC(Resources.class, "getText", String.class,
-                          String.class, Object[].class)
-            .INVOKESPECIAL(EvaluationException.class, "<init>", Void.TYPE,
-                           ELContext.class, String.class).ATHROW();
-        }
-
-        mc.label(exit);
-        if (clazz.base instanceof IRClass base) {
-          mc.THIS()
-            .ALOAD(1)
-            .ALOAD(2)
-            .ALOAD(3)
-            .INVOKESPECIAL(base.internalName, "setValue", Void.TYPE,
-                           ELContext.class, Object.class, Object.class)
-            .RETURN()
-            .end();
-        } else {
-          mc.RETURN()
-            .end();
-        }
-      }
     }
 
     private record MethodRecord(String name, Class<?>[] paramTypes) {

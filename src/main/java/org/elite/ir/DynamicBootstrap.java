@@ -217,7 +217,7 @@ public final class DynamicBootstrap {
   {
     Method m = clazz.getMethod(name, EvaluationContext.class, Object[].class);
     if (!Modifier.isStatic(m.getModifiers())) {
-      Member ann = m.getAnnotation(Member.class);
+      MetaMethod ann = m.getAnnotation(MetaMethod.class);
       if (ann != null && ann.arity() == 0 && !ann.varargs()) {
         MethodHandle mh = lookup.unreflect(m);
         mh = insertArguments(mh, 2, (Object)new Object[0]);
@@ -233,7 +233,7 @@ public final class DynamicBootstrap {
   {
     Method m = clazz.getMethod(name, EvaluationContext.class, Object[].class);
     if (!Modifier.isStatic(m.getModifiers())) {
-      Member ann = m.getAnnotation(Member.class);
+      MetaMethod ann = m.getAnnotation(MetaMethod.class);
       if (ann != null && ann.arity() == 1 && !ann.varargs())
         return lookup.unreflect(m);
     }

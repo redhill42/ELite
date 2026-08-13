@@ -13,28 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.elite.eval;
+package org.elite.ir;
 
-import static org.elite.eval.ELUtils.NO_RESULT;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * The DynamicDispatcher is used for compiled elite class to dispatch member
- * procedures.
+ * Annotate an ELite class.
  */
-public interface DynamicDispatcher {
+@Documented
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface MetaClass {
   /**
-   * Invoke an instance member procedure by name.
+   * Return the class name.
    */
-  default Object
-  __invoke__(EvaluationContext env, String name, Object... args) {
-    return NO_RESULT;
-  }
-
-  /**
-   * Invoke a static member procedure by name.
-   */
-  default Object
-  __invokeStatic__(EvaluationContext env, String name, Object... args) {
-    return NO_RESULT;
-  }
+  String name();
 }

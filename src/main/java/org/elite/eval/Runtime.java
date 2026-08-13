@@ -25,6 +25,7 @@ import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TargetMethodClosure;
 import org.elite.eval.closure.TypedClosure;
+import org.elite.ir.MetaClass;
 import org.elite.parser.ELNode;
 import org.elite.parser.Token;
 import org.elite.resolver.MethodResolver;
@@ -98,6 +99,17 @@ public final class Runtime {
     return value;
   }
 
+  private static String typeName(Object obj) {
+    if (obj == null)
+      return null;
+
+    MetaClass meta = obj.getClass().getAnnotation(MetaClass.class);
+    if (meta != null)
+      return meta.name();
+
+    return obj.getClass().getName();
+  }
+
   public static Object getValue(ELContext elctx, Object obj, Object key) {
     if (obj == null || key == null)
       return null;
@@ -124,7 +136,7 @@ public final class Runtime {
     }
 
     throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
-                                            obj.getClass().getName(), key));
+                                            typeName(obj), key));
   }
 
   private static Closure resolveMethod(ELContext elctx, Object base,
@@ -150,9 +162,8 @@ public final class Runtime {
   public static Object setValue(Object value, Object obj, Object key,
                                 ELContext elctx) {
     if (obj == null || key == null) {
-      String objName = obj == null ? "null" : obj.getClass().getName();
-      throw new EvaluationException(elctx,
-                                    _T(EL_PROPERTY_NOT_FOUND, objName, key));
+      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
+                                              typeName(obj), key));
     }
 
     try {
@@ -164,7 +175,7 @@ public final class Runtime {
       // fallthrough
     } catch (PropertyNotWritableException ex) {
       throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_WRITABLE,
-                                              obj.getClass().getName(), key));
+                                              typeName(obj), key));
     } catch (EvaluationException ex) {
       throw ex;
     } catch (ELException ex) {
@@ -174,7 +185,7 @@ public final class Runtime {
     }
 
     throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
-                                            obj.getClass().getName(), key));
+                                            typeName(obj), key));
   }
 
   private static EvaluationException

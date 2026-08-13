@@ -33,6 +33,7 @@ public class IRFunction {
   private final IRClass owner;
   private final String name;
   private final int paramCount;
+  private final String[] paramNames;
   private final boolean varargs;
   private final int modifiers;
 
@@ -71,16 +72,19 @@ public class IRFunction {
   private Object[] defaultValues;
 
   // Create a IRFunction skeleton for a standalone function.
-  IRFunction(String name, int paramCount, boolean varargs) {
-    this(null, name, paramCount, varargs, Modifier.PUBLIC | Modifier.STATIC);
+  IRFunction(String name, int paramCount, String[] paramNames,
+             boolean varargs) {
+    this(null, name, paramCount, paramNames, varargs,
+         Modifier.PUBLIC | Modifier.STATIC);
   }
 
   // Create a IRFunction skeleton for class member function.
-  IRFunction(IRClass owner, String name, int paramCount, boolean varargs,
-             int modifiers) {
+  IRFunction(IRClass owner, String name, int paramCount, String[] paramNames,
+             boolean varargs, int modifiers) {
     this.owner = owner;
     this.name = name;
     this.paramCount = paramCount;
+    this.paramNames = paramNames;
     this.varargs = varargs;
     this.modifiers = modifiers;
   }
@@ -111,6 +115,10 @@ public class IRFunction {
 
   public int paramCount() {
     return paramCount;
+  }
+
+  public String[] paramNames() {
+    return paramNames;
   }
 
   public boolean isVarArgs() {

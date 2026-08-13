@@ -44,6 +44,14 @@ public class AnnotationAssembly {
     return new AnnotationAssembly(this, impl.visitArray(name));
   }
 
+  public AnnotationAssembly ARRAY(String name, Object[] values) {
+    AnnotationVisitor a = impl.visitArray(name);
+    for (Object value : values)
+      a.visit(null, value);
+    a.visitEnd();
+    return this;
+  }
+
   public AnnotationAssembly end() {
     impl.visitEnd();
     return parent;

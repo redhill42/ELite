@@ -848,7 +848,7 @@ public final class OperatorBootstrap {
         //   [static] Object +(EvaluationContext, Object[])
         Method m = lhs.getClass().getMethod(name, EvaluationContext.class,
                                             Object[].class);
-        Member ann = m.getAnnotation(Member.class);
+        MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (Modifier.isStatic(m.getModifiers())) {
           if (ann != null && ann.arity() == 2 && !ann.varargs()) {
             // (env, lhs, rhs) -> (lhs, rhs, env)
@@ -1951,7 +1951,7 @@ public final class OperatorBootstrap {
         //   [static] Object __neg__(EvaluationContext, Object[])
         Method m = rhs.getClass().getMethod(name, EvaluationContext.class,
                                             Object[].class);
-        Member ann = m.getAnnotation(Member.class);
+        MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (Modifier.isStatic(m.getModifiers())) {
           if (ann != null && ann.arity() == 1 && !ann.varargs()) {
             // (env, rhs) -> (rhs, env)
@@ -2144,7 +2144,7 @@ public final class OperatorBootstrap {
         // thrown.
         Method m = rhs.getClass().getMethod("isEmpty", EvaluationContext.class,
                                             Object[].class);
-        Member ann = m.getAnnotation(Member.class);
+        MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (!Modifier.isStatic(m.getModifiers()) &&
             ann != null && ann.arity() == 0 && !ann.varargs()) {
           return lookup.unreflect(m).asCollector(Object[].class, 0);
