@@ -1133,7 +1133,7 @@ public class BytecodeCompiler {
             .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
                           ELContext.class);
           if (returnType != Void.TYPE && returnType != Object.class)
-            mc.DUP(); // for TypeCoersion.corce
+            mc.DUP(); // for coerce
           mc.ASTORE(ctxSlot);
 
           mc.THIS()
@@ -1160,11 +1160,10 @@ public class BytecodeCompiler {
           } else if (returnType == Object.class) {
             mc.ARETURN();
           } else {
-            mc.LDC(Type.getType(TypeCoercion.getBoxedType(returnType)))
-              .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
-                            ELContext.class, Object.class, Class.class)
-              .UNBOX(returnType)
-              .XRETURN(returnType);
+            mc.INVOKEDYNAMIC(FunctionCompiler.COERCE_BOOTSTRAP, "coerce",
+                             AsmType.getMethodDescriptor(
+                               returnType, ELContext.class, Object.class));
+            mc.XRETURN(returnType);
           }
           mc.end();
         }
@@ -1216,6 +1215,12 @@ public class BytecodeCompiler {
           .ASTORE(2);
         new FunctionCompiler(fn, className, false, String.class, mc).compile();
       } else {
+        mc.THIS()
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
+          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
+                         ELContext.class)
+          .ASTORE(1);
+
         mc.NEW_INSTANCE(StringBuilder.class)
           .LDC(clazz.name + "(")
           .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
@@ -1238,12 +1243,15 @@ public class BytecodeCompiler {
             .INVOKESTATIC(ELUtils.class, "escape", StringBuilder.class,
                           StringBuilder.class, String.class)
             .GOTO(b2)
-            .label(b1)
-            .INVOKESTATIC(TypeCoercion.class, "coerceToString", String.class,
-                          Object.class)
+          .label(b1)
+            .ALOAD(1)
+            .SWAP()
+            .INVOKEDYNAMIC(FunctionCompiler.COERCE_BOOTSTRAP, "coerce",
+                           AsmType.getMethodDescriptor(
+                             String.class, ELContext.class, Object.class))
             .INVOKEVIRTUAL(StringBuilder.class, "append", StringBuilder.class,
                            String.class)
-            .label(b2);
+          .label(b2);
         }
 
         mc.LDC(")")
@@ -1695,13 +1703,8 @@ public class BytecodeCompiler {
         } else if (returnType == Void.TYPE) {
           mc.POP().RETURN();
         } else {
-          mc.ALOAD(S_CTX())
-            .SWAP()
-            .LDC(Type.getType(TypeCoercion.getBoxedType(returnType)))
-            .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
-                          ELContext.class, Object.class, Class.class)
-            .UNBOX(returnType)
-            .XRETURN(returnType);
+          emitCoerce(returnType);
+          mc.XRETURN(returnType);
         }
       }
   
@@ -2058,19 +2061,10 @@ public class BytecodeCompiler {
   
       case STORE_ARRAY -> {
         Class<?> c = (Class<?>)fn.getConstant(v.poolIndex());
-  
-        if (c.isPrimitive()) {
-          mc.UNBOX(c);
-        } else if (c != Object.class) {
-          mc.LDC(Type.getType(c))
-            .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
-                          Object.class, Class.class)
-            .CHECKCAST(c);
-        }
-  
+
+        emitCoerce(c);
         mc.PUSH(v.count());
         mc.SWAP();
-  
         if (c == Integer.TYPE)
           mc.IASTORE();
         else if (c == Long.TYPE)
@@ -2150,14 +2144,7 @@ public class BytecodeCompiler {
           className = f.getDeclaringClass().getName();
           fieldName = f.getName();
           type = f.getType();
-          if (type != Object.class) {
-            mc.ALOAD(S_CTX())
-              .SWAP()
-              .LDC(Type.getType(TypeCoercion.getBoxedType(type)))
-              .INVOKESTATIC(TypeCoercion.class, "coerce", Object.class,
-                            ELContext.class, Object.class, Class.class)
-              .UNBOX(type);
-          }
+          emitCoerce(TypeCoercion.getBoxedType(type));
         } else {
           className = currentClassName;
           fieldName = (String)field;
@@ -2169,6 +2156,8 @@ public class BytecodeCompiler {
           mc.DUP();
         else
           v.advance(); // no DUP, eat POP
+        if (type.isPrimitive())
+          mc.UNBOX_UNCHECKED(type);
         mc.PUTSTATIC(className, fieldName, type);
       }
   
@@ -2191,10 +2180,9 @@ public class BytecodeCompiler {
         int tail = head + 1;
         mc.DUP()
           .INSTANCEOF(Seq.class)
-          .IFNE(c)
-          .INVOKESTATIC(TypeCoercion.class, "coerceToSeq", Seq.class,
-                        Object.class)
-          .label(c)
+          .IFNE(c);
+        emitCoerce(Seq.class);
+        mc.label(c)
           .ASTORE(tail)
           .ASTORE(head)
           .NEW(Cons.class)
@@ -2235,16 +2223,15 @@ public class BytecodeCompiler {
         }
       }
   
-      case DECLARE_NS ->
-        mc.INVOKESTATIC(TypeCoercion.class, "coerceToString", String.class,
-                        Object.class)
-          .ALOAD(S_ENV())
+      case DECLARE_NS -> {
+        emitCoerce(String.class);
+        mc.ALOAD(S_ENV())
           .SWAP()
           .LDC(fn.getConstant(v.poolIndex()))
           .SWAP()
           .INVOKEVIRTUAL(EvaluationContext.class, "declarePrefix", Void.TYPE,
                          String.class, String.class);
-  
+      }
 
       default -> throw new CompilationError(
         _T(IR_BC_UNHANDLED_OPCODE, v.opcode(), Opcode.name(v.opcode())));
@@ -2365,6 +2352,15 @@ public class BytecodeCompiler {
       return null;
     }
 
+
+    private static final Handle COERCE_BOOTSTRAP =
+      new Handle(
+        Opcodes.H_INVOKESTATIC, AsmType.toInternalName(CoercionBootstrap.class),
+        "coerceBootstrap",
+        AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
+                                    String.class, MethodType.class),
+        false);
+
     private static final Handle BINARY_BOOTSTRAP =
       new Handle(
         Opcodes.H_INVOKESTATIC, AsmType.toInternalName(OperatorBootstrap.class),
@@ -2380,6 +2376,16 @@ public class BytecodeCompiler {
         AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
                                     String.class, MethodType.class),
         false);
+
+    private void emitCoerce(Class<?> type) {
+      if (type != Object.class) {
+        mc.ALOAD(S_CTX());
+        mc.SWAP();
+        mc.INVOKEDYNAMIC(COERCE_BOOTSTRAP, "coerce",
+                         AsmType.getMethodDescriptor(
+                           type, ELContext.class, Object.class));
+      }
+    }
 
     private void emitBinary(InstructionView v, String name, Class<?> returnType) {
       mc.ALOAD(S_ENV());

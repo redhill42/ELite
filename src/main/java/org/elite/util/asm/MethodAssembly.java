@@ -671,7 +671,7 @@ public class MethodAssembly {
    *
    * @param type the type of the top stack value.
    */
-  public MethodAssembly UNBOX(Class<?> type) {
+  private MethodAssembly UNBOX(Class<?> type, boolean check) {
     if (type.isPrimitive()) {
       String t, m, s;
       if (type == Boolean.TYPE) {
@@ -709,12 +709,21 @@ public class MethodAssembly {
       } else {
         throw new IllegalArgumentException(type.getName());
       }
-      impl.visitTypeInsn(CHECKCAST, t);
+      if (check)
+        impl.visitTypeInsn(CHECKCAST, t);
       impl.visitMethodInsn(INVOKEVIRTUAL, t, m, s);
     } else if (type != Object.class) {
       impl.visitTypeInsn(CHECKCAST, AsmType.toInternalName(type));
     }
     return this;
+  }
+
+  public MethodAssembly UNBOX(Class<?> type) {
+    return UNBOX(type, true);
+  }
+
+  public MethodAssembly UNBOX_UNCHECKED(Class<?> type) {
+    return UNBOX(type, false);
   }
 
   public MethodAssembly THROW_NEW(Class<?> type) {
