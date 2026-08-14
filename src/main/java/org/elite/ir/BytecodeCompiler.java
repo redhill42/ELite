@@ -511,6 +511,13 @@ public class BytecodeCompiler {
                           Object[].class);
       }
 
+      mc.ANNOTATION(MetaMethod.class, true)
+        .FIELD("name", clazz.name)
+        .FIELD("arity", initFunc.paramCount())
+        .FIELD("varargs", initFunc.isVarArgs())
+        .ARRAY("parameterNames", initFunc.paramNames())
+        .end();
+
       if (clazz.base instanceof Class) {
         // FIXME: invoke super constructor of Java base class.
         mc.THIS()

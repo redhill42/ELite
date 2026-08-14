@@ -205,6 +205,8 @@ public final class SymbolTableBuilder {
     }
 
     private ELNode.LAMBDA createInitProc(ELNode.CLASSDEF e) {
+      ELNode.METASET meta = null;
+
       List<ELNode.DEFINE> initVars = new ArrayList<>();
       if (e.vars != null)
         Collections.addAll(initVars, e.vars);
@@ -214,7 +216,12 @@ public final class SymbolTableBuilder {
       for (int i = 0; i < e.ivars.length; i++) {
         ELNode.DEFINE ivar = e.ivars[i];
         if (ivar.id.equals(e.id) && ivar.expr instanceof ELNode.LAMBDA init) {
+          if (e.vars != null && init.vars.length != 0)
+            table.addError(init.pos, "The constructor of a data class must " +
+                                     "have no parameters");
+
           initProc = init;
+          meta = ivar.meta;
 
           // Remove the init proc.
           ELNode.DEFINE[] ivars = new ELNode.DEFINE[e.ivars.length - 1];
@@ -273,9 +280,19 @@ public final class SymbolTableBuilder {
         e.pos, e.file, "<init>", null, initParams.toArray(new ELNode.DEFINE[0]),
         initProc != null && initProc.varargs,
         new ELNode.COMPOUND(e.pos, initBody.toArray(new ELNode[0])));
-      ELNode.DEFINE initDef = new ELNode.DEFINE(e.pos, "<init>", null, null,
+      ELNode.DEFINE initDef = new ELNode.DEFINE(e.pos, "<init>", null, meta,
                                                 initFunc);
       scan(initDef);
+
+      if (e.vars != null) {
+        // Recreate IRFunction skeleton for init parameter names.
+        String[] keys = Arrays.stream(e.vars).map(x -> x.id)
+          .toArray(String[]::new);
+        initFunc.symbol.func = new IRFunction(e.symbol.clazz, "<init>",
+                                              e.vars.length, keys, false,
+                                              Modifier.PUBLIC);
+      }
+
       return initFunc;
     }
 

@@ -63,7 +63,7 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_dynamicSetValue;
   private static final MethodHandle MH_invokeDispatcher;
   private static final MethodHandle MH_callDispatcher;
-  private static final MethodHandle MH_dynamicCall;
+  private static final MethodHandle MH_constructDispatcher;
 
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
@@ -114,9 +114,10 @@ public final class DynamicBootstrap {
                    String[].class, EvaluationContext.class, Object.class,
                    Object[].class));
 
-      MH_dynamicCall = lookup.findStatic(
-        ELEngine.class, "callTarget",
-        methodType(Object.class, ELContext.class, Object.class, Object[].class));
+      MH_constructDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "constructDispatcher",
+        methodType(Object.class, Lookup.class, MutableCallSite.class,
+                   EvaluationContext.class, Object[].class));
 
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
@@ -644,31 +645,37 @@ public final class DynamicBootstrap {
         mh = permuteArguments(mh, 1, 0, 2);
       }
 
-      // Build the permutation table for named arguments.
-      int[] perm = null;
-      if (keys.length != 0) {
-        try {
-          perm = buildPermutation(meta.parameterNames(), keys, varargs);
-        } catch (IllegalArgumentException e) {
-          return dropArguments(throwEvaluationException(e.getMessage()),
-                               1, Object.class, Object[].class);
-        }
-      }
-
-      if (perm != null) {
-        // Reorder named arguments using the permutation table.
-        MethodHandle filter = insertArguments(MH_permuteNamedArgs,
-                                              1, perm, arity, varargs);
-        mh = filterArguments(mh, 2, filter);
-      } else if (varargs) {
-        // Build argument list for varargs.
-        MethodHandle filter = insertArguments(MH_buildVarArgs, 1, arity);
-        mh = filterArguments(mh, 2, filter);
-      }
-
-      return mh;
+      return reorderArguments(mh, meta.parameterNames(), keys, arity, varargs);
     } catch (IllegalAccessException e) {
       return reportMethodNotFound(obj, name);
+    }
+  }
+
+  private static MethodHandle dispatchELiteConstructor(
+    MethodHandles.Lookup lookup, Class<?> c, String name, String[] keys,
+    Object[] args)
+  {
+    try {
+      Constructor<?> cons = c.getConstructor(EvaluationContext.class,
+                                             Object[].class);
+
+      // Check arguments.
+      MetaMethod meta = cons.getAnnotation(MetaMethod.class);
+      int arity = meta.arity();
+      boolean varargs = meta.varargs();
+      int argc = args.length;
+
+      if (varargs ? (argc < arity - 1) : (argc != arity)) {
+        return dropArguments(
+          throwEvaluationException(_T(EL_FN_BAD_ARG_COUNT, name, arity, argc)),
+          1, Object.class, Object[].class);
+      }
+
+      MethodHandle mh = lookup.unreflectConstructor(cons);
+      mh = dropArguments(mh, 1, Object.class);
+      return reorderArguments(mh, meta.parameterNames(), keys, arity, varargs);
+    } catch (NoSuchMethodException | IllegalAccessException e) {
+      return reportMethodNotFound(c, name);
     }
   }
 
@@ -683,6 +690,34 @@ public final class DynamicBootstrap {
       }
     }
     return null;
+  }
+
+  private static MethodHandle reorderArguments(MethodHandle mh, String[] names,
+                                               String[] keys, int arity,
+                                               boolean varargs) {
+    // Build the permutation table for named arguments.
+    int[] perm = null;
+    if (keys.length != 0) {
+      try {
+        perm = buildPermutation(names, keys, varargs);
+      } catch (IllegalArgumentException e) {
+        return dropArguments(throwEvaluationException(e.getMessage()), 1,
+                             Object.class, Object[].class);
+      }
+    }
+
+    if (perm != null) {
+      // Reorder named arguments using the permutation table.
+      MethodHandle filter = insertArguments(MH_permuteNamedArgs, 1, perm, arity,
+                                            varargs);
+      mh = filterArguments(mh, 2, filter);
+    } else if (varargs) {
+      // Build argument list for varargs.
+      MethodHandle filter = insertArguments(MH_buildVarArgs, 1, arity);
+      mh = filterArguments(mh, 2, filter);
+    }
+
+    return mh;
   }
 
   private static int indexOfArg(String name, String[] names, boolean varargs) {
@@ -944,25 +979,42 @@ public final class DynamicBootstrap {
     }
 
     // If the class has a static method of valueOf, then call the method
-    // to initialize the class instance.
+    // to initialize the class instance, otherwise, invoke the class
+    // constructor.
     if (isELiteClass(c)) {
       MethodHandle mh = dispatchELiteMethod(lookup, c, "valueOf", keys, null,
                                             args);
       if (mh != null)
         return mh;
+
+      String name = c.getAnnotation(MetaClass.class).name();
+      return dispatchELiteConstructor(lookup, c, name, keys, args);
     } else {
+      if (keys.length != 0) {
+        String unknowKeys =
+          Arrays.stream(keys).filter(s -> !s.isEmpty())
+            .collect(Collectors.joining(", "));
+        return dropArguments(
+          throwEvaluationException(_T(EL_UNKNOWN_ARG_NAME, unknowKeys)),
+          1, Object.class, Object[].class);
+      }
+
       MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
       MethodClosure mc = resolver.resolveStaticMethod(c, "valueOf");
       if (mc != null)
         return dispatchJavaMethod(lookup, env, mc, null, args);
-    }
 
-    return dispatchConstructor(lookup, env, c, args);
+      MethodHandle mh = dispatchJavaConstructor(lookup, env, c, args);
+      if (mh == null)
+        return null;
+      return dropArguments(mh, 0, EvaluationContext.class, Object.class);
+    }
   }
 
-  private static MethodHandle dispatchConstructor(MethodHandles.Lookup lookup,
-                                                  EvaluationContext env,
-                                                  Class<?> c, Object[] args) {
+  private static MethodHandle dispatchJavaConstructor(
+    MethodHandles.Lookup lookup, EvaluationContext env, Class<?> c,
+    Object[] args)
+  {
     try {
       Constructor<?> cons = ELEngine.resolveConstructor(
         env.getELContext(), c, ELEngine.getCallArgs(args));
@@ -978,9 +1030,56 @@ public final class DynamicBootstrap {
         mh = filterArguments(mh, 0, filter);
       }
 
-      return dropArguments(mh, 0, EvaluationContext.class, Object.class);
+      return mh;
     } catch (IllegalAccessException e) {
       return null;
     }
+  }
+
+  //=------------------------------------------------------------------------=//
+
+  @SuppressWarnings("unused")
+  public static CallSite constructBootstrap(MethodHandles.Lookup lookup,
+                                            String name,
+                                            MethodType callSiteType) {
+    MutableCallSite cs = new MutableCallSite(callSiteType);
+    MethodHandle target = insertArguments(MH_constructDispatcher,
+                                          0, lookup, cs);
+    target = target.asType(callSiteType);
+    cs.setTarget(target);
+    return cs;
+  }
+
+  private static Object constructDispatcher(MethodHandles.Lookup lookup,
+                                            MutableCallSite cs,
+                                            EvaluationContext env,
+                                            Object[] args)
+    throws Throwable
+  {
+    MethodHandle target = dispatchJavaConstructor(
+      lookup, env, cs.type().returnType(), args);
+
+    if (target == null) {
+      target = throwEvaluationException("Constructor not found: " +
+                                        cs.type().returnType().getName());
+      target = dropArguments(target, 1, Object[].class);
+    } else {
+      target = dropArguments(target, 0, EvaluationContext.class);
+    }
+    target = target.asType(cs.type());
+
+    // Guard condition, constructor argument types are not changed.
+    Class<?>[] types = typeOf(null, args);
+    MethodHandle guard = insertArguments(MH_typesEqual, 0, (Object)null);
+    guard = insertArguments(guard, 1, (Object)types);
+    guard = dropArguments(guard, 0, EvaluationContext.class);
+
+    // Create PIC guard.
+    MethodHandle fallback = cs.getTarget();
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
+    cs.setTarget(guarded);
+
+    // Directly invoke target for current call.
+    return target.invoke(env, args);
   }
 }

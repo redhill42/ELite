@@ -22,6 +22,7 @@ import elite.lang.Seq;
 import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
 import elite.lang.annotation.ExpandoScope;
+import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
@@ -38,7 +39,6 @@ import org.elite.resolver.MethodResolver;
 import org.elite.resources.Resources;
 
 import javax.el.ELContext;
-import javax.el.ELResolver;
 import javax.xml.XMLConstants;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -135,6 +135,7 @@ public class IRBuilder extends ELNode.Visitor {
   private static final Method setValueBootstrap;
   private static final Method invokeBootstrap;
   private static final Method callBootstrap;
+  private static final Method constructBootstrap;
   private static final Method coerceBootstrap;
 
   static {
@@ -151,6 +152,9 @@ public class IRBuilder extends ELNode.Visitor {
       callBootstrap = DynamicBootstrap.class.getMethod(
         "callBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class, String[].class);
+      constructBootstrap = DynamicBootstrap.class.getMethod(
+        "constructBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
       coerceBootstrap = CoercionBootstrap.class.getMethod(
         "coerceBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
@@ -857,7 +861,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
           Class<?> cls = loadClassAtCompileTime(ident.pos, c.name);
-          if (buildNew(cls, node.args, null))
+          if (buildNew(cls, node.args))
             return;
         }
       }
@@ -896,7 +900,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Resolve java class.
         Class<?> cls = resolveClassAtCompileTime(ident.id);
-        if (cls != null && buildNew(cls, node.args, null))
+        if (cls != null && buildNew(cls, node.args))
           return;
 
         // Resolve target at runtime if the given id is not a local var
@@ -988,7 +992,7 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       Class<?> jc = resolveJavaClass(acc);
-      if (jc != null && buildNew(jc, node.args, null))
+      if (jc != null && buildNew(jc, node.args))
         return;
 
       // Resolve method at runtime.
@@ -1056,6 +1060,14 @@ public class IRBuilder extends ELNode.Visitor {
                                String[] keys) {
     return getCallArgs(pos, lambda.name, lambda.vars, args, keys,
                        lambda.varargs);
+  }
+
+  private ELNode[] getCallArgs(int pos, IRClass irc, ELNode[] args,
+                               String[] keys) {
+    if (irc.node.vars != null)
+      return getCallArgs(pos, "<init>", irc.node.vars, args, keys, false);
+    else
+      return getCallArgs(pos, irc.init_proc, args, keys);
   }
 
   private ELNode[] getCallArgs(int pos, String name, ELNode.DEFINE[] vars,
@@ -1163,7 +1175,7 @@ public class IRBuilder extends ELNode.Visitor {
       }
     }
 
-    args = getCallArgs(pos, irc.init_proc, args, keys);
+    args = getCallArgs(pos, irc, args, keys);
     current.emitNew(irc);
     current.emitPushEnv();
     buildCallArgs(irc.init_proc, args);
@@ -2925,7 +2937,7 @@ public class IRBuilder extends ELNode.Visitor {
       IRClass superClass = (IRClass)initClass.base;
       nested.current.emitPushThis();
       nested.current.emitPushEnv();
-      ELNode[] args = nested.getCallArgs(node.pos, superClass.init_proc,
+      ELNode[] args = nested.getCallArgs(node.pos, superClass,
                                          initClass.super_args,
                                          initClass.super_keys);
       nested.buildCallArgs(superClass.init_proc, args);
@@ -3648,98 +3660,81 @@ public class IRBuilder extends ELNode.Visitor {
       if (irc.isSingleton()) {
         current.emitGetStatic(irc, "$singleton");
       } else {
-        ELNode[] args = getCallArgs(node.pos, irc.init_proc, node.args,
-                                    node.keys);
+        ELNode[] args = getCallArgs(node.pos, irc, node.args, node.keys);
         current.emitNew(irc);
         current.emitPushEnv();
         buildCallArgs(irc.init_proc, args);
         current.emitConstructor(irc);
       }
-      return;
-    }
-
-    if (node.base.symbol != null &&
-        node.base.symbol.def.expr instanceof ELNode.CLASS c &&
-        c.slots == null) {
-      Class<?> cls = loadClassAtCompileTime(node.pos, c.name);
-      if (buildNew(cls, node.args, node.props))
-        return;
-    }
-
-    Class<?> cls = resolveClassAtCompileTime(node.getClassName());
-    if (cls != null && buildNew(cls, node.args, node.props))
-      return;
-
-    // Resolve Java class and constructor at runtime.
-    current.emitPushEnv();
-    buildConst(node.getClassName());
-    buildTuple(node.args);
-    if (node.props == null) {
-      current.emitPushNull();
     } else {
-      emitNewInstance(LinkedHashMap.class);
-      for (int i = 0; i < node.props.keys.length; i++) {
-        current.emitDup();
-        build(node.props.keys[i]);
-        build(node.props.values[i]);
-        emitInvokeMethod(LinkedHashMap.class, "put", Object.class, Object.class);
-        current.emitPop();
-      }
+      Class<?> cls = resolveJavaClass(node.base, true);
+      if (!buildNew(cls, node.args))
+        throw reportError(node.pos, "Constructor not found: " + cls.getName());
     }
-    emitInvokeMethod(Runtime.class, "newInstance", EvaluationContext.class,
-                     String.class, Object[].class, Map.class);
-  }
 
-  private boolean buildNew(Class<?> cls, ELNode[] args, ELNode.MAP props) {
-    Constructor<?> cons = resolveConstructor(cls, args.length);
-    if (cons == null)
-      return false;
-
-    Class<?>[] types = cons.getParameterTypes();
-    current.emitNew(cls);
-    for (int i = 0; i < args.length; i++) {
-      if (types[i] == Object.class) {
-        build(args[i]);
-      } else {
-        current.emitPushCtx();
-        build(args[i]);
-        buildCoerce(TypeCoercion.getBoxedType(types[i]));
-        if (types[i].isPrimitive())
-          current.emitUnbox(types[i]);
-      }
-    }
-    current.emitConstructor(cons);
-
-    if (props != null) {
+    if (node.props != null) {
       Slot tmpSlot = new Slot();
       tmpSlot.store();
-      current.emitPushCtx();
-      emitInvokeMethod(ELContext.class, "getELResolver");
-      for (int i = 0; i < props.keys.length; i++) {
-        current.emitDup();
-        current.emitPushCtx();
-        tmpSlot.load();
-        build(props.keys[i]);
-        build(props.values[i]);
-        emitInvokeMethod(ELResolver.class, "setValue", ELContext.class,
-                         Object.class, Object.class, Object.class);
+      for (int i = 0; i < node.props.keys.length; i++) {
+        if (node.props.keys[i] instanceof ELNode.STRINGVAL key) {
+          build(node.props.values[i]);
+          tmpSlot.load();
+          current.emitPushEnv();
+          current.emitInvokeDynamic(new Descriptors.Indy(
+            setValueBootstrap, key.value, void.class, Object.class,
+            Object.class, EvaluationContext.class));
+        } else {
+          build(node.props.values[i]);
+          tmpSlot.load();
+          build(node.props.keys[i]);
+          current.emitPushCtx();
+          emitInvokeMethod(Runtime.class, "setValue", Object.class,
+                           Object.class, Object.class, ELContext.class);
+          current.emitPop();
+        }
       }
       tmpSlot.release();
     }
-
-    return true;
   }
 
-  private Constructor<?> resolveConstructor(Class<?> cls, int nargs) {
+  private boolean buildNew(Class<?> cls, ELNode[] args) {
     Constructor<?> cons = null;
+    boolean overload = false;
     for (Constructor<?> c : cls.getConstructors()) {
-      if (c.getParameterCount() == nargs && !c.isVarArgs()) {
+      if (c.getParameterCount() == args.length && !c.isVarArgs()) {
         if (cons != null)
-          return null;
+          overload = true;
         cons = c;
       }
     }
-    return cons;
+
+    if (cons == null)
+      return false;
+
+    if (!overload) {
+      Class<?>[] types = cons.getParameterTypes();
+      current.emitNew(cls);
+      for (int i = 0; i < args.length; i++) {
+        if (types[i] == Object.class) {
+          build(args[i]);
+        } else {
+          current.emitPushCtx();
+          build(args[i]);
+          buildCoerce(TypeCoercion.getBoxedType(types[i]));
+          if (types[i].isPrimitive())
+            current.emitUnbox(types[i]);
+        }
+      }
+      current.emitConstructor(cons);
+    } else {
+      current.emitPushEnv();
+      buildTuple(args);
+      current.emitInvokeDynamic(new Descriptors.Indy(
+        constructBootstrap, cls.getSimpleName(), cls,
+        EvaluationContext.class, Object[].class));
+    }
+
+    return true;
   }
 
   public void visitNode(ELNode node) {
