@@ -1510,7 +1510,11 @@ public class IRBuilder extends ELNode.Visitor {
     return mc.getJavaMethod();
   }
 
-  private Class<?> resolveJavaClass(ELNode node) {
+  private Class<?> resolveJavaClass(ELNode base) {
+    return resolveJavaClass(base, false);
+  }
+
+  private Class<?> resolveJavaClass(ELNode node, boolean load) {
     if (node instanceof ELNode.IDENT var && var.symbol != null &&
         var.symbol.def.expr instanceof ELNode.CLASS c) {
       return loadClassAtCompileTime(node.pos, c.name);
@@ -1526,6 +1530,8 @@ public class IRBuilder extends ELNode.Visitor {
     }
     if (node instanceof ELNode.IDENT var && var.symbol == null) {
       buf.insert(0, var.id);
+      if (load)
+        return loadClassAtCompileTime(node.pos, buf.toString());
       return resolveClassAtCompileTime(buf.toString());
     }
 
@@ -2042,28 +2048,11 @@ public class IRBuilder extends ELNode.Visitor {
       return;
     }
 
-    Class<?> jc = resolveJavaClass(node.type);
-    if (jc != null) {
-      build(node.right);
-      current.emitInstanceOf(jc);
-      if (node.negative)
-        current.emitNot();
-      return;
-    }
-
+    Class<?> jc = resolveJavaClass(node.type, true);
     build(node.right);
-    current.emitInstanceOf(node.getTypeName());
+    current.emitInstanceOf(jc);
     if (node.negative)
       current.emitNot();
-  }
-
-  private void emitInstanceOf(String name) {
-    try {
-      Class<?> cls = ClassResolver.getInstance(elctx).resolveClass(name);
-      current.emitInstanceOf(cls);
-    } catch (ClassNotFoundException e) {
-      current.emitInstanceOf(name);
-    }
   }
 
   // ── Binary and unary arithmetic ──
@@ -2763,7 +2752,7 @@ public class IRBuilder extends ELNode.Visitor {
       iterSlot.store();
       current.emitPop();
     } else {
-      emitInvokeMethod(Runtime.class, "getIterator", Object.class);
+      emitInvokeMethod(Runtime.class, "iterator", Object.class);
       iterSlot.store();
       current.emitJumpIfNull(exit);
     }
@@ -3252,7 +3241,7 @@ public class IRBuilder extends ELNode.Visitor {
       // Type check if annotated.
       if (def.type != null) {
         argConsumed = true;
-        emitInstanceOf(def.type);
+        current.emitInstanceOf(loadClassAtCompileTime(def.pos, def.type));
         current.emitJumpIfFalse(failBlock);
       }
 
@@ -3355,7 +3344,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (pat instanceof ELNode.CLASS cls) {
-      emitInstanceOf(cls.name);
+      current.emitInstanceOf(loadClassAtCompileTime(cls.pos, cls.name));
       return;
     }
 
@@ -3556,11 +3545,7 @@ public class IRBuilder extends ELNode.Visitor {
           cls = loadClassAtCompileTime(base.pos, c.name);
           slots = c.slots;
         } else {
-          cls = resolveClassAtCompileTime(base.id);
-          if (cls == null) {
-            emitInstanceOf(base.id);
-            return;
-          }
+          cls = loadClassAtCompileTime(base.pos, base.id);
         }
 
         if (argc == 0) {

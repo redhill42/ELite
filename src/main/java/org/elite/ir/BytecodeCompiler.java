@@ -1170,16 +1170,10 @@ public class BytecodeCompiler {
   
       case INSTANCEOF -> {
         Object cls = fn.getConstant(v.poolIndex());
-        if (cls instanceof IRClass irc) {
+        if (cls instanceof IRClass irc)
           mc.INSTANCEOF(irc.internalName);
-        } else if (cls instanceof Class) {
+        else
           mc.INSTANCEOF((Class<?>)cls);
-        } else {
-          mc.LDC(cls)
-            .ALOAD(S_ENV())
-            .INVOKESTATIC(Runtime.class, "__instanceof__", Boolean.TYPE,
-                          Object.class, String.class, EvaluationContext.class);
-        }
         emitJumpAfterCond(v);
       }
   

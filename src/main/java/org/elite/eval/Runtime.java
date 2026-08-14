@@ -24,7 +24,6 @@ import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TargetMethodClosure;
-import org.elite.eval.closure.TypedClosure;
 import org.elite.ir.MetaClass;
 import org.elite.parser.ELNode;
 import org.elite.parser.Token;
@@ -35,7 +34,6 @@ import org.w3c.dom.Element;
 import javax.el.ELContext;
 import javax.el.ELException;
 import javax.el.ELResolver;
-import javax.el.MethodNotFoundException;
 import javax.el.PropertyNotFoundException;
 import javax.el.PropertyNotWritableException;
 import javax.el.ValueExpression;
@@ -280,11 +278,6 @@ public final class Runtime {
     return obj;
   }
 
-  public static boolean __instanceof__(Object value, String typename,
-                                       EvaluationContext env) {
-    return TypedClosure.typecheck(env, typename, value);
-  }
-
   public static Object newRange(Object begin, Object next, Object end) {
     if (isChar(begin) && (next == null || isChar(next)) &&
         (end == null || isChar(end))) {
@@ -451,7 +444,7 @@ public final class Runtime {
     }
   }
 
-  public static java.util.Iterator<?> getIterator(Object coll) {
+  public static java.util.Iterator<?> iterator(Object coll) {
     if (coll instanceof Iterable<?>)
       return ((Iterable<?>)coll).iterator();
     if (coll instanceof Map<?, ?>)
