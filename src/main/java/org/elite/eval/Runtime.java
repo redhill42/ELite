@@ -99,6 +99,27 @@ public final class Runtime {
     return value;
   }
 
+  public static Object resolveCallTarget(EvaluationContext env, String id) {
+    ELContext elctx = env.getELContext();
+
+    ValueExpression expr = env.resolveVariable(id);
+    if (expr != null) {
+      return (expr instanceof LiteralClosure c) ? c.getValue(null) :
+             (expr instanceof Closure) ? expr : expr.getValue(elctx);
+    }
+
+    MethodClosure method = MethodResolver.getInstance(elctx)
+      .resolveGlobalMethod(env.getFunctionMapper(), id);
+    if (method != null)
+      return method;
+
+    elctx.setPropertyResolved(false);
+    Object target = elctx.getELResolver().getValue(elctx, null, id);
+    if (target == null)
+      throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
+    return target;
+  }
+
   private static String typeName(Object obj) {
     if (obj == null)
       return null;
@@ -186,121 +207,6 @@ public final class Runtime {
 
     throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
                                             typeName(obj), key));
-  }
-
-  private static EvaluationException
-  reportMethodNotFound(ELContext elctx, Object base, String key,
-                       MethodNotFoundException cause) {
-    String msg = (cause == null) ? null : cause.getMessage();
-    if (msg == null) {
-      if (base instanceof ClosureObject) {
-        base = ((ClosureObject)base).get_class().getName();
-      } else if (base instanceof Closure) {
-        base = base.toString();
-      } else if (base != null) {
-        base = base.getClass().getName();
-      }
-      msg = _T(EL_METHOD_NOT_FOUND, base, key);
-    }
-    return new EvaluationException(elctx, msg);
-  }
-
-  public static Object invoke(EvaluationContext env, Object base,
-                              Object key, Object[] args) {
-    ELContext elctx = env.getELContext();
-    if (base == null)
-      return null;
-    if (key == null)
-      throw reportMethodNotFound(elctx, base, null, null);
-
-    String name = TypeCoercion.coerceToString(key);
-    Closure[] callArgs = ELEngine.getCallArgs(args);
-
-    if (base == GlobalScope.SINGLETON) {
-      Object target = getValue(elctx, base, key);
-      try {
-        return ELEngine.invokeTarget(elctx, target, callArgs);
-      } catch (MethodNotFoundException e) {
-        throw reportMethodNotFound(elctx, base, name, e);
-      } catch (RuntimeException ex) {
-        throw new EvaluationException(elctx, ex);
-      }
-    }
-
-    // Invoke on legacy closure object for backward compatibility. Removed
-    // when compiled class system is complete.
-    if (base instanceof ClosureObject) {
-      Object result = ((ClosureObject)base).invoke(elctx, name, callArgs);
-      if (result != NO_RESULT)
-        return result;
-    }
-
-    // Resolve and invoke method closure
-    if (!(base instanceof MethodDelegate)) {
-      MethodResolver resolver = MethodResolver.getInstance(elctx);
-      MethodClosure method;
-      boolean usebase = false;
-
-      if (base == SystemScope.SINGLETON) {
-        method = resolver.resolveSystemMethod(name);
-      } else if (base instanceof Class) {
-        method = resolver.resolveStaticMethod((Class<?>)base, name);
-        if (method == null) {
-          method = resolver.resolveMethod((Class<?>)base, name);
-          if (method == null) {
-            method = resolver.resolveMethod(Class.class, name);
-            usebase = true;
-          }
-        }
-      } else {
-        method = resolver.resolveMethod(base.getClass(), name);
-        usebase = true;
-      }
-
-      if (method != null) {
-        try {
-          if (usebase)
-            return method.invoke(elctx, base, callArgs);
-          else
-            return method.invoke(elctx, callArgs);
-        } catch (RuntimeException ex) {
-          throw new EvaluationException(elctx, ex);
-        }
-      }
-    }
-
-    // Invoke dynamic object method.
-    if (base instanceof MethodResolvable)
-      return ((MethodResolvable)base).invoke(elctx, name, callArgs);
-
-    throw reportMethodNotFound(elctx, base, name, null);
-  }
-
-  private static Object resolveTarget(EvaluationContext env, String id) {
-    ELContext elctx = env.getELContext();
-
-    ValueExpression expr = env.resolveVariable(id);
-    if (expr != null) {
-      return (expr instanceof LiteralClosure c) ? c.getValue(null) :
-             (expr instanceof Closure) ? expr : expr.getValue(elctx);
-    }
-
-    MethodClosure method = MethodResolver.getInstance(elctx)
-      .resolveGlobalMethod(env.getFunctionMapper(), id);
-    if (method != null)
-      return method;
-
-    elctx.setPropertyResolved(false);
-    return elctx.getELResolver().getValue(elctx, null, id);
-  }
-
-  public static Object invokeTarget(EvaluationContext env, String id,
-                                    Object[] args) {
-    ELContext elctx = env.getELContext();
-    Object target = resolveTarget(env, id);
-    if (target == null)
-      throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
-    return ELEngine.callTarget(elctx, target, args);
   }
 
   public static Object invokeAssignOp(ELContext elctx, Integer op, Object lhs,

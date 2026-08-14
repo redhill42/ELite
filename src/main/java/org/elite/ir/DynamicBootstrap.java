@@ -17,6 +17,8 @@
 package org.elite.ir;
 
 import elite.lang.Closure;
+import elite.lang.Decimal;
+import elite.lang.Rational;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.MethodDelegate;
@@ -35,9 +37,12 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.MutableCallSite;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -57,9 +62,13 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_setValueDispatcher;
   private static final MethodHandle MH_dynamicSetValue;
   private static final MethodHandle MH_invokeDispatcher;
+  private static final MethodHandle MH_callDispatcher;
+  private static final MethodHandle MH_dynamicCall;
 
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
+
+  private static final MethodHandle MH_callClosure;
 
   private static final MethodHandle MH_typesEqual;
   private static final MethodHandle MH_permuteNamedArgs;
@@ -99,11 +108,30 @@ public final class DynamicBootstrap {
                    String.class, String[].class, EvaluationContext.class,
                    Object.class, Object[].class));
 
+      MH_callDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "callDispatcher",
+        methodType(Object.class, Lookup.class, MutableCallSite.class,
+                   String[].class, EvaluationContext.class, Object.class,
+                   Object[].class));
+
+      MH_dynamicCall = lookup.findStatic(
+        ELEngine.class, "callTarget",
+        methodType(Object.class, ELContext.class, Object.class, Object[].class));
+
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
 
       MH_mapPut = lookup.findVirtual(
         Map.class, "put", methodType(Object.class, Object.class, Object.class));
+
+      MH_callClosure =
+        permuteArguments(
+          filterArguments(
+            lookup.findVirtual(Closure.class, "call",
+                               methodType(Object.class, ELContext.class,
+                                          Object[].class)),
+            1, MH_getELContext),
+          1, 0, 2);
 
       MH_permuteNamedArgs = lookup.findStatic(
         DynamicBootstrap.class, "permuteNamedArgs",
@@ -135,6 +163,29 @@ public final class DynamicBootstrap {
     } catch (NoSuchMethodException | IllegalAccessException e) {
       throw new ExceptionInInitializerError(e);
     }
+  }
+
+  private static Class<?> typeOf(Object obj) {
+    return obj == null ? null : obj.getClass();
+  }
+
+  private static Class<?>[] typeOf(Object obj, Object[] args) {
+    Class<?>[] types = new Class<?>[args.length + 1];
+    types[0] = typeOf(obj);
+    for (int i = 0; i < args.length; i++)
+      types[i + 1] = typeOf(args[i]);
+    return types;
+  }
+
+  private static boolean typesEqual(Object obj, Object[] args, Class<?>[] types) {
+    if (typeOf(obj) != types[0])
+      return false;
+    if (args.length != types.length - 1)
+      return false;
+    for (int i = 0; i < args.length; i++)
+      if (typeOf(args[i]) != types[i + 1])
+        return false;
+    return true;
   }
 
   //=------------------------------------------------------------------------=//
@@ -458,30 +509,6 @@ public final class DynamicBootstrap {
     return cs;
   }
 
-  private static Class<?> typeOf(Object obj) {
-    return obj == null ? null : obj.getClass();
-  }
-
-  private static Class<?>[] typeOf(Object obj, Object[] args) {
-    Class<?>[] types = new Class<?>[args.length + 1];
-    types[0] = typeOf(obj);
-    for (int i = 0; i < args.length; i++)
-      types[i + 1] = typeOf(args[i]);
-    return types;
-  }
-
-  private static boolean typesEqual(Object obj, Object[] args,
-                                    Class<?>[] types) {
-    if (typeOf(obj) != types[0])
-      return false;
-    if (args.length != types.length - 1)
-      return false;
-    for (int i = 0; i < args.length; i++)
-      if (typeOf(args[i]) != types[i + 1])
-        return false;
-    return true;
-  }
-
   private static Object invokeDispatcher(MethodHandles.Lookup lookup,
                                          MutableCallSite cs, String name,
                                          String[] keys, EvaluationContext env,
@@ -738,7 +765,7 @@ public final class DynamicBootstrap {
                                                  MethodClosure mc,
                                                  Object obj, Object[] args) {
     try {
-      Method m = mc.getJavaMethod(env.getELContext(), args);
+      Method m = mc.getJavaMethod(env.getELContext(), obj, args);
       if (m == null)
         throw new MethodNotFoundException();
 
@@ -824,5 +851,136 @@ public final class DynamicBootstrap {
       args[i - start] = arg;
     }
     return args;
+  }
+
+  //=------------------------------------------------------------------------=//
+
+  @SuppressWarnings("unused")
+  public static CallSite callBootstrap(MethodHandles.Lookup lookup,
+                                       String name, MethodType callSiteType,
+                                       String... keys) {
+    MutableCallSite cs = new MutableCallSite(callSiteType);
+    MethodHandle target = insertArguments(MH_callDispatcher, 0, lookup, cs, keys);
+    target = target.asType(callSiteType);
+    cs.setTarget(target);
+    return cs;
+  }
+
+  private static Object callDispatcher(MethodHandles.Lookup lookup,
+                                       MutableCallSite cs, String[] keys,
+                                       EvaluationContext env, Object receiver,
+                                       Object[] args)
+    throws Throwable
+  {
+    MethodHandle target = dispatchCall(lookup, env, keys, receiver, args);
+    target = target.asType(cs.type());
+
+    // Guard condition: obj and argument types are not changed.
+    Class<?>[] types = typeOf(receiver, args);
+    MethodHandle guard = insertArguments(MH_typesEqual, 2, (Object)types);
+    guard = dropArguments(guard, 0, EvaluationContext.class);
+
+    // Create PIC guard.
+    MethodHandle fallback = cs.getTarget();
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
+    cs.setTarget(guarded);
+
+    // Directly invoke target for current call.
+    return target.invoke(env, receiver, args);
+  }
+
+  private static MethodHandle dispatchCall(MethodHandles.Lookup lookup,
+                                           EvaluationContext env,
+                                           String[] keys, Object obj,
+                                           Object[] args) {
+    if (obj == null)
+      return dropArguments(throwNullPointerException(), 1, Object.class,
+                           Object[].class);
+
+    if (obj instanceof Closure)
+      return MH_callClosure;
+
+    if (obj instanceof Class<?> c) {
+      MethodHandle mh = dispatchClassCall(lookup, env, c, keys, args);
+      if (mh != null)
+        return mh;
+    }
+
+    // If the object has a __call__ instance method, then call this method.
+    if (isELiteObject(obj)) {
+      MethodHandle mh = dispatchELiteMethod(lookup, obj.getClass(), "__call__",
+                                            keys, obj, args);
+      if (mh != null)
+        return mh;
+    } else {
+      MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
+      MethodClosure mc = resolver.resolveMethod(obj.getClass(), "__call__");
+      if (mc != null)
+        return dispatchJavaMethod(lookup, env, mc, obj, args);
+    }
+
+    return reportMethodNotFound(obj, "__call__");
+  }
+
+  private static MethodHandle dispatchClassCall(MethodHandles.Lookup lookup,
+                                                EvaluationContext env,
+                                                Class<?> c, String[] keys,
+                                                Object[] args) {
+    // int(x) for type coercion.
+    if (args.length == 1 &&
+        (TypeCoercion.getUnboxedType(c).isPrimitive() ||
+         c == String.class || c == BigInteger.class || c == BigDecimal.class ||
+         c == Decimal.class || c == Rational.class)) {
+      if (c == Void.TYPE) {
+        return dropArguments(constant(Object.class, null), 0,
+                             EvaluationContext.class, Object.class,
+                             Object[].class);
+      } else {
+        MethodHandle mh = CoercionBootstrap.dispatchCoerce(args[0], c);
+        mh = filterArguments(mh, 0, MH_getELContext);
+        mh = dropArguments(mh, 1, Object.class);
+        return mh.asSpreader(2, Object[].class, 1);
+      }
+    }
+
+    // If the class has a static method of valueOf, then call the method
+    // to initialize the class instance.
+    if (isELiteClass(c)) {
+      MethodHandle mh = dispatchELiteMethod(lookup, c, "valueOf", keys, null,
+                                            args);
+      if (mh != null)
+        return mh;
+    } else {
+      MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
+      MethodClosure mc = resolver.resolveStaticMethod(c, "valueOf");
+      if (mc != null)
+        return dispatchJavaMethod(lookup, env, mc, null, args);
+    }
+
+    return dispatchConstructor(lookup, env, c, args);
+  }
+
+  private static MethodHandle dispatchConstructor(MethodHandles.Lookup lookup,
+                                                  EvaluationContext env,
+                                                  Class<?> c, Object[] args) {
+    try {
+      Constructor<?> cons = ELEngine.resolveConstructor(
+        env.getELContext(), c, ELEngine.getCallArgs(args));
+      if (cons == null)
+        return null;
+
+      MethodHandle mh = lookup.unreflectConstructor(cons);
+      mh = mh.asSpreader(Object[].class, args.length);
+
+      Class<?>[] types = cons.getParameterTypes();
+      if (needCoerce(args, types, 0, false)) {
+        MethodHandle filter = insertArguments(MH_coerceArgs, 1, types, 0, false);
+        mh = filterArguments(mh, 0, filter);
+      }
+
+      return dropArguments(mh, 0, EvaluationContext.class, Object.class);
+    } catch (IllegalAccessException e) {
+      return null;
+    }
   }
 }

@@ -22,7 +22,6 @@ import elite.lang.Seq;
 import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
 import elite.lang.annotation.ExpandoScope;
-import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
@@ -135,6 +134,7 @@ public class IRBuilder extends ELNode.Visitor {
   private static final Method getValueBootstrap;
   private static final Method setValueBootstrap;
   private static final Method invokeBootstrap;
+  private static final Method callBootstrap;
   private static final Method coerceBootstrap;
 
   static {
@@ -147,6 +147,9 @@ public class IRBuilder extends ELNode.Visitor {
         MethodType.class);
       invokeBootstrap = DynamicBootstrap.class.getMethod(
         "invokeBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class, String[].class);
+      callBootstrap = DynamicBootstrap.class.getMethod(
+        "callBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class, String[].class);
       coerceBootstrap = CoercionBootstrap.class.getMethod(
         "coerceBootstrap", MethodHandles.Lookup.class, String.class,
@@ -898,10 +901,12 @@ public class IRBuilder extends ELNode.Visitor {
 
         // Resolve target at runtime if the given id is not a local var
         current.emitPushEnv();
+        current.emitPushEnv();
         buildConst(ident.id);
+        emitInvokeMethod(Runtime.class, "resolveCallTarget",
+                         EvaluationContext.class, String.class);
         buildTuple(node.args);
-        emitInvokeMethod(Runtime.class, "invokeTarget", EvaluationContext.class,
-                         String.class, Object[].class);
+        buildDynamicCall(node.keys);
         return;
       }
     }
@@ -1006,16 +1011,14 @@ public class IRBuilder extends ELNode.Visitor {
           Object.class, EvaluationContext.class, Object.class, Object[].class));
       } else {
         current.emitPushEnv();
-        build(acc.right);
-        build(acc.index);
+        build(acc);
         buildTuple(node.args);
-        emitInvokeMethod(Runtime.class, "invoke", EvaluationContext.class,
-                         Object.class, Object.class, Object[].class);
+        buildDynamicCall(node.keys);
       }
       return;
     }
 
-    current.emitPushCtx();
+    current.emitPushEnv();
     build(base);
 
     if (base instanceof ELNode.LAMBDA lam && lam.symbol != null &&
@@ -1032,8 +1035,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Evaluate base and generate dynamic call.
     buildTuple(node.args);
-    emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
-                     Object.class, Object[].class);
+    buildDynamicCall(node.keys);
   }
 
   private int indexOfVar(String name, ELNode.DEFINE[] vars, boolean varargs) {
@@ -1455,6 +1457,21 @@ public class IRBuilder extends ELNode.Visitor {
     return false;
   }
 
+  private void buildDynamicCall(String[] keys) {
+    String[] keyArgs;
+    if (keys == null)
+      keyArgs = new String[0];
+    else {
+      keyArgs = new String[keys.length];
+      for (int i = 0; i < keys.length; i++)
+        keyArgs[i] = keys[i] != null ? keys[i] : "";
+    }
+
+    current.emitInvokeDynamic(new Descriptors.Indy(
+      callBootstrap, "call", keyArgs, Object.class, EvaluationContext.class,
+      Object.class, Object[].class));
+  }
+
   private Method resolveStaticMethod(ELNode base, String name) {
     Class<?> cls = resolveJavaClass(base);
     if (cls == null)
@@ -1751,11 +1768,10 @@ public class IRBuilder extends ELNode.Visitor {
       if (global.getReturnType() != Void.TYPE)
         current.emitPop();
     } else {
-      current.emitPushCtx();
+      current.emitPushEnv();
       bodySlot.load();
       buildTuple(indSlot);
-      emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
-                       Object.class, Object[].class);
+      buildDynamicCall(null);
       current.emitPop();
     }
 
@@ -2138,11 +2154,10 @@ public class IRBuilder extends ELNode.Visitor {
                  var.symbol != null && var.symbol.clazz != null) {
         buildClassCall(node.pos, var.symbol.clazz, node.right);
       } else {
-        current.emitPushCtx();
+        current.emitPushEnv();
         build(node.oper);
         buildTuple(node.right);
-        emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
-                         Object.class, Object[].class);
+        buildDynamicCall(null);
       }
     } else {
       throw reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
@@ -2157,11 +2172,10 @@ public class IRBuilder extends ELNode.Visitor {
                  var.symbol != null && var.symbol.clazz != null) {
         buildClassCall(node.pos, var.symbol.clazz, node.left, node.right);
       } else {
-        current.emitPushCtx();
+        current.emitPushEnv();
         build(node.oper);
         buildTuple(node.left, node.right);
-        emitInvokeMethod(ELEngine.class, "callTarget", ELContext.class,
-                         Object.class, Object[].class);
+        buildDynamicCall(null);
       }
     } else {
       throw reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));

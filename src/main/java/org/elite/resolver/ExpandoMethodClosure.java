@@ -55,9 +55,13 @@ class ExpandoMethodClosure extends MethodClosure
         return null;
     }
 
-    public Method getJavaMethod(ELContext elctx, Object... args) {
-        if (delegate instanceof MethodClosure)
-            return ((MethodClosure)delegate).getJavaMethod(elctx, args);
+    public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
+        if (delegate instanceof MethodClosure) {
+            Object[] expando = new Object[args.length + 1];
+            expando[0] = obj;
+            System.arraycopy(args, 0, expando, 1, args.length);
+            return ((MethodClosure)delegate).getJavaMethod(elctx, null, expando);
+        }
         return null;
     }
 

@@ -65,7 +65,7 @@ class SingleMethodClosure extends JavaMethodClosure {
     return method;
   }
 
-  public Method getJavaMethod(ELContext elctx, Object... args) {
+  public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
     return method;
   }
 

@@ -42,7 +42,7 @@ public abstract class MethodClosure extends AbstractClosure
     /**
      * 使用运行时参数解析Java方法，如果方法不存在则返回null.
      */
-    public Method getJavaMethod(ELContext elctx, Object... args) {
+    public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
         return null;
     }
 

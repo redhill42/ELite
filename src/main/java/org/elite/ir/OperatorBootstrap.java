@@ -856,7 +856,7 @@ public final class OperatorBootstrap {
       // Find static operator procedure.
       mc = resolver.resolveStaticMethod(lhs.getClass(), opname);
       if (mc != null) {
-        Method m = mc.getJavaMethod(elctx, lhs, rhs);
+        Method m = mc.getJavaMethod(elctx, null, lhs, rhs);
         if (m == null) {
           return dropArguments(
             throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
@@ -949,10 +949,10 @@ public final class OperatorBootstrap {
       MethodResolver resolver = MethodResolver.getInstance(elctx);
       MethodClosure mc;
 
-      // Invoke static operator on closure object.
+      // Find static operator procedure.
       mc = resolver.resolveStaticMethod(rhs.getClass(), opname);
       if (mc != null) {
-        Method m = mc.getJavaMethod(elctx, lhs, rhs);
+        Method m = mc.getJavaMethod(elctx, null, lhs, rhs);
         if (m == null) {
           return dropArguments(
             throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
@@ -978,7 +978,7 @@ public final class OperatorBootstrap {
       // Invoke expando reverse operator procedure.
       mc = resolver.resolveMethod(rhs.getClass(), "?".concat(opname));
       if (mc != null) {
-        Method m = mc.getJavaMethod(elctx, lhs);
+        Method m = mc.getJavaMethod(elctx, rhs, lhs);
         if (m == null) {
           return dropArguments(
             throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
@@ -2056,7 +2056,7 @@ public final class OperatorBootstrap {
       // Find static operator procedure.
       mc = resolver.resolveStaticMethod(rhs.getClass(), opname);
       if (mc != null) {
-        Method m = mc.getJavaMethod(elctx, rhs);
+        Method m = mc.getJavaMethod(elctx, null, rhs);
         if (m == null) {
           return dropArguments(
             throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
