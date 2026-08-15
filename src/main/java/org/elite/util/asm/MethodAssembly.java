@@ -12,6 +12,7 @@ import java.lang.reflect.Constructor;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Label;
+
 import static org.objectweb.asm.Opcodes.*;
 
 @SuppressWarnings("unused")
@@ -157,6 +158,26 @@ public class MethodAssembly {
   public MethodAssembly BIPUSH(int i)   { impl.visitIntInsn(BIPUSH, i);  return this; }
   public MethodAssembly SIPUSH(int i)   { impl.visitIntInsn(SIPUSH, i);  return this; }
   public MethodAssembly NEWARRAY(int i) { impl.visitIntInsn(NEWARRAY, i);return this; }
+
+  public MethodAssembly NEWARRAY(Class<?> c) {
+    if (c == Integer.TYPE)
+      return NEWARRAY(T_INT);
+    if (c == Long.TYPE)
+      return NEWARRAY(T_LONG);
+    if (c == Byte.TYPE)
+      return NEWARRAY(T_BYTE);
+    if (c == Short.TYPE)
+      return NEWARRAY(T_SHORT);
+    if (c == Character.TYPE)
+      return NEWARRAY(T_CHAR);
+    if (c == Float.TYPE)
+      return NEWARRAY(T_FLOAT);
+    if (c == Double.TYPE)
+      return NEWARRAY(T_DOUBLE);
+    if (c == Boolean.TYPE)
+      return NEWARRAY(T_BOOLEAN);
+    return ANEWARRAY(c);
+  }
 
   // local variable instructions ...
 
@@ -505,7 +526,7 @@ public class MethodAssembly {
   }
 
   public MethodAssembly MULTIANEWARRAY(Class<?> type, int dims) {
-    impl.visitMultiANewArrayInsn(AsmType.toInternalName(type), dims);
+    impl.visitMultiANewArrayInsn(AsmType.getDescriptor(type), dims);
     return this;
   }
 
@@ -576,6 +597,18 @@ public class MethodAssembly {
   public MethodAssembly XSTORE(int var, Class<?> type) {
     int opcode = AsmType.getType(type).getOpcode(ISTORE);
     impl.visitVarInsn(opcode, var);
+    return this;
+  }
+
+  public MethodAssembly XALOAD(Class<?> type) {
+    int opcode = AsmType.getType(type).getOpcode(IALOAD);
+    impl.visitInsn(opcode);
+    return this;
+  }
+
+  public MethodAssembly XASTORE(Class<?> type) {
+    int opcode = AsmType.getType(type).getOpcode(IASTORE);
+    impl.visitInsn(opcode);
     return this;
   }
 

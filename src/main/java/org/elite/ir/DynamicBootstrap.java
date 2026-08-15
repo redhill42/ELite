@@ -361,7 +361,7 @@ public final class DynamicBootstrap {
           mangle("[]"), EvaluationContext.class, Object[].class);
         MetaMethod meta = m.getAnnotation(MetaMethod.class);
         if (!Modifier.isStatic(m.getModifiers()) && meta != null &&
-            meta.name().equals("[]") && meta.arity() == 1 && !meta.varargs()) {
+            meta.arity() == 1 && !meta.varargs()) {
           // (obj, env, [index]) -> (env, obj, index)
           MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
           return permuteArguments(mh, 1, 0, 2);
@@ -733,7 +733,7 @@ public final class DynamicBootstrap {
           mangle("[]="), EvaluationContext.class, Object[].class);
         MetaMethod meta = m.getAnnotation(MetaMethod.class);
         if (!Modifier.isStatic(m.getModifiers()) && meta != null &&
-            meta.name().equals("[]=") && meta.arity() == 2 && !meta.varargs()) {
+            meta.arity() == 2 && !meta.varargs()) {
           // (obj, env, [index, value]) -> (value, obj, index, env)
           MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 2);
           return permuteArguments(mh, 3, 0, 2, 1);

@@ -911,7 +911,7 @@ public class Parser extends Scanner {
         scan();
         init = parseArrayInitializer();
       }
-      return new ELNode.ARRAY(p, clsName, dims, init);
+      return new ELNode.ARRAY(p, cls, dims, init);
     }
 
     if (token != LBRACE) {

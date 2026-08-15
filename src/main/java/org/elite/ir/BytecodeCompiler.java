@@ -49,6 +49,7 @@ import java.io.ObjectOutputStream;
 import java.lang.invoke.CallSite;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -58,6 +59,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -420,11 +422,14 @@ public class BytecodeCompiler {
                         ? ((IRClass)clazz.base).internalName
                         : ((Class<?>)clazz.base).getName();
 
-      List<String> interfaces = new ArrayList<>();
+      Set<String> interfaces = new LinkedHashSet<>();
       if (clazz.interfaces != null) {
         for (Class<?> i : clazz.interfaces)
           interfaces.add(i.getName());
       }
+
+      if (isDataClass(clazz))
+        interfaces.add("java.io.Serializable");
 
       boolean isComparable = false;
       if (!interfaces.contains("java.lang.Comparable") &&
@@ -628,6 +633,12 @@ public class BytecodeCompiler {
       }
 
       consumer.acceptClass(className, cc.end());
+    }
+
+    private static boolean isDataClass(IRClass clazz) {
+      ELNode.METASET meta = clazz.node.symbol.def.meta;
+      return meta != null &&
+        Arrays.stream(meta.metadata).anyMatch(md -> md.type.equals("data"));
     }
 
     private record MethodRecord(String name, Class<?>[] paramTypes) {
@@ -1532,71 +1543,31 @@ public class BytecodeCompiler {
       }
 
       case NEW_ARRAY -> {
-        Class<?> c = (Class<?>)fn.getConstant(v.poolIndex());
-        mc.PUSH(v.count());
-        if (c == Integer.TYPE)
-          mc.NEWARRAY(Opcodes.T_INT);
-        else if (c == Long.TYPE)
-          mc.NEWARRAY(Opcodes.T_LONG);
-        else if (c == Byte.TYPE)
-          mc.NEWARRAY(Opcodes.T_BYTE);
-        else if (c == Short.TYPE)
-          mc.NEWARRAY(Opcodes.T_SHORT);
-        else if (c == Character.TYPE)
-          mc.NEWARRAY(Opcodes.T_CHAR);
-        else if (c == Float.TYPE)
-          mc.NEWARRAY(Opcodes.T_FLOAT);
-        else if (c == Double.TYPE)
-          mc.NEWARRAY(Opcodes.T_DOUBLE);
-        else if (c == Boolean.TYPE)
-          mc.NEWARRAY(Opcodes.T_BOOLEAN);
-        else
-          mc.ANEWARRAY(c);
+        mc.NEWARRAY((Class<?>)fn.getConstant(v.poolIndex()));
       }
-  
+
+      case NEW_FIXED_ARRAY -> {
+        mc.PUSH(v.payload());
+        mc.NEWARRAY((Class<?>)fn.getConstant(v.poolIndex()));
+      }
+
+      case NEW_MULTI_ARRAY -> {
+        Class<?> type = (Class<?>)fn.getConstant(v.poolIndex());
+        Object array = Array.newInstance(type, new int[v.payload()]);
+        mc.MULTIANEWARRAY(array.getClass(), v.payload());
+      }
+
       case LOAD_ARRAY -> {
-        Class<?> c = (Class<?>)fn.getConstant(v.poolIndex());
-        mc.PUSH(v.count());
-        if (c == Integer.TYPE)
-          mc.IALOAD();
-        else if (c == Long.TYPE)
-          mc.LALOAD();
-        else if (c == Byte.TYPE || c == Boolean.TYPE)
-          mc.BALOAD();
-        else if (c == Short.TYPE)
-          mc.SALOAD();
-        else if (c == Character.TYPE)
-          mc.CALOAD();
-        else if (c == Float.TYPE)
-          mc.FALOAD();
-        else if (c == Double.TYPE)
-          mc.DALOAD();
-        else
-          mc.AALOAD();
+        mc.PUSH(v.payload());
+        mc.XALOAD((Class<?>)fn.getConstant(v.poolIndex()));
       }
   
       case STORE_ARRAY -> {
         Class<?> c = (Class<?>)fn.getConstant(v.poolIndex());
-
         emitCoerce(c);
-        mc.PUSH(v.count());
+        mc.PUSH(v.payload());
         mc.SWAP();
-        if (c == Integer.TYPE)
-          mc.IASTORE();
-        else if (c == Long.TYPE)
-          mc.LASTORE();
-        else if (c == Byte.TYPE || c == Boolean.TYPE)
-          mc.BASTORE();
-        else if (c == Short.TYPE)
-          mc.SASTORE();
-        else if (c == Character.TYPE)
-          mc.CASTORE();
-        else if (c == Float.TYPE)
-          mc.FASTORE();
-        else if (c == Double.TYPE)
-          mc.DASTORE();
-        else
-          mc.AASTORE();
+        mc.XASTORE(c);
       }
   
       case GETFIELD -> {
@@ -1867,7 +1838,6 @@ public class BytecodeCompiler {
         return next;
       return null;
     }
-
 
     private static final Handle COERCE_BOOTSTRAP =
       new Handle(

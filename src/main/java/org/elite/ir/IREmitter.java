@@ -60,432 +60,411 @@ final class IREmitter {
     return false;
   }
 
-  public IREmitter emit(int opcode, int payload) {
-    return emit(opcode, payload, 0);
+  public void emit(int opcode, int payload) {
+    emit(opcode, payload, 0);
   }
 
-  public IREmitter emit(int opcode, int payload, int operand) {
+  public void emit(int opcode, int payload, int operand) {
     if (!isDead())
       buf.add(pack(opcode, payload, operand));
-    return this;
   }
 
   // ── Stack ops ──
 
-  public IREmitter emitNop() {
+  public void emitNop() {
     if (!isDead()) {
       // Bypass peephole optimizer.
       buf.add(pack(NOP, 0, 0));
     }
-    return this;
   }
 
-  public IREmitter emitPushConst(Object value) {
-    return emit(PUSH_CONST, 0, builder.putConstant(value));
+  public void emitPushConst(Object value) {
+    emit(PUSH_CONST, 0, builder.putConstant(value));
   }
 
-  public IREmitter emitPushTrue() {
-    return emit(PUSH_TRUE, 0);
+  public void emitPushTrue() {
+    emit(PUSH_TRUE, 0);
   }
 
-  public IREmitter emitPushFalse() {
-    return emit(PUSH_FALSE, 0);
+  public void emitPushFalse() {
+    emit(PUSH_FALSE, 0);
   }
 
-  public IREmitter emitPushNull() {
-    return emit(PUSH_NULL, 0);
+  public void emitPushNull() {
+    emit(PUSH_NULL, 0);
   }
 
-  public IREmitter emitPushThis() {
-    return emit(PUSH_THIS, 0);
+  public void emitPushThis() {
+    emit(PUSH_THIS, 0);
   }
 
-  public IREmitter emitPushEnv() {
-    return emit(PUSH_ENV, 0, 0);
+  public void emitPushEnv() {
+    emit(PUSH_ENV, 0, 0);
   }
 
-  public IREmitter emitPushCtx() {
-    return emit(PUSH_CTX, 0, 0);
+  public void emitPushCtx() {
+    emit(PUSH_CTX, 0, 0);
   }
 
-  public IREmitter emitPushVar(int varIndex) {
-    return emit(PUSH_VAR, 0, varIndex);
+  public void emitPushVar(int varIndex) {
+    emit(PUSH_VAR, 0, varIndex);
   }
 
-  public IREmitter emitPushGlobal(int slot) {
-    return emit(PUSH_GLOBAL, 0, slot);
+  public void emitPushGlobal(int slot) {
+    emit(PUSH_GLOBAL, 0, slot);
   }
 
-  public IREmitter emitPushGlobal(String name) {
-    return emit(PUSH_GLOBAL, 0, builder.putConstant(name));
+  public void emitPushGlobal(String name) {
+    emit(PUSH_GLOBAL, 0, builder.putConstant(name));
   }
 
-  public IREmitter emitPop() {
-    return emit(POP, 0);
+  public void emitPop() {
+    emit(POP, 0);
   }
 
-  public IREmitter emitDup() {
-    return emit(DUP, 0);
+  public void emitDup() {
+    emit(DUP, 0);
   }
 
   // ── Typed arithmetic (with inline primitive type in kind field) ──
 
-  public IREmitter emitAdd() {
-    return emit(ADD, K_DYNAMIC, 0);
+  public void emitAdd() {
+    emit(ADD, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitAdd(int kind) {
-    return emit(ADD, kind, 0);
+  public void emitAdd(int kind) {
+    emit(ADD, kind, 0);
   }
 
-  public IREmitter emitSub() {
-    return emit(SUB, K_DYNAMIC, 0);
+  public void emitSub() {
+    emit(SUB, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitSub(int kind) {
-    return emit(SUB, kind, 0);
+  public void emitSub(int kind) {
+    emit(SUB, kind, 0);
   }
 
-  public IREmitter emitMul() {
-    return emit(MUL, K_DYNAMIC, 0);
+  public void emitMul() {
+    emit(MUL, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitMul(int kind) {
-    return emit(MUL, kind, 0);
+  public void emitDiv() {
+    emit(DIV, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitDiv() {
-    return emit(DIV, K_DYNAMIC, 0);
+  public void emitDiv(int kind) {
+    emit(DIV, kind, 0);
   }
 
-  public IREmitter emitDiv(int kind) {
-    return emit(DIV, kind, 0);
+  public void emitIDiv() {
+    emit(IDIV, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitIDiv() {
-    return emit(IDIV, K_DYNAMIC, 0);
+  public void emitRem() {
+    emit(REM, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitRem() {
-    return emit(REM, K_DYNAMIC, 0);
+  public void emitPow() {
+    emit(POW, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitPow() {
-    return emit(POW, K_DYNAMIC, 0);
+  public void emitNeg() {
+    emit(NEG, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitNeg() {
-    return emit(NEG, K_DYNAMIC, 0);
+  public void emitCat() {
+    emit(CAT, 0);
   }
 
-  public IREmitter emitCat() {
-    return emit(CAT, 0);
+  public void emitBitAnd() {
+    emit(BITAND, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitBitAnd() {
-    return emit(BITAND, K_DYNAMIC, 0);
+  public void emitBitOr() {
+    emit(BITOR, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitBitOr() {
-    return emit(BITOR, K_DYNAMIC, 0);
+  public void emitBitNot() {
+    emit(BITNOT, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitBitNot() {
-    return emit(BITNOT, K_DYNAMIC, 0);
+  public void emitXor() {
+    emit(XOR, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitXor() {
-    return emit(XOR, K_DYNAMIC, 0);
+  public void emitShl() {
+    emit(SHL, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitShl() {
-    return emit(SHL, K_DYNAMIC, 0);
+  public void emitShr() {
+    emit(SHR, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitShr() {
-    return emit(SHR, K_DYNAMIC, 0);
+  public void emitUShr() {
+    emit(USHR, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitUShr() {
-    return emit(USHR, K_DYNAMIC, 0);
+  public void emitEq() {
+    emit(EQ, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitEq() {
-    return emit(EQ, K_DYNAMIC, 0);
+  public void emitEq(int kind) {
+    emit(EQ, kind, 0);
   }
 
-  public IREmitter emitEq(int kind) {
-    return emit(EQ, kind, 0);
+  public void emitNe() {
+    emit(NE, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitNe() {
-    return emit(NE, K_DYNAMIC, 0);
+  public void emitIdEq() {
+    emit(IDEQ, 0);
   }
 
-  public IREmitter emitNe(int kind) {
-    return emit(NE, kind, 0);
+  public void emitIdNe() {
+    emit(IDNE, 0);
   }
 
-  public IREmitter emitIdEq() {
-    return emit(IDEQ, 0);
+  public void emitLt() {
+    emit(LT, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitIdNe() {
-    return emit(IDNE, 0);
+  public void emitLt(int kind) {
+    emit(LT, kind, 0);
   }
 
-  public IREmitter emitLt() {
-    return emit(LT, K_DYNAMIC, 0);
+  public void emitLe() {
+    emit(LE, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitLt(int kind) {
-    return emit(LT, kind, 0);
+  public void emitGt() {
+    emit(GT, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitLe() {
-    return emit(LE, K_DYNAMIC, 0);
+  public void emitGe() {
+    emit(GE, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitGt() {
-    return emit(GT, K_DYNAMIC, 0);
+  public void emitCmp() {
+    emit(CMP, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitGe() {
-    return emit(GE, K_DYNAMIC, 0);
+  public void emitIn() {
+    emit(IN, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitCmp() {
-    return emit(CMP, K_DYNAMIC, 0);
+  public void emitInstanceOf(Class<?> cls) {
+    emit(INSTANCEOF, 0, builder.putConstant(cls));
   }
 
-  public IREmitter emitIn() {
-    return emit(IN, K_DYNAMIC, 0);
+  public void emitInstanceOf(IRClass cls) {
+    emit(INSTANCEOF, 0, builder.putConstant(cls));
   }
 
-  public IREmitter emitInstanceOf(Class<?> cls) {
-    return emit(INSTANCEOF, 0, builder.putConstant(cls));
+  public void emitEmpty() {
+    emit(EMPTY, K_DYNAMIC, 0);
   }
 
-  public IREmitter emitInstanceOf(IRClass cls) {
-    return emit(INSTANCEOF, 0, builder.putConstant(cls));
-  }
-
-  public IREmitter emitInstanceOf(String clsid) {
-    return emit(INSTANCEOF, 0, builder.putConstant(clsid));
-  }
-
-  public IREmitter emitEmpty() {
-    return emit(EMPTY, K_DYNAMIC, 0);
-  }
-
-  public IREmitter emitNot() {
-    return emit(NOT, 0);
+  public void emitNot() {
+    emit(NOT, 0);
   }
 
   // ── Control flow ──
 
-  public IREmitter emitJump(int blockId) {
-    return emit(JUMP, 0, blockId);
+  public void emitJump(int blockId) {
+    emit(JUMP, 0, blockId);
   }
 
-  public IREmitter emitJumpIfTrue(int blockId) {
-    return emit(JUMP_IF_TRUE, 0, blockId);
+  public void emitJumpIfTrue(int blockId) {
+    emit(JUMP_IF_TRUE, 0, blockId);
   }
 
-  public IREmitter emitJumpIfFalse(int blockId) {
-    return emit(JUMP_IF_FALSE, 0, blockId);
+  public void emitJumpIfFalse(int blockId) {
+    emit(JUMP_IF_FALSE, 0, blockId);
   }
 
-  public IREmitter emitJumpIfNull(int blockId) {
-    return emit(JUMP_IF_NULL, 0, blockId);
+  public void emitJumpIfNull(int blockId) {
+    emit(JUMP_IF_NULL, 0, blockId);
   }
 
-  public IREmitter emitJumpIfNonNull(int blockId) {
-    return emit(JUMP_IF_NONNULL, 0, blockId);
+  public void emitJumpIfNonNull(int blockId) {
+    emit(JUMP_IF_NONNULL, 0, blockId);
   }
 
-  public IREmitter emitReturn() {
-    return emit(RETURN, 0);
+  public void emitReturn() {
+    emit(RETURN, 0);
   }
 
-  public IREmitter emitTry(Descriptors.Try desc) {
-    return emit(TRY, 0, builder.putConstant(desc));
+  public void emitTry(Descriptors.Try desc) {
+    emit(TRY, 0, builder.putConstant(desc));
   }
 
-  public IREmitter emitSynchronized(IRFunction body) {
-    return emit(SYNCHRONIZED, 0, builder.putConstant(body));
+  public void emitSynchronized(IRFunction body) {
+    emit(SYNCHRONIZED, 0, builder.putConstant(body));
   }
 
-  public IREmitter emitThrow() {
-    return emit(THROW, 0);
+  public void emitThrow() {
+    emit(THROW, 0);
   }
 
-  public IREmitter emitThrowException() {
-    return emit(THROW_EXCEPTION, 0, 0);
+  public void emitThrowException() {
+    emit(THROW_EXCEPTION, 0, 0);
   }
 
-  public IREmitter emitThrowException(String message) {
-    return emit(THROW_EXCEPTION, 1, builder.putConstant(message));
+  public void emitAssert(int count) {
+    emit(ASSERT, count);
   }
 
-  public IREmitter emitAssert(int count) {
-    return emit(ASSERT, count);
+  public void emitEnterScope() {
+    emit(ENTER_SCOPE, 0);
   }
 
-  public IREmitter emitEnterScope() {
-    return emit(ENTER_SCOPE, 0);
+  public void emitLeaveScope() {
+    emit(LEAVE_SCOPE, 0);
   }
 
-  public IREmitter emitLeaveScope() {
-    return emit(LEAVE_SCOPE, 0);
+  public void emitDefineGlobal(int slot) {
+    emit(DEFINE_GLOBAL, 0, slot);
   }
 
-  public IREmitter emitDefineGlobal(int slot) {
-    return emit(DEFINE_GLOBAL, 0, slot);
+  public void emitDefineGlobal(String name, boolean readonly) {
+    emit(DEFINE_GLOBAL, readonly ? 1 : 0, builder.putConstant(name));
   }
 
-  public IREmitter emitDefineGlobal(String name, boolean readonly) {
-    return emit(DEFINE_GLOBAL, readonly ? 1 : 0, builder.putConstant(name));
+  public void emitStoreGlobal(int slot) {
+    emit(STORE_GLOBAL, 0, slot);
   }
 
-  public IREmitter emitStoreGlobal(int slot) {
-    return emit(STORE_GLOBAL, 0, slot);
+  public void emitStoreGlobal(String name) {
+    emit(STORE_GLOBAL, 0, builder.putConstant(name));
   }
 
-  public IREmitter emitStoreGlobal(String name) {
-    return emit(STORE_GLOBAL, 0, builder.putConstant(name));
+  public void emitStoreVar(int varIndex) {
+    emit(STORE_VAR, 0, varIndex);
   }
 
-  public IREmitter emitStoreVar(int varIndex) {
-    return emit(STORE_VAR, 0, varIndex);
+  public void emitStoreVarPop(int varIndex) {
+    emit(STORE_VAR_POP, 0, varIndex);
   }
 
-  public IREmitter emitStoreVarPop(int varIndex) {
-    return emit(STORE_VAR_POP, 0, varIndex);
+  public void emitClosure(IRFunction func) {
+    emit(CLOSURE, 0, builder.putConstant(func));
   }
 
-  public IREmitter emitClosure(IRFunction func) {
-    return emit(CLOSURE, 0, builder.putConstant(func));
+  public void emitInvokeDirect(IRFunction fn) {
+    emit(INVOKE_DIRECT, 0, builder.putConstant(fn));
   }
 
-  public IREmitter emitInvokeDirect(IRFunction fn) {
-    return emit(INVOKE_DIRECT, 0, builder.putConstant(fn));
+  public void emitInvokeMethod(Method method) {
+    emit(INVOKE_METHOD, 0, builder.putConstant(method));
   }
 
-  public IREmitter emitInvokeMethod(Method method) {
-    return emit(INVOKE_METHOD, 0, builder.putConstant(method));
+  public void emitInvokeDynamic(Descriptors.Indy desc) {
+    emit(INVOKE_DYNAMIC, 0, builder.putConstant(desc));
   }
 
-  public IREmitter emitInvokeDynamic(Descriptors.Indy desc) {
-    return emit(INVOKE_DYNAMIC, 0, builder.putConstant(desc));
+  public void emitNew(Class<?> c) {
+    emit(NEW, 0, builder.putConstant(c));
   }
 
-  public IREmitter emitNew(Class<?> c) {
-    return emit(NEW, 0, builder.putConstant(c));
+  public void emitNew(IRClass clazz) {
+    emit(NEW, 0, builder.putConstant(clazz));
   }
 
-  public IREmitter emitNew(IRClass clazz) {
-    return emit(NEW, 0, builder.putConstant(clazz));
+  public void emitConstructor(Constructor<?> constructor) {
+    emit(CONSTRUCTOR, 0, builder.putConstant(constructor));
   }
 
-  public IREmitter emitConstructor(Constructor<?> constructor) {
-    return emit(CONSTRUCTOR, 0, builder.putConstant(constructor));
+  public void emitConstructor(IRClass clazz) {
+    emit(CONSTRUCTOR, 0, builder.putConstant(clazz));
   }
 
-  public IREmitter emitConstructor(IRClass clazz) {
-    return emit(CONSTRUCTOR, 0, builder.putConstant(clazz));
+  public void emitNewArray(Class<?> type) {
+    emit(NEW_ARRAY, 0, builder.putConstant(type));
   }
 
-  public IREmitter emitNewArray(int count, Class<?> type) {
-    return emit(NEW_ARRAY, count, builder.putConstant(type));
+  public void emitNewFixedArray(int count, Class<?> type) {
+    emit(NEW_FIXED_ARRAY, count, builder.putConstant(type));
   }
 
-  public IREmitter emitLoadArray(int index, Class<?> type) {
-    return emit(LOAD_ARRAY, index, builder.putConstant(type));
+  public void emitNewMultiArray(int dims, Class<?> type) {
+    emit(NEW_MULTI_ARRAY, dims, builder.putConstant(type));
   }
 
-  public IREmitter emitStoreArray(int index, Class<?> type) {
-    return emit(STORE_ARRAY, index, builder.putConstant(type));
+  public void emitLoadArray(int index, Class<?> type) {
+    emit(LOAD_ARRAY, index, builder.putConstant(type));
   }
 
-  public IREmitter emitGetField(IRClass clazz, String field) {
-    return emit(GETFIELD, 0, builder.putConstant(
-      new Descriptors.Field(clazz, field)));
+  public void emitStoreArray(int index, Object type) {
+    emit(STORE_ARRAY, index, builder.putConstant(type));
   }
 
-  public IREmitter emitGetField(String field) {
-    return emit(GETFIELD, 0, builder.putConstant(field));
+  public void emitGetField(IRClass clazz, String field) {
+    emit(GETFIELD, 0, builder.putConstant(new Descriptors.Field(clazz, field)));
   }
 
-  public IREmitter emitPutField(IRClass clazz, String field) {
-    return emit(PUTFIELD, 0, builder.putConstant(
-      new Descriptors.Field(clazz, field)));
+  public void emitGetField(String field) {
+    emit(GETFIELD, 0, builder.putConstant(field));
   }
 
-  public IREmitter emitPutField(String field) {
-    return emit(PUTFIELD, 0, builder.putConstant(field));
+  public void emitPutField(IRClass clazz, String field) {
+    emit(PUTFIELD, 0, builder.putConstant(new Descriptors.Field(clazz, field)));
   }
 
-  public IREmitter emitGetStatic(IRClass clazz, String field) {
-    return emit(GETSTATIC, 0, builder.putConstant(
-      new Descriptors.Field(clazz, field)));
+  public void emitPutField(String field) {
+    emit(PUTFIELD, 0, builder.putConstant(field));
   }
 
-  public IREmitter emitGetStatic(String field) {
-    return emit(GETSTATIC, 0, builder.putConstant(field));
+  public void emitGetStatic(IRClass clazz, String field) {
+    emit(GETSTATIC, 0,
+         builder.putConstant(new Descriptors.Field(clazz, field)));
   }
 
-  public IREmitter emitGetStatic(Field field) {
-    return emit(GETSTATIC, 0, builder.putConstant(field));
+  public void emitGetStatic(Field field) {
+    emit(GETSTATIC, 0, builder.putConstant(field));
   }
 
-  public IREmitter emitPutStatic(IRClass clazz, String field) {
-    return emit(PUTSTATIC, 0, builder.putConstant(
-      new Descriptors.Field(clazz, field)));
+  public void emitPutStatic(IRClass clazz, String field) {
+    emit(PUTSTATIC, 0, builder.putConstant(new Descriptors.Field(clazz, field)));
   }
 
-  public IREmitter emitPutStatic(String field) {
-    return emit(PUTSTATIC, 0, builder.putConstant(field));
+  public void emitPutStatic(Field field) {
+    emit(PUTSTATIC, 0, builder.putConstant(field));
   }
 
-  public IREmitter emitPutStatic(Field field) {
-    return emit(PUTSTATIC, 0, builder.putConstant(field));
+  public void emitCheckCast(Class<?> type) {
+    emit(CHECKCAST, 0, builder.putConstant(type));
   }
 
-  public IREmitter emitCheckCast(Class<?> type) {
-    return emit(CHECKCAST, 0, builder.putConstant(type));
+  public void emitCheckCast(IRClass clazz) {
+    emit(CHECKCAST, 0, builder.putConstant(clazz));
   }
 
-  public IREmitter emitCheckCast(IRClass clazz) {
-    return emit(CHECKCAST, 0, builder.putConstant(clazz));
+  public void emitBox(Class<?> type) {
+    emit(BOX, 0, builder.putConstant(type));
   }
 
-  public IREmitter emitBox(Class<?> type) {
-    return emit(BOX, 0, builder.putConstant(type));
+  public void emitUnbox(Class<?> type) {
+    emit(UNBOX, 0, builder.putConstant(type));
   }
 
-  public IREmitter emitUnbox(Class<?> type) {
-    return emit(UNBOX, 0, builder.putConstant(type));
+  public void emitNewCons() {
+    emit(NEW_CONS, 0);
   }
 
-  public IREmitter emitNewCons() {
-    return emit(NEW_CONS, 0);
+  public void emitNewDelayCons() {
+    emit(NEW_DELAY_CONS, 0);
   }
 
-  public IREmitter emitNewDelayCons() {
-    return emit(NEW_DELAY_CONS, 0);
+  public void emitNil() {
+    emit(NIL, 0);
   }
 
-  public IREmitter emitNil() {
-    return emit(NIL, 0);
+  public void emitNewTuple(int count) {
+    emit(NEW_TUPLE, count, 0);
   }
 
-  public IREmitter emitNewTuple(int count) {
-    return emit(NEW_TUPLE, count, 0);
-  }
-
-  public IREmitter emitDeclareNS(String prefix) {
-    return emit(DECLARE_NS, 0, builder.putConstant(prefix));
+  public void emitDeclareNS(String prefix) {
+    emit(DECLARE_NS, 0, builder.putConstant(prefix));
   }
 
   public int[] toArray() {

@@ -221,6 +221,7 @@ public class DefaultVisitor extends ELNode.Visitor
     public void visit(ELNode.CLASS e)       { visitConstant(e); }
 
     public void visit(ELNode.ARRAY e) {
+        scan(e.type);
         scan(e.dims);
         scan(e.init);
     }

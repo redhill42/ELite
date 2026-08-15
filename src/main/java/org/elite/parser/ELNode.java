@@ -5266,11 +5266,11 @@ public abstract class ELNode implements Serializable {
    * Array expression.
    */
   public static class ARRAY extends ELNode {
-    public final String type;
+    public final ELNode type;
     public final ELNode[] dims;
     public final ELNode[] init;
 
-    public ARRAY(int pos, String type, ELNode[] dims, ELNode[] init) {
+    public ARRAY(int pos, ELNode type, ELNode[] dims, ELNode[] init) {
       super(Token.ARRAY, pos);
       this.type = type;
       this.dims = dims;
@@ -5329,7 +5329,7 @@ public abstract class ELNode implements Serializable {
       if (type == null) {
         return Object.class;
       } else {
-        Object cls = ELEngine.resolveClass(context, type);
+        Object cls = ELEngine.resolveClass(context, getFullClassName(type));
         if (cls instanceof Class) {
           return (Class<?>)cls;
         } else {

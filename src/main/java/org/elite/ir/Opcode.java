@@ -103,15 +103,17 @@ public final class Opcode {
   public static final int NEW               = 0x51;
   public static final int CONSTRUCTOR       = 0x52;
   public static final int NEW_ARRAY         = 0x53;
-  public static final int LOAD_ARRAY        = 0x54;
-  public static final int STORE_ARRAY       = 0x55;
-  public static final int GETFIELD          = 0x56;
-  public static final int PUTFIELD          = 0x57;
-  public static final int GETSTATIC         = 0x58;
-  public static final int PUTSTATIC         = 0x59;
-  public static final int CHECKCAST         = 0x5A;
-  public static final int BOX               = 0x5B;
-  public static final int UNBOX             = 0x5C;
+  public static final int NEW_FIXED_ARRAY   = 0x54;
+  public static final int NEW_MULTI_ARRAY   = 0x55;
+  public static final int LOAD_ARRAY        = 0x56;
+  public static final int STORE_ARRAY       = 0x57;
+  public static final int GETFIELD          = 0x58;
+  public static final int PUTFIELD          = 0x59;
+  public static final int GETSTATIC         = 0x5A;
+  public static final int PUTSTATIC         = 0x5B;
+  public static final int CHECKCAST         = 0x5C;
+  public static final int BOX               = 0x5D;
+  public static final int UNBOX             = 0x5E;
 
   // ── Data structure ──
   public static final int NEW_CONS          = 0x60;
@@ -193,6 +195,8 @@ public final class Opcode {
       case NEW            -> "NEW";
       case CONSTRUCTOR    -> "CONSTRUCTOR";
       case NEW_ARRAY      -> "NEW_ARRAY";
+      case NEW_FIXED_ARRAY-> "NEW_ARRAY";
+      case NEW_MULTI_ARRAY-> "NEW_MULTI_ARRAY";
       case LOAD_ARRAY     -> "LOAD_ARRAY";
       case STORE_ARRAY    -> "STORE_ARRAY";
       case GETFIELD       -> "GETFIELD";

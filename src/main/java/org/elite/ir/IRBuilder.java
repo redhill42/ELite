@@ -1151,7 +1151,7 @@ public class IRBuilder extends ELNode.Visitor {
     int nvars = lambda.vars.length;
 
     // Build argument for argument list, exclude varargs.
-    current.emitNewArray(nvars, Object.class);
+    current.emitNewFixedArray(nvars, Object.class);
     if (lambda.varargs)
       nvars--;
     for (int i = 0; i < nvars; i++) {
@@ -1910,74 +1910,49 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.ARRAY node) {
     // Resolve component type at compile time, default to Object.class.
-    Object componentType = resolveClassAtCompileTime(node.type);
-    if (componentType == null)
-      componentType = node.type; // use string that resolved at runtime
-
-    if (componentType instanceof Class &&
-        buildConstantDimensionArray(node, (Class<?>)componentType))
-      return;
-
-    current.emitPushCtx();
-    buildConst(componentType);
-
-    // Build dimension expressions into a tuple.
-    if (node.dims == null) {
-      current.emitPushNull();
-    } else {
-      buildTuple(node.dims);
-    }
-
-    // Build init expressions into a tuple.
-    if (node.init == null) {
-      current.emitPushNull();
-    } else {
-      buildTuple(node.init);
-    }
-
-    emitInvokeMethod(Runtime.class, "newArray", ELContext.class,
-                     Object.class, Object[].class, Object[].class);
-  }
-
-  private boolean buildConstantDimensionArray(ELNode.ARRAY node, Class<?> type) {
-    if (node.dims != null) {
-      for (ELNode e : node.dims) {
-        if (e instanceof ELNode.NUMBER n && n.value instanceof Integer)
-          continue;
-        return false;
-      }
-    }
+    Class<?> componentType;
+    if (resolveIRClass(node.type) != null)
+      componentType = Object.class;
+    else
+      componentType = resolveJavaClass(node.type, true);
 
     if (node.dims == null || node.dims.length == 1) {
-      int length = 0;
-      if (node.dims != null)
-        length = ((ELNode.NUMBER)node.dims[0]).value.intValue();
-      if (node.init != null && length < node.init.length)
-        length = node.init.length;
-
-      current.emitNewArray(length, type);
+      if (node.dims == null) {
+        buildConst(node.init != null ? node.init.length : 0);
+        current.emitUnbox(int.class);
+      } else if (node.dims[0] instanceof ELNode.NUMBER n &&
+                 n.value instanceof Integer) {
+        buildConst(n.value);
+        current.emitUnbox(int.class);
+      } else {
+        current.emitPushCtx();
+        build(node.dims[0]);
+        buildCoerce(int.class);
+      }
+      current.emitNewArray(componentType);
 
       if (node.init != null) {
         for (int i = 0; i < node.init.length; i++) {
           current.emitDup();
           build(node.init[i]);
-          current.emitStoreArray(i, type);
+          current.emitStoreArray(i, componentType);
         }
       }
     } else {
-      buildConst(type);
-      current.emitCheckCast(Class.class);
-      current.emitNewArray(node.dims.length, Integer.TYPE);
       for (int i = 0; i < node.dims.length; i++) {
-        current.emitDup();
-        buildConst(((ELNode.NUMBER)node.dims[i]).value.intValue());
-        current.emitStoreArray(i, Integer.TYPE);
+        if (node.dims[i] instanceof ELNode.NUMBER n &&
+                n.value instanceof Integer) {
+          buildConst(n.value);
+          current.emitUnbox(int.class);
+        } else {
+          current.emitPushCtx();
+          build(node.dims[i]);
+          buildCoerce(int.class);
+        }
       }
-      emitInvokeMethod(Array.class, "newInstance", Class.class, int[].class);
+      current.emitNewMultiArray(node.dims.length, componentType);
+      // TODO: handle multi dimension array initializer.
     }
-
-    // FIXME: handle multi dimensional array
-    return true;
   }
 
   public void visit(ELNode.XML node) {
@@ -2022,11 +1997,12 @@ public class IRBuilder extends ELNode.Visitor {
     build(node.tag);
 
     if (node.keys == null) {
-      current.emitPushNull().emitPushNull();
+      current.emitPushNull();
+      current.emitPushNull();
     } else {
       buildTuple(node.keys);
 
-      current.emitNewArray(node.values.length, Object.class);
+      current.emitNewFixedArray(node.values.length, Object.class);
       for (int i = 0; i < node.values.length; i++) {
         current.emitDup();
         if (tmpSlots != null && tmpSlots[i] != null)
@@ -4354,7 +4330,7 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildTuple(Class<?> type, ELNode[] elems, int start, int len) {
-    current.emitNewArray(len, type);
+    current.emitNewFixedArray(len, type);
     for (int i = 0; i < len; i++) {
       current.emitDup();
       build(elems[start + i]);
@@ -4373,7 +4349,7 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildTuple(Slot... slots) {
-    current.emitNewArray(slots.length, Object.class);
+    current.emitNewFixedArray(slots.length, Object.class);
     for (int i = 0; i < slots.length; i++) {
       current.emitDup();
       slots[i].load();

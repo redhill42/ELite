@@ -109,8 +109,9 @@ final class IRPrinter {
          Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
       sb.append(" B").append(v.jumpTarget());
 
-    case Opcode.NEW_ARRAY, Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY -> {
-      sb.append(" ").append(v.count()).append(",");
+    case Opcode.NEW_FIXED_ARRAY, Opcode.NEW_MULTI_ARRAY,
+         Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY -> {
+      sb.append(" ").append(v.payload()).append(",");
       formatConstPool(sb, constants, v.poolIndex());
     }
 
