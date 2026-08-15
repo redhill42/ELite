@@ -18,10 +18,12 @@ package org.elite.ir;
 
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
+import org.elite.eval.TypeCoercion;
 import javax.el.ELContext;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Type;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodHandles.filterArguments;
@@ -73,7 +75,7 @@ final class BootstrapCommon {
   static MethodHandle makeCoerce(MethodHandle mh, int pos, Object... args) {
     for (int i = 0; i < args.length; i++) {
       Class<?> type = mh.type().parameterType(pos + i);
-      if (!type.isInstance(args[i]))
+      if (!TypeCoercion.getBoxedType(type).isInstance(args[i]))
         mh = filterArguments(mh, pos + i, makeCoerce(args[i], type));
     }
     return mh;

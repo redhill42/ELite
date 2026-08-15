@@ -2362,6 +2362,8 @@ public final class OperatorBootstrap {
               mh = permuteArguments(mh, 0, 2, 1);
             }
             mh = filterArguments(mh, 2, MH_getELContext);
+          } else {
+            mh = dropArguments(mh, 2, EvaluationContext.class);
           }
           return makeCoerce(mh, 0, lhs, rhs);
         } catch (IllegalAccessException e) {

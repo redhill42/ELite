@@ -195,6 +195,7 @@ public class ELUtils
             return id;
 
         return switch (id) {
+            case "~"   -> "__cat__";
             case "+"   -> "__add__";
             case "-"   -> "__sub__";
             case "*"   -> "__mul__";
@@ -208,25 +209,44 @@ public class ELUtils
             case "<<"  -> "__shl__";
             case ">>"  -> "__shr__";
             case ">>>" -> "__ushr__";
+            case "=="  -> "__eq__";
+            case "!="  -> "__ne__";
             case "<"   -> "__lt__";
             case "<="  -> "__le__";
             case ">"   -> "__gt__";
             case ">="  -> "__ge__";
             case "<=>" -> "__cmp__";
-            case "=="  -> "__eq__";
-            case "!="  -> "__ne__";
-            case "+="  -> "__add_assign__";
-            case "-="  -> "__sub_assign__";
-            case "*="  -> "__mul_assign__";
-            case "/="  -> "__div_assign__";
-            case "%="  -> "__rem_assign__";
-            case "^="  -> "__pow_assign__";
-            case "`|=" -> "__bitor_assign__";
-            case "`&=" -> "__bitand_assign__";
-            case "`^=" -> "__xor_assign__";
-            case "<<=" -> "__shl_assign__";
-            case ">>=" -> "__shr_assign__";
-            case">>>=" -> "__ushr_assign__";
+
+            case "?~"  -> "__rcat__";
+            case "?+"  -> "__radd__";
+            case "?-"  -> "__rsub__";
+            case "?*"  -> "__rmul__";
+            case "?/"  -> "__rdiv__";
+            case "?%"  -> "__rrem__";
+            case "?^"  -> "__rpow__";
+            case "?`|" -> "__rbitor__";
+            case "?`&" -> "__rbitand__";
+            case "?`^" -> "__rxor__";
+            case "?<<" -> "__rshl__";
+            case "?>>" -> "__rshr__";
+            case "?>>>"-> "__rshr__";
+
+            case "+="  -> "__aadd__";
+            case "-="  -> "__asub__";
+            case "*="  -> "__amul__";
+            case "/="  -> "__adiv__";
+            case "%="  -> "__arem__";
+            case "^="  -> "__apow__";
+            case "`|=" -> "__abitor__";
+            case "`&=" -> "__abitand__";
+            case "`^=" -> "__axor__";
+            case "<<=" -> "__ashl__";
+            case ">>=" -> "__ashr__";
+            case ">>>="-> "__aushr__";
+
+            case "[]"  -> "__getvalue__";
+            case "[]=" -> "__setvalue__";
+
             default -> {
                 StringBuilder sb = new StringBuilder();
                 sb.append("__");

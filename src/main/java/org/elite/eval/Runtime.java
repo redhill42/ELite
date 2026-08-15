@@ -20,16 +20,11 @@ import elite.lang.Closure;
 import elite.xml.XmlNode;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
-import org.elite.eval.closure.TargetMethodClosure;
-import org.elite.ir.MetaClass;
 import org.elite.resolver.MethodResolver;
 import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import javax.el.ELContext;
-import javax.el.ELException;
-import javax.el.PropertyNotFoundException;
-import javax.el.PropertyNotWritableException;
 import javax.el.ValueExpression;
 import javax.xml.XMLConstants;
 import java.io.ByteArrayInputStream;
@@ -109,95 +104,6 @@ public final class Runtime {
     if (target == null)
       throw new EvaluationException(elctx, _T(EL_UNDEFINED_IDENTIFIER, id));
     return target;
-  }
-
-  private static String typeName(Object obj) {
-    if (obj == null)
-      return null;
-
-    MetaClass meta = obj.getClass().getAnnotation(MetaClass.class);
-    if (meta != null)
-      return meta.name();
-
-    return obj.getClass().getName();
-  }
-
-  public static Object getValue(ELContext elctx, Object obj, Object key) {
-    if (obj == null || key == null)
-      return null;
-
-    try {
-      elctx.setPropertyResolved(false);
-      Object value = elctx.getELResolver().getValue(elctx, obj, key);
-      if (elctx.isPropertyResolved())
-        return value;
-    } catch (PropertyNotFoundException ex) {
-      // fallthrough
-    } catch (EvaluationException ex) {
-      throw ex;
-    } catch (ELException ex) {
-      throw new EvaluationException(elctx, ex.getMessage(), ex.getCause());
-    } catch (RuntimeException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
-
-    if (key instanceof String) {
-      Closure method = resolveMethod(elctx, obj, (String)key);
-      if (method != null)
-        return method;
-    }
-
-    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
-                                            typeName(obj), key));
-  }
-
-  private static Closure resolveMethod(ELContext elctx, Object base,
-                                       String name) {
-    MethodResolver resolver = MethodResolver.getInstance(elctx);
-    if (base == SystemScope.SINGLETON) {
-      return resolver.resolveSystemMethod(name);
-    } else if (base instanceof Class) {
-      MethodClosure c = resolver.resolveStaticMethod((Class<?>)base, name);
-      if (c != null)
-        return c;
-      c = resolver.resolveMethod((Class<?>)base, name);
-      if (c != null)
-        return c;
-      c = resolver.resolveMethod(Class.class, name);
-      return (c == null) ? null : new TargetMethodClosure(base, c);
-    } else {
-      MethodClosure c = resolver.resolveMethod(base.getClass(), name);
-      return c == null ? null : new TargetMethodClosure(base, c);
-    }
-  }
-
-  public static Object setValue(Object value, Object obj, Object key,
-                                ELContext elctx) {
-    if (obj == null || key == null) {
-      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
-                                              typeName(obj), key));
-    }
-
-    try {
-      elctx.setPropertyResolved(false);
-      elctx.getELResolver().setValue(elctx, obj, key, value);
-      if (elctx.isPropertyResolved())
-        return value;
-    } catch (PropertyNotFoundException ex) {
-      // fallthrough
-    } catch (PropertyNotWritableException ex) {
-      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_WRITABLE,
-                                              typeName(obj), key));
-    } catch (EvaluationException ex) {
-      throw ex;
-    } catch (ELException ex) {
-      throw new EvaluationException(elctx, ex.getMessage(), ex.getCause());
-    } catch (RuntimeException ex) {
-      throw new EvaluationException(elctx, ex);
-    }
-
-    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
-                                            typeName(obj), key));
   }
 
   public static Object newRange(Object begin, Object next, Object end) {

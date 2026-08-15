@@ -21,16 +21,20 @@ import elite.lang.Decimal;
 import elite.lang.Rational;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.EvaluationException;
 import org.elite.eval.MethodDelegate;
 import org.elite.eval.MethodResolvable;
-import org.elite.eval.Runtime;
 import org.elite.eval.SystemScope;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
+import org.elite.eval.closure.TargetMethodClosure;
 import org.elite.resolver.MethodResolver;
 import org.elite.util.BeanUtils;
 import javax.el.ELContext;
+import javax.el.ELException;
 import javax.el.MethodNotFoundException;
+import javax.el.PropertyNotFoundException;
+import javax.el.PropertyNotWritableException;
 import java.beans.IntrospectionException;
 import java.lang.invoke.CallSite;
 import java.lang.invoke.MethodHandle;
@@ -44,6 +48,7 @@ import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -58,8 +63,10 @@ public final class DynamicBootstrap {
   private DynamicBootstrap() {}
 
   private static final MethodHandle MH_getValueDispatcher;
+  private static final MethodHandle MH_getIndexedValueDispatcher;
   private static final MethodHandle MH_dynamicGetValue;
   private static final MethodHandle MH_setValueDispatcher;
+  private static final MethodHandle MH_setIndexedValueDispatcher;
   private static final MethodHandle MH_dynamicSetValue;
   private static final MethodHandle MH_invokeDispatcher;
   private static final MethodHandle MH_callDispatcher;
@@ -67,10 +74,13 @@ public final class DynamicBootstrap {
 
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
+  private static final MethodHandle MH_listGet;
+  private static final MethodHandle MH_listSet;
 
   private static final MethodHandle MH_callClosure;
 
-  private static final MethodHandle MH_typesEqual;
+  private static final MethodHandle MH_setValueTypesEqual;
+  private static final MethodHandle MH_invokeTypesEqual;
   private static final MethodHandle MH_permuteNamedArgs;
   private static final MethodHandle MH_buildVarArgs;
   private static final MethodHandle MH_coerceArgs;
@@ -87,8 +97,14 @@ public final class DynamicBootstrap {
                    MutableCallSite.class, String.class,
                    EvaluationContext.class, Object.class));
 
+      MH_getIndexedValueDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "getIndexedValueDispatcher",
+        methodType(Object.class, MethodHandles.Lookup.class,
+                   MutableCallSite.class, EvaluationContext.class,
+                   Object.class, Object.class));
+
       MH_dynamicGetValue = lookup.findStatic(
-        Runtime.class, "getValue",
+        DynamicBootstrap.class, "dynamicGetValue",
         methodType(Object.class, ELContext.class, Object.class, Object.class));
 
       MH_setValueDispatcher = lookup.findStatic(
@@ -97,10 +113,16 @@ public final class DynamicBootstrap {
                    MutableCallSite.class, String.class, Object.class,
                    Object.class, EvaluationContext.class));
 
+      MH_setIndexedValueDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "setIndexedValueDispatcher",
+        methodType(void.class, MethodHandles.Lookup.class,
+                   MutableCallSite.class, Object.class, Object.class,
+                   Object.class, EvaluationContext.class));
+
       MH_dynamicSetValue = lookup.findStatic(
-        Runtime.class, "setValue",
-        methodType(Object.class, Object.class, Object.class, Object.class,
-                   ELContext.class));
+        DynamicBootstrap.class, "setValue",
+        methodType(void.class, ELContext.class, Object.class, Object.class,
+                   Object.class));
 
       MH_invokeDispatcher = lookup.findStatic(
         DynamicBootstrap.class, "invokeDispatcher",
@@ -121,9 +143,12 @@ public final class DynamicBootstrap {
 
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
-
       MH_mapPut = lookup.findVirtual(
         Map.class, "put", methodType(Object.class, Object.class, Object.class));
+      MH_listGet = lookup.findVirtual(
+        List.class, "get", methodType(Object.class, int.class));
+      MH_listSet = lookup.findVirtual(
+        List.class, "set", methodType(Object.class, int.class, Object.class));
 
       MH_callClosure =
         permuteArguments(
@@ -157,8 +182,13 @@ public final class DynamicBootstrap {
         methodType(Object[].class, Object[].class, Class[].class, int.class,
                    boolean.class));
 
-      MH_typesEqual = lookup.findStatic(
-        DynamicBootstrap.class, "typesEqual",
+      MH_setValueTypesEqual = lookup.findStatic(
+        DynamicBootstrap.class, "setValueTypesEqual",
+        methodType(boolean.class, Object.class, Object.class, Object.class,
+                   Class.class, Class.class, Class.class));
+
+      MH_invokeTypesEqual = lookup.findStatic(
+        DynamicBootstrap.class, "invokeTypesEqual",
         methodType(boolean.class, Object.class, Object[].class, Class[].class));
 
     } catch (NoSuchMethodException | IllegalAccessException e) {
@@ -178,7 +208,8 @@ public final class DynamicBootstrap {
     return types;
   }
 
-  private static boolean typesEqual(Object obj, Object[] args, Class<?>[] types) {
+  private static boolean invokeTypesEqual(Object obj, Object[] args,
+                                          Class<?>[] types) {
     if (typeOf(obj) != types[0])
       return false;
     if (args.length != types.length - 1)
@@ -208,7 +239,7 @@ public final class DynamicBootstrap {
                                            EvaluationContext env, Object obj)
       throws Throwable
   {
-    MethodHandle target = dispatchGetValue(lookup, obj, name);
+    MethodHandle target = dispatchGetValue(lookup, env, obj, name);
     target = target.asType(cs.type());
 
     // Guard condition: obj != null && obj.getClass() == cachedClass
@@ -228,6 +259,7 @@ public final class DynamicBootstrap {
   }
 
   private static MethodHandle dispatchGetValue(MethodHandles.Lookup lookup,
+                                               EvaluationContext env,
                                                Object obj, String name) {
     if (obj == null) {
       MethodHandle mh = constant(Object.class, null);
@@ -311,9 +343,127 @@ public final class DynamicBootstrap {
       // fallthrough
     }
 
+    MethodHandle mh = dispatchGetValueExpando(lookup, env, obj, name);
+    if (mh != null)
+      return insertArguments(mh, 2, name);
+
     // Fallback to dynamic getValue.
     MethodHandle fallback = insertArguments(MH_dynamicGetValue, 2, name);
     return filterArguments(fallback, 0, MH_getELContext);
+  }
+
+  private static MethodHandle dispatchGetValueExpando(MethodHandles.Lookup lookup,
+                                                      EvaluationContext env,
+                                                      Object obj, Object index) {
+    if (isELiteObject(obj)) {
+      try {
+        Method m = obj.getClass().getMethod(
+          mangle("[]"), EvaluationContext.class, Object[].class);
+        MetaMethod meta = m.getAnnotation(MetaMethod.class);
+        if (!Modifier.isStatic(m.getModifiers()) && meta != null &&
+            meta.name().equals("[]") && meta.arity() == 1 && !meta.varargs()) {
+          // (obj, env, [index]) -> (env, obj, index)
+          MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
+          return permuteArguments(mh, 1, 0, 2);
+        }
+      } catch (NoSuchMethodException | IllegalAccessException ex) {
+        // fallthrough
+      }
+    } else {
+      ELContext elctx = env.getELContext();
+      MethodResolver resolver = MethodResolver.getInstance(elctx);
+      MethodClosure mc = resolver.resolveMethod(obj.getClass(), "[]");
+
+      if (mc != null) {
+        Method m = mc.getJavaMethod(elctx, obj, index);
+        if (m == null) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, "[]", "[]",
+                                        obj.getClass().getName())),
+            1, Object.class, Object.class);
+        }
+
+        try {
+          MethodHandle mh = lookup.unreflect(m);
+          if (m.getParameterTypes()[0] == ELContext.class) {
+            if (Modifier.isStatic(m.getModifiers())) {
+              // For expando method, (elctx, obj, index), already in order
+            } else {
+              // For instance method, (obj, elctx, index) -> (env, obj, index)
+              mh = permuteArguments(mh, 1, 0, 2);
+            }
+            mh = filterArguments(mh, 0, MH_getELContext);
+          } else {
+            mh = dropArguments(mh, 0, EvaluationContext.class);
+          }
+          return makeCoerce(mh, 1, obj, index);
+        } catch (IllegalAccessException ex) {
+          // fallthrough
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private static String typeName(Object obj) {
+    if (obj == null)
+      return null;
+
+    MetaClass meta = obj.getClass().getAnnotation(MetaClass.class);
+    if (meta != null)
+      return meta.name();
+
+    return obj.getClass().getName();
+  }
+
+  private static Object dynamicGetValue(ELContext elctx, Object obj, Object key) {
+    if (obj == null || key == null)
+      return null;
+
+    try {
+      elctx.setPropertyResolved(false);
+      Object value = elctx.getELResolver().getValue(elctx, obj, key);
+      if (elctx.isPropertyResolved())
+        return value;
+    } catch (PropertyNotFoundException ex) {
+      // fallthrough
+    } catch (EvaluationException ex) {
+      throw ex;
+    } catch (ELException ex) {
+      throw new EvaluationException(elctx, ex.getMessage(), ex.getCause());
+    } catch (RuntimeException ex) {
+      throw new EvaluationException(elctx, ex);
+    }
+
+    if (key instanceof String) {
+      Closure method = resolveMethod(elctx, obj, (String)key);
+      if (method != null)
+        return method;
+    }
+
+    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
+                                            typeName(obj), key));
+  }
+
+  private static Closure resolveMethod(ELContext elctx, Object base,
+                                       String name) {
+    MethodResolver resolver = MethodResolver.getInstance(elctx);
+    if (base == SystemScope.SINGLETON) {
+      return resolver.resolveSystemMethod(name);
+    } else if (base instanceof Class) {
+      MethodClosure c = resolver.resolveStaticMethod((Class<?>)base, name);
+      if (c != null)
+        return c;
+      c = resolver.resolveMethod((Class<?>)base, name);
+      if (c != null)
+        return c;
+      c = resolver.resolveMethod(Class.class, name);
+      return (c == null) ? null : new TargetMethodClosure(base, c);
+    } else {
+      MethodClosure c = resolver.resolveMethod(base.getClass(), name);
+      return c == null ? null : new TargetMethodClosure(base, c);
+    }
   }
 
   private static MethodHandle getGetterMethod(MethodHandles.Lookup lookup,
@@ -374,6 +524,76 @@ public final class DynamicBootstrap {
   //=------------------------------------------------------------------------=//
 
   @SuppressWarnings("unused")
+  public static CallSite getIndexedValueBootstrap(MethodHandles.Lookup lookup,
+                                                  String name,
+                                                  MethodType callsiteType) {
+    MutableCallSite cs = new MutableCallSite(callsiteType);
+    MethodHandle target = insertArguments(MH_getIndexedValueDispatcher, 0,
+                                          lookup, cs);
+    target = target.asType(callsiteType);
+    cs.setTarget(target);
+    return cs;
+  }
+
+  private static Object getIndexedValueDispatcher(MethodHandles.Lookup lookup,
+                                                  MutableCallSite cs,
+                                                  EvaluationContext env,
+                                                  Object obj, Object index)
+    throws Throwable
+  {
+    MethodHandle target = dispatchGetIndexedValue(lookup, env, obj, index);
+    target = target.asType(cs.type());
+
+    Class<?> objClass = obj == null ? null : obj.getClass();
+    Class<?> indexClass = index == null ? null : index.getClass();
+    MethodHandle guard = insertArguments(MH_classesEqual, 2, objClass, indexClass);
+    guard = dropArguments(guard, 0, EvaluationContext.class);
+
+    // Create PIC guard.
+    MethodHandle fallback = cs.getTarget();
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
+    cs.setTarget(guarded);
+
+    // Directly invoke target for current call.
+    return target.invokeExact(env, obj, index);
+  }
+
+  private static MethodHandle dispatchGetIndexedValue(MethodHandles.Lookup lookup,
+                                                      EvaluationContext env,
+                                                      Object obj, Object index) {
+    if (obj == null || index == null) {
+      MethodHandle mh = constant(Object.class, null);
+      return dropArguments(mh, 0, EvaluationContext.class, Object.class,
+                           Object.class);
+    }
+
+    if (obj instanceof Map)
+      return dropArguments(MH_mapGet, 0, EvaluationContext.class);
+
+    if (index instanceof Number) {
+      if (obj.getClass().isArray()) {
+        MethodHandle mh = MethodHandles.arrayElementGetter(obj.getClass());
+        mh = dropArguments(mh, 0, EvaluationContext.class);
+        return makeCoerce(mh, 2, index);
+      }
+
+      if (obj instanceof List) {
+        MethodHandle mh = dropArguments(MH_listGet, 0, EvaluationContext.class);
+        return makeCoerce(mh, 2, index);
+      }
+    }
+
+    MethodHandle mh = dispatchGetValueExpando(lookup, env, obj, index);
+    if (mh != null)
+      return mh;
+
+    // Fallback to dynamic getValue.
+    return filterArguments(MH_dynamicGetValue, 0, MH_getELContext);
+  }
+
+  //=------------------------------------------------------------------------=//
+
+  @SuppressWarnings("unused")
   public static CallSite setValueBootstrap(MethodHandles.Lookup lookup,
                                            String name,
                                            MethodType callSiteType) {
@@ -391,7 +611,7 @@ public final class DynamicBootstrap {
                                          EvaluationContext env)
     throws Throwable
   {
-    MethodHandle target = dispatchSetValue(lookup, name, obj, value);
+    MethodHandle target = dispatchSetValue(lookup, env, name, obj, value);
     target = target.asType(cs.type());
 
     // Guard condition: obj != null && obj.getClass() == cachedClass.
@@ -413,6 +633,7 @@ public final class DynamicBootstrap {
   }
 
   private static MethodHandle dispatchSetValue(MethodHandles.Lookup lookup,
+                                               EvaluationContext env,
                                                String name, Object obj,
                                                Object value) {
     if (obj == null) {
@@ -484,8 +705,14 @@ public final class DynamicBootstrap {
       // fallthrough
     }
 
+    MethodHandle mh = dispatchSetValueExpando(lookup, env, obj, name, value);
+    if (mh != null)
+      return insertArguments(mh, 2, name);
+
     // Fallback to dynamic setValue.
-    MethodHandle fallback = insertArguments(MH_dynamicSetValue, 2, name);
+    // (elctx, obj, index, value) -> (value, obj, (name), env)
+    MethodHandle fallback = permuteArguments(MH_dynamicSetValue, 3, 1, 2, 0);
+    fallback = insertArguments(fallback, 2, name);
     return filterArguments(fallback, 2, MH_getELContext);
   }
 
@@ -494,6 +721,181 @@ public final class DynamicBootstrap {
     mh = permuteArguments(mh, 1, 0);
     mh = makeCoerce(mh, 0, value);
     return dropArguments(mh, 2, EvaluationContext.class);
+  }
+
+  private static MethodHandle dispatchSetValueExpando(MethodHandles.Lookup lookup,
+                                                      EvaluationContext env,
+                                                      Object obj, Object index,
+                                                      Object value) {
+    if (isELiteObject(obj)) {
+      try {
+        Method m = obj.getClass().getMethod(
+          mangle("[]="), EvaluationContext.class, Object[].class);
+        MetaMethod meta = m.getAnnotation(MetaMethod.class);
+        if (!Modifier.isStatic(m.getModifiers()) && meta != null &&
+            meta.name().equals("[]=") && meta.arity() == 2 && !meta.varargs()) {
+          // (obj, env, [index, value]) -> (value, obj, index, env)
+          MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 2);
+          return permuteArguments(mh, 3, 0, 2, 1);
+        }
+      } catch (NoSuchMethodException | IllegalAccessException e) {
+        // fallthrough
+      }
+    } else {
+      ELContext elctx = env.getELContext();
+      MethodResolver resolver = MethodResolver.getInstance(elctx);
+      MethodClosure mc = resolver.resolveMethod(obj.getClass(), "[]=");
+
+      if (mc != null) {
+        Method m = mc.getJavaMethod(elctx, obj, index, value);
+        if (m == null) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, "[]=", "[]=",
+                                        obj.getClass().getName())),
+            0, Object.class, Object.class, Object.class);
+        }
+
+        try {
+          MethodHandle mh = lookup.unreflect(m);
+          if (m.getParameterTypes()[0] == ELContext.class) {
+            if (Modifier.isStatic(m.getModifiers())) {
+              // For expando method, (elctx, obj, index, value) ->
+              //                     (value, obj, index, env)
+              mh = permuteArguments(mh, 3, 1, 2, 0);
+            } else {
+              // For instance method, (obj, elctx, index, value) ->
+              //                      (value, obj, index, env)
+              mh = permuteArguments(mh, 3, 0, 2, 1);
+            }
+            mh = filterArguments(mh, 3, MH_getELContext);
+          } else {
+            // (obj, index, value) -> (value, obj, index, (env))
+            mh = permuteArguments(mh, 2, 0, 1);
+            mh = dropArguments(mh, 3, EvaluationContext.class);
+          }
+          return makeCoerce(mh, 0, value, obj, index);
+        } catch (IllegalAccessException e) {
+          // fallthrough
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private static void setValue(ELContext elctx, Object obj, Object index,
+                               Object value) {
+    if (obj == null || index == null) {
+      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
+                                              typeName(obj), index));
+    }
+
+    try {
+      elctx.setPropertyResolved(false);
+      elctx.getELResolver().setValue(elctx, obj, index, value);
+      if (elctx.isPropertyResolved())
+        return;
+    } catch (PropertyNotFoundException ex) {
+      // fallthrough
+    } catch (PropertyNotWritableException ex) {
+      throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_WRITABLE,
+                                              typeName(obj), index));
+    } catch (EvaluationException ex) {
+      throw ex;
+    } catch (ELException ex) {
+      throw new EvaluationException(elctx, ex.getMessage(), ex.getCause());
+    } catch (RuntimeException ex) {
+      throw new EvaluationException(elctx, ex);
+    }
+
+    throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
+                                            typeName(obj), index));
+  }
+
+  //=------------------------------------------------------------------------=//
+
+  @SuppressWarnings("unused")
+  public static CallSite setIndexedValueBootstrap(MethodHandles.Lookup lookup,
+                                                  String name,
+                                                  MethodType callSiteType) {
+    MutableCallSite cs = new MutableCallSite(callSiteType);
+    MethodHandle target = insertArguments(MH_setIndexedValueDispatcher, 0,
+                                          lookup, cs);
+    target = target.asType(callSiteType);
+    cs.setTarget(target);
+    return cs;
+  }
+
+  private static boolean setValueTypesEqual(
+      Object   value,    Object    obj,     Object   index,
+      Class<?> valueType, Class<?> objType, Class<?> indexType) {
+    return typeOf(value) == valueType &&
+           typeOf(obj)   == objType &&
+           typeOf(index) == indexType;
+  }
+
+  private static void setIndexedValueDispatcher(MethodHandles.Lookup lookup,
+                                                MutableCallSite cs, Object value,
+                                                Object obj, Object index,
+                                                EvaluationContext env)
+    throws Throwable
+  {
+    MethodHandle target = dispatchSetIndexedValue(lookup, env, obj, index, value);
+    target = target.asType(cs.type());
+
+    Class<?> objType = obj == null ? null : obj.getClass();
+    Class<?> indexType = index == null ? null : index.getClass();
+    Class<?> valueType = value == null ? null : value.getClass();
+    MethodHandle guard = insertArguments(
+      MH_setValueTypesEqual, 3, valueType, objType, indexType);
+    guard =dropArguments(guard, 3, EvaluationContext.class);
+
+    // Create PIC guard.
+    MethodHandle fallback = cs.getTarget();
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
+    cs.setTarget(guarded);
+
+    // Directly invoke target for current call.
+    target.invokeExact(value, obj, index, env);
+  }
+
+  private static MethodHandle dispatchSetIndexedValue(MethodHandles.Lookup lookup,
+                                                      EvaluationContext env,
+                                                      Object obj, Object index,
+                                                      Object value) {
+    if (obj == null || index == null) {
+      return dropArguments(throwNullPointerException(), 0, Object.class,
+                           Object.class, Object.class);
+    }
+
+    if (obj instanceof Map) {
+      MethodHandle mh = permuteArguments(MH_mapPut, 2, 0, 1);
+      return dropArguments(mh, 3, EvaluationContext.class);
+    }
+
+    if (index instanceof Number) {
+      if (obj.getClass().isArray()) {
+        MethodHandle mh = MethodHandles.arrayElementSetter(obj.getClass());
+        mh = makeCoerce(mh, 1, index, value);
+        mh = permuteArguments(mh, 2, 0, 1);
+        return dropArguments(mh, 3, EvaluationContext.class);
+      }
+
+      if (obj instanceof List) {
+        MethodHandle mh = permuteArguments(MH_listSet, 2, 0, 1);
+        mh = makeCoerce(mh, 2, index);
+        return dropArguments(mh, 3, EvaluationContext.class);
+      }
+    }
+
+    MethodHandle mh = dispatchSetValueExpando(lookup, env, obj, index, value);
+    if (mh != null)
+      return mh;
+
+    // Fallback to dynamic setValue.
+    // (elctx, obj, index, value) -> (value, obj, index, env)
+    MethodHandle fallback = permuteArguments(MH_dynamicSetValue, 3, 1, 2, 0);
+    return filterArguments(fallback, 3, MH_getELContext);
   }
 
   //=------------------------------------------------------------------------=//
@@ -521,7 +923,7 @@ public final class DynamicBootstrap {
 
     // Guard condition: obj and argument types are not changed.
     Class<?>[] types = typeOf(obj, args);
-    MethodHandle guard = insertArguments(MH_typesEqual, 2, (Object)types);
+    MethodHandle guard = insertArguments(MH_invokeTypesEqual, 2, (Object)types);
     guard = dropArguments(guard, 0, EvaluationContext.class);
 
     // Create PIC guard.
@@ -912,7 +1314,7 @@ public final class DynamicBootstrap {
 
     // Guard condition: obj and argument types are not changed.
     Class<?>[] types = typeOf(receiver, args);
-    MethodHandle guard = insertArguments(MH_typesEqual, 2, (Object)types);
+    MethodHandle guard = insertArguments(MH_invokeTypesEqual, 2, (Object)types);
     guard = dropArguments(guard, 0, EvaluationContext.class);
 
     // Create PIC guard.
@@ -1070,7 +1472,7 @@ public final class DynamicBootstrap {
 
     // Guard condition, constructor argument types are not changed.
     Class<?>[] types = typeOf(null, args);
-    MethodHandle guard = insertArguments(MH_typesEqual, 0, (Object)null);
+    MethodHandle guard = insertArguments(MH_invokeTypesEqual, 0, (Object)null);
     guard = insertArguments(guard, 1, (Object)types);
     guard = dropArguments(guard, 0, EvaluationContext.class);
 

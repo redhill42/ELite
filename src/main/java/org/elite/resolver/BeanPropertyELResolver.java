@@ -153,17 +153,17 @@ public class BeanPropertyELResolver extends ELResolver
 
         // Dont' expose properties for a PropertyDelegate
         if (!(base instanceof PropertyDelegate)) {
-            // If the property has read or write methods then get the property value
-            BeanProperty bp = getBeanProperty(base.getClass(), property);
-            if (bp != null) {
-                if (bp.getReadMethod() == null) {
-                    throw new PropertyNotFoundException("Property not found: " + property);
-                } else {
-                    Object value = getPropertyValue(bp.getReadMethod(), base);
-                    context.setPropertyResolved(true);
-                    return value;
+                // If the property has read or write methods then get the property value
+                BeanProperty bp = getBeanProperty(base.getClass(), property);
+                if (bp != null) {
+                    if (bp.getReadMethod() == null) {
+                        throw new PropertyNotFoundException("Property not found: " + property);
+                    } else {
+                        Object value = getPropertyValue(bp.getReadMethod(), base);
+                        context.setPropertyResolved(true);
+                        return value;
+                    }
                 }
-            }
 
             // If field present and accessible then return the field value.
             Field field = getBeanField(base.getClass(), property);

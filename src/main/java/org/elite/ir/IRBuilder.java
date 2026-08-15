@@ -22,7 +22,6 @@ import elite.lang.Seq;
 import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
 import elite.lang.annotation.ExpandoScope;
-import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
@@ -133,7 +132,9 @@ public class IRBuilder extends ELNode.Visitor {
   private final Map<Integer, Integer> linePcMapping = new HashMap<>();
 
   private static final Method getValueBootstrap;
+  private static final Method getIndexedValueBootstrap;
   private static final Method setValueBootstrap;
+  private static final Method setIndexedValueBootstrap;
   private static final Method invokeBootstrap;
   private static final Method callBootstrap;
   private static final Method constructBootstrap;
@@ -145,8 +146,14 @@ public class IRBuilder extends ELNode.Visitor {
       getValueBootstrap = DynamicBootstrap.class.getMethod(
         "getValueBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
+      getIndexedValueBootstrap = DynamicBootstrap.class.getMethod(
+        "getIndexedValueBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
       setValueBootstrap = DynamicBootstrap.class.getMethod(
         "setValueBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
+      setIndexedValueBootstrap = DynamicBootstrap.class.getMethod(
+        "setIndexedValueBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
       invokeBootstrap = DynamicBootstrap.class.getMethod(
         "invokeBootstrap", MethodHandles.Lookup.class, String.class,
@@ -630,11 +637,12 @@ public class IRBuilder extends ELNode.Visitor {
         getValueBootstrap, ((ELNode.STRINGVAL)index).value, Object.class,
         EvaluationContext.class, Object.class));
     } else {
-      current.emitPushCtx();
+      current.emitPushEnv();
       build(target);
       build(index);
-      emitInvokeMethod(Runtime.class, "getValue", ELContext.class, Object.class,
-                       Object.class);
+      current.emitInvokeDynamic(new Descriptors.Indy(
+        getIndexedValueBootstrap, "getValue", Object.class,
+        EvaluationContext.class, Object.class, Object.class));
     }
   }
 
@@ -740,11 +748,13 @@ public class IRBuilder extends ELNode.Visitor {
         setValueBootstrap, ((ELNode.STRINGVAL)node.index).value, void.class,
         Object.class, Object.class, EvaluationContext.class));
     } else {
+      current.emitDup();
       build(node.right);
       build(node.index);
-      current.emitPushCtx();
-      emitInvokeMethod(Runtime.class, "setValue", Object.class,
-                       Object.class, Object.class, ELContext.class);
+      current.emitPushEnv();
+      current.emitInvokeDynamic(new Descriptors.Indy(
+        setIndexedValueBootstrap, "setValue", void.class, Object.class,
+        Object.class, Object.class, EvaluationContext.class));
     }
   }
 
