@@ -55,6 +55,7 @@ import static org.elite.ir.SymbolTable.Scope;
 
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
+import static org.elite.eval.ELUtils.*;
 import static org.elite.resources.Resources.*;
 
 /**
@@ -137,6 +138,7 @@ public class IRBuilder extends ELNode.Visitor {
   private static final Method callBootstrap;
   private static final Method constructBootstrap;
   private static final Method coerceBootstrap;
+  private static final Method assignOpBootstrap;
 
   static {
     try {
@@ -157,6 +159,9 @@ public class IRBuilder extends ELNode.Visitor {
         MethodType.class);
       coerceBootstrap = CoercionBootstrap.class.getMethod(
         "coerceBootstrap", MethodHandles.Lookup.class, String.class,
+        MethodType.class);
+      assignOpBootstrap = OperatorBootstrap.class.getMethod(
+        "assignOpBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
     } catch (NoSuchMethodException e) {
       throw new ExceptionInInitializerError(e);
@@ -2280,12 +2285,12 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.ASSIGNOP node) {
     // Invoke dynamic assignment operator
-    current.emitPushCtx();
-    buildConst(node.binary.op);
     build(node.left);
     build(node.right);
-    emitInvokeMethod(Runtime.class, "invokeAssignOp", ELContext.class,
-                     Integer.class, Object.class, Object.class);
+    current.emitPushEnv();
+    current.emitInvokeDynamic(new Descriptors.Indy(
+      assignOpBootstrap, mangle(ELNode.opIdentifiers[node.binary.op]),
+      Object.class, Object.class, Object.class, EvaluationContext.class));
 
     // Now perform assignment.
     if (node.left instanceof ELNode.IDENT ident) {

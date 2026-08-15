@@ -16,16 +16,12 @@
 
 package org.elite.eval;
 
-import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.xml.XmlNode;
-import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TargetMethodClosure;
 import org.elite.ir.MetaClass;
-import org.elite.parser.ELNode;
-import org.elite.parser.Token;
 import org.elite.resolver.MethodResolver;
 import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
@@ -45,7 +41,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
-import static org.elite.eval.ELUtils.*;
 import static org.elite.resources.Resources.*;
 
 /**
@@ -203,48 +198,6 @@ public final class Runtime {
 
     throw new EvaluationException(elctx, _T(EL_PROPERTY_NOT_FOUND,
                                             typeName(obj), key));
-  }
-
-  public static Object invokeAssignOp(ELContext elctx, Integer op, Object lhs,
-                                      Object rhs) {
-    String opname = ELNode.opIdentifiers[op];
-    Closure[] args = new Closure[1];
-    Object result;
-
-    // invoke assignment operator procedure
-    if (lhs != null && opname != null) {
-      if (lhs instanceof ClosureObject co) {
-        args[0] = new LiteralClosure(rhs);
-        result = co.invokeSpecial(elctx, opname.concat("="), args);
-        if (result != NO_RESULT)
-          return result;
-      } else if (!(lhs instanceof Number)) {
-        MethodClosure method = MethodResolver.getInstance(elctx)
-          .resolveMethod(lhs.getClass(), opname.concat("="));
-        if (method != null) {
-          args[0] = new LiteralClosure(rhs);
-          return method.invoke(elctx, lhs, args);
-        }
-      }
-    }
-
-    // do standard evaluation.
-    return switch (op) {
-      case Token.ADD    -> Builtin.__add__(elctx, lhs, rhs);
-      case Token.SUB    -> Builtin.__sub__(elctx, lhs, rhs);
-      case Token.MUL    -> Builtin.__mul__(elctx, lhs, rhs);
-      case Token.DIV    -> Builtin.__div__(elctx, lhs, rhs);
-      case Token.REM    -> Builtin.__rem__(elctx, lhs, rhs);
-      case Token.POW    -> Builtin.__pow__(elctx, lhs, rhs);
-      case Token.BITAND -> Builtin.__bitand__(elctx, lhs, rhs);
-      case Token.BITOR  -> Builtin.__bitor__(elctx, lhs, rhs);
-      case Token.XOR    -> Builtin.__xor__(elctx, lhs, rhs);
-      case Token.CAT    -> Builtin.__cat__(elctx, lhs, rhs);
-      case Token.SHL    -> Builtin.__shl__(elctx, lhs, rhs);
-      case Token.SHR    -> Builtin.__shr__(elctx, lhs, rhs);
-      case Token.USHR   -> Builtin.__ushr__(elctx, lhs, rhs);
-      default -> null;
-    };
   }
 
   public static Object newRange(Object begin, Object next, Object end) {

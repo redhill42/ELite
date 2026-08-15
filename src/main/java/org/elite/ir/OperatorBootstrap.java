@@ -20,6 +20,7 @@ import elite.lang.Closure;
 import elite.lang.Decimal;
 import elite.lang.Rational;
 import elite.lang.Seq;
+import javolution.testing.AssertionException;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.GlobalScope;
 import org.elite.eval.TypeCoercion;
@@ -60,6 +61,7 @@ public final class OperatorBootstrap {
 
   private static final MethodHandle MH_binaryDispatcher;
   private static final MethodHandle MH_unaryDispatcher;
+  private static final MethodHandle MH_assignOpDispatcher;
 
   private static final MethodHandle MH_looksLikeFloats;
 
@@ -243,6 +245,12 @@ public final class OperatorBootstrap {
         methodType(Object.class, MethodHandles.Lookup.class,
                    MutableCallSite.class, String.class, Object.class,
                    EvaluationContext.class));
+
+      MH_assignOpDispatcher = lookup.findStatic(
+        OperatorBootstrap.class, "assignOpDispatcher",
+        methodType(Object.class, MethodHandles.Lookup.class,
+                   MutableCallSite.class, String.class, Object.class,
+                   Object.class, EvaluationContext.class));
 
       MH_looksLikeFloats = lookup.findStatic(
         OperatorBootstrap.class, "looksLikeFloats",
@@ -2250,5 +2258,119 @@ public final class OperatorBootstrap {
 
   private static boolean arrayEmpty(Object x) {
     return Array.getLength(x) == 0;
+  }
+
+  //=------------------------------------------------------------------------=//
+
+  @SuppressWarnings("unused")
+  public static CallSite assignOpBootstrap(MethodHandles.Lookup lookup,
+                                           String name,
+                                           MethodType callsiteType) {
+    MutableCallSite cs = new MutableCallSite(callsiteType);
+    MethodHandle target = insertArguments(MH_assignOpDispatcher,
+                                          0, lookup, cs, name);
+    target = target.asType(callsiteType);
+    cs.setTarget(target);
+    return cs;
+  }
+
+  private static Object assignOpDispatcher(MethodHandles.Lookup lookup,
+                                           MutableCallSite cs, String name,
+                                           Object lhs, Object rhs,
+                                           EvaluationContext env)
+    throws Throwable
+  {
+    MethodHandle target = dispatchAssignOp(lookup, env, name, lhs, rhs);
+    target = target.asType(cs.type());
+
+    Class<?> lhsType = lhs == null ? null : lhs.getClass();
+    Class<?> rhsType = rhs == null ? null : rhs.getClass();
+    MethodHandle guard = insertArguments(MH_classesEqual, 2, lhsType, rhsType);
+    guard = dropArguments(guard, 2, EvaluationContext.class);
+
+    // Create PIC guard
+    MethodHandle fallback = cs.getTarget();
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
+    cs.setTarget(guarded);
+
+    // Directly invoke target for current call.
+    return target.invoke(lhs, rhs, env);
+  }
+
+  private static MethodHandle dispatchAssignOp(MethodHandles.Lookup lookup,
+                                               EvaluationContext env,
+                                               String name, Object lhs,
+                                               Object rhs) {
+    if (lhs == null || rhs == null)
+      return dropArguments(throwNullPointerException(), 0, Object.class,
+                           Object.class);
+
+    String opname = switch (name) {
+      case "__add__"    -> "+=";
+      case "__sub__"    -> "-=";
+      case "__mul__"    -> "*=";
+      case "__div__"    -> "/=";
+      case "__rem__"    -> "%=";
+      case "__pow__"    -> "^=";
+      case "__bitand__" -> "`&=";
+      case "__bitor__"  -> "`|=";
+      case "__cat__"    -> "~=";
+      case "__shl__"    -> "<<=";
+      case "__shr__"    -> ">>=";
+      case "__ushr__"   -> ">>>=";
+      default -> throw new AssertionError("Unknown operator: " + name);
+    };
+
+    // Invoke assignment operator procedure
+    if (isELiteObject(lhs)) {
+      try {
+        Method m = lhs.getClass()
+          .getMethod(mangle(opname), EvaluationContext.class,
+                     Object[].class);
+        MetaMethod ann = m.getAnnotation(MetaMethod.class);
+        if (!Modifier.isStatic(m.getModifiers()) && ann != null &&
+            ann.arity() == 1 && !ann.varargs()) {
+          // (lhs, env, [rhs]) -> (lhs, rhs, env)
+          MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
+          return permuteArguments(mh, 0, 2, 1);
+        }
+      } catch (NoSuchMethodException | IllegalAccessException e) {
+        // fallthrough
+      }
+    } else if (!(lhs instanceof Number)) {
+      ELContext elctx = env.getELContext();
+      MethodResolver resolver = MethodResolver.getInstance(elctx);
+      MethodClosure mc = resolver.resolveMethod(lhs.getClass(), opname);
+
+      if (mc != null) {
+        Method m = mc.getJavaMethod(elctx, lhs, rhs);
+        if (m == null) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_NO_SUCH_METHOD, opname,
+                                        opname, lhs.getClass().getName())),
+            0, Object.class, Object.class);
+        }
+
+        try {
+          MethodHandle mh = lookup.unreflect(m);
+          if (m.getParameterTypes()[0] == ELContext.class) {
+            if (Modifier.isStatic(m.getModifiers())) {
+              // For expando method, (elctx, lhs, rhs) -> (lhs, rhs, env)
+              mh = permuteArguments(mh, 1, 2, 0);
+            } else {
+              // For instance method, (lhs, elctx, rhs) -> (lhs, rhs, env)
+              mh = permuteArguments(mh, 0, 2, 1);
+            }
+            mh = filterArguments(mh, 2, MH_getELContext);
+          }
+          return makeCoerce(mh, 0, lhs, rhs);
+        } catch (IllegalAccessException e) {
+          // fallthrough
+        }
+      }
+    }
+
+    // Do standard evaluation.
+    return dispatchBinary(lookup, env, name, lhs, rhs);
   }
 }
