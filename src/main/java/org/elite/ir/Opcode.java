@@ -116,11 +116,8 @@ public final class Opcode {
   public static final int UNBOX             = 0x5E;
 
   // ── Data structure ──
-  public static final int NEW_CONS          = 0x60;
-  public static final int NEW_DELAY_CONS    = 0x61;
-  public static final int NIL               = 0x62;
-  public static final int NEW_TUPLE         = 0x63;
-  public static final int DECLARE_NS        = 0x64;
+  public static final int NEW_TUPLE         = 0x60;
+  public static final int DECLARE_NS        = 0x61;
 
   /** Human-readable name for debugging. */
   public static String name(int op) {
@@ -207,9 +204,6 @@ public final class Opcode {
       case BOX            -> "BOX";
       case UNBOX          -> "UNBOX";
 
-      case NEW_CONS       -> "NEW_CONS";
-      case NEW_DELAY_CONS -> "NEW_DELAY_CONS";
-      case NIL            -> "NIL";
       case NEW_TUPLE      -> "NEW_TUPLE";
       case DECLARE_NS     -> "DECLARE_NS";
 

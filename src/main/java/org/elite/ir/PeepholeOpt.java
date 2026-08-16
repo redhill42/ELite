@@ -19,8 +19,6 @@ package org.elite.ir;
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import org.elite.eval.ELProgram;
-import org.elite.eval.seq.Cons;
-import org.elite.eval.seq.DelayCons;
 import javax.el.ELContext;
 import static org.elite.ir.Opcode.*;
 
@@ -49,7 +47,7 @@ final class PeepholeOpt {
     case POP: {
       switch (lastOpcode) {
       case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, PUSH_NULL, PUSH_THIS, PUSH_ENV,
-           PUSH_CTX, PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE, NIL:
+           PUSH_CTX, PUSH_VAR, PUSH_GLOBAL, DUP, CLOSURE:
         // PUSH_CONST, POP -> NOP
         code.reset(last);
         return true;
@@ -61,11 +59,6 @@ final class PeepholeOpt {
         // PUSH_CONST, PUSH_CONST, ..., NEW_TUPLE(n), POP -> NOP
         code.reset(last);
         popN(code, IRFormat.payload(lastInst));
-        return true;
-      case NEW_CONS, NEW_DELAY_CONS:
-        // PUSH_VAR, PUSH_VAR, NEW_CONS, POP -> NOP
-        code.reset(last);
-        popN(code, 2);
         return true;
       }
       break;
@@ -202,7 +195,7 @@ final class PeepholeOpt {
         // PUSH_NULL, JUMP_IF_NULL -> JUMP
         code.set(last, IRFormat.pack(JUMP, 0, operand));
         return true;
-      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE:
         // non-null constant, JUMP_IF_NULL -> NOP
         code.reset(last);
         return true;
@@ -215,7 +208,7 @@ final class PeepholeOpt {
             // PUSH_NULL, DUP, JUMP_IF_NULL -> PUSH_NULL, JUMP
             code.set(last, IRFormat.pack(JUMP, 0, operand));
             return true;
-          case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+          case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE:
             // PUSH nonnull, DUP, JUMP_IF_NULL -> PUSH nonnull
             code.reset(last);
             return true;
@@ -230,7 +223,7 @@ final class PeepholeOpt {
         // PUSH_NULL, JUMP_IF_NONNULL -> NOP
         code.reset(last);
         return true;
-      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+      case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE:
         // non-null constant, JUMP_IF_NONNULL -> JUMP
         code.set(last, IRFormat.pack(JUMP, 0, operand));
         return true;
@@ -252,7 +245,7 @@ final class PeepholeOpt {
             // PUSH_NULL, DUP, JUMP_IF_NONNULL -> PUSH_NULL
             code.reset(last);
             return true;
-          case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE, NIL:
+          case PUSH_CONST, PUSH_TRUE, PUSH_FALSE, NOT, CLOSURE:
             // PUSH nonnull, DUP, JUMP_IF_NONNULL -> PUSH nonnull, JUMP
             code.set(last, IRFormat.pack(JUMP, 0, operand));
             return true;
@@ -342,12 +335,6 @@ final class PeepholeOpt {
         case PUSH_CONST:
           Object obj = builder.getConstant(lastOperand);
           code.set(last, packBool(cls.isInstance(obj)));
-          return true;
-        case NEW_CONS, NIL:
-          code.set(last, packBool(cls.isAssignableFrom(Cons.class)));
-          return true;
-        case NEW_DELAY_CONS:
-          code.set(last, packBool(cls.isAssignableFrom(DelayCons.class)));
           return true;
         case CLOSURE:
           code.set(last, packBool(cls.isAssignableFrom(Closure.class)));

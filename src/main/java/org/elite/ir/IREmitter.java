@@ -447,18 +447,6 @@ final class IREmitter {
     emit(UNBOX, 0, builder.putConstant(type));
   }
 
-  public void emitNewCons() {
-    emit(NEW_CONS, 0);
-  }
-
-  public void emitNewDelayCons() {
-    emit(NEW_DELAY_CONS, 0);
-  }
-
-  public void emitNil() {
-    emit(NIL, 0);
-  }
-
   public void emitNewTuple(int count) {
     emit(NEW_TUPLE, count, 0);
   }

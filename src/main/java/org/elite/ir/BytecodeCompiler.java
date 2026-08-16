@@ -15,8 +15,6 @@
  */
 package org.elite.ir;
 
-import elite.lang.Closure;
-import elite.lang.Seq;
 import elite.lang.Symbol;
 import org.elite.eval.DelegatingELContext;
 import org.elite.eval.ELEngine;
@@ -30,8 +28,6 @@ import org.elite.eval.StandaloneVariableMapper;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.UserException;
 import org.elite.eval.closure.TypedClosure;
-import org.elite.eval.seq.Cons;
-import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
 import org.elite.util.DynamicClassLoader;
 import org.elite.util.asm.AsmType;
@@ -54,17 +50,16 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.elite.eval.ELUtils.*;
 import static org.elite.ir.Opcode.*;
@@ -126,38 +121,35 @@ public class BytecodeCompiler {
     // Map functions to program class methods.
     int idx = 0;
     for (IRFunction f : program.functions()) {
-      if (f == program.entry()) {
-        f.internalName = "execute$main";
-      } else {
-        f.internalName = "execute$" +
-                         (isJavaIdentifier(f.name()) ? f.name() : "") +
-                         "$" + idx++;
-      }
+      if (f == program.entry())
+        f.internalName = "fn$main";
+      else if (isJavaIdentifier(f.name()))
+        f.internalName = "fn$" + f.name() + "$" + idx++;
+      else
+        f.internalName = "lambda$$" + idx++;
     }
 
     // Map elite class to Java class.
     for (IRClass c : program.classes()) {
       c.internalName = ProgramClassName + "$" + c.internalName;
 
+      // Collect all class member functions.
       Map<IRFunction, ELNode.DEFINE> fmap = new HashMap<>();
-      for (ELNode.DEFINE var : c.node.cvars) {
-        if (var.expr instanceof ELNode.LAMBDA fn)
-          fmap.put(fn.symbol.func, var);
-      }
-      for (ELNode.DEFINE var : c.node.ivars) {
-        if (var.expr instanceof ELNode.LAMBDA fn)
-          fmap.put(fn.symbol.func, var);
-      }
+      Stream.concat(Arrays.stream(c.node.cvars), Arrays.stream(c.node.ivars))
+        .filter(var -> var.symbol.func != null)
+        .forEach(var -> fmap.put(var.symbol.func, var));
 
+      // If the function is a class member, must use the function name (may
+      // mangle), otherwise, for named lambda, use "lambda$name$0" for internal
+      // name, otherwise, just use "lambda$$0" for internal name.
       for (IRFunction f : c.functions()) {
         ELNode.DEFINE def = fmap.get(f);
-        if (def == null) {
-          f.internalName = "__lambda$" +
-                           ((isJavaIdentifier(f.name())) ? f.name() : "") +
-                           "$" + idx++;
-        } else {
+        if (def != null)
           f.internalName = mangle(def.id);
-        }
+        else if (isJavaIdentifier(f.name()))
+          f.internalName = "lambda$" + f.name() + "$" + idx++;
+        else
+          f.internalName = "lambda$$" + idx++;
       }
     }
 
@@ -209,7 +201,7 @@ public class BytecodeCompiler {
 
   private void compileFunction(ClassAssembly cc, IRFunction f) {
     // The function method:
-    // public static Object execute$func$0(
+    // public static Object fn$func$0(
     //    EvaluationContext env, Object[] args)
     MethodAssembly mc = cc.newMethod(
       ACC_PUBLIC | ACC_STATIC | ACC_FINAL, f.internalName, Object.class,
@@ -284,7 +276,7 @@ public class BytecodeCompiler {
     //         .importExternal(elctx)
     //     ELEngine.setCurrentELContext(elctx);
     //     EvaluationContext env = new EvaluationContext(elctx);
-    //     execute$main(env, new Object[0]);
+    //     fn$main(env, new Object[0]);
     // }
 
     MethodAssembly mc = cc.newMethod(ACC_PUBLIC | ACC_STATIC, "main",
@@ -356,7 +348,7 @@ public class BytecodeCompiler {
       // argument list.
       .ICONST_0()
       .ANEWARRAY(Object.class)
-      .INVOKESTATIC(ProgramClassName, "execute$main", Object.class,
+      .INVOKESTATIC(ProgramClassName, "fn$main", Object.class,
                     EvaluationContext.class, Object[].class)
       .POP()
       .RETURN()
@@ -1542,9 +1534,8 @@ public class BytecodeCompiler {
         }
       }
 
-      case NEW_ARRAY -> {
+      case NEW_ARRAY ->
         mc.NEWARRAY((Class<?>)fn.getConstant(v.poolIndex()));
-      }
 
       case NEW_FIXED_ARRAY -> {
         mc.PUSH(v.payload());
@@ -1660,43 +1651,7 @@ public class BytecodeCompiler {
         mc.BOX((Class<?>)fn.getConstant(v.poolIndex()));
       case UNBOX ->
         mc.UNBOX((Class<?>)fn.getConstant(v.poolIndex()));
-  
-      case NEW_CONS -> {
-        Label c = new Label();
-        int head = TMP_SLOT();
-        int tail = head + 1;
-        mc.DUP()
-          .INSTANCEOF(Seq.class)
-          .IFNE(c);
-        emitCoerce(Seq.class);
-        mc.label(c)
-          .ASTORE(tail)
-          .ASTORE(head)
-          .NEW(Cons.class)
-          .DUP()
-          .ALOAD(head)
-          .ALOAD(tail)
-          .INVOKESPECIAL(Cons.class, "<init>", Void.TYPE, Object.class, Seq.class);
-      }
-  
-      case NEW_DELAY_CONS -> {
-        int head = TMP_SLOT();
-        int tail = head + 1;
-        mc.CHECKCAST(Closure.class)
-          .ASTORE(tail)
-          .CHECKCAST(Closure.class)
-          .ASTORE(head)
-          .NEW(DelayCons.class)
-          .DUP()
-          .ALOAD(head)
-          .ALOAD(tail)
-          .INVOKESPECIAL(DelayCons.class, "<init>", Void.TYPE,
-                         Closure.class, Closure.class);
-      }
-  
-      case NIL ->
-        mc.INVOKESTATIC(Cons.class, "nil", Cons.class);
-  
+
       case NEW_TUPLE -> {
         int cnt = v.count();
         mc.PUSH(cnt);
@@ -1798,8 +1753,8 @@ public class BytecodeCompiler {
         .RETURN()
         .end();
 
-      // Object execute(EvaluationContext env, Object[] args) {
-      //     return ELiteProgram$1.execute$2(env.pushContext(), args);
+      // protected Object execute(EvaluationContext env, Object[] args) {
+      //     return ELiteProgram$1.fn$2(env.pushContext(), args);
       // }
       mc = cc.newMethod(ACC_PROTECTED, "execute", Object.class,
                         EvaluationContext.class, Object[].class);
@@ -1967,7 +1922,7 @@ public class BytecodeCompiler {
       }
 
       try {
-        Method m = programClass.getMethod("execute$main",
+        Method m = programClass.getMethod("fn$main",
                                           EvaluationContext.class,
                                           Object[].class);
         return new IRCompiledFunction(m);

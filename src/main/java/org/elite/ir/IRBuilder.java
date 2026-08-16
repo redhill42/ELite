@@ -17,6 +17,7 @@
 package org.elite.ir;
 
 import elite.lang.Builtin;
+import elite.lang.Closure;
 import elite.lang.MathLib;
 import elite.lang.Seq;
 import elite.lang.annotation.Data;
@@ -29,6 +30,7 @@ import org.elite.eval.Runtime;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
+import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
 import org.elite.parser.ParseException;
 import org.elite.parser.Position;
@@ -1657,10 +1659,14 @@ public class IRBuilder extends ELNode.Visitor {
       }
 
       case "list":
-        build(args);
-        current.emitNil();
-        for (int i = 0; i < args.length; i++)
-          current.emitNewCons();
+        for (ELNode arg : args) {
+          current.emitNew(Cons.class);
+          build(arg);
+        }
+        emitInvokeMethod(Cons.class, "nil");
+        for (int i = 0; i < args.length; i++) {
+          emitConstructor(Cons.class, Object.class, Seq.class);
+        }
         return true;
 
       case "range":
@@ -1866,16 +1872,39 @@ public class IRBuilder extends ELNode.Visitor {
   // ── Literals: list, map, tuple, range ──
 
   public void visit(ELNode.CONS node) {
-    build(node.head);
-    build(node.tail);
-    if (node.delay)
-      current.emitNewDelayCons();
-    else
-      current.emitNewCons();
+    if (node.delay) {
+      current.emitNew(DelayCons.class);
+      build(node.head);
+      build(node.tail);
+      emitConstructor(DelayCons.class, Closure.class, Closure.class);
+      return;
+    }
+
+    int count = 0;
+    ELNode e = node;
+
+    while (e instanceof ELNode.CONS cons) {
+      current.emitNew(Cons.class);
+      build(cons.head);
+      e = cons.tail;
+      count++;
+    }
+
+    if (e instanceof ELNode.NIL) {
+      emitInvokeMethod(Cons.class, "nil");
+    } else {
+      current.emitPushCtx();
+      build(e);
+      buildCoerce(Seq.class);
+    }
+
+    while (count-- != 0) {
+      emitConstructor(Cons.class, Object.class, Seq.class);
+    }
   }
 
   public void visit(ELNode.NIL node) {
-    current.emitNil();
+    emitInvokeMethod(Cons.class, "nil");
   }
 
   public void visit(ELNode.MAP node) {
