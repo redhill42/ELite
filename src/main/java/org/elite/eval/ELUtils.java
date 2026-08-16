@@ -190,77 +190,20 @@ public class ELUtils
         return true;
     }
 
-    public static String mangle(String id) {
-        if (isJavaIdentifier(id))
-            return id;
+    public static String mangle(String name) {
+        return name.replace("<", "%lt%")
+                   .replace(">", "%gt%")
+                   .replace("[", "%lb%")
+                   .replace("]", "%rb%")
+                   .replace("/", "%div%");
+    }
 
-        return switch (id) {
-            case "~"   -> "__cat__";
-            case "+"   -> "__add__";
-            case "-"   -> "__sub__";
-            case "*"   -> "__mul__";
-            case "/"   -> "__div__";
-            case "%"   -> "__rem__";
-            case "^"   -> "__pow__";
-            case "`!"  -> "__bitnot__";
-            case "`|"  -> "__bitor__";
-            case "`&"  -> "__bitand__";
-            case "`^"  -> "__xor__";
-            case "<<"  -> "__shl__";
-            case ">>"  -> "__shr__";
-            case ">>>" -> "__ushr__";
-            case "=="  -> "__eq__";
-            case "!="  -> "__ne__";
-            case "<"   -> "__lt__";
-            case "<="  -> "__le__";
-            case ">"   -> "__gt__";
-            case ">="  -> "__ge__";
-            case "<=>" -> "__cmp__";
-
-            case "?~"  -> "__rcat__";
-            case "?+"  -> "__radd__";
-            case "?-"  -> "__rsub__";
-            case "?*"  -> "__rmul__";
-            case "?/"  -> "__rdiv__";
-            case "?%"  -> "__rrem__";
-            case "?^"  -> "__rpow__";
-            case "?`|" -> "__rbitor__";
-            case "?`&" -> "__rbitand__";
-            case "?`^" -> "__rxor__";
-            case "?<<" -> "__rshl__";
-            case "?>>" -> "__rshr__";
-            case "?>>>"-> "__rshr__";
-
-            case "+="  -> "__aadd__";
-            case "-="  -> "__asub__";
-            case "*="  -> "__amul__";
-            case "/="  -> "__adiv__";
-            case "%="  -> "__arem__";
-            case "^="  -> "__apow__";
-            case "`|=" -> "__abitor__";
-            case "`&=" -> "__abitand__";
-            case "`^=" -> "__axor__";
-            case "<<=" -> "__ashl__";
-            case ">>=" -> "__ashr__";
-            case ">>>="-> "__aushr__";
-
-            case "[]"  -> "__getvalue__";
-            case "[]=" -> "__setvalue__";
-
-            default -> {
-                StringBuilder sb = new StringBuilder();
-                sb.append("__");
-                for (int i = 0; i < id.length(); i++) {
-                    char c = id.charAt(i);
-                    if (Character.isJavaIdentifierPart(c))
-                        sb.append(c);
-                    else
-                        sb.append("$").append(Integer.toHexString(c));
-                }
-                sb.append("__");
-                yield sb.toString();
-            }
-        };
+    public static String demangle(String name) {
+        return name.replace("%lt%", "<")
+                   .replace("%gt%", ">")
+                   .replace("%lb%", "[")
+                   .replace("%rb%", "]")
+                   .replace("%div%", "/");
     }
 
     public static String getMethodDescriptor(Method method) {

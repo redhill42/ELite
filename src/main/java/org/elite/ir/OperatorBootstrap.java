@@ -20,7 +20,6 @@ import elite.lang.Closure;
 import elite.lang.Decimal;
 import elite.lang.Rational;
 import elite.lang.Seq;
-import javolution.testing.AssertionException;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.GlobalScope;
 import org.elite.eval.TypeCoercion;
@@ -798,29 +797,29 @@ public final class OperatorBootstrap {
                                              EvaluationContext env,
                                              String name, Object lhs,
                                              Object rhs) {
-    MethodHandle target = switch (name) {
-      case "__add__"    -> dispatchAdd    (lookup, env, lhs, rhs);
-      case "__sub__"    -> dispatchSub    (lookup, env, lhs, rhs);
-      case "__mul__"    -> dispatchMul    (lookup, env, lhs, rhs);
-      case "__div__"    -> dispatchDiv    (lookup, env, lhs, rhs);
-      case "__idiv__"   -> dispatchIDiv   (lookup, env, lhs, rhs);
-      case "__rem__"    -> dispatchRem    (lookup, env, lhs, rhs);
-      case "__pow__"    -> dispatchPow    (lookup, env, lhs, rhs);
-      case "__eq__"     -> dispatchEq     (lookup, env, lhs, rhs);
-      case "__ne__"     -> dispatchNe     (lookup, env, lhs, rhs);
-      case "__lt__"     -> dispatchLt     (lookup, env, lhs, rhs);
-      case "__le__"     -> dispatchLe     (lookup, env, lhs, rhs);
-      case "__gt__"     -> dispatchGt     (lookup, env, lhs, rhs);
-      case "__ge__"     -> dispatchGe     (lookup, env, lhs, rhs);
-      case "__cmp__"    -> dispatchCmp    (lookup, env, lhs, rhs);
-      case "__bitand__" -> dispatchBitAnd (lookup, env, lhs, rhs);
-      case "__bitor__"  -> dispatchBitOr  (lookup, env, lhs, rhs);
-      case "__xor__"    -> dispatchXor    (lookup, env, lhs, rhs);
-      case "__shl__"    -> dispatchShl    (lookup, env, lhs, rhs);
-      case "__shr__"    -> dispatchShr    (lookup, env, lhs, rhs);
-      case "__ushr__"   -> dispatchUshr   (lookup, env, lhs, rhs);
-      case "__cat__"    -> dispatchCat    (lookup, env, lhs, rhs);
-      case "__in__"     -> dispatchIn     (lookup, lhs, rhs);
+    MethodHandle target = switch (demangle(name)) {
+      case "+"        -> dispatchAdd    (lookup, env, lhs, rhs);
+      case "-"        -> dispatchSub    (lookup, env, lhs, rhs);
+      case "*"        -> dispatchMul    (lookup, env, lhs, rhs);
+      case "/"        -> dispatchDiv    (lookup, env, lhs, rhs);
+      case "__div__"  -> dispatchIDiv   (lookup, env, lhs, rhs);
+      case "%"        -> dispatchRem    (lookup, env, lhs, rhs);
+      case "^"        -> dispatchPow    (lookup, env, lhs, rhs);
+      case "=="       -> dispatchEq     (lookup, env, lhs, rhs);
+      case "!="       -> dispatchNe     (lookup, env, lhs, rhs);
+      case "<"        -> dispatchLt     (lookup, env, lhs, rhs);
+      case "<="       -> dispatchLe     (lookup, env, lhs, rhs);
+      case ">"        -> dispatchGt     (lookup, env, lhs, rhs);
+      case ">="       -> dispatchGe     (lookup, env, lhs, rhs);
+      case "<=>"      -> dispatchCmp    (lookup, env, lhs, rhs);
+      case "`&"       -> dispatchBitAnd (lookup, env, lhs, rhs);
+      case "`|"       -> dispatchBitOr  (lookup, env, lhs, rhs);
+      case "`^"       -> dispatchXor    (lookup, env, lhs, rhs);
+      case "<<"       -> dispatchShl    (lookup, env, lhs, rhs);
+      case ">>"       -> dispatchShr    (lookup, env, lhs, rhs);
+      case ">>>"      -> dispatchUshr   (lookup, env, lhs, rhs);
+      case "~"        -> dispatchCat    (lookup, env, lhs, rhs);
+      case "<-"       -> dispatchIn     (lookup, lhs, rhs);
       default -> throw new AssertionError("Unknown operator: " + name);
     };
 
@@ -831,14 +830,14 @@ public final class OperatorBootstrap {
 
   private static MethodHandle dispatchBinaryOperator(MethodHandles.Lookup lookup,
                                                      EvaluationContext env,
-                                                     String name, String opname,
-                                                     Object lhs, Object rhs) {
+                                                     String opname, Object lhs,
+                                                     Object rhs) {
     if (isELiteObject(lhs)) {
       try {
         // Find the operator method in ELite class.
         //   [static] Object +(EvaluationContext, Object[])
-        Method m = lhs.getClass().getMethod(name, EvaluationContext.class,
-                                            Object[].class);
+        Method m = lhs.getClass().getMethod(
+          mangle(opname), EvaluationContext.class, Object[].class);
         MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (Modifier.isStatic(m.getModifiers())) {
           if (ann != null && ann.arity() == 2 && !ann.varargs()) {
@@ -924,8 +923,8 @@ public final class OperatorBootstrap {
       try {
         // Find the static operator method in ELite class.
         //   static Object +(EvaluationContext, Object[])
-        Method m = rhs.getClass()
-          .getMethod(name, EvaluationContext.class, Object[].class);
+        Method m = rhs.getClass().getMethod(
+          mangle(opname), EvaluationContext.class, Object[].class);
         MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (Modifier.isStatic(m.getModifiers()) &&
             ann != null && ann.arity() == 2 && !ann.varargs()) {
@@ -1024,7 +1023,7 @@ public final class OperatorBootstrap {
 
   private static MethodHandle dispatchArithmetic(MethodHandles.Lookup lookup,
                                                  EvaluationContext env,
-                                                 String name, String opname,
+                                                 String opname,
                                                  Object lhs, Object rhs,
                                                  MethodHandle intOp,
                                                  MethodHandle longOp,
@@ -1038,8 +1037,7 @@ public final class OperatorBootstrap {
       return dropArguments(throwNullPointerException(), 0, Object.class,
                            Object.class);
 
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, name, opname,
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, opname, lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1097,7 +1095,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchAdd(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "__add__", "+", lhs, rhs,
+    return dispatchArithmetic(lookup, env, "+", lhs, rhs,
                               MH_intAdd, MH_longAdd, MH_floatAdd, MH_doubleAdd,
                               MH_bigIntegerAdd, MH_bigDecimalAdd, MH_decimalAdd,
                               MH_rationalAdd);
@@ -1130,7 +1128,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchSub(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "__sub__", "-", lhs, rhs,
+    return dispatchArithmetic(lookup, env, "-", lhs, rhs,
                               MH_intSub, MH_longSub, MH_floatSub, MH_doubleSub,
                               MH_bigIntegerSub, MH_bigDecimalSub, MH_decimalSub,
                               MH_rationalSub);
@@ -1163,7 +1161,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchMul(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "__mul__", "*", lhs, rhs,
+    return dispatchArithmetic(lookup, env, "*", lhs, rhs,
                               MH_intMul, MH_longMul, MH_floatMul, MH_doubleMul,
                               MH_bigIntegerMul, MH_bigDecimalMul, MH_decimalMul,
                               MH_rationalMul);
@@ -1194,7 +1192,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchDiv(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "__div__", "/", lhs, rhs,
+    return dispatchArithmetic(lookup, env, "/", lhs, rhs,
                               MH_intDiv, MH_longDiv, MH_floatDiv, MH_doubleDiv,
                               MH_bigIntegerDiv, MH_bigDecimalDiv, MH_decimalDiv,
                               MH_rationalDiv);
@@ -1252,7 +1250,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchIDiv(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "__idiv__", "div", lhs, rhs,
+    return dispatchArithmetic(lookup, env, "__div__", lhs, rhs,
                               MH_intIDiv, MH_longIDiv, MH_floatIDiv, MH_doubleIDiv,
                               MH_bigIntegerIDiv, MH_bigDecimalIDiv, MH_decimalIDiv,
                               MH_rationalIDiv);
@@ -1281,7 +1279,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchRem(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "__rem__", "%", lhs, rhs,
+    return dispatchArithmetic(lookup, env, "%", lhs, rhs,
                               MH_intRem, MH_longRem, MH_floatRem, MH_doubleRem,
                               MH_bigIntegerRem, MH_bigDecimalRem, MH_decimalRem,
                               MH_rationalRem);
@@ -1310,8 +1308,7 @@ public final class OperatorBootstrap {
       return dropArguments(throwNullPointerException(), 0, Object.class,
                            Object.class);
 
-    MethodHandle operator = dispatchBinaryOperator(
-      lookup, env, "__pow__", "^", lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, "^", lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1376,7 +1373,7 @@ public final class OperatorBootstrap {
 
   private static MethodHandle dispatchEquality(MethodHandles.Lookup lookup,
                                                EvaluationContext env,
-                                               String name, String opname,
+                                               String opname,
                                                Object lhs, Object rhs,
                                                MethodHandle booleanOp,
                                                MethodHandle intOp,
@@ -1385,8 +1382,7 @@ public final class OperatorBootstrap {
                                                MethodHandle doubleOp,
                                                MethodHandle arrayOp,
                                                MethodHandle objectOp) {
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, name, opname,
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, opname, lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1434,7 +1430,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchEq(MethodHandles.Lookup lookup,
                                          EvaluationContext env,
                                          Object lhs, Object rhs) {
-    return dispatchEquality(lookup, env, "__eq__", "==", lhs, rhs,
+    return dispatchEquality(lookup, env, "==", lhs, rhs,
                             MH_booleanEq, MH_intEq, MH_longEq, MH_floatEq,
                             MH_doubleEq, MH_arrayEq, MH_objectEq);
   }
@@ -1462,7 +1458,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchNe(MethodHandles.Lookup lookup,
                                          EvaluationContext env,
                                          Object lhs, Object rhs) {
-    return dispatchEquality(lookup, env, "__ne__", "!=", lhs, rhs,
+    return dispatchEquality(lookup, env, "!=", lhs, rhs,
                             MH_booleanNe, MH_intNe, MH_longNe, MH_floatNe,
                             MH_doubleNe, MH_arrayNe, MH_objectNe);
   }
@@ -1499,7 +1495,7 @@ public final class OperatorBootstrap {
 
   private static MethodHandle dispatchComparison(MethodHandles.Lookup lookup,
                                                  EvaluationContext env,
-                                                 String name, String opname,
+                                                 String opname,
                                                  Object lhs, Object rhs,
                                                  MethodHandle intOp,
                                                  MethodHandle longOp,
@@ -1511,8 +1507,7 @@ public final class OperatorBootstrap {
       return dropArguments(cst, 0, Object.class, Object.class);
     }
 
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, name, opname,
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, opname, lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1547,7 +1542,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchLt(MethodHandles.Lookup lookup,
                                          EvaluationContext env,
                                          Object lhs, Object rhs) {
-    return dispatchComparison(lookup, env, "__lt__", "<", lhs, rhs,
+    return dispatchComparison(lookup, env, "<", lhs, rhs,
                               MH_intLt, MH_longLt, MH_floatLt, MH_doubleLt,
                               MH_compareLt);
   }
@@ -1575,7 +1570,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchLe(MethodHandles.Lookup lookup,
                                          EvaluationContext env,
                                          Object lhs, Object rhs) {
-    return dispatchComparison(lookup, env, "__le__", "<=", lhs, rhs,
+    return dispatchComparison(lookup, env, "<=", lhs, rhs,
                               MH_intLe, MH_longLe, MH_floatLe, MH_doubleLe,
                               MH_compareLe);
   }
@@ -1603,7 +1598,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchGt(MethodHandles.Lookup lookup,
                                          EvaluationContext env,
                                          Object lhs, Object rhs) {
-    return dispatchComparison(lookup, env, "__gt__", ">", lhs, rhs,
+    return dispatchComparison(lookup, env, ">", lhs, rhs,
                               MH_intGt, MH_longGt, MH_floatGt, MH_doubleGt,
                               MH_compareGt);
   }
@@ -1631,7 +1626,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchGe(MethodHandles.Lookup lookup,
                                          EvaluationContext env,
                                          Object lhs, Object rhs) {
-    return dispatchComparison(lookup, env, "__ge__", ">=", lhs, rhs,
+    return dispatchComparison(lookup, env, ">=", lhs, rhs,
                               MH_intGe, MH_longGe, MH_floatGe, MH_doubleGe,
                               MH_compareGe);
   }
@@ -1659,8 +1654,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchCmp(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, "__cmp__", "<=>",
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, "<=>", lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1685,7 +1679,7 @@ public final class OperatorBootstrap {
 
   private static MethodHandle dispatchBitwise(MethodHandles.Lookup lookup,
                                               EvaluationContext env,
-                                              String name, String opname,
+                                              String opname,
                                               Object lhs, Object rhs,
                                               MethodHandle booleanOp,
                                               MethodHandle intOp,
@@ -1695,8 +1689,7 @@ public final class OperatorBootstrap {
       return dropArguments(throwNullPointerException(), 0, Object.class,
                            Object.class);
 
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, name, opname,
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, opname, lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1712,7 +1705,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchBitAnd(MethodHandles.Lookup lookup,
                                              EvaluationContext env,
                                              Object lhs, Object rhs) {
-    return dispatchBitwise(lookup, env, "__bitand__", "`&", lhs, rhs,
+    return dispatchBitwise(lookup, env, "`&", lhs, rhs,
                            MH_booleanBitAnd, MH_intBitAnd, MH_longBitAnd,
                            MH_bigIntegerBitAnd);
   }
@@ -1732,7 +1725,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchBitOr(MethodHandles.Lookup lookup,
                                             EvaluationContext env,
                                             Object lhs, Object rhs) {
-    return dispatchBitwise(lookup, env, "__bitor__", "`|", lhs, rhs,
+    return dispatchBitwise(lookup, env, "`|", lhs, rhs,
                            MH_booleanBitOr, MH_intBitOr, MH_longBitOr,
                            MH_bigIntegerBitOr);
   }
@@ -1752,7 +1745,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchXor(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchBitwise(lookup, env, "__xor__", "`^", lhs, rhs,
+    return dispatchBitwise(lookup, env, "`^", lhs, rhs,
                            MH_booleanXor, MH_intXor, MH_longXor,
                            MH_bigIntegerXor);
   }
@@ -1773,7 +1766,7 @@ public final class OperatorBootstrap {
 
   private static MethodHandle dispatchShift(MethodHandles.Lookup lookup,
                                             EvaluationContext env,
-                                            String name, String opname,
+                                            String opname,
                                             Object lhs, Object rhs,
                                             MethodHandle intOp,
                                             MethodHandle longOp,
@@ -1782,8 +1775,7 @@ public final class OperatorBootstrap {
       return dropArguments(throwNullPointerException(), 0, Object.class,
                            Object.class);
 
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, name, opname,
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, opname, lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -1797,7 +1789,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchShl(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchShift(lookup, env, "__shl__", "<<", lhs, rhs,
+    return dispatchShift(lookup, env, "<<", lhs, rhs,
                          MH_intShl, MH_longShl, MH_bigIntegerShl);
   }
 
@@ -1812,7 +1804,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchShr(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchShift(lookup, env, "__shr__", ">>", lhs, rhs,
+    return dispatchShift(lookup, env, ">>", lhs, rhs,
                          MH_intShr, MH_longShr, MH_bigIntegerShr);
   }
 
@@ -1827,7 +1819,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchUshr(MethodHandles.Lookup lookup,
                                            EvaluationContext env,
                                            Object lhs, Object rhs) {
-    return dispatchShift(lookup, env, "__ushr__", ">>>", lhs, rhs,
+    return dispatchShift(lookup, env, ">>>", lhs, rhs,
                          MH_intUShr, MH_longUShr, MH_bigIntegerUShr);
   }
 
@@ -1844,8 +1836,7 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchCat(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    MethodHandle operator = dispatchBinaryOperator(lookup, env, "__cat__", "^",
-                                                   lhs, rhs);
+    MethodHandle operator = dispatchBinaryOperator(lookup, env, "~", lhs, rhs);
     if (operator != null)
       return operator;
 
@@ -2018,9 +2009,9 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchUnary(MethodHandles.Lookup lookup,
                                             EvaluationContext env,
                                             String name, Object rhs) {
-    MethodHandle target = switch (name) {
+    MethodHandle target = switch (demangle(name)) {
       case "__neg__"    -> dispatchNeg(lookup, env, rhs);
-      case "__bitnot__" -> dispatchBitNot(lookup, env, rhs);
+      case "`!"         -> dispatchBitNot(lookup, env, rhs);
       case "__empty__"  -> dispatchEmpty(lookup, rhs);
       default           -> throw new AssertionError("Unknown operator: " + name);
     };
@@ -2305,21 +2296,7 @@ public final class OperatorBootstrap {
       return dropArguments(throwNullPointerException(), 0, Object.class,
                            Object.class);
 
-    String opname = switch (name) {
-      case "__add__"    -> "+=";
-      case "__sub__"    -> "-=";
-      case "__mul__"    -> "*=";
-      case "__div__"    -> "/=";
-      case "__rem__"    -> "%=";
-      case "__pow__"    -> "^=";
-      case "__bitand__" -> "`&=";
-      case "__bitor__"  -> "`|=";
-      case "__cat__"    -> "~=";
-      case "__shl__"    -> "<<=";
-      case "__shr__"    -> ">>=";
-      case "__ushr__"   -> ">>>=";
-      default -> throw new AssertionError("Unknown operator: " + name);
-    };
+    String opname = name.concat("=");
 
     // Invoke assignment operator procedure
     if (isELiteObject(lhs)) {
