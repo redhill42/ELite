@@ -26,6 +26,8 @@ public class SymbolTable {
     public IRFunction func;         // known function: the compiled IRFunction
     public IRClass clazz;           // the symbol is defined as an IRClass
 
+    public boolean immutable = true; // the symbol is immutable by default
+
     Symbol(Scope scope, ELNode.DEFINE def) {
       this.scope = scope;
       this.name = def.id;

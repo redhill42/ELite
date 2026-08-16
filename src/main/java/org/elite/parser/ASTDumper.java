@@ -142,6 +142,11 @@ public final class ASTDumper {
                 sb.append(" slot=").append(node.symbol.slot);
         }
 
+        if (node instanceof ELNode.DEFINE def && def.symbol != null &&
+            def.symbol.immutable) {
+            sb.append(" immutable");
+        }
+
         // Literal values
         if (node instanceof ELNode.NUMBER n) {
             sb.append(" ").append(n.value);

@@ -8,7 +8,9 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.elite.resources.Resources.*;
 
@@ -62,6 +64,8 @@ public final class SymbolTableBuilder {
 
     record Undefined(ELNode.IDENT var, SymbolTable.Scope scope, boolean call) {}
     List<Undefined> undefined = new ArrayList<>();
+
+    Set<ELNode.IDENT> mutableSymbols = new HashSet<>();
 
     BuilderVisitor(SymbolTable table) {
       this.table = table;
@@ -338,6 +342,42 @@ public final class SymbolTableBuilder {
       }
     }
 
+    public void visit(ELNode.ASSIGN e) {
+      super.visit(e);
+      visitAssign(e.left);
+    }
+
+    public void visit(ELNode.ASSIGNOP e) {
+      super.visit(e);
+      visitAssign(e.left);
+    }
+
+    private void visitAssign(ELNode e) {
+      assert e instanceof ELNode.IDENT ||
+             e instanceof ELNode.ACCESS ||
+             e instanceof ELNode.TUPLE;
+
+      if (e instanceof ELNode.IDENT v) {
+        if (v.symbol != null)
+          v.symbol.immutable = false;
+        else
+          mutableSymbols.add(v);
+      } else if (e instanceof ELNode.TUPLE t) {
+        List<ELNode> worklist = new ArrayList<>(Arrays.asList(t.elems));
+        while (!worklist.isEmpty()) {
+          ELNode elem = worklist.remove(0);
+          if (elem instanceof ELNode.IDENT v) {
+            if (v.symbol != null)
+              v.symbol.immutable = false;
+            else
+              mutableSymbols.add(v);
+          } else if (elem instanceof ELNode.TUPLE) {
+            worklist.addAll(Arrays.asList(((ELNode.TUPLE)elem).elems));
+          }
+        }
+      }
+    }
+
     private boolean inScope(SymbolTable.Symbol sym) {
       return enclosingScope == null ||
              sym.scope.enclosingScope() == enclosingScope;
@@ -489,6 +529,8 @@ public final class SymbolTableBuilder {
           if (!(undef.call && sym.def.expr instanceof ELNode.LAMBDA) &&
               sym.scope.enclosingScope() != undef.scope.enclosingScope())
             sym.captured = true;
+          if (mutableSymbols.contains(undef.var))
+            sym.immutable = false;
         }
       }
     }
