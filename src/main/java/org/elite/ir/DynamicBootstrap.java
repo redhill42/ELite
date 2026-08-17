@@ -45,6 +45,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Arrays;
@@ -1343,6 +1344,9 @@ public final class DynamicBootstrap {
         return mh;
     }
 
+    if (isFunctionalInterfaceProxy(obj))
+      return dispatchFunctionInterfaceCall(lookup, obj, keys, args);
+
     // If the object has a __call__ instance method, then call this method.
     if (isELiteObject(obj)) {
       MethodHandle mh = dispatchELiteMethod(lookup, obj.getClass(), "__call__",
@@ -1367,7 +1371,8 @@ public final class DynamicBootstrap {
     if (args.length == 1 &&
         (TypeCoercion.getUnboxedType(c).isPrimitive() ||
          c == String.class || c == BigInteger.class || c == BigDecimal.class ||
-         c == Decimal.class || c == Rational.class)) {
+         c == Decimal.class || c == Rational.class ||
+         (isFunctionalInterface(c) && args[0] instanceof Closure))) {
       if (c == Void.TYPE) {
         return dropArguments(constant(Object.class, null), 0,
                              EvaluationContext.class, Object.class,
@@ -1436,6 +1441,69 @@ public final class DynamicBootstrap {
     } catch (IllegalAccessException e) {
       return null;
     }
+  }
+
+  private static MethodHandle dispatchFunctionInterfaceCall(
+    MethodHandles.Lookup lookup, Object obj, String[] keys, Object[] args)
+  {
+    if (keys.length != 0) {
+      String unknowKeys =
+        Arrays.stream(keys).filter(s -> !s.isEmpty())
+          .collect(Collectors.joining(", "));
+      return dropArguments(
+        throwEvaluationException(_T(EL_UNKNOWN_ARG_NAME, unknowKeys)),
+        1, Object.class, Object[].class);
+    }
+
+    Method m = getFunctionalInterfaceMethod(obj.getClass().getInterfaces()[0]);
+    try {
+      MethodHandle mh = lookup.unreflect(m);
+      mh = dropArguments(mh, 0, EvaluationContext.class);
+      if (m.getParameterCount() == 0)
+        mh = dropArguments(mh, 2, Object[].class);
+      else
+        mh = mh.asSpreader(Object[].class, m.getParameterCount());
+
+      Class<?>[] types = m.getParameterTypes();
+      if (needCoerce(args, types, 0, false)) {
+        MethodHandle filter = insertArguments(MH_coerceArgs, 1, types, 0, false);
+        mh = filterArguments(mh, 2, filter);
+      }
+
+      return mh;
+    } catch (IllegalAccessException e) {
+      return reportMethodNotFound(obj, m.getName());
+    }
+  }
+
+  private static boolean isFunctionalInterface(Class<?> c) {
+    if (c.isAnnotationPresent(FunctionalInterface.class))
+      return true;
+
+    Method method = null;
+    for (Method m : c.getMethods()) {
+      if (Modifier.isAbstract(m.getModifiers())) {
+        if (method != null)
+          return false;
+        method = m;
+      }
+    }
+    return method != null;
+  }
+
+  private static boolean isFunctionalInterfaceProxy(Object obj) {
+    return Proxy.isProxyClass(obj.getClass()) &&
+           obj.getClass().getInterfaces().length == 1 &&
+           isFunctionalInterface(obj.getClass().getInterfaces()[0]);
+  }
+
+  private static Method getFunctionalInterfaceMethod(Class<?> c) {
+    for (Method m : c.getMethods()) {
+      if (Modifier.isAbstract(m.getModifiers())) {
+        return m;
+      }
+    }
+    throw new AssertionError("Method not found in functional interface");
   }
 
   //=------------------------------------------------------------------------=//
