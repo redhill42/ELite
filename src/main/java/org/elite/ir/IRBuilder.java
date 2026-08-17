@@ -165,7 +165,7 @@ public class IRBuilder extends ELNode.Visitor {
         MethodType.class, String[].class);
       constructBootstrap = DynamicBootstrap.class.getMethod(
         "constructBootstrap", MethodHandles.Lookup.class, String.class,
-        MethodType.class);
+        MethodType.class, Class.class);
       coerceBootstrap = CoercionBootstrap.class.getMethod(
         "coerceBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class);
@@ -3750,8 +3750,8 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPushEnv();
       buildTuple(args);
       current.emitInvokeDynamic(new Descriptors.Indy(
-        constructBootstrap, cls.getSimpleName(), cls,
-        EvaluationContext.class, Object[].class));
+        constructBootstrap, cls.getSimpleName(), new Object[]{cls},
+        Object.class, EvaluationContext.class, Object[].class));
     }
 
     return true;

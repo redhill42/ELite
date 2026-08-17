@@ -140,7 +140,7 @@ public final class DynamicBootstrap {
       MH_constructDispatcher = lookup.findStatic(
         DynamicBootstrap.class, "constructDispatcher",
         methodType(Object.class, Lookup.class, MutableCallSite.class,
-                   EvaluationContext.class, Object[].class));
+                   Class.class, EvaluationContext.class, Object[].class));
 
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
@@ -933,7 +933,7 @@ public final class DynamicBootstrap {
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
-    return target.invoke(env, obj, args);
+    return target.invokeExact(env, obj, args);
   }
 
   private static MethodHandle reportMethodNotFound(Object obj, String name) {
@@ -1324,7 +1324,7 @@ public final class DynamicBootstrap {
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
-    return target.invoke(env, receiver, args);
+    return target.invokeExact(env, receiver, args);
   }
 
   private static MethodHandle dispatchCall(MethodHandles.Lookup lookup,
@@ -1511,23 +1511,23 @@ public final class DynamicBootstrap {
   @SuppressWarnings("unused")
   public static CallSite constructBootstrap(MethodHandles.Lookup lookup,
                                             String name,
-                                            MethodType callSiteType) {
+                                            MethodType callSiteType,
+                                            Class<?> c) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
     MethodHandle target = insertArguments(MH_constructDispatcher,
-                                          0, lookup, cs);
+                                          0, lookup, cs, c);
     target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
   }
 
   private static Object constructDispatcher(MethodHandles.Lookup lookup,
-                                            MutableCallSite cs,
+                                            MutableCallSite cs, Class<?> c,
                                             EvaluationContext env,
                                             Object[] args)
     throws Throwable
   {
-    MethodHandle target = dispatchJavaConstructor(
-      lookup, env, cs.type().returnType(), args);
+    MethodHandle target = dispatchJavaConstructor(lookup, env, c, args);
 
     if (target == null) {
       target = throwEvaluationException("Constructor not found: " +
@@ -1550,6 +1550,6 @@ public final class DynamicBootstrap {
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
-    return target.invoke(env, args);
+    return target.invokeExact(env, args);
   }
 }
