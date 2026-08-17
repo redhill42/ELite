@@ -19,6 +19,7 @@ package org.elite.ir;
 import elite.lang.Builtin;
 import elite.lang.Closure;
 import elite.lang.MathLib;
+import elite.lang.Range;
 import elite.lang.Seq;
 import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
@@ -617,9 +618,33 @@ public class IRBuilder extends ELNode.Visitor {
         return;
       }
 
-      Class<?> baseClass = resolveJavaClass(node.right);
-      if (baseClass != null && tryBuildGetStatic(baseClass, key))
-        return;
+      Class<?> javaClass = resolveJavaClass(node.right);
+      if (javaClass != null) {
+        // Access Java class static field.
+        if (tryBuildGetStatic(javaClass, key))
+          return;
+
+        // Resolve Java method reference as a property. The method reference
+        // is encapsulated to a MethodClosure and can be called at runtime.
+        MethodResolver resolver = MethodResolver.getInstance(elctx);
+        if (resolver.resolveStaticMethod(javaClass, key) != null) {
+          current.emitPushCtx();
+          emitInvokeMethod(MethodResolver.class, "getInstance", ELContext.class);
+          buildConst(javaClass);
+          buildConst(key);
+          emitInvokeMethod(MethodResolver.class, "resolveStaticMethod",
+                           Class.class, String.class);
+          return;
+        } else if (resolver.resolveMethod(javaClass, key) != null) {
+          current.emitPushCtx();
+          emitInvokeMethod(MethodResolver.class, "getInstance", ELContext.class);
+          buildConst(javaClass);
+          buildConst(key);
+          emitInvokeMethod(MethodResolver.class, "resolveMethod",
+                           Class.class, String.class);
+          return;
+        }
+      }
     }
 
     Class<?> cls = resolveJavaClass(node);
@@ -734,10 +759,19 @@ public class IRBuilder extends ELNode.Visitor {
         return;
       }
 
-      // Access Java class static field.
-      Class<?> baseClass = resolveJavaClass(node.right);
-      if (baseClass != null && tryBuildPutStatic(node.pos, baseClass, key))
-        return;
+      Class<?> javaClass = resolveJavaClass(node.right);
+      if (javaClass != null) {
+        // Access Java class static field.
+        if (tryBuildPutStatic(node.pos, javaClass, key))
+          return;
+
+        // Cannot mutate a Java method reference.
+        if (Arrays.stream(javaClass.getMethods())
+                  .anyMatch(m -> m.getName().equals(key))) {
+          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
+                                         javaClass.getName(), key));
+        }
+      }
     }
 
     // Set object property at runtime. Note that parameter order is reversed
@@ -816,21 +850,6 @@ public class IRBuilder extends ELNode.Visitor {
       Field field = cls.getField(name);
       int mods = field.getModifiers();
       if (Modifier.isPublic(mods) && Modifier.isStatic(mods)) {
-        if (Modifier.isFinal(mods)) {
-          try {
-            Object value = field.get(null);
-            if (value == null || value instanceof Boolean ||
-                value instanceof Byte || value instanceof Short ||
-                value instanceof Character || value instanceof Integer ||
-                value instanceof Long || value instanceof Float ||
-                value instanceof Double || value instanceof String) {
-              buildConst(value);
-              return true;
-            }
-          } catch (IllegalArgumentException | IllegalAccessException ex) {
-            // fallthrough
-          }
-        }
         current.emitGetStatic(field);
         return true;
       }
@@ -1529,7 +1548,16 @@ public class IRBuilder extends ELNode.Visitor {
       Object value = base.getValue(null);
       if (value != null)
         baseClass = value.getClass();
+    } else if (base instanceof ELNode.CONS) {
+      baseClass = Cons.class;
+    } else if (base instanceof ELNode.RANGE) {
+      baseClass = Range.class;
+    } else if (base instanceof ELNode.TUPLE) {
+      baseClass = Object[].class;
+    } else if (base instanceof ELNode.MAP) {
+      baseClass = Map.class;
     }
+
     if (baseClass == null)
       return null;
 

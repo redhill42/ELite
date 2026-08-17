@@ -1202,7 +1202,7 @@ public final class Builtin {
   /**
    * 列表聚合支持函数, 将子表展开后拼接成新的表.
    */
-  @Expando(name = {"mappend", "flatmap"}, scope = {EXPANDO, GLOBAL})
+  @Expando(name = {"mappend", "flatMap"}, scope = {EXPANDO, GLOBAL})
   public static Seq mappend(Seq seq, Closure proc) {
     return MappendSeq.make(seq, proc);
   }
