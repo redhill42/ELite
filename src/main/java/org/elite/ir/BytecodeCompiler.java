@@ -448,12 +448,10 @@ public class BytecodeCompiler {
                                            interfaces.toArray(new String[0]));
       attachSource(cc, clazz.node.file);
 
-      if (clazz.outer != null)
-        cc.getImpl().visitNestHost(AsmType.toInternalName(clazz.outer.internalName));
+      if (clazz.host != null)
+        cc.getImpl().visitNestHost(AsmType.toInternalName(clazz.host.internalName));
       for (IRClass inner : clazz.inners)
         cc.getImpl().visitNestMember(AsmType.toInternalName(inner.internalName));
-      for (IRFunction closure : clazz.closures)
-        cc.getImpl().visitNestMember(AsmType.toInternalName(getClosureName(closure)));
 
       // Add annotation for ELite class.
       cc.ANNOTATION(MetaClass.class, true)
@@ -1693,7 +1691,6 @@ public class BytecodeCompiler {
       if (closure.owner() != null && !closure.isStatic()) {
         String ownerName = closure.owner().internalName;
         cc.addField(ACC_PRIVATE, "$this", AsmType.toDescriptor(ownerName));
-        cc.getImpl().visitNestHost(AsmType.toInternalName(ownerName));
         mc = cc.newMethod(ACC_PUBLIC, "<init>", AsmType.toMethodDescriptor(
           "V", EvaluationContext.class.getName(), ownerName), null);
         mc.THIS()

@@ -59,8 +59,8 @@ public class IRClass {
   public IRClass outer;
 
   /** Inner classes and captured closures. */
+  public IRClass host;
   public final List<IRClass> inners = new ArrayList<>();
-  public final List<IRFunction> closures = new ArrayList<>();
 
   /** The class and instance initialize procedure. */
   public ELNode.LAMBDA init_proc;
@@ -94,6 +94,10 @@ public class IRClass {
     }
 
     return false;
+  }
+
+  public IRClass host() {
+    return host != null ? host : this;
   }
 
   public String dump() {

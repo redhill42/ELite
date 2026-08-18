@@ -367,9 +367,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (node.id.equals("this"))
           current.emitPushThis();
         else if (node.symbol.def.expr instanceof ELNode.LAMBDA) {
-          IRFunction fn = node.symbol.func;
-          fn.owner().closures.add(fn);
-          current.emitClosure(fn);
+          current.emitClosure(node.symbol.func);
         } else if (node.symbol.isStatic())
           current.emitGetStatic(currentClass, node.id);
         else {
@@ -377,9 +375,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
       } else {
         if (node.symbol.def.expr instanceof ELNode.LAMBDA) {
-          IRFunction fn = node.symbol.func;
-          fn.owner().closures.add(fn);
-          current.emitClosure(fn);
+          current.emitClosure(node.symbol.func);
         } else if (node.symbol.isStatic()) {
           current.emitGetStatic(ownerClass, node.id);
         } else {
@@ -597,9 +593,7 @@ public class IRBuilder extends ELNode.Visitor {
       Symbol outerSym = getOuterClassMember(node.right, key);
       if (outerSym != null) {
         if (outerSym.func != null) {
-          IRFunction fn = outerSym.func;
-          fn.owner().closures.add(fn);
-          current.emitClosure(fn);
+          current.emitClosure(outerSym.func);
         } else {
           IRClass outerClass = outerSym.scope.enclosingClass();
           IRClass currentClass = currentScope.enclosingClass();
@@ -800,9 +794,17 @@ public class IRBuilder extends ELNode.Visitor {
       IRClass c = resolveIRClass(acc.right);
       if (c != null) {
         for (ELNode.DEFINE def : c.node.cvars) {
-          if (def.id.equals(key.value) && def.symbol.clazz != null &&
-              def.symbol.isPublic() && def.symbol.isStatic())
+          if (def.id.equals(key.value) && def.symbol.clazz != null) {
+            if (!def.symbol.isPublic())
+              throw reportError(node.pos, _T(EL_ILLEGAL_ACCESS, c.name, def.id));
             return def.symbol.clazz;
+          }
+        }
+
+        for (ELNode.DEFINE def : c.node.ivars) {
+          if (def.id.equals(key.value) && def.symbol.clazz != null)
+            throw reportError(node.pos,
+              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, def.id));
         }
       }
     }
@@ -1580,13 +1582,19 @@ public class IRBuilder extends ELNode.Visitor {
       buf.insert(0, '.');
       node = acc.right;
     }
-    if (node instanceof ELNode.IDENT var && var.symbol == null) {
+
+    if (node instanceof ELNode.IDENT var) {
       buf.insert(0, var.id);
-      if (load)
-        return loadClassAtCompileTime(node.pos, buf.toString());
-      return resolveClassAtCompileTime(buf.toString());
+      if (var.symbol == null) {
+        if (load)
+          return loadClassAtCompileTime(node.pos, buf.toString());
+        else
+          return resolveClassAtCompileTime(buf.toString());
+      }
     }
 
+    if (load)
+      throw reportError(node.pos, _T(EL_CLASS_NOT_FOUND, buf.toString()));
     return null;
   }
 
@@ -3052,11 +3060,8 @@ public class IRBuilder extends ELNode.Visitor {
     clazz.interfaces = interfaces;
 
     // Determine the outer class.
-    if (!node.symbol.isStatic()) {
+    if (!node.symbol.isStatic())
       clazz.outer = node.scope.parent.enclosingClass();
-      if (clazz.outer != null)
-        clazz.outer.inners.add(clazz);
-    }
 
     // Recursively build nested classes.
     for (ELNode.DEFINE var : node.cvars) {

@@ -157,9 +157,20 @@ public final class SymbolTableBuilder {
       // Create internal class name for nested class. This includes inner class
       // and static nested class.
       String internalName = e.id;
-      IRClass outer = table.currentScope().parent.enclosingClass();
-      if (outer != null)
+      IRClass host = null;
+      SymbolTable.Scope scope = table.currentScope();
+      while (true) {
+        IRClass outer = scope.parent.enclosingClass();
+        if (outer == null)
+          break;
         internalName = outer.name + "$" + internalName;
+        host = outer;
+        scope = outer.node.scope;
+      }
+      if (host != null) {
+        clazz.host = host;
+        host.inners.add(clazz);
+      }
       clazz.internalName = internalName;
 
       // Run default visitor to populate member symbols.
