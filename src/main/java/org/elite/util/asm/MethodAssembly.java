@@ -504,6 +504,43 @@ public class MethodAssembly {
     return this;
   }
 
+  public MethodAssembly PUSH_CONST(Object value) {
+    if (value instanceof Boolean) {
+      PUSH((Boolean)value ? 1 : 0);
+    } else if (value instanceof Byte || value instanceof Short ||
+               value instanceof Integer) {
+      PUSH(((Number)value).intValue());
+    } else if (value instanceof Character) {
+      PUSH((Character)value);
+    } else if (value instanceof Long lvalue) {
+      if (lvalue == 0L)
+        LCONST_0();
+      else if (lvalue == 1L)
+        LCONST_1();
+      else
+        LDC(value);
+    } else if (value instanceof Float fvalue) {
+      if (fvalue == 0.0f)
+        FCONST_0();
+      else if (fvalue == 1.0f)
+        FCONST_1();
+      else if (fvalue == 2.0f)
+        FCONST_2();
+      else
+        LDC(value);
+    } else if (value instanceof Double dvalue) {
+      if (dvalue == 0.0d)
+        DCONST_0();
+      else if (dvalue == 1.0d)
+        DCONST_1();
+      else
+        LDC(value);
+    } else {
+      throw new UnsupportedOperationException();
+    }
+    return this;
+  }
+
   public MethodAssembly IINC(int var, int increment) {
     impl.visitIincInsn(var, increment);
     return this;

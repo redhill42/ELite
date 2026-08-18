@@ -1052,38 +1052,19 @@ public class BytecodeCompiler {
             value instanceof Short   || value instanceof Character ||
             value instanceof Integer || value instanceof Long ||
             value instanceof Float   || value instanceof Double) {
-          InstructionView next = peekNext(v);
-          if (next != null && next.opcode() == UNBOX &&
-              value.getClass() == TypeCoercion.getBoxedType(
-                (Class<?>)fn.getConstant(next.poolIndex()))) {
-            if (value instanceof Boolean)
-              mc.PUSH((Boolean)value ? 1 : 0);
-            else if (value instanceof Byte || value instanceof Short ||
-                     value instanceof Integer)
-              mc.PUSH(((Number)value).intValue());
-            else if (value instanceof Character)
-              mc.PUSH((Character)value);
-            else
-              mc.LDC(value);
-            v.advance();
-          } else {
-            mc.BOX(value);
-          }
+          emitPushPrimitive(v, value);
         } else if (value instanceof String) {
-          mc.LDC(value);
+          emitPushString(v, (String)value);
         } else if (value instanceof Class<?> c) {
-          if (c.isPrimitive())
-            mc.GETSTATIC(TypeCoercion.getBoxedType(c), "TYPE", Class.class);
-          else
-            mc.LDC(Type.getType(c));
+          mc.LDC(Type.getType(c));
         } else if (value instanceof IRClass irc) {
           mc.LDC(Type.getType(AsmType.toDescriptor(irc.internalName)));
-        } else if (value instanceof Symbol) {
-          mc.LDC(((Symbol)value).getName())
+        } else if (value instanceof Symbol sym) {
+          mc.LDC(sym.getName())
             .INVOKESTATIC(Symbol.class, "valueOf", Symbol.class, String.class);
         } else {
           // Load constant from constant pool.
-          loadConstant(mc, fn.getConstant(v.poolIndex()));
+          loadConstant(mc, value);
         }
       }
   
@@ -1791,6 +1772,106 @@ public class BytecodeCompiler {
         AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
                                     String.class, MethodType.class),
         false);
+
+    private void emitPushPrimitive(InstructionView v, Object value) {
+      InstructionView next = peekNext(v);
+      if (next == null) {
+        mc.BOX(value);
+        return;
+      }
+
+      switch (next.opcode()) {
+      case UNBOX: {
+        Class<?> unboxedType = (Class<?>)fn.getConstant(next.poolIndex());
+        if (value.getClass() == TypeCoercion.getBoxedType(unboxedType)) {
+          mc.PUSH_CONST(value);
+          v.advance();
+          return;
+        }
+        break;
+      }
+
+      case RETURN: {
+        if (returnType == void.class) {
+          mc.RETURN();
+          v.advance();
+          return;
+        }
+        if (returnType.isPrimitive()) {
+          mc.PUSH_CONST(value);
+          emitPrimitiveConversion(value, returnType);
+          mc.XRETURN(returnType);
+          v.advance();
+          return;
+        }
+        break;
+      }
+
+      case STORE_ARRAY: {
+        Class<?> arrayType = (Class<?>)fn.getConstant(next.poolIndex());
+        if (arrayType.isPrimitive()) {
+          mc.PUSH(next.payload());
+          mc.PUSH_CONST(value);
+          emitPrimitiveConversion(value, arrayType);
+          mc.XASTORE(arrayType);
+          v.advance();
+          return;
+        }
+        break;
+      }
+      }
+
+      mc.BOX(value);
+    }
+
+    private void emitPrimitiveConversion(Object value, Class<?> type) {
+      if (type == boolean.class || type == byte.class || type == short.class ||
+          type == char.class || type == int.class) {
+        if (value instanceof Long)
+          mc.L2I();
+        else if (value instanceof Float)
+          mc.F2I();
+        else if (value instanceof Double)
+          mc.D2I();
+      } else if (type == long.class && !(value instanceof Long)) {
+        if (value instanceof Float)
+          mc.F2L();
+        else if (value instanceof Double)
+          mc.D2L();
+        else
+          mc.I2L();
+      } else if (type == float.class && !(value instanceof Float)) {
+        if (value instanceof Double)
+          mc.D2F();
+        else if (value instanceof Long)
+          mc.L2F();
+        else
+          mc.I2F();
+      } else if (type == double.class && !(value instanceof Double)) {
+        if (value instanceof Long)
+          mc.L2D();
+        else if (value instanceof Float)
+          mc.F2D();
+        else
+          mc.I2D();
+      }
+    }
+
+    private void emitPushString(InstructionView v, String value) {
+      InstructionView next = peekNext(v);
+      if (next != null && next.opcode() == STORE_ARRAY) {
+        Class<?> arrayType = (Class<?>)fn.getConstant(next.poolIndex());
+        if (arrayType == String.class || arrayType == Object.class) {
+          mc.PUSH(next.payload());
+          mc.LDC(value);
+          mc.AASTORE();
+          v.advance();
+          return;
+        }
+      }
+
+      mc.LDC(value);
+    }
 
     private void emitCoerce(Class<?> type) {
       if (type != Object.class) {
