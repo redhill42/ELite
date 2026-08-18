@@ -176,8 +176,10 @@ public final class SymbolTableBuilder {
       // Run default visitor to populate member symbols.
       super.visit(e);
 
-      // Add an implicit this variable.
+      // Add implicit variables.
       table.define(new ELNode.DEFINE(e.pos, "this"));
+      table.define(new ELNode.DEFINE(e.pos, "self"));
+      table.define(new ELNode.DEFINE(e.pos, "super"));
 
       // Create AST for init procedures.
       clazz.clinit_proc = createClassInitProc(e);

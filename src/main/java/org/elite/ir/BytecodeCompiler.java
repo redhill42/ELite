@@ -1568,6 +1568,10 @@ public class BytecodeCompiler {
           } else {
             mc.GETFIELD(f.clazz().internalName, f.field(), Object.class);
           }
+        } else if (field instanceof Field f) {
+          mc.GETFIELD(f.getDeclaringClass(), f.getName(), f.getType());
+          if (f.getType().isPrimitive())
+            mc.BOX(f.getType());
         } else {
           mc.THIS().GETFIELD(currentClassName, (String)field, Object.class);
         }
@@ -1576,13 +1580,22 @@ public class BytecodeCompiler {
       case PUTFIELD -> {
         Object field = fn.getConstant(v.poolIndex());
         String className, fieldName;
+        Class<?> type;
+
         if (field instanceof Descriptors.Field f) {
           className = f.clazz().internalName;
           fieldName = f.field();
+          type = Object.class;
+          mc.SWAP();
+        } else if (field instanceof Field f) {
+          className = f.getDeclaringClass().getName();
+          fieldName = f.getName();
+          type = f.getType();
           mc.SWAP();
         } else {
           className = currentClassName;
           fieldName = (String)field;
+          type = Object.class;
           mc.THIS().SWAP();
         }
 
@@ -1591,7 +1604,9 @@ public class BytecodeCompiler {
           mc.DUP_X1();
         else
           v.advance(); // no DUP, eat POP
-        mc.PUTFIELD(className, fieldName, Object.class);
+        if (type.isPrimitive())
+          mc.UNBOX_UNCHECKED(type);
+        mc.PUTFIELD(className, fieldName, type);
       }
   
       case GETSTATIC -> {

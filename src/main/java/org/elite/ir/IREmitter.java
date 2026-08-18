@@ -402,12 +402,20 @@ final class IREmitter {
     emit(GETFIELD, 0, builder.putConstant(new Descriptors.Field(clazz, field)));
   }
 
+  public void emitGetField(Field field) {
+    emit(GETFIELD, 0, builder.putConstant(field));
+  }
+
   public void emitGetField(String field) {
     emit(GETFIELD, 0, builder.putConstant(field));
   }
 
   public void emitPutField(IRClass clazz, String field) {
     emit(PUTFIELD, 0, builder.putConstant(new Descriptors.Field(clazz, field)));
+  }
+
+  public void emitPutField(Field field) {
+    emit(PUTFIELD, 0, builder.putConstant(field));
   }
 
   public void emitPutField(String field) {

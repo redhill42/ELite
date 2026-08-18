@@ -160,7 +160,7 @@ public class IRBuilder extends ELNode.Visitor {
         MethodType.class);
       invokeBootstrap = DynamicBootstrap.class.getMethod(
         "invokeBootstrap", MethodHandles.Lookup.class, String.class,
-        MethodType.class, String[].class);
+        MethodType.class, int.class, String[].class);
       callBootstrap = DynamicBootstrap.class.getMethod(
         "callBootstrap", MethodHandles.Lookup.class, String.class,
         MethodType.class, String[].class);
@@ -389,7 +389,7 @@ public class IRBuilder extends ELNode.Visitor {
           current.emitGetField(ownerClass, node.id);
         }
       }
-    } else if (buildLoadClassMember(node.pos, node.id)) {
+    } else if (buildLoadClassMember(node.pos, node.id, false)) {
       // already done.
     } else if (node.symbol == null || node.symbol.captured) {
       current.emitPushGlobal(node.id);
@@ -436,7 +436,7 @@ public class IRBuilder extends ELNode.Visitor {
           current.emitPutField(ownerClass, node.id);
         }
       }
-    } else if (buildStoreClassMember(node.pos, node.id)) {
+    } else if (buildStoreClassMember(node.pos, node.id, false)) {
       // already done.
     } else {
       if (node.symbol != null && node.symbol.isFinal())
@@ -449,126 +449,165 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private boolean buildLoadClassMember(int pos, String id) {
+  private boolean buildLoadClassMember(int pos, String id, boolean isSuper) {
     IRClass clazz = currentScope.enclosingClass();
     if (clazz == null)
       return false;
-    for (; clazz.base instanceof IRClass base; clazz = base) {
-      Optional<ELNode.DEFINE> var =
-        Stream.concat(
-            Stream.concat(Arrays.stream(base.node.cvars),
-                          Arrays.stream(base.node.ivars)),
-            base.node.vars != null ? Arrays.stream(base.node.vars)
-                                   : Stream.empty())
-          .filter(x -> x.id.equals(id))
-          .findFirst();
 
-      if (var.isPresent()) {
-        ELNode.DEFINE def = var.get();
-        if (def.symbol.isPrivate())
-          throw reportError(pos, _T(EL_ILLEGAL_ACCESS, base.name, id));
-        if (currentScope.isStaticScope() && !def.symbol.isStatic())
-          throw reportError(pos,
-                            _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
-        if (def.expr instanceof ELNode.CLASSDEF cdef) {
-          buildConst(cdef.symbol.clazz);
-        } else if (def.expr instanceof ELNode.LAMBDA fn) {
-          current.emitClosure(fn.symbol.func);
-        } else if (def.symbol.isStatic()) {
-          current.emitGetStatic(base, id);
-        } else {
-          current.emitPushThis();
-          current.emitGetField(base, id);
+    if (!isSuper || clazz.base instanceof IRClass) {
+      if (isSuper)
+        clazz = (IRClass)clazz.base;
+      boolean isSuperClass = isSuper;
+      do {
+        Optional<ELNode.DEFINE> var =
+          Stream.concat(
+              Stream.concat(Arrays.stream(clazz.node.cvars),
+                            Arrays.stream(clazz.node.ivars)),
+              clazz.node.vars != null ? Arrays.stream(clazz.node.vars)
+                                      : Stream.empty())
+            .filter(x -> x.id.equals(id))
+            .findFirst();
+
+        if (var.isPresent()) {
+          ELNode.DEFINE def = var.get();
+          if (def.expr instanceof ELNode.CLASSDEF)
+            throw reportError(pos, _T(EL_PROPERTY_NOT_FOUND, clazz.name, id));
+          if (isSuperClass && def.symbol.isPrivate())
+            throw reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, id));
+          if (currentScope.isStaticScope() && !def.symbol.isStatic())
+            throw reportError(pos,
+                              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
+          if (def.expr instanceof ELNode.CLASSDEF cdef) {
+            buildConst(cdef.symbol.clazz);
+          } else if (def.expr instanceof ELNode.LAMBDA fn) {
+            current.emitClosure(fn.symbol.func);
+          } else if (def.symbol.isStatic()) {
+            current.emitGetStatic(clazz, id);
+          } else {
+            current.emitPushThis();
+            current.emitGetField(clazz, id);
+          }
+          return true;
         }
-        return true;
+
+        if (clazz.base instanceof IRClass) {
+          clazz = (IRClass)clazz.base;
+          isSuperClass = true;
+        } else {
+          break;
+        }
+      } while (true);
+    }
+
+    for (Class<?> baseClass = (Class<?>)clazz.base; baseClass != null;
+         baseClass = baseClass.getSuperclass()) {
+      try {
+        Field field = baseClass.getDeclaredField(id);
+        if (Modifier.isPublic(field.getModifiers()) ||
+            Modifier.isProtected(field.getModifiers())) {
+          if (Modifier.isStatic(field.getModifiers())) {
+            current.emitGetStatic(field);
+          } else {
+            current.emitPushThis();
+            current.emitGetField(field);
+          }
+          return true;
+        }
+      } catch (NoSuchFieldException e) {
+        // continue
       }
     }
+
     return false;
   }
 
-  private boolean buildStoreClassMember(int pos, String id) {
+  private boolean buildStoreClassMember(int pos, String id, boolean isSuper) {
     IRClass clazz = currentScope.enclosingClass();
     if (clazz == null)
       return false;
-    for (; clazz.base instanceof IRClass base; clazz = base) {
-      Optional<ELNode.DEFINE> var =
-        Stream.concat(
-            Stream.concat(Arrays.stream(base.node.cvars),
-                          Arrays.stream(base.node.ivars)),
-            base.node.vars != null ? Arrays.stream(base.node.vars)
-                                   : Stream.empty())
-          .filter(x -> x.id.equals(id))
-          .findFirst();
 
-      if (var.isPresent()) {
-        ELNode.DEFINE def = var.get();
-        if (def.symbol.isPrivate())
-          throw reportError(pos, _T(EL_ILLEGAL_ACCESS, base.name, id));
-        if (currentScope.isStaticScope() && !def.symbol.isStatic())
-          throw reportError(pos,
-                            _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
-        if (def.symbol.isFinal() ||
-            def.expr instanceof ELNode.CLASSDEF ||
-            def.expr instanceof ELNode.LAMBDA)
-          throw reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, base.name, id));
-        if (def.symbol.isStatic()) {
-          current.emitPutStatic(base, id);
-        } else {
-          current.emitPushThis();
-          current.emitPutField(base, id);
+    if (!isSuper || clazz.base instanceof IRClass) {
+      if (isSuper)
+        clazz = (IRClass)clazz.base;
+      boolean isSuperClass = isSuper;
+      do {
+        Optional<ELNode.DEFINE> var =
+          Stream.concat(
+              Stream.concat(Arrays.stream(clazz.node.cvars),
+                            Arrays.stream(clazz.node.ivars)),
+              clazz.node.vars != null ? Arrays.stream(clazz.node.vars)
+                                     : Stream.empty())
+            .filter(x -> x.id.equals(id))
+            .findFirst();
+
+        if (var.isPresent()) {
+          ELNode.DEFINE def = var.get();
+          if (isSuperClass && def.symbol.isPrivate())
+            throw reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, id));
+          if (currentScope.isStaticScope() && !def.symbol.isStatic())
+            throw reportError(pos,
+                              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
+          if (def.symbol.isFinal() ||
+              def.expr instanceof ELNode.CLASSDEF ||
+              def.expr instanceof ELNode.LAMBDA)
+            throw reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, clazz.name, id));
+          if (def.symbol.isStatic()) {
+            current.emitPutStatic(clazz, id);
+          } else {
+            current.emitPushThis();
+            current.emitPutField(clazz, id);
+          }
+          return true;
         }
-        return true;
+
+        if (clazz.base instanceof IRClass) {
+          clazz = (IRClass)clazz.base;
+          isSuperClass = true;
+        } else {
+          break;
+        }
+      } while (true);
+    }
+
+    for (Class<?> baseClass = (Class<?>)clazz.base; baseClass != null;
+         baseClass = baseClass.getSuperclass()) {
+      try {
+        Field field = baseClass.getDeclaredField(id);
+        if (Modifier.isPublic(field.getModifiers()) ||
+            Modifier.isProtected(field.getModifiers())) {
+          if (Modifier.isFinal(field.getModifiers()))
+            throw reportError(
+              pos, _T(EL_PROPERTY_NOT_WRITABLE, baseClass.getName(), id));
+          if (Modifier.isStatic(field.getModifiers())) {
+            current.emitPutStatic(field);
+          } else {
+            current.emitPushThis();
+            current.emitPutField(field);
+          }
+          return true;
+        }
+      } catch (NoSuchFieldException e) {
+        // continue
       }
     }
+
     return false;
   }
 
   public void visit(ELNode.ACCESS node) {
     if (node.index instanceof ELNode.STRINGVAL) {
       String key = ((ELNode.STRINGVAL)node.index).value;
-      if (node.right instanceof ELNode.IDENT base && base.id.equals("this")) {
+
+      if (node.right instanceof ELNode.IDENT var &&
+          (var.id.equals("this") || var.id.equals("super"))) {
         Scope classScope = currentScope.enclosingClassScope();
-        if (base.symbol == null || classScope == null ||
-            base.symbol.scope != classScope)
-          throw reportError(node.pos, "Dangling this reference");
-
-        IRClass irc = currentScope.enclosingClass();
-        boolean isSuperClass = false;
-        do {
-          Optional<ELNode.DEFINE> var =
-            Stream.concat(irc.node.vars != null ? Arrays.stream(irc.node.vars)
-                                                : Stream.empty(),
-                          Arrays.stream(irc.node.ivars))
-              .filter(def -> def.id.equals(key))
-              .findFirst();
-
-          if (var.isPresent()) {
-            ELNode.DEFINE def = var.get();
-            if (def.expr instanceof ELNode.CLASSDEF)
-              throw reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, irc.name,
-                                             key));
-            if (isSuperClass && def.symbol.isPrivate())
-              throw reportError(node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
-            if (def.expr instanceof ELNode.LAMBDA fn)
-              current.emitClosure(fn.symbol.func);
-            else
-              current.emitGetField(key);
-            return;
-          }
-
-          if (Arrays.stream(irc.node.cvars).anyMatch(x -> x.id.equals(key)))
-            throw reportError(node.pos,
-                              _T(EL_PROPERTY_NOT_FOUND, irc.name, key));
-
-          if (irc.base instanceof IRClass) {
-            irc = (IRClass)irc.base;
-            isSuperClass = true;
-          } else {
-            break;
-          }
-        } while (true);
-
-        throw reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, irc.name, key));
+        if (var.symbol == null || classScope == null ||
+            var.symbol.scope != classScope)
+          throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+        if (!buildLoadClassMember(node.pos, key, var.id.equals("super")))
+          throw reportError(node.pos,
+            _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
+        return;
       }
 
       IRClass irc = resolveIRClass(node.right);
@@ -665,49 +704,19 @@ public class IRBuilder extends ELNode.Visitor {
   private void buildStoreProperty(ELNode.ACCESS node) {
     if (node.index instanceof ELNode.STRINGVAL) {
       String key = ((ELNode.STRINGVAL)node.index).value;
-      if (node.right instanceof ELNode.IDENT base && base.id.equals("this")) {
+
+      // Access member variable via this or super reference. Traverse class
+      // hierarchy to find the member variable.
+      if (node.right instanceof ELNode.IDENT var &&
+          (var.id.equals("this") || var.id.equals("super"))) {
         Scope classScope = currentScope.enclosingClassScope();
-        if (base.symbol == null || classScope == null ||
-            base.symbol.scope != classScope)
-          throw reportError(node.pos, "Dangling this reference");
-
-        // Access member variable via this reference. Traverse class hierarchy
-        // to find the member variable.
-        IRClass irc = currentScope.enclosingClass();
-        boolean isSuperClass = false;
-        do {
-          Optional<ELNode.DEFINE> var =
-            Stream.concat(irc.node.vars != null ? Arrays.stream(irc.node.vars)
-                                                : Stream.empty(),
-                          Arrays.stream(irc.node.ivars))
-              .filter(def -> def.id.equals(key))
-              .findFirst();
-
-          if (var.isPresent()) {
-            ELNode.DEFINE def = var.get();
-            if (def.symbol.isFinal() ||
-                def.expr instanceof ELNode.LAMBDA ||
-                def.expr instanceof ELNode.CLASSDEF)
-              throw reportError(
-                node.pos, _T(EL_PROPERTY_NOT_WRITABLE, irc.name, key));
-            if (isSuperClass && def.symbol.isPrivate())
-              throw reportError(node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
-            current.emitPutField(def.id);
-            return;
-          }
-
-          if (Arrays.stream(irc.node.cvars).anyMatch(x -> x.id.equals(key)))
-            throw reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, irc.name, key));
-
-          if (irc.base instanceof IRClass) {
-            irc = (IRClass)irc.base;
-            isSuperClass = true;
-          } else {
-            break;
-          }
-        } while (true);
-
-        throw reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, irc.name, key));
+        if (var.symbol == null || classScope == null ||
+            var.symbol.scope != classScope)
+          throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+        if (!buildStoreClassMember(node.pos, key, var.id.equals("super")))
+          throw reportError(node.pos,
+            _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
+        return;
       }
 
       // Access a class static member variable.
@@ -873,7 +882,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     if (base instanceof ELNode.IDENT ident) {
       if (ident.id.equals("super"))
-        throw reportError(node.pos, _T(EL_DANGLING_SUPER));
+        throw reportError(node.pos, _T(EL_MISPLACED_SUPER));
 
       if (ident.symbol != null) {
         if (ident.symbol.func != null) {
@@ -901,31 +910,8 @@ public class IRBuilder extends ELNode.Visitor {
 
       if (ident.symbol == null) {
         // Resolve member function from super class.
-        IRClass clazz = currentScope.enclosingClass();
-        if (clazz != null) {
-          for (; clazz.base instanceof IRClass zuper; clazz = zuper) {
-            Optional<ELNode.DEFINE> var =
-              Stream.concat(Arrays.stream(zuper.node.cvars),
-                            Arrays.stream(zuper.node.ivars))
-                .filter(x -> x.id.equals(ident.id) &&
-                             x.expr instanceof ELNode.LAMBDA)
-                .findFirst();
-
-            if (var.isPresent()) {
-              ELNode.DEFINE def = var.get();
-              if (def.symbol.isPrivate())
-                throw reportError(node.pos,
-                  _T(EL_ILLEGAL_ACCESS, zuper.name, ident.id));
-              if (currentScope.isStaticScope() && !def.symbol.isStatic())
-                throw reportError(node.pos,
-                  _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, ident.id));
-              ELNode[] args = getCallArgs(node.pos, (ELNode.LAMBDA)def.expr,
-                                          node.args, node.keys);
-              buildDirectCall(def.symbol, args);
-              return;
-            }
-          }
-        }
+        if (buildThisCall(node, ident.id, false))
+          return;
 
         // Resolve builtin function.
         if (tryBuildGlobalMethodCall(ident.id, node.args))
@@ -952,40 +938,17 @@ public class IRBuilder extends ELNode.Visitor {
       // Try to resolve direct method for known Java types.
       if (acc.index instanceof ELNode.STRINGVAL) {
         String key = ((ELNode.STRINGVAL)acc.index).value;
-        if (acc.right instanceof ELNode.IDENT ident &&
-            ident.id.equals("this")) {
+
+        if (acc.right instanceof ELNode.IDENT var &&
+            (var.id.equals("this") || var.id.equals("super"))) {
           Scope classScope = currentScope.enclosingClassScope();
-          if (ident.symbol == null || classScope == null ||
-              ident.symbol.scope != classScope)
-            throw reportError(node.pos, "Dangling this reference");
-
-          // Resolve member function from class hierarchy.
-          IRClass irc = currentScope.enclosingClass();
-          boolean isSuperClass = false;
-          do {
-            for (ELNode.DEFINE def : irc.node.ivars) {
-              if (def.id.equals(key) && def.expr instanceof ELNode.LAMBDA fn) {
-                if (isSuperClass && def.symbol.isPrivate())
-                  throw reportError(node.pos,
-                                    _T(EL_ILLEGAL_ACCESS, irc.name, key));
-                ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
-                if (inTailPosition && fn.symbol.func == this.func) {
-                  buildTailCall(fn, args);
-                } else {
-                  buildDirectCall(fn.symbol, args);
-                }
-                return;
-              }
-            }
-            if (irc.base instanceof IRClass) {
-              irc = (IRClass)irc.base;
-              isSuperClass = true;
-            } else {
-              break;
-            }
-          } while (true);
-
-          throw reportError(node.pos, _T(EL_METHOD_NOT_FOUND, irc.name, key));
+          if (var.symbol == null || classScope == null ||
+              var.symbol.scope != classScope)
+            throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+          if (!buildThisCall(node, key, var.id.equals("super")))
+            throw reportError(node.pos,
+              _T(EL_METHOD_NOT_FOUND, currentScope.enclosingClass().name, key));
+          return;
         }
 
         IRClass irc = resolveIRClass(acc.right);
@@ -1034,17 +997,18 @@ public class IRBuilder extends ELNode.Visitor {
         build(acc.right);
         buildTuple(node.args);
 
-        String[] keys;
+        Object[] bootstrapArgs;
         if (node.keys == null)
-          keys = new String[0];
+          bootstrapArgs = new Object[1];
         else {
-          keys = new String[node.keys.length];
-          for (int i = 0; i < keys.length; i++)
-            keys[i] = node.keys[i] != null ? node.keys[i] : "";
+          bootstrapArgs = new Object[node.keys.length + 1];
+          for (int i = 0; i < node.keys.length; i++)
+            bootstrapArgs[i + 1] = node.keys[i] != null ? node.keys[i] : "";
         }
+        bootstrapArgs[0] = false;
 
         current.emitInvokeDynamic(new Descriptors.Indy(
-          invokeBootstrap, ((ELNode.STRINGVAL)acc.index).value, keys,
+          invokeBootstrap, ((ELNode.STRINGVAL)acc.index).value, bootstrapArgs,
           Object.class, EvaluationContext.class, Object.class, Object[].class));
       } else {
         current.emitPushEnv();
@@ -1475,6 +1439,90 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     return true;
+  }
+
+  private boolean buildThisCall(ELNode.APPLY node, String key, boolean isSuper) {
+    IRClass clazz = currentScope.enclosingClass();
+    if (clazz == null)
+      return false;
+
+    if (!isSuper || clazz.base instanceof IRClass) {
+      if (isSuper)
+        clazz = (IRClass)clazz.base;
+      boolean isSuperClass = isSuper;
+      do {
+        Optional<ELNode.DEFINE> var =
+          Stream.concat(Arrays.stream(clazz.node.cvars),
+                        Arrays.stream(clazz.node.ivars))
+            .filter(x -> x.id.equals(key) &&
+                         x.expr instanceof ELNode.LAMBDA)
+            .findFirst();
+
+        if (var.isPresent()) {
+          ELNode.DEFINE def = var.get();
+          if (isSuperClass && def.symbol.isPrivate())
+            throw reportError(node.pos,
+                              _T(EL_ILLEGAL_ACCESS, clazz.name, key));
+          if (currentScope.isStaticScope() && !def.symbol.isStatic())
+            throw reportError(node.pos,
+                              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
+          ELNode[] args = getCallArgs(node.pos, (ELNode.LAMBDA)def.expr,
+                                      node.args, node.keys);
+          if (!isSuper && inTailPosition && def.symbol.func == this.func)
+            buildTailCall((ELNode.LAMBDA)def.expr, args);
+          else
+            buildDirectCall(def.symbol, args);
+          return true;
+        }
+
+        if (clazz.base instanceof IRClass) {
+          clazz = (IRClass)clazz.base;
+          isSuperClass = true;
+        } else {
+          break;
+        }
+      } while (true);
+    }
+
+    Class<?> baseClass = (Class<?>)clazz.base;
+    MethodResolver resolver = MethodResolver.getInstance(elctx);
+    MethodClosure mc;
+    boolean isStatic = true;
+
+    mc = resolver.resolveStaticMethod(baseClass, key);
+    if (mc == null) {
+      mc = resolver.resolveProtectedMethod(baseClass, key);
+      if (mc != null && currentScope.isStaticScope())
+        throw reportError(node.pos,
+                          _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
+      isStatic = false;
+    }
+
+    if (mc != null) {
+      current.emitPushEnv();
+      if (isStatic)
+        buildConst(clazz.base);
+      else
+        current.emitPushThis();
+      buildTuple(node.args);
+
+      Object[] bootstrapArgs;
+      if (node.keys == null)
+        bootstrapArgs = new Object[1];
+      else {
+        bootstrapArgs = new Object[node.keys.length + 1];
+        for (int i = 0; i < node.keys.length; i++)
+          bootstrapArgs[i + 1] = node.keys[i] != null ? node.keys[i] : "";
+      }
+      bootstrapArgs[0] = isSuper && !isStatic;
+
+      current.emitInvokeDynamic(new Descriptors.Indy(
+        invokeBootstrap, key, bootstrapArgs, Object.class,
+        EvaluationContext.class, Object.class, Object[].class));
+      return true;
+    }
+
+    return false;
   }
 
   private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {

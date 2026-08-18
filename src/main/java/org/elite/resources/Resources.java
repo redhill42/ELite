@@ -122,7 +122,8 @@ public final class Resources
     public static final String EL_CLASS_NOT_FOUND = "EL_CLASS_NOT_FOUND";
     public static final String EL_NOT_A_CLASS = "EL_NOT_A_CLASS";
     public static final String EL_NOT_COMPARABLE = "EL_NOT_COMPARABLE";
-    public static final String EL_DANGLING_SUPER = "EL_DANGLING_SUPER";
+    public static final String EL_DANGLING_REFERENCE = "EL_DANGLING_REFERENCE";
+    public static final String EL_MISPLACED_SUPER = "EL_MISPLACED_SUPER";
     public static final String EL_ILLEGAL_ACCESS  = "EL_ILLEGAL_ACCESS";
 
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";

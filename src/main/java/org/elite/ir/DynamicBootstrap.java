@@ -128,8 +128,8 @@ public final class DynamicBootstrap {
       MH_invokeDispatcher = lookup.findStatic(
         DynamicBootstrap.class, "invokeDispatcher",
         methodType(Object.class, Lookup.class, MutableCallSite.class,
-                   String.class, String[].class, EvaluationContext.class,
-                   Object.class, Object[].class));
+                   String.class, boolean.class, String[].class,
+                   EvaluationContext.class, Object.class, Object[].class));
 
       MH_callDispatcher = lookup.findStatic(
         DynamicBootstrap.class, "callDispatcher",
@@ -904,10 +904,10 @@ public final class DynamicBootstrap {
   @SuppressWarnings("unused")
   public static CallSite invokeBootstrap(MethodHandles.Lookup lookup,
                                          String name, MethodType callsiteType,
-                                         String... keys) {
+                                         int isSuper, String... keys) {
     MutableCallSite cs = new MutableCallSite(callsiteType);
-    MethodHandle target = insertArguments(MH_invokeDispatcher, 0,
-                                          lookup, cs, name, keys);
+    MethodHandle target = insertArguments(MH_invokeDispatcher, 0, lookup, cs,
+                                          name, isSuper != 0, keys);
     target = target.asType(callsiteType);
     cs.setTarget(target);
     return cs;
@@ -915,11 +915,13 @@ public final class DynamicBootstrap {
 
   private static Object invokeDispatcher(MethodHandles.Lookup lookup,
                                          MutableCallSite cs, String name,
-                                         String[] keys, EvaluationContext env,
+                                         boolean isSuper, String[] keys,
+                                         EvaluationContext env,
                                          Object obj, Object[] args)
     throws Throwable
   {
-    MethodHandle target = dispatchInvoke(lookup, env, name, keys, obj, args);
+    MethodHandle target = dispatchInvoke(lookup, env, name, isSuper, keys,
+                                         obj, args);
     target = target.asType(cs.type());
 
     // Guard condition: obj and argument types are not changed.
@@ -953,8 +955,9 @@ public final class DynamicBootstrap {
 
   private static MethodHandle dispatchInvoke(MethodHandles.Lookup lookup,
                                              EvaluationContext env,
-                                             String name, String[] keys,
-                                             Object obj, Object[] args) {
+                                             String name, boolean isSuper,
+                                             String[] keys, Object obj,
+                                             Object[] args) {
     if (obj == null)
       return dropArguments(throwNullPointerException(), 1, Object.class,
                            Object[].class);
@@ -962,12 +965,12 @@ public final class DynamicBootstrap {
     // Dispatch to ELite method.
     if (isELiteObject(obj)) {
       MethodHandle mh = dispatchELiteMethod(
-        lookup, obj.getClass(), name, keys, obj, args);
+        lookup, obj.getClass(), name, isSuper, keys, obj, args);
       if (mh != null)
         return mh;
     } else if (obj instanceof Class<?> c && isELiteClass(c)) {
       MethodHandle mh = dispatchELiteMethod(
-        lookup, c, name, keys, null, args);
+        lookup, c, name, false, keys, null, args);
       if (mh != null)
         return mh;
     }
@@ -990,15 +993,20 @@ public final class DynamicBootstrap {
           assert obj == SystemScope.SINGLETON;
           MethodClosure mc = resolver.resolveSystemMethod(name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, null, args);
+            return dispatchJavaMethod(lookup, env, mc, false, null, args);
         } else if (obj instanceof Class<?> c) {
           MethodClosure mc = resolver.resolveStaticMethod(c, name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, null, args);
+            return dispatchJavaMethod(lookup, env, mc, false, null, args);
+        } else if (isSuper) {
+          MethodClosure mc =
+            resolver.resolveProtectedMethod(obj.getClass().getSuperclass(), name);
+          if (mc != null)
+            return dispatchJavaMethod(lookup, env, mc, true, obj, args);
         } else {
           MethodClosure mc = resolver.resolveMethod(obj.getClass(), name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, obj, args);
+            return dispatchJavaMethod(lookup, env, mc, false, obj, args);
         }
       } catch (MethodNotFoundException e) {
         return reportMethodNotFound(obj, name);
@@ -1018,14 +1026,15 @@ public final class DynamicBootstrap {
 
   private static MethodHandle dispatchELiteMethod(MethodHandles.Lookup lookup,
                                                   Class<?> c, String name,
-                                                  String[] keys,
-                                                  Object obj, Object[] args) {
+                                                  boolean isSuper,
+                                                  String[] keys, Object obj,
+                                                  Object[] args) {
     try {
-      Method m = getELiteMethod(c, mangle(name));
+      Method m = getELiteMethod(isSuper ? c.getSuperclass() : c, mangle(name));
       if (m == null)
         return null;
       if (Modifier.isStatic(m.getModifiers()) != (obj == null))
-        return reportMethodNotFound(obj, name);
+        return reportMethodNotFound(c, name);
 
       // Check arguments.
       MetaMethod meta = m.getAnnotation(MetaMethod.class);
@@ -1039,7 +1048,9 @@ public final class DynamicBootstrap {
           1, Object.class, Object[].class);
       }
 
-      MethodHandle mh = lookup.unreflect(m);
+      MethodHandle mh = isSuper && obj != null
+                        ? lookup.unreflectSpecial(m, c)
+                        : lookup.unreflect(m);
 
       if (obj == null) {
         mh = dropArguments(mh, 1, Object.class);
@@ -1050,7 +1061,7 @@ public final class DynamicBootstrap {
 
       return reorderArguments(mh, meta.parameterNames(), keys, arity, varargs);
     } catch (IllegalAccessException e) {
-      return reportMethodNotFound(obj, name);
+      return reportMethodNotFound(c, name);
     }
   }
 
@@ -1201,7 +1212,8 @@ public final class DynamicBootstrap {
   private static MethodHandle dispatchJavaMethod(Lookup lookup,
                                                  EvaluationContext env,
                                                  MethodClosure mc,
-                                                 Object obj, Object[] args) {
+                                                 boolean isSuper, Object obj,
+                                                 Object[] args) {
     try {
       Method m = mc.getJavaMethod(env.getELContext(), obj, args);
       if (m == null)
@@ -1221,7 +1233,9 @@ public final class DynamicBootstrap {
       }
       assert m.isVarArgs() ? (args.length >= arity - 1) : (args.length == arity);
 
-      MethodHandle mh = lookup.unreflect(m);
+      MethodHandle mh = isSuper && obj != null
+                        ? lookup.unreflectSpecial(m, obj.getClass())
+                        : lookup.unreflect(m);
 
       if (expando) {
         // Expando method. (elctx, obj, args...) -> (env, obj, args...)
@@ -1350,14 +1364,14 @@ public final class DynamicBootstrap {
     // If the object has a __call__ instance method, then call this method.
     if (isELiteObject(obj)) {
       MethodHandle mh = dispatchELiteMethod(lookup, obj.getClass(), "__call__",
-                                            keys, obj, args);
+                                            false, keys, obj, args);
       if (mh != null)
         return mh;
     } else {
       MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
       MethodClosure mc = resolver.resolveMethod(obj.getClass(), "__call__");
       if (mc != null)
-        return dispatchJavaMethod(lookup, env, mc, obj, args);
+        return dispatchJavaMethod(lookup, env, mc, false, obj, args);
     }
 
     return reportMethodNotFound(obj, "__call__");
@@ -1389,8 +1403,8 @@ public final class DynamicBootstrap {
     // to initialize the class instance, otherwise, invoke the class
     // constructor.
     if (isELiteClass(c)) {
-      MethodHandle mh = dispatchELiteMethod(lookup, c, "valueOf", keys, null,
-                                            args);
+      MethodHandle mh = dispatchELiteMethod(lookup, c, "valueOf", false, keys,
+                                            null, args);
       if (mh != null)
         return mh;
 
@@ -1409,7 +1423,7 @@ public final class DynamicBootstrap {
       MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
       MethodClosure mc = resolver.resolveStaticMethod(c, "valueOf");
       if (mc != null)
-        return dispatchJavaMethod(lookup, env, mc, null, args);
+        return dispatchJavaMethod(lookup, env, mc, false, null, args);
 
       MethodHandle mh = dispatchJavaConstructor(lookup, env, c, args);
       if (mh == null)
