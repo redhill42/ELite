@@ -2026,7 +2026,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     if (node.dims == null || node.dims.length == 1) {
       if (node.dims == null) {
-        buildConst(node.init != null ? node.init.length : 0);
+        buildConst(node.init != null ? node.init.elems.length : 0);
         current.emitUnbox(int.class);
       } else if (node.dims[0] instanceof ELNode.NUMBER n &&
                  n.value instanceof Integer) {
@@ -2040,9 +2040,9 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitNewArray(componentType);
 
       if (node.init != null) {
-        for (int i = 0; i < node.init.length; i++) {
+        for (int i = 0; i < node.init.elems.length; i++) {
           current.emitDup();
-          build(node.init[i]);
+          build(node.init.elems[i]);
           current.emitStoreArray(i, componentType);
         }
       }

@@ -5268,9 +5268,9 @@ public abstract class ELNode implements Serializable {
   public static class ARRAY extends ELNode {
     public final ELNode type;
     public final ELNode[] dims;
-    public final ELNode[] init;
+    public final ELNode.TUPLE init;
 
-    public ARRAY(int pos, ELNode type, ELNode[] dims, ELNode[] init) {
+    public ARRAY(int pos, ELNode type, ELNode[] dims, ELNode.TUPLE init) {
       super(Token.ARRAY, pos);
       this.type = type;
       this.dims = dims;
@@ -5290,8 +5290,8 @@ public abstract class ELNode implements Serializable {
       if (dims != null) {
         length = coerceToInt(dims[0].getValue(context));
       }
-      if (init != null && length < init.length) {
-        length = init.length;
+      if (init != null && length < init.elems.length) {
+        length = init.elems.length;
       }
 
       Class<?> cls = componentType(context);
@@ -5299,12 +5299,12 @@ public abstract class ELNode implements Serializable {
 
       if (init != null) {
         if (result instanceof Object[] a) {
-          for (int i = 0; i < init.length; i++) {
-            a[i] = init[i].getValue(context);
+          for (int i = 0; i < init.elems.length; i++) {
+            a[i] = init.elems[i].getValue(context);
           }
         } else {
-          for (int i = 0; i < init.length; i++) {
-            Object value = init[i].getValue(context);
+          for (int i = 0; i < init.elems.length; i++) {
+            Object value = init.elems[i].getValue(context);
             Array.set(result, i, coerce(value, cls));
           }
         }

@@ -113,11 +113,7 @@ public final class Resources
     public static final String EL_INVALID_METHOD_BODY = "EL_INVALID_METHOD_BODY";
     public static final String EL_NO_METHOD_BODY = "EL_NO_METHOD_BODY";
     public static final String EL_INVOKE_ABSTRACT_METHOD = "EL_INVOKE_ABSTRACT_METHOD";
-    public static final String EL_EMPTY_DO_CONSTRUCT = "EL_EMPTY_DO_CONSTRUCT";
-    public static final String EL_LAST_DO_STATEMENT = "EL_LAST_DO_STATEMENT";
-    public static final String EL_RETURN_CONTINUATION = "EL_RETURN_CONTINUATION";
     public static final String EL_STATEMENT_NOT_IN_LOOP = "EL_STATEMENT_NOT_IN_LOOP";
-    public static final String EL_DEFAULT_VALUE_NOT_CONSTANT = "EL_DEFAULT_VALUE_NOT_CONSTANT";
     public static final String EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER = "EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER";
     public static final String EL_CLASS_NOT_FOUND = "EL_CLASS_NOT_FOUND";
     public static final String EL_NOT_A_CLASS = "EL_NOT_A_CLASS";
@@ -125,6 +121,7 @@ public final class Resources
     public static final String EL_DANGLING_REFERENCE = "EL_DANGLING_REFERENCE";
     public static final String EL_MISPLACED_SUPER = "EL_MISPLACED_SUPER";
     public static final String EL_ILLEGAL_ACCESS  = "EL_ILLEGAL_ACCESS";
+    public static final String EL_MISSING_ARRAY_DIMENSION = "EL_MISSING_ARRAY_DIMENSION";
 
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";
     public static final String JSPRT_UNSUPPORTED_EVAL_TYPE = "JSPRT_UNSUPPORTED_EVAL_TYPE";

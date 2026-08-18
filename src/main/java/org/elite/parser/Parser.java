@@ -906,11 +906,14 @@ public class Parser extends Scanner {
     // new class[dim?]{init}?
     if (token == LBRACKET) {
       ELNode[] dims = parseArrayDimensions();
-      ELNode[] init = null;
-      if ((dims == null || dims.length == 1) && token == LBRACE) { // FIXME
+      ELNode.TUPLE init = null;
+      if ((dims == null || dims.length == 1) && token == LPAREN) {
+        // FIXME: handle multi-dimensional array initializer
         scan();
         init = parseArrayInitializer();
       }
+      if (dims == null && init == null)
+        throw parseError(_T(EL_MISSING_ARRAY_DIMENSION));
       return new ELNode.ARRAY(p, cls, dims, init);
     }
 
@@ -1005,16 +1008,16 @@ public class Parser extends Scanner {
     return to_a(dims);
   }
 
-  private ELNode[] parseArrayInitializer() {
+  private ELNode.TUPLE parseArrayInitializer() {
+    int p = pos;
     List<ELNode> elems = new ArrayList<>();
-    while (token != RBRACE) {
+    while (token != RPAREN) {
       elems.add(parseSyntaxExpression());
-      if (!scan(COMMA)) {
+      if (!scan(COMMA))
         break;
-      }
     }
-    expect(RBRACE);
-    return to_a(elems);
+    expect(RPAREN);
+    return new ELNode.TUPLE(p, to_a(elems));
   }
 
   ELNode parseEmbedExpression(int p, String str) {

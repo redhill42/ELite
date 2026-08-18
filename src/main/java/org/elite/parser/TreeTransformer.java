@@ -718,7 +718,7 @@ public class TreeTransformer extends ELNode.Visitor
     public void visit(ELNode.ARRAY e) {
         ELNode type = transform(e.type);
         ELNode[] dims = transform(e.dims);
-        ELNode[] init = transform(e.init);
+        ELNode.TUPLE init = (ELNode.TUPLE)transform(e.init);
         if (type == e.type && dims == e.dims && init == e.init)
             result = e;
         else
