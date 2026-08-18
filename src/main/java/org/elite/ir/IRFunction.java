@@ -63,14 +63,6 @@ public class IRFunction {
    */
   private DebugInfo debugInfo;
 
-  /**
-   * Default parameter values (parallel to params; null entries = no default).
-   * Simple literals are evaluated at compile time; null for complex
-   * expressions.
-   * Applied in execute() when caller provides fewer args than paramCount.
-   */
-  private Object[] defaultValues;
-
   // Create a IRFunction skeleton for a standalone function.
   IRFunction(String name, int paramCount, String[] paramNames,
              boolean varargs) {
@@ -91,14 +83,12 @@ public class IRFunction {
 
   // Populate IRFunction with code after compilation.
   void populate(int[] code, int maxLocals, int[] blockOffsets,
-                Object[] constantPool, DebugInfo debugInfo,
-                Object[] defaultValues) {
+                Object[] constantPool, DebugInfo debugInfo) {
     this.code = code;
     this.maxLocals = maxLocals;
     this.blockOffsets = blockOffsets;
     this.constantPool = constantPool;
     this.debugInfo = debugInfo;
-    this.defaultValues = defaultValues;
   }
 
   public boolean isDeclaration() {
@@ -155,21 +145,6 @@ public class IRFunction {
 
   public DebugInfo debugInfo() {
     return debugInfo;
-  }
-
-  /**
-   * Default parameter values (null = no default).
-   */
-  public Object[] defaultValues() {
-    return defaultValues;
-  }
-
-  /**
-   * Return this function with the given default parameter values.
-   */
-  public IRFunction withDefaults(Object[] defs) {
-    defaultValues = defs;
-    return this;
   }
 
   /**

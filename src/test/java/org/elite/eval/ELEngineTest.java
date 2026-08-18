@@ -231,43 +231,43 @@ class ELEngineTest extends EliteTestBase {
         // Regression: default parameter values were not applied in IR mode
         // (INVOKE_DIRECT doesn't fill in defaults). The locals array must
         // be populated with default values for missing arguments.
-        exec("define fib(n, a = 1, b = 1) => n <= 2 ? b : fib(n-1, b, a+b)");
-        assertEquals(144L, evalL("fib(12)"));
-        assertEquals(1L, evalL("fib(1)"));
-        assertEquals(2L, evalL("fib(3)"));
+        String func = "define fib(n, a = 1, b = 1) => n <= 2 ? b : fib(n-1, b, a+b);";
+        assertEquals(144L, evalL(func + "fib(12)"));
+        assertEquals(1L, evalL(func + "fib(1)"));
+        assertEquals(2L, evalL(func + "fib(3)"));
     }
 
     @Test
     void defaultParametersSimpleFunction() {
-        exec("define add(a, b = 10) => a + b");
-        assertEquals(15L, evalL("add(5)"));
-        assertEquals(7L, evalL("add(5, 2)"));
+        String func = "define add(a, b = 10) => a + b;";
+        assertEquals(15L, evalL(func + "add(5)"));
+        assertEquals(7L, evalL(func + "add(5, 2)"));
     }
 
     @Test
     void defaultParametersMultipleDefaults() {
-        exec("define f(a, b = 10, c = 100) => [a, b, c]");
-        assertEquals("[1, 10, 100]", eval("f(1)").toString());
-        assertEquals("[1, 2, 100]", eval("f(1, 2)").toString());
-        assertEquals("[1, 2, 3]", eval("f(1, 2, 3)").toString());
+        String func = "define f(a, b = 10, c = 100) => [a, b, c];";
+        assertEquals("[1, 10, 100]", eval(func + "f(1)").toString());
+        assertEquals("[1, 2, 100]", eval(func + "f(1, 2)").toString());
+        assertEquals("[1, 2, 3]", eval(func + "f(1, 2, 3)").toString());
     }
 
     @Test
     void defaultParametersWithControlFlow() {
         // Default params with recursion and INVOKE_TAIL (TCO) in the else branch.
         // Exercises IRSpecializer deopt splitting around tail-call instructions.
-        exec("define sum(n, acc = 0) => n <= 0 ? acc : sum(n-1, acc+n)");
-        assertEquals(55L, evalL("sum(10)"));
-        assertEquals(0L, evalL("sum(0)"));
-        assertEquals(15L, evalL("sum(5)"));
+        String func = "define sum(n, acc = 0) => n <= 0 ? acc : sum(n-1, acc+n);";
+        assertEquals(55L, evalL(func + "sum(10)"));
+        assertEquals(0L, evalL(func + "sum(0)"));
+        assertEquals(15L, evalL(func + "sum(5)"));
     }
 
     @Test
     void defaultParameterZeroValue() {
         // Zero is a valid default — must not be confused with null/missing
-        exec("define inc(a, delta = 0) => a + delta");
-        assertEquals(5L, evalL("inc(5)"));
-        assertEquals(7L, evalL("inc(5, 2)"));
+        String func = "define inc(a, delta = 0) => a + delta;";
+        assertEquals(5L, evalL(func + "inc(5)"));
+        assertEquals(7L, evalL(func + "inc(5, 2)"));
     }
 
     // ---- Default params with explicit null (P0-2) ----
@@ -277,36 +277,38 @@ class ELEngineTest extends EliteTestBase {
         // Explicitly passing null must NOT be replaced by the default value.
         // Bug: IFNONNULL check in bytecode and execute() couldn't distinguish
         // "not provided" from "explicitly passed null".
-        exec("define f(x = 42) => x");
-        assertEquals(42L, evalL("f()"), "missing arg → default");
-        assertEquals(10L, evalL("f(10)"), "explicit arg → arg");
+        assertEquals(42L, evalL("define f(x = 42) => x; f()"), "missing arg → default");
+        assertEquals(10L, evalL("define f(x = 42) => x; f(10)"), "explicit arg → arg");
         assertNull(eval("f(null)"), "explicit null → null, not 42");
     }
 
     @Test
     void defaultParameterNullWithMultipleDefaults() {
-        exec("define f(a, b = 10, c = 100) => [a, b, c]");
         // Passing null for first param, relying on defaults for others
-        Object r = eval("f(null, 2)");
+        Object r = eval(
+          "define f(a, b = 10, c = 100) => [a, b, c]; f(null, 2)");
         assertEquals("[null, 2, 100]", r.toString());
     }
 
     @Test
     void defaultParameterNullThenDefault() {
-        exec("define f(a = 1, b = 2) => [a, b]");
-        assertEquals("[null, 2]", eval("f(null)").toString(),
-            "null for a, default for b");
-        assertEquals("[null, null]", eval("f(null, null)").toString(),
-            "explicit null for both, no defaults");
+        assertEquals(
+          "[null, 2]",
+          eval("define f(a = 1, b = 2) => [a, b]; f(null)").toString(),
+          "null for a, default for b");
+        assertEquals(
+          "[null, null]",
+          eval("define f(a = 1, b = 2) => [a, b]; f(null, null)").toString(),
+          "explicit null for both, no defaults");
     }
 
     @Test
     void defaultParameterExplicitNullStringDefault() {
-        exec("define greet(name = \"World\") => \"Hello, \" ~ name");
-        assertEquals("Hello, World", eval("greet()"));
-        assertEquals("Hello, Alice", eval("greet(\"Alice\")"));
+        String func = "define greet(name = \"World\") => \"Hello, \" ~ name;";
+        assertEquals("Hello, World", eval(func + "greet()"));
+        assertEquals("Hello, Alice", eval(func + "greet(\"Alice\")"));
         // Explicit null must NOT be replaced by default "World"
-        assertEquals("Hello, null", eval("greet(null)"),
+        assertEquals("Hello, null", eval(func + "greet(null)"),
             "explicit null must stay null, not be replaced by default 'World'");
     }
 

@@ -1710,46 +1710,8 @@ public class BytecodeCompiler {
         .LDC(closure.name())
         .PUSH(closure.paramCount());
 
-      if (closure.defaultValues() == null)
-        mc.ACONST_NULL();
-      else {
-        Object[] defaults = closure.defaultValues();
-        mc.PUSH(defaults.length)
-          .ANEWARRAY(Object.class);
-        for (int i = 0; i < defaults.length; i++) {
-          Object value = defaults[i];
-          mc.DUP();
-          mc.PUSH(i);
-          if (value == null) {
-            mc.ACONST_NULL();
-          } else if (value instanceof Boolean || value instanceof Byte ||
-                     value instanceof Short   || value instanceof Character ||
-                     value instanceof Integer || value instanceof Long) {
-            mc.BOX(value);
-          } else if (value instanceof String) {
-            mc.LDC(value);
-          } else if (value instanceof Symbol) {
-            mc.LDC(((Symbol)value).getName())
-              .INVOKESTATIC(Symbol.class, "valueOf", Symbol.class, String.class);
-          } else if (value instanceof Class) {
-            mc.LDC(Type.getType((Class<?>)value));
-          } else if (value instanceof IRClass c) {
-            mc.LDC(Type.getType(AsmType.toDescriptor(c.internalName)));
-          } else if (value instanceof Field f) {
-            mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
-          } else if (value instanceof Descriptors.Field f) {
-            mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
-          } else {
-            // Load constant from constant pool.
-            loadConstant(mc, value);
-          }
-          mc.AASTORE();
-        }
-      }
-
       mc.INVOKESPECIAL(IRCompiledClosure.class, "<init>", Void.TYPE,
-                       EvaluationContext.class, String.class, int.class,
-                       Object[].class)
+                       EvaluationContext.class, String.class, int.class)
         .RETURN()
         .end();
 

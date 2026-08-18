@@ -20,14 +20,12 @@ public abstract class IRCompiledClosure extends Closure
   private transient EvaluationContext context;
   private final String name;
   private final int paramCount;
-  private final Object[] defaults;
 
   protected IRCompiledClosure(EvaluationContext context, String name,
-                              int paramCount, Object[] defaults) {
+                              int paramCount) {
     this.context = context;
     this.name = name;
     this.paramCount = paramCount;
-    this.defaults = defaults;
   }
 
   @Override
@@ -96,16 +94,9 @@ public abstract class IRCompiledClosure extends Closure
 
   @Override
   public Object call(ELContext elctx, Object[] args) {
-    int nvars = paramCount;
-    int argc = args.length;
-    if ((argc > nvars) || (argc < nvars && defaults == null))
-      throw new EvaluationException(elctx,
-                                    _T(EL_FN_BAD_ARG_COUNT, name, nvars, argc));
-    if (argc != nvars) {
-      Object[] xargs = new Object[nvars];
-      System.arraycopy(args, 0, xargs, 0, argc);
-      System.arraycopy(defaults, argc, xargs, argc, nvars - argc);
-      args = xargs;
+    if (args.length != paramCount) {
+      throw new EvaluationException(
+        elctx, _T(EL_FN_BAD_ARG_COUNT, name, paramCount, args.length));
     }
 
     return execute(getContext(elctx), args);
