@@ -55,6 +55,7 @@ import java.util.stream.Stream;
 import static org.elite.ir.SymbolTable.Symbol;
 import static org.elite.ir.SymbolTable.Scope;
 
+import static org.elite.eval.TypeCoercion.*;
 import static org.elite.ir.IRFormat.*;
 import static org.elite.ir.Opcode.*;
 import static org.elite.eval.ELUtils.*;
@@ -399,14 +400,15 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildStoreVariable(ELNode.IDENT node) {
-    if (node.symbol != null && node.symbol.clazz != null)
+    if (node.symbol != null &&
+        (node.symbol.clazz != null || node.symbol.func != null))
       throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
 
     if (node.symbol != null && node.symbol.scope.isClassScope()) {
       IRClass currentClass = currentScope.enclosingClass();
       IRClass ownerClass = node.symbol.scope.frontier.symbol.clazz;
       if (ownerClass == currentClass) {
-        if (node.id.equals("this") || node.symbol.func != null)
+        if (node.id.equals("this"))
           throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
                                          currentClass.name, node.id));
         if (node.symbol.isFinal() &&
@@ -419,7 +421,7 @@ public class IRBuilder extends ELNode.Visitor {
         else
           current.emitPutField(node.id);
       } else {
-        if (node.symbol.isFinal() || node.symbol.func != null)
+        if (node.symbol.isFinal())
           throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
                                          currentClass.name, node.id));
 
@@ -1678,17 +1680,8 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Build fixed arguments.
     int i = 0;
-    for (; iarg < nargs; iarg++, i++) {
-      if (types[iarg] == Object.class) {
-        build(args[i]);
-      } else {
-        current.emitPushCtx();
-        build(args[i]);
-        buildCoerce(TypeCoercion.getBoxedType(types[iarg]));
-        if (types[iarg].isPrimitive())
-          current.emitUnbox(types[iarg]);
-      }
-    }
+    for (; iarg < nargs; iarg++, i++)
+      buildCoerce(args[i], types[iarg]);
 
     // Build variable arguments.
     if (vargs)
@@ -3053,11 +3046,12 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void emitSuperConstructor(int pos, IRClass initClass) {
+    ELNode[] args = initClass.super_args;
+
     if (initClass.base instanceof IRClass superClass) {
       current.emitPushThis();
       current.emitPushEnv();
-      ELNode[] args = getCallArgs(pos, superClass, initClass.super_args,
-                                  initClass.super_keys);
+      args = getCallArgs(pos, superClass, args, initClass.super_keys);
       buildCallArgs(superClass.init_proc, args);
       current.emitConstructor(superClass);
     } else {
@@ -3065,7 +3059,7 @@ public class IRBuilder extends ELNode.Visitor {
       Class<?> baseClass = (Class<?>)initClass.base;
       List<Constructor<?>> constructors = new ArrayList<>();
       for (Constructor<?> c : baseClass.getDeclaredConstructors()) {
-        if (c.getParameterCount() == initClass.super_args.length &&
+        if (c.getParameterCount() == args.length &&
             (Modifier.isPublic(c.getModifiers()) ||
              Modifier.isProtected(c.getModifiers())))
           constructors.add(c);
@@ -3079,20 +3073,13 @@ public class IRBuilder extends ELNode.Visitor {
         Constructor<?> cons = constructors.get(0);
         Class<?>[] types = cons.getParameterTypes();
         current.emitPushThis();
-        for (int i = 0; i < initClass.super_args.length; i++) {
-          if (types[i] == Object.class) {
-            build(initClass.super_args[i]);
-          } else {
-            current.emitPushCtx();
-            build(initClass.super_args[i]);
-            buildCoerce(types[i]);
-          }
-        }
+        for (int i = 0; i < args.length; i++)
+          buildCoerce(args[i], types[i]);
         current.emitConstructor(cons);
       } else {
         // For overload constructor, resolve construct at runtime.
-        buildTuple(Object.class, initClass.super_args);
-        current.emitConstructor(initClass.super_args.length, baseClass);
+        buildTuple(Object.class, args);
+        current.emitConstructor(args.length, baseClass);
       }
     }
   }
@@ -3843,17 +3830,8 @@ public class IRBuilder extends ELNode.Visitor {
     if (!overload) {
       Class<?>[] types = cons.getParameterTypes();
       current.emitNew(cls);
-      for (int i = 0; i < args.length; i++) {
-        if (types[i] == Object.class) {
-          build(args[i]);
-        } else {
-          current.emitPushCtx();
-          build(args[i]);
-          buildCoerce(TypeCoercion.getBoxedType(types[i]));
-          if (types[i].isPrimitive())
-            current.emitUnbox(types[i]);
-        }
-      }
+      for (int i = 0; i < args.length; i++)
+        buildCoerce(args[i], types[i]);
       current.emitConstructor(cons);
     } else {
       current.emitPushEnv();
@@ -4435,6 +4413,30 @@ public class IRBuilder extends ELNode.Visitor {
   private void buildCoerce(Class<?> type) {
     current.emitInvokeDynamic(new Descriptors.Indy(
       coerceBootstrap, "coerce", type, ELContext.class, Object.class));
+  }
+
+  private void buildCoerce(ELNode node, Class<?> type) {
+    // No coercion for Object.
+    if (type == Object.class) {
+      build(node);
+      return;
+    }
+
+    // No coercion if constant matches target type.
+    if (node instanceof ELNode.Constant cst) {
+      Object value = cst.getValue(null);
+      if (value != null && getBoxedType(type).isInstance(value)) {
+        buildConst(value);
+        if (type.isPrimitive())
+          current.emitUnbox(type);
+        return;
+      }
+    }
+
+    // Coerce at runtime.
+    current.emitPushCtx();
+    build(node);
+    buildCoerce(type);
   }
 
   private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {

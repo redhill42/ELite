@@ -1608,7 +1608,7 @@ public final class DynamicBootstrap {
 
   private static int resolveConstructor(Class<?> superClass, Object[] args) {
     int candidateIndex = -1;
-    int shortestDistance = 0;
+    int shortestDistance = Integer.MAX_VALUE;
     int index = 0;
 
     for (Constructor<?> cons : superClass.getDeclaredConstructors()) {
@@ -1621,14 +1621,9 @@ public final class DynamicBootstrap {
       int d = distanceof(types, args);
       if (d == 0)
         return index;
-      if (d != -1) {
-        if (candidateIndex == -1) {
-          candidateIndex = index;
-          shortestDistance = d;
-        } else if (d < shortestDistance) {
-          candidateIndex = index;
-          shortestDistance = d;
-        }
+      if (d != -1 && d < shortestDistance) {
+        candidateIndex = index;
+        shortestDistance = d;
       }
       index++;
     }
