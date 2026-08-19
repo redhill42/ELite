@@ -67,11 +67,11 @@ public class ELiteScriptEngineFactory implements ScriptEngineFactory
         } else if (key.equals(ScriptEngine.ENGINE)) {
             return "ELite";
         } else if (key.equals(ScriptEngine.ENGINE_VERSION)) {
-            return "1.0.1";
+            return "2.0.0";
         } else if (key.equals(ScriptEngine.LANGUAGE)) {
             return "ELite";
         } else if (key.equals(ScriptEngine.LANGUAGE_VERSION)) {
-            return "1.0.1";
+            return "2.0.0";
         } else if (key.equals("THREADING")) {
             return "MULTITHREADED";
         } else {

@@ -16,25 +16,25 @@ mvn package -DskipTests
 ```
 
 The build produces:
-- `target/elite-1.0-bin/elite-1.0/` — distribution directory
-- `target/elite-1.0.jar` — shaded JAR (self-contained)
+- `target/elite-2.0.0-bin/elite-2.0.0/` — distribution directory
+- `target/elite-2.0.0.jar` — shaded JAR (self-contained)
 
 ### Running
 
 ```bash
-cd target/elite-1.0-bin/elite-1.0
+cd target/elite-2.0.0-bin/elite-2.0.0
 bin/xel                  # interactive REPL
 bin/xel sample/hello.xel # run a script file
 ```
 
 Or use the JAR directly:
 ```bash
-java -jar target/elite-1.0.jar
+java -jar target/elite-2.0.0.jar
 ```
 
 ### Embedded Use (Java)
 
-ELite implements `javax.script.ScriptEngine` (JSR 223). Add `elite-1.0.jar` to your classpath and:
+ELite implements `javax.script.ScriptEngine` (JSR 223). Add `elite-2.0.0.jar` to your classpath and:
 
 ```java
 import javax.script.*;

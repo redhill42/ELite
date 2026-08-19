@@ -44,12 +44,11 @@ public class ELProgram implements Serializable
     /**
      * Optimization level for expression evaluation.
      * <ul>
-     *   <li>0 — AST interpreter (correctness baseline)</li>
-     *   <li>1 — IR interpreter (for IR verification only)</li>
-     *   <li>2 — JVM bytecode (default; no fallback to interpreter)</li>
-     *   <li>3 — JVM bytecode (reserved for aggressive optimizations; currently same as 2)</li>
+     *   <li>0 — AST interpreter (correctness baseline and debugging)</li>
+     *   <li>nonzero — JVM bytecode executor (JIT compilation; the default)</li>
      * </ul>
-     * Read from system property {@code elite.opt.level}; defaults to 2 (bytecode).
+     * Read from system property {@code elite.opt.level}; defaults to 2,
+     * which selects the bytecode executor.
      */
     public static final int OPT_LEVEL = Integer.getInteger("elite.opt.level", 2);
 
@@ -162,8 +161,8 @@ public class ELProgram implements Serializable
     }
 
     /**
-     * Compile program into IR. The IR can be executed by IR interpreter or
-     * compile to Java bytecode by BytecodeCompiler.
+     * Compile program into IR. The IR is then lowered to JVM bytecode by
+     * BytecodeCompiler.
      */
     public IRProgram compile(ELContext elctx) {
         // Import modules and classes to populate global context. The global
