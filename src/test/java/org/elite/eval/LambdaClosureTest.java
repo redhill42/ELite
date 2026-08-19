@@ -88,16 +88,16 @@ class LambdaClosureTest extends EliteTestBase {
 
     @Test
     void defaultParameter() {
-        String func = "define greet(name = \"World\") => \"Hello, \" ~ name;";
-        assertEquals("Hello, World", eval(func + "greet()"));
-        assertEquals("Hello, Tom", eval(func + "greet(\"Tom\")"));
+        exec("define greet(name = \"World\") => \"Hello, \" ~ name");
+        assertEquals("Hello, World", eval("greet()"));
+        assertEquals("Hello, Tom", eval("greet(\"Tom\")"));
     }
 
     @Test
     void multipleDefaultParams() {
-        String func = "define f(a = 1, b = 2) => a + b;";
-        assertEquals(3L, evalL(func + "f()"));
-        assertEquals(5L, evalL(func + "f(3)"));
+        exec("define f(a = 1, b = 2) => a + b");
+        assertEquals(3L, evalL("f()"));
+        assertEquals(5L, evalL("f(3)"));
     }
 
     // ---- Variadic functions ----

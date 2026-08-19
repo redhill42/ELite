@@ -3056,7 +3056,91 @@ public class IRBuilder extends ELNode.Visitor {
     // Returns null for void function. Other return type has no meaning in
     // current implementation where we lacks type inferrer.
     nested.emitReturn("void".equals(node.rtype));
-    return nested.finish();
+
+    return nested.finish().withDefaults(getDefaultValues(node.vars));
+  }
+
+  /**
+   * Extract default parameter values from lambda definitions.
+   */
+  private Object[] getDefaultValues(ELNode.DEFINE[] vars) {
+    Object[] defs = null;
+    for (int i = 0; i < vars.length; i++) {
+      if (vars[i].expr != null) {
+        if (defs == null)
+          defs = new Object[vars.length];
+        defs[i] = const_value(vars[i].expr);
+      }
+    }
+    return defs;
+  }
+
+  private Object const_value(ELNode node) {
+    if (node instanceof ELNode.NUMBER x)
+      return x.value;
+    if (node instanceof ELNode.STRINGVAL x)
+      return x.value;
+    if (node instanceof ELNode.CHARVAL x)
+      return x.value;
+    if (node instanceof ELNode.BOOLEANVAL x)
+      return x.value;
+    if (node instanceof ELNode.SYMBOL x)
+      return x.value;
+    if (node instanceof ELNode.REGEXP x)
+      return x.value;
+    if (node instanceof ELNode.NIL)
+      return Cons.nil();
+    if (node instanceof ELNode.NULL)
+      return null;
+
+    if (node instanceof ELNode.TUPLE x) {
+      Object[] a = new Object[x.elems.length];
+      for (int i = 0; i < a.length; i++)
+        a[i] = const_value(x.elems[i]);
+      return a;
+    }
+
+    if (node instanceof ELNode.CONS x && !x.delay) {
+      Object h = const_value(x.head);
+      Object t = const_value(x.tail);
+      if (t instanceof Seq)
+        return new Cons(h, (Seq)t);
+    }
+
+    if (node instanceof ELNode.IDENT var && var.symbol != null &&
+        var.symbol.clazz != null) {
+      return var.symbol.clazz;
+    }
+
+    if (node instanceof ELNode.ACCESS acc &&
+        acc.index instanceof ELNode.STRINGVAL key) {
+      if (acc.right instanceof ELNode.IDENT base &&
+          base.symbol != null && base.symbol.clazz != null) {
+        for (ELNode.DEFINE def : base.symbol.clazz.node.cvars) {
+          if (def.symbol.isPublic() &&
+              !(def.symbol.def.expr instanceof ELNode.LAMBDA) &&
+              !(def.symbol.def.expr instanceof ELNode.CLASSDEF)) {
+            return new Descriptors.Field(base.symbol.clazz, key.value);
+          }
+        }
+      }
+
+      Class<?> c = resolveJavaClass(acc.right);
+      if (c != null) {
+        try {
+          Field f = c.getField(key.value);
+          if (Modifier.isPublic(f.getModifiers()) &&
+              Modifier.isStatic(f.getModifiers()))
+            return f;
+        } catch (NoSuchFieldException e) { /* fallthrough */ }
+      }
+    }
+
+    Class<?> c = resolveJavaClass(node);
+    if (c != null)
+      return c;
+
+    throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
   }
 
   public void visit(ELNode.CLASSDEF node) {
@@ -3920,7 +4004,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     func.populate(merged.toArray(), maxLocals, offsets,
                   constants.toArray(new Object[0]),
-                  buildDebugInfo());
+                  buildDebugInfo(), null);
     return func;
   }
 

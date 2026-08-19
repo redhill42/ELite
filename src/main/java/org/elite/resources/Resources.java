@@ -114,6 +114,7 @@ public final class Resources
     public static final String EL_NO_METHOD_BODY = "EL_NO_METHOD_BODY";
     public static final String EL_INVOKE_ABSTRACT_METHOD = "EL_INVOKE_ABSTRACT_METHOD";
     public static final String EL_STATEMENT_NOT_IN_LOOP = "EL_STATEMENT_NOT_IN_LOOP";
+    public static final String EL_DEFAULT_VALUE_NOT_CONSTANT = "EL_DEFAULT_VALUE_NOT_CONSTANT";
     public static final String EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER = "EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER";
     public static final String EL_CLASS_NOT_FOUND = "EL_CLASS_NOT_FOUND";
     public static final String EL_NOT_A_CLASS = "EL_NOT_A_CLASS";
