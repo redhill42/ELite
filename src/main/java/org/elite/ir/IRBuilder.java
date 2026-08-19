@@ -3032,16 +3032,8 @@ public class IRBuilder extends ELNode.Visitor {
     // pre-allocated slot, avoiding collisions.
     nested.reserveSlots(node.scope.maxSlots);
 
-    if (initClass != null) {
-      IRClass superClass = (IRClass)initClass.base;
-      nested.current.emitPushThis();
-      nested.current.emitPushEnv();
-      ELNode[] args = nested.getCallArgs(node.pos, superClass,
-                                         initClass.super_args,
-                                         initClass.super_keys);
-      nested.buildCallArgs(superClass.init_proc, args);
-      nested.current.emitConstructor(superClass);
-    }
+    if (initClass != null)
+      nested.emitSuperConstructor(node.pos, initClass);
 
     for (ELNode.DEFINE var : node.vars) {
       // Define global for captured lamba parameters.
@@ -3058,6 +3050,51 @@ public class IRBuilder extends ELNode.Visitor {
     nested.emitReturn("void".equals(node.rtype));
 
     return nested.finish().withDefaults(getDefaultValues(node.vars));
+  }
+
+  private void emitSuperConstructor(int pos, IRClass initClass) {
+    if (initClass.base instanceof IRClass superClass) {
+      current.emitPushThis();
+      current.emitPushEnv();
+      ELNode[] args = getCallArgs(pos, superClass, initClass.super_args,
+                                  initClass.super_keys);
+      buildCallArgs(superClass.init_proc, args);
+      current.emitConstructor(superClass);
+    } else {
+      // Collect all constructor with the given arity.
+      Class<?> baseClass = (Class<?>)initClass.base;
+      List<Constructor<?>> constructors = new ArrayList<>();
+      for (Constructor<?> c : baseClass.getDeclaredConstructors()) {
+        if (c.getParameterCount() == initClass.super_args.length &&
+            (Modifier.isPublic(c.getModifiers()) ||
+             Modifier.isProtected(c.getModifiers())))
+          constructors.add(c);
+      }
+
+      if (constructors.isEmpty())
+        throw reportError(pos, _T(EL_CONSTRUCTOR_NOT_FOUND, baseClass.getName()));
+
+      if (constructors.size() == 1) {
+        // For non-overload constructor, generate the constructor invocation.
+        Constructor<?> cons = constructors.get(0);
+        Class<?>[] types = cons.getParameterTypes();
+        current.emitPushThis();
+        for (int i = 0; i < initClass.super_args.length; i++) {
+          if (types[i] == Object.class) {
+            build(initClass.super_args[i]);
+          } else {
+            current.emitPushCtx();
+            build(initClass.super_args[i]);
+            buildCoerce(types[i]);
+          }
+        }
+        current.emitConstructor(cons);
+      } else {
+        // For overload constructor, resolve construct at runtime.
+        buildTuple(Object.class, initClass.super_args);
+        current.emitConstructor(initClass.super_args.length, baseClass);
+      }
+    }
   }
 
   /**
@@ -3224,11 +3261,7 @@ public class IRBuilder extends ELNode.Visitor {
       buildLambda(clazz.clinit_proc);
 
     // Build instance init proc.
-    if (clazz.base instanceof IRClass) {
-      buildLambda(clazz.init_proc, clazz);
-    } else {
-      buildLambda(clazz.init_proc);
-    }
+    buildLambda(clazz.init_proc, clazz);
 
     buildConst(clazz);
   }

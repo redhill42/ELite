@@ -17,6 +17,7 @@
 package org.elite.ir;
 
 import elite.lang.Symbol;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
@@ -152,6 +153,8 @@ final class IRPrinter {
     if (c instanceof Field f)
       return "<" + f.getDeclaringClass().getSimpleName() + "." + f.getName() +
              ">";
+    if (c instanceof Constructor<?> cons)
+      return "<" + cons.getDeclaringClass().getSimpleName() + ">";
     if (c instanceof Descriptors.Indy i)
       return i.name() + "(" + i.bootstrap().getName() + ")";
     return c.getClass().getSimpleName();

@@ -20,6 +20,7 @@ import org.elite.eval.DelegatingELContext;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
+import org.elite.eval.EvaluationException;
 import org.elite.eval.ExternalImports;
 import org.elite.eval.Frame;
 import org.elite.eval.Runtime;
@@ -29,6 +30,7 @@ import org.elite.eval.TypeCoercion;
 import org.elite.eval.UserException;
 import org.elite.eval.closure.TypedClosure;
 import org.elite.parser.ELNode;
+import org.elite.resources.Resources;
 import org.elite.util.DynamicClassLoader;
 import org.elite.util.asm.AsmType;
 import org.elite.util.asm.ClassAssembly;
@@ -50,11 +52,13 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -512,12 +516,6 @@ public class BytecodeCompiler {
         .FIELD("varargs", initFunc.isVarArgs())
         .ARRAY("parameterNames", initFunc.paramNames())
         .end();
-
-      if (clazz.base instanceof Class) {
-        // FIXME: invoke super constructor of Java base class.
-        mc.THIS()
-          .INVOKESPECIAL((Class<?>)clazz.base, "<init>", Void.TYPE, NO_ARGS);
-      }
 
       if (className.equals(rootBaseClass)) {
         // Add $context field to save the ELContext for methods invoked without
@@ -1506,8 +1504,9 @@ public class BytecodeCompiler {
             mc.INVOKESPECIAL(irc.internalName, "<init>", Void.TYPE,
                              EvaluationContext.class, Object[].class);
           }
-        } else {
-          Constructor<?> cons = (Constructor<?>)c;
+        } else if (c instanceof Class<?>) {
+          emitSuperConstructor((Class<?>)c, v.count());
+        } else if (c instanceof Constructor<?> cons) {
           mc.INVOKESPECIAL(cons.getDeclaringClass(), "<init>", Void.TYPE,
                            cons.getParameterTypes());
         }
@@ -1778,6 +1777,82 @@ public class BytecodeCompiler {
       createdClosures.add(closure);
       consumer.acceptClass(name, cc.end());
       return name;
+    }
+
+    private static final Handle RESOLVE_CONSTRUCTOR_BOOTSTRAP =
+      new Handle(
+        Opcodes.H_INVOKESTATIC, AsmType.toInternalName(DynamicBootstrap.class),
+        "resolveConstructorBootstrap",
+        AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
+                                    String.class, MethodType.class, Class.class),
+        false);
+
+    private void emitSuperConstructor(Class<?> baseClass, int arity) {
+      List<Constructor<?>> constructors = new ArrayList<>();
+      for (Constructor<?> c : baseClass.getDeclaredConstructors()) {
+        if (c.getParameterCount() == arity &&
+            (Modifier.isPublic(c.getModifiers()) ||
+             Modifier.isProtected(c.getModifiers())))
+          constructors.add(c);
+      }
+      assert constructors.size() > 1;
+
+      Label[] labels = new Label[constructors.size()];
+      for (int i = 0; i < labels.length; i++)
+        labels[i] = new Label();
+      Label dflt = new Label(), done = new Label();
+
+      int argsSlot = TMP_SLOT();
+      mc.ASTORE(argsSlot);
+
+      mc.ALOAD(argsSlot)
+        .INVOKEDYNAMIC(RESOLVE_CONSTRUCTOR_BOOTSTRAP, "super",
+                       AsmType.getMethodDescriptor(int.class, Object[].class),
+                       Type.getType(baseClass))
+        .TABLESWITCH(0, constructors.size() - 1, labels, dflt);
+
+      for (int i = 0; i < constructors.size(); i++) {
+        Constructor<?> cons = constructors.get(i);
+        Class<?>[] types = cons.getParameterTypes();
+        mc.label(labels[i]);
+        mc.THIS();
+        for (int j = 0; j < types.length; j++) {
+          if (types[j] == Object.class) {
+            mc.ALOAD(argsSlot)
+              .PUSH(j)
+              .AALOAD();
+          } else {
+            mc.ALOAD(S_CTX())
+              .ALOAD(argsSlot)
+              .PUSH(j)
+              .AALOAD()
+              .INVOKEDYNAMIC(COERCE_BOOTSTRAP, "coerce",
+                             AsmType.getMethodDescriptor(
+                               types[j], ELContext.class, Object.class));
+          }
+        }
+        mc.INVOKESPECIAL(baseClass, "<init>", void.class, types);
+        mc.GOTO(done);
+      }
+
+      mc.label(dflt)
+        .NEW(EvaluationException.class)
+        .DUP()
+        .ALOAD(S_CTX())
+        .GETSTATIC(Resources.class, EL_CONSTRUCTOR_NOT_FOUND, String.class)
+        .ICONST_1()
+        .ANEWARRAY(Object.class)
+        .DUP()
+        .ICONST_0()
+        .LDC(baseClass.getName())
+        .AASTORE()
+        .INVOKESTATIC(Resources.class, "getText", String.class, String.class,
+                      Object[].class)
+        .INVOKESPECIAL(EvaluationException.class, "<init>", void.class,
+                       ELContext.class, String.class)
+        .ATHROW();
+
+      mc.label(done);
     }
 
     private InstructionView peekNext(InstructionView v) {

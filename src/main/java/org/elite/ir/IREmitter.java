@@ -378,6 +378,10 @@ final class IREmitter {
     emit(CONSTRUCTOR, 0, builder.putConstant(clazz));
   }
 
+  public void emitConstructor(int arity, Class<?> baseClass) {
+    emit(CONSTRUCTOR, arity, builder.putConstant(baseClass));
+  }
+
   public void emitNewArray(Class<?> type) {
     emit(NEW_ARRAY, 0, builder.putConstant(type));
   }

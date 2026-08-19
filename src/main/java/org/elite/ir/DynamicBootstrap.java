@@ -72,6 +72,7 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_invokeDispatcher;
   private static final MethodHandle MH_callDispatcher;
   private static final MethodHandle MH_constructDispatcher;
+  private static final MethodHandle MH_resolveConstructorDispatcher;
 
   private static final MethodHandle MH_mapGet;
   private static final MethodHandle MH_mapPut;
@@ -141,6 +142,10 @@ public final class DynamicBootstrap {
         DynamicBootstrap.class, "constructDispatcher",
         methodType(Object.class, Lookup.class, MutableCallSite.class,
                    Class.class, EvaluationContext.class, Object[].class));
+
+      MH_resolveConstructorDispatcher = lookup.findStatic(
+        DynamicBootstrap.class, "resolveConstructorDispatcher",
+        methodType(int.class, MutableCallSite.class, Class.class, Object[].class));
 
       MH_mapGet = lookup.findVirtual(
         Map.class, "get", methodType(Object.class, Object.class));
@@ -1565,5 +1570,86 @@ public final class DynamicBootstrap {
 
     // Directly invoke target for current call.
     return target.invokeExact(env, args);
+  }
+
+  //=------------------------------------------------------------------------=//
+
+  @SuppressWarnings("unused")
+  public static CallSite resolveConstructorBootstrap(MethodHandles.Lookup lookup,
+                                                     String name,
+                                                     MethodType callSiteType,
+                                                     Class<?> superClass) {
+    MutableCallSite cs = new MutableCallSite(callSiteType);
+    MethodHandle target = insertArguments(MH_resolveConstructorDispatcher,
+                                          0, cs, superClass);
+    cs.setTarget(target);
+    return cs;
+  }
+
+  private static int resolveConstructorDispatcher(MutableCallSite cs,
+                                                  Class<?> superClass,
+                                                  Object[] args) {
+    int index = resolveConstructor(superClass, args);
+    MethodHandle target = constant(int.class, index);
+    target = dropArguments(target, 0, Object[].class);
+
+    Class<?>[] types = typeOf(null, args);
+    MethodHandle guard = insertArguments(MH_invokeTypesEqual, 0, (Object)null);
+    guard = insertArguments(guard, 1, (Object)types);
+
+    // Create PIC guard.
+    MethodHandle fallback = cs.getTarget();
+    MethodHandle guarded = guardWithTest(guard, target, fallback);
+    cs.setTarget(guarded);
+
+    // Directly return index for current call.
+    return index;
+  }
+
+  private static int resolveConstructor(Class<?> superClass, Object[] args) {
+    int candidateIndex = -1;
+    int shortestDistance = 0;
+    int index = 0;
+
+    for (Constructor<?> cons : superClass.getDeclaredConstructors()) {
+      if (cons.getParameterCount() != args.length ||
+          !(Modifier.isPublic(cons.getModifiers()) ||
+            Modifier.isProtected(cons.getModifiers())))
+        continue;
+
+      Class<?>[] types = cons.getParameterTypes();
+      int d = distanceof(types, args);
+      if (d == 0)
+        return index;
+      if (d != -1) {
+        if (candidateIndex == -1) {
+          candidateIndex = index;
+          shortestDistance = d;
+        } else if (d < shortestDistance) {
+          candidateIndex = index;
+          shortestDistance = d;
+        }
+      }
+      index++;
+    }
+
+    return candidateIndex;
+  }
+
+  private static int distanceof(Class<?>[] types, Object[] args) {
+    int distance = 0;
+    for (int i = 0; i < types.length; i++) {
+      int d = distanceof(args[i], types[i]);
+      if (d == -1)
+        return -1;
+      distance += d;
+    }
+    return distance;
+  }
+
+  private static int distanceof(Object arg, Class<?> type) {
+    if (arg == null)
+      return TypeCoercion.GUESSED_DISTANCE;
+    return TypeCoercion.distanceof(arg.getClass(), type);
   }
 }

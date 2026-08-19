@@ -92,6 +92,7 @@ public final class Resources
     public static final String EL_INVALID_METHOD_EXPRESSION = "EL_INVALID_METHOD_EXPRESSION";
     public static final String EL_PROPERTY_NOT_FOUND = "EL_PROPERTY_NOT_FOUND";
     public static final String EL_METHOD_NOT_FOUND = "EL_METHOD_NOT_FOUND";
+    public static final String EL_CONSTRUCTOR_NOT_FOUND = "EL_CONSTRUCTOR_NOT_FOUND";
     public static final String EL_UNDEFINED_IDENTIFIER = "EL_UNDEFINED_IDENTIFIER";
     public static final String EL_REDEFINED_IDENTIFIER = "EL_REDEFINED_IDENTIFIER";
     public static final String EL_VARIABLE_NOT_WRITABLE = "EL_VARIABLE_NOT_WRITABLE";
