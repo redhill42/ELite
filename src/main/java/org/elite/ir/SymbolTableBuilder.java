@@ -118,6 +118,7 @@ public final class SymbolTableBuilder {
         cdef.symbol = sym;
       }
 
+      scan(e.type);
       scan(e.expr);
     }
 
@@ -134,6 +135,8 @@ public final class SymbolTableBuilder {
         }
         scan(param.expr);
       }
+
+      scan(e.rtype);
 
       // Lambda has its own evaluation context, no need to create redundant
       // context for compound scope.
@@ -479,6 +482,7 @@ public final class SymbolTableBuilder {
         return;
 
       if (pat instanceof ELNode.DEFINE def) {
+        scan(def.type);
         if (!"_".equals(def.id)) {
           if (bind) {
             def.symbol = table.define(def);
@@ -490,9 +494,8 @@ public final class SymbolTableBuilder {
         }
       } else if (pat instanceof ELNode.IDENT ident) {
         var sym = table.lookupLocal(ident.id);
-        if (sym != null) {
+        if (sym != null)
           ident.symbol = sym;
-        }
       } else if (pat instanceof ELNode.TUPLE t) {
         for (ELNode e : t.elems)
           collectPatternBindings(e, bind);
@@ -503,23 +506,14 @@ public final class SymbolTableBuilder {
         for (ELNode v : m.values)
           collectPatternBindings(v, bind);
       } else if (pat instanceof ELNode.OR or) {
-        // Only left pattern needs binding, right pattern
-        // should have same bindings as left, this is guaranteed
-        // by Parser.
+        // Only left pattern needs binding, right pattern should have same
+        // bindings as left. This is guaranteed by Parser.
         collectPatternBindings(or.left, bind);
         collectPatternBindings(or.right, false);
       } else if (pat instanceof ELNode.NOT not) {
         collectPatternBindings(not.right, bind);
       } else if (pat instanceof ELNode.NEW data) {
-        var sym = table.lookup(((ELNode.IDENT)data.base).id);
-        if (sym != null) {
-          data.base.symbol = sym;
-          if (!inScope(sym))
-            sym.captured = true;
-        } else {
-          undefined.add(new Undefined((ELNode.IDENT)data.base,
-                                      table.currentScope(), false));
-        }
+        scan(data.base);
         for (ELNode v : data.args)
           collectPatternBindings(v, bind);
       }

@@ -37,11 +37,13 @@ public class DefaultVisitor extends ELNode.Visitor
     }
 
     public void visit(ELNode.LAMBDA e) {
+        scan(e.rtype);
         scan(e.vars);
         scan(e.body);
     }
 
     public void visit(ELNode.DEFINE e) {
+        scan(e.type);
         scan(e.meta);
         scan(e.expr);
     }
@@ -193,6 +195,7 @@ public class DefaultVisitor extends ELNode.Visitor
 
     public void visit(ELNode.TRY e) {
         scan(e.body);
+        scan(e.types);
         scan(e.handlers);
         scan(e.finalizer);
     }

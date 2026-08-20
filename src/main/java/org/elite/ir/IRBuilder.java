@@ -28,7 +28,6 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.Runtime;
-import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
@@ -355,9 +354,8 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.IDENT node) {
-    if (node.symbol != null &&
-        node.symbol.def.expr instanceof ELNode.CLASSDEF cdef) {
-      buildConst(cdef.symbol.clazz);
+    if (node.symbol != null && node.symbol.clazz != null) {
+      buildConst(node.symbol.clazz);
     } else if (node.symbol != null && node.symbol.scope.isClassScope()) {
       IRClass currentClass = currentScope.enclosingClass();
       IRClass ownerClass = node.symbol.scope.frontier.symbol.clazz;
@@ -390,12 +388,13 @@ public class IRBuilder extends ELNode.Visitor {
           current.emitGetField(ownerClass, node.id);
         }
       }
-    } else if (buildLoadClassMember(node.pos, node.id, false)) {
-      // already done.
-    } else if (node.symbol == null || node.symbol.captured) {
-      current.emitPushGlobal(node.id);
     } else {
-      current.emitPushVar(node.symbol.slot);
+      if (node.symbol == null && buildLoadClassMember(node.pos, node.id, false))
+        return;
+      if (node.symbol == null || node.symbol.captured)
+        current.emitPushGlobal(node.id);
+      else
+        current.emitPushVar(node.symbol.slot);
     }
   }
 
@@ -438,16 +437,15 @@ public class IRBuilder extends ELNode.Visitor {
           current.emitPutField(ownerClass, node.id);
         }
       }
-    } else if (buildStoreClassMember(node.pos, node.id, false)) {
-      // already done.
     } else {
       if (node.symbol != null && node.symbol.isFinal())
         throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
-      if (node.symbol == null || node.symbol.captured) {
+      if (node.symbol == null && buildStoreClassMember(node.pos, node.id, false))
+        return;
+      if (node.symbol == null || node.symbol.captured)
         current.emitStoreGlobal(node.id);
-      } else {
+      else
         current.emitStoreVar(node.symbol.slot);
-      }
     }
   }
 
@@ -794,35 +792,6 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private IRClass resolveIRClass(ELNode node) {
-    if (node instanceof ELNode.IDENT var) {
-      if (var.symbol != null && var.symbol.clazz != null)
-        return var.symbol.clazz;
-    }
-
-    if (node instanceof ELNode.ACCESS acc &&
-        acc.index instanceof ELNode.STRINGVAL key) {
-      IRClass c = resolveIRClass(acc.right);
-      if (c != null) {
-        for (ELNode.DEFINE def : c.node.cvars) {
-          if (def.id.equals(key.value) && def.symbol.clazz != null) {
-            if (!def.symbol.isPublic())
-              throw reportError(node.pos, _T(EL_ILLEGAL_ACCESS, c.name, def.id));
-            return def.symbol.clazz;
-          }
-        }
-
-        for (ELNode.DEFINE def : c.node.ivars) {
-          if (def.id.equals(key.value) && def.symbol.clazz != null)
-            throw reportError(node.pos,
-              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, def.id));
-        }
-      }
-    }
-
-    return null;
-  }
-
   private Symbol getOuterClassMember(ELNode node, String key) {
     if (node instanceof ELNode.ACCESS acc &&
         acc.right instanceof ELNode.IDENT base &&
@@ -1039,6 +1008,76 @@ public class IRBuilder extends ELNode.Visitor {
     // Evaluate base and generate dynamic call.
     buildTuple(node.args);
     buildDynamicCall(node.keys);
+  }
+
+  private IRClass resolveIRClass(ELNode node) {
+    if (node instanceof ELNode.IDENT var) {
+      if (var.symbol != null && var.symbol.clazz != null)
+        return var.symbol.clazz;
+    }
+
+    if (node instanceof ELNode.ACCESS acc &&
+        acc.index instanceof ELNode.STRINGVAL key) {
+      IRClass c = resolveIRClass(acc.right);
+      if (c != null) {
+        for (ELNode.DEFINE def : c.node.cvars) {
+          if (def.id.equals(key.value) && def.symbol.clazz != null) {
+            if (!def.symbol.isPublic())
+              throw reportError(node.pos, _T(EL_ILLEGAL_ACCESS, c.name, def.id));
+            return def.symbol.clazz;
+          }
+        }
+
+        for (ELNode.DEFINE def : c.node.ivars) {
+          if (def.id.equals(key.value) && def.symbol.clazz != null)
+            throw reportError(node.pos,
+              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, def.id));
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private Class<?> resolveJavaClass(ELNode base) {
+    return resolveJavaClass(base, false);
+  }
+
+  private Class<?> resolveJavaClass(ELNode node, boolean load) {
+    if (node instanceof ELNode.IDENT var && var.symbol != null &&
+        var.symbol.def.expr instanceof ELNode.CLASS c) {
+      return loadClassAtCompileTime(node.pos, c.name);
+    }
+
+    StringBuilder buf = new StringBuilder();
+    while (node instanceof ELNode.ACCESS acc) {
+      if (!(acc.index instanceof ELNode.STRINGVAL str))
+        return null;
+      buf.insert(0, str.value);
+      buf.insert(0, '.');
+      node = acc.right;
+    }
+
+    if (node instanceof ELNode.IDENT var) {
+      buf.insert(0, var.id);
+      if (var.symbol == null) {
+        if (load)
+          return loadClassAtCompileTime(node.pos, buf.toString());
+        else
+          return resolveClassAtCompileTime(buf.toString());
+      }
+    }
+
+    if (load)
+      throw reportError(node.pos, _T(EL_CLASS_NOT_FOUND, buf.toString()));
+    return null;
+  }
+
+  Object resolveClass(ELNode node) {
+    IRClass irc = resolveIRClass(node);
+    if (irc != null)
+      return irc;
+    return resolveJavaClass(node, true);
   }
 
   private int indexOfVar(String name, ELNode.DEFINE[] vars, boolean varargs) {
@@ -1614,40 +1653,6 @@ public class IRBuilder extends ELNode.Visitor {
     return mc.getJavaMethod();
   }
 
-  private Class<?> resolveJavaClass(ELNode base) {
-    return resolveJavaClass(base, false);
-  }
-
-  private Class<?> resolveJavaClass(ELNode node, boolean load) {
-    if (node instanceof ELNode.IDENT var && var.symbol != null &&
-        var.symbol.def.expr instanceof ELNode.CLASS c) {
-      return loadClassAtCompileTime(node.pos, c.name);
-    }
-
-    StringBuilder buf = new StringBuilder();
-    while (node instanceof ELNode.ACCESS acc) {
-      if (!(acc.index instanceof ELNode.STRINGVAL str))
-        return null;
-      buf.insert(0, str.value);
-      buf.insert(0, '.');
-      node = acc.right;
-    }
-
-    if (node instanceof ELNode.IDENT var) {
-      buf.insert(0, var.id);
-      if (var.symbol == null) {
-        if (load)
-          return loadClassAtCompileTime(node.pos, buf.toString());
-        else
-          return resolveClassAtCompileTime(buf.toString());
-      }
-    }
-
-    if (load)
-      throw reportError(node.pos, _T(EL_CLASS_NOT_FOUND, buf.toString()));
-    return null;
-  }
-
   private boolean buildMethodCall(Method method, ELNode base, ELNode[] args) {
     Class<?>[] types = method.getParameterTypes();
     int nargs = types.length;
@@ -2143,18 +2148,8 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.INSTANCEOF node) {
-    IRClass irc = resolveIRClass(node.type);
-    if (irc != null) {
-      build(node.right);
-      current.emitInstanceOf(irc);
-      if (node.negative)
-        current.emitNot();
-      return;
-    }
-
-    Class<?> jc = resolveJavaClass(node.type, true);
     build(node.right);
-    current.emitInstanceOf(jc);
+    current.emitInstanceOf(resolveClass(node.type));
     if (node.negative)
       current.emitNot();
   }
@@ -2920,10 +2915,10 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private void emitReturn(boolean returnVoid) {
+  private void emitReturn(ELNode rtype) {
     if (exitBlock != -1)
       startBlock(exitBlock);
-    if (returnVoid) {
+    if (rtype instanceof ELNode.IDENT ident && ident.id.equals("void")) {
       current.emitPop();
       current.emitPushNull();
       current.emitReturn();
@@ -2951,9 +2946,10 @@ public class IRBuilder extends ELNode.Visitor {
     // Handlers: each handler is a DEFINE(id = exception var, expr = body).
     int count = node.handlers != null ? node.handlers.length : 0;
     IRFunction[] handlers = new IRFunction[count];
-    String[] types = new String[count];
+    Class<?>[] types = new Class<?>[count];
     for (int i = 0; i < count; i++) {
-      types[i] = node.types[i];
+      if (node.types[i] != null)
+        types[i] = resolveJavaClass(node.types[i], true);
       handlers[i] = buildScopedLambda((ELNode.LAMBDA)node.handlers[i]);
     }
 
@@ -3040,9 +3036,9 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Returns null for void function. Other return type has no meaning in
     // current implementation where we lacks type inferrer.
-    nested.emitReturn("void".equals(node.rtype));
+    nested.emitReturn(node.rtype);
 
-    return nested.finish().withDefaults(getDefaultValues(node.vars));
+    return nested.finish(getDefaultValues(node.vars));
   }
 
   private void emitSuperConstructor(int pos, IRClass initClass) {
@@ -3369,7 +3365,7 @@ public class IRBuilder extends ELNode.Visitor {
       // Type check if annotated.
       if (def.type != null) {
         argConsumed = true;
-        current.emitInstanceOf(loadClassAtCompileTime(def.pos, def.type));
+        current.emitInstanceOf(resolveClass(def.type));
         current.emitJumpIfFalse(failBlock);
       }
 
@@ -3956,7 +3952,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   // ── Finalization ──
 
-  IRFunction finish() {
+  IRFunction finish(Object[] defaultValues) {
     // Finish current block.
     blocks.add(new Block(currentBlockId, current.toArray(), linePcMapping));
 
@@ -4015,7 +4011,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     func.populate(merged.toArray(), maxLocals, offsets,
                   constants.toArray(new Object[0]),
-                  buildDebugInfo(), null);
+                  buildDebugInfo(), defaultValues);
     return func;
   }
 
@@ -4506,7 +4502,7 @@ public class IRBuilder extends ELNode.Visitor {
                                 symTable.currentScope());
     b.build(node);
     b.current.emitReturn();
-    return b.finish();
+    return b.finish(null);
   }
 
   public static IRProgram compile(ELContext elctx, ELProgram program) {
@@ -4538,13 +4534,13 @@ public class IRBuilder extends ELNode.Visitor {
         b.current.emitPop();
       }
       b.build(exps.get(exps.size() - 1));
-      b.emitReturn(false);
+      b.emitReturn(null);
     } else {
       b.current.emitPushNull();
-      b.emitReturn(false);
+      b.emitReturn(null);
     }
 
-    b.finish();
+    b.finish(null);
     return output;
   }
 

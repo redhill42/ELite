@@ -532,7 +532,7 @@ public class ClassDefinition extends AnnotatedClosure
                         }
                     }
                     if (var.type != null)
-                        c = TypedClosure.make(ctx, var.type, c);
+                        c = TypedClosure.make(ctx, var.getTypeName(), c);
                     if (immutable)
                         c.setModifiers(c.getModifiers() | Modifier.FINAL);
                     c.getValue(elctx);

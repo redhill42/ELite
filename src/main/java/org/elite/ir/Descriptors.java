@@ -38,7 +38,7 @@ final class Descriptors {
   record Try(
     IRFunction    body,
     IRFunction[]  handlers,
-    String[]      types,
+    Class<?>[]    types,
     IRFunction    finalizer
   ) {}
 

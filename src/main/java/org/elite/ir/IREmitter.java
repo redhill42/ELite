@@ -252,11 +252,7 @@ final class IREmitter {
     emit(IN, K_DYNAMIC, 0);
   }
 
-  public void emitInstanceOf(Class<?> cls) {
-    emit(INSTANCEOF, 0, builder.putConstant(cls));
-  }
-
-  public void emitInstanceOf(IRClass cls) {
+  public void emitInstanceOf(Object cls) {
     emit(INSTANCEOF, 0, builder.putConstant(cls));
   }
 

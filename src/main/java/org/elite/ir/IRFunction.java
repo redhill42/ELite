@@ -165,14 +165,6 @@ public class IRFunction {
   }
 
   /**
-   * Return this function with the given default parameter values.
-   */
-  public IRFunction withDefaults(Object[] defs) {
-    defaultValues = defs;
-    return this;
-  }
-
-  /**
    * Get the code offset for a given block ID.
    */
   public int blockStart(int blockId) {

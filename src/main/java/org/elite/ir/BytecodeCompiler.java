@@ -28,7 +28,6 @@ import org.elite.eval.StackTrace;
 import org.elite.eval.StandaloneVariableMapper;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.UserException;
-import org.elite.eval.closure.TypedClosure;
 import org.elite.parser.ELNode;
 import org.elite.resources.Resources;
 import org.elite.util.DynamicClassLoader;
@@ -1286,11 +1285,8 @@ public class BytecodeCompiler {
           for (int i = 0; i < desc.handlers().length; i++) {
             if (desc.types()[i] != null) {
               Label next = new Label();
-              mc.ALOAD(S_ENV())
-                .LDC(desc.types()[i])
-                .ALOAD(caughtSlot)
-                .INVOKESTATIC(TypedClosure.class, "typecheck", Boolean.TYPE,
-                              EvaluationContext.class, String.class, Object.class)
+              mc.ALOAD(caughtSlot)
+                .INSTANCEOF(desc.types()[i])
                 .IFEQ(next);
               emitDirectCall(desc.handlers()[i], caughtSlot);
               mc.ASTORE(resultSlot);

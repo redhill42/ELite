@@ -509,7 +509,7 @@ public abstract class ELNode implements Serializable {
   public static class LAMBDA extends ELNode {
     public final String file;
     public final String name;
-    public final String rtype;
+    public ELNode rtype;
     public final DEFINE[] vars;
     public final boolean varargs;
     public final ELNode body;
@@ -520,7 +520,7 @@ public abstract class ELNode implements Serializable {
       this(pos, file, null, null, vars, false, body);
     }
 
-    public LAMBDA(int pos, String file, String name, String rtype,
+    public LAMBDA(int pos, String file, String name, ELNode rtype,
                   DEFINE[] vars, boolean varargs, ELNode body) {
       super(Token.LAMBDA, pos);
       this.file = file;
@@ -538,6 +538,10 @@ public abstract class ELNode implements Serializable {
       }
     }
 
+    public String getReturnType() {
+      return rtype == null ? null : getFullClassName(rtype);
+    }
+
     public Object getValue(EvaluationContext context) {
       return new Procedure(context, this);
     }
@@ -549,7 +553,7 @@ public abstract class ELNode implements Serializable {
     public MethodInfo getMethodInfo(EvaluationContext context) {
       Class<?> returnType = Object.class;
       if (rtype != null) {
-        Object cls = ELEngine.resolveClass(context, rtype);
+        Object cls = ELEngine.resolveClass(context, getReturnType());
         if (cls instanceof Class) {
           returnType = (Class<?>)cls;
         }
@@ -558,7 +562,7 @@ public abstract class ELNode implements Serializable {
       Class<?>[] paramTypes = new Class<?>[vars.length];
       for (int i = 0; i < vars.length; i++) {
         if (vars[i].type != null) {
-          Object cls = ELEngine.resolveClass(context, vars[i].type);
+          Object cls = ELEngine.resolveClass(context, vars[i].getTypeName());
           if (cls instanceof Class) {
             paramTypes[i] = (Class<?>)cls;
           } else {
@@ -605,7 +609,7 @@ public abstract class ELNode implements Serializable {
       for (int i = 0; i < args.length; i++) {
         DEFINE var = this.vars[i];
         if (var.type != null) {
-          args[i] = TypedClosure.make(env, var.type, args[i]);
+          args[i] = TypedClosure.make(env, var.getTypeName(), args[i]);
         }
         // evaluate the argument value
         Object value = args[i].getValue(elctx);
@@ -715,7 +719,7 @@ public abstract class ELNode implements Serializable {
       if (rtype == null) {
         return res;
       } else {
-        return TypedClosure.typecast(ctx, rtype, res);
+        return TypedClosure.typecast(ctx, getReturnType(), res);
       }
     }
 
@@ -837,7 +841,7 @@ public abstract class ELNode implements Serializable {
    */
   public static class DEFINE extends ELNode implements Pattern {
     public String id;
-    public String type;
+    public ELNode type;
     public METASET meta;
     public ELNode expr;
 
@@ -847,16 +851,20 @@ public abstract class ELNode implements Serializable {
       this(pos, id, null, null, null);
     }
 
-    public DEFINE(int pos, String id, String type, METASET meta) {
+    public DEFINE(int pos, String id, ELNode type, METASET meta) {
       this(pos, id, type, meta, null);
     }
 
-    public DEFINE(int pos, String id, String type, METASET meta, ELNode expr) {
+    public DEFINE(int pos, String id, ELNode type, METASET meta, ELNode expr) {
       super(Token.DEFINE, pos);
       this.id = id;
       this.type = type;
       this.meta = meta;
       this.expr = expr;
+    }
+
+    public String getTypeName() {
+      return type == null ? null : getFullClassName(type);
     }
 
     public Object getValue(EvaluationContext context) {
@@ -868,9 +876,10 @@ public abstract class ELNode implements Serializable {
       Closure closure;
 
       if (expr == null) {
-        closure = TypedClosure.make(context, type, null, false);
+        closure = TypedClosure.make(context, getTypeName(), null, false);
       } else {
-        closure = TypedClosure.make(context, type, expr.getValue(context), false);
+        closure = TypedClosure.make(context, getTypeName(),
+                                    expr.getValue(context), false);
       }
 
       if (meta != null) {
@@ -885,7 +894,7 @@ public abstract class ELNode implements Serializable {
     }
 
     public boolean matches(EvaluationContext context, Object value) {
-      if (type != null && !TypedClosure.typecheck(context, type, value)) {
+      if (type != null && !TypedClosure.typecheck(context, getTypeName(), value)) {
         return false;
       }
 
@@ -900,7 +909,8 @@ public abstract class ELNode implements Serializable {
       }
 
       // Add the variable into environment.
-      context.setVariable(id, TypedClosure.make(context, type, value, false));
+      context.setVariable(id, TypedClosure.make(context, getTypeName(), value,
+                                                false));
       return true;
     }
 
@@ -4784,11 +4794,11 @@ public abstract class ELNode implements Serializable {
    */
   public static class TRY extends ELNode {
     public final ELNode body;
-    public final String[] types;
+    public final ELNode[] types;
     public final ELNode[] handlers;
     public final ELNode finalizer;
 
-    public TRY(int pos, ELNode body, String[] types, ELNode[] handlers,
+    public TRY(int pos, ELNode body, ELNode[] types, ELNode[] handlers,
                ELNode finalizer) {
       super(Token.TRY, pos);
       this.body = body;
@@ -4838,7 +4848,8 @@ public abstract class ELNode implements Serializable {
       ELNode handler = null;
       for (int i = 0; i < handlers.length; i++) {
         if (types[i] != null) {
-          if (TypedClosure.typecheck(context, types[i], exc)) {
+          if (TypedClosure.typecheck(context, ELNode.getFullClassName(types[i]),
+                                     exc)) {
             handler = handlers[i];
             break;
           }

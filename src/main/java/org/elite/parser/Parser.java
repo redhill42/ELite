@@ -95,7 +95,7 @@ public class Parser extends Scanner {
     }
   }
 
-  ELNode.DEFINE new_symbol(int p, String id, String type, ELNode.METASET meta) {
+  ELNode.DEFINE new_symbol(int p, String id, ELNode type, ELNode.METASET meta) {
     ELNode.DEFINE var = new ELNode.DEFINE(p, id, type, meta);
     env.put(id, var);
     return var;
@@ -1392,10 +1392,9 @@ public class Parser extends Scanner {
     return result;
   }
 
-  private String parseTypeNameOpt() {
+  private ELNode parseTypeNameOpt() {
     if (token == COLONCOLON) {
-      scan();
-      return parseClassLiteral(false);
+      return class_node(scan(), parseClassLiteral(false));
     } else {
       return null;
     }
@@ -1559,7 +1558,7 @@ public class Parser extends Scanner {
   /**
    * Translate a lambda expression with pattern-matching.
    */
-  private ELNode.LAMBDA translateLambda(int p, String name, String type,
+  private ELNode.LAMBDA translateLambda(int p, String name, ELNode type,
                                         List<ELNode.Pattern> patterns,
                                         boolean varargs, ELNode body) {
     int npats = patterns.size();
@@ -1634,7 +1633,7 @@ public class Parser extends Scanner {
                                }, body);
   }
 
-  private ELNode parseProcedureDefinition(String name, String rtype,
+  private ELNode parseProcedureDefinition(String name, ELNode rtype,
                                           ELNode.METASET meta) {
     int p = pos;
     ParamList plist;
@@ -1689,7 +1688,7 @@ public class Parser extends Scanner {
     return body;
   }
 
-  private ELNode parseBranchedProcedureDefinition(String name, String rtype,
+  private ELNode parseBranchedProcedureDefinition(String name, ELNode rtype,
                                                   ParamList first_plist,
                                                   ELNode first_body) {
     List<ParamList> branch_plists = new ArrayList<>();
@@ -1764,7 +1763,7 @@ public class Parser extends Scanner {
   }
 
   private ELNode parseCurriedProcedureDefinition(int p, String name,
-                                                 String rtype,
+                                                 ELNode rtype,
                                                  ELNode.METASET meta,
                                                  ParamList plist) {
     if ((meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0) {
@@ -1929,7 +1928,7 @@ public class Parser extends Scanner {
     }
   }
 
-  private ELNode.LAMBDA translateEquation(int pos, String name, String type,
+  private ELNode.LAMBDA translateEquation(int pos, String name, ELNode type,
                                           ParamList plist, ELNode body) {
     int npats = plist.params.length;
     ELNode.DEFINE[] vars = new ELNode.DEFINE[npats];
@@ -1968,7 +1967,7 @@ public class Parser extends Scanner {
     ELNode.METASET meta = parseMetaData();
     String var = scanQName();
     expect(IDENT);
-    String type = parseTypeNameOpt();
+    ELNode type = parseTypeNameOpt();
     ELNode exp = scan(ASSIGN) ? parseExpression() : null;
     return new ELNode.DEFINE(p, var, type, meta, exp);
   }
@@ -2171,12 +2170,12 @@ public class Parser extends Scanner {
   private ELNode.DEFINE parseSingleDefinition(ELNode.METASET meta) {
     int p = pos;
     ELNode.DEFINE var;
-    String type;
+    ELNode type;
 
     if (token == VOID) {
       scan();
       var = scanVar(p, meta);
-      var.expr = parseProcedureDefinition(var.id, "void", meta);
+      var.expr = parseProcedureDefinition(var.id, new ELNode.IDENT(p, "void"), meta);
       return var;
     }
 
@@ -2276,7 +2275,7 @@ public class Parser extends Scanner {
       scan();
       if (token == LPAREN) {
         ELNode.DEFINE var = new_symbol(p, id, null, null);
-        var.expr = parseProcedureDefinition(id, "void", null);
+        var.expr = parseProcedureDefinition(id, new ELNode.IDENT(p, "void"), null);
         return var;
       }
     }
@@ -2874,7 +2873,8 @@ public class Parser extends Scanner {
    * Parse a let expression.
    */
   private ELNode parseLetExpression(int p, boolean sequential) {
-    String name, type;
+    String name;
+    ELNode type;
     List<ELNode.Pattern> pats = new ArrayList<>();
     List<ELNode> exps = new ArrayList<>();
     ELNode body;
@@ -2885,7 +2885,8 @@ public class Parser extends Scanner {
       expect(IDENT);
       type = parseTypeNameOpt();
     } else {
-      name = type = null;
+      name = null;
+      type = null;
     }
 
     // parse declarations
@@ -3431,7 +3432,7 @@ public class Parser extends Scanner {
         scan();
         return parseConstructorPattern(p, id, bindings);
       } else {
-        String type = parseTypeNameOpt();
+        ELNode type = parseTypeNameOpt();
         ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern(bindings) : null;
         ELNode.DEFINE def = new ELNode.DEFINE(p, id, type, null, apat); // variable
         if (!"_".equals(id))
@@ -3647,7 +3648,7 @@ public class Parser extends Scanner {
    */
   private ELNode parseTryExpression(int p) {
     ELNode body;
-    String[] types = null;
+    ELNode[] types = null;
     ELNode[] handlers = null;
     ELNode finalizer = null;
 
@@ -3657,14 +3658,14 @@ public class Parser extends Scanner {
     expect(RBRACE);
 
     if (token == CATCH) {
-      List<String> tlist = new ArrayList<>();
+      List<ELNode> tlist = new ArrayList<>();
       List<ELNode> hlist = new ArrayList<>();
       while (token == CATCH) {
         int p2 = scan();
         expect(LPAREN);
         String id = idValue;
         expect(IDENT);
-        String type = parseTypeNameOpt();
+        ELNode type = parseTypeNameOpt();
         expect(RPAREN);
         ELNode.DEFINE var = new ELNode.DEFINE(p2, id);
         expect(LBRACE);
@@ -3675,7 +3676,7 @@ public class Parser extends Scanner {
         tlist.add(type);
         hlist.add(h);
       }
-      types = to_sa(tlist);
+      types = to_a(tlist);
       handlers = to_a(hlist);
     }
 

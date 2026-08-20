@@ -124,13 +124,6 @@ public final class ASTDumper {
             if (nm != null) sb.append(" name='").append(nm).append("'");
         } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
 
-        // type annotation
-        try {
-            Field typeField = cls.getField("type");
-            Object type = typeField.get(node);
-            if (type != null) sb.append(" :").append(type);
-        } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
-
         if (node.scope != null) {
             sb.append(" scope(depth=").append(node.scope.depth()).append(")");
         }
@@ -186,7 +179,7 @@ public final class ASTDumper {
                     continue;
 
                 switch (f.getName()) {
-                case "op", "id", "type", "value", "file", "pos", "name", "dvals", "varargs",
+                case "op", "id", "value", "file", "pos", "name", "dvals", "varargs",
                      "negative", "exclude", "readonly", "immediate", "delay", "rt" -> {
                     continue;
                 }

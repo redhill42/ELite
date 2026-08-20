@@ -107,7 +107,7 @@ public class TreeTransformer extends ELNode.Visitor
 
     public void visit(ELNode.LAMBDA e) {
         String name = transform(e.name);
-        String rtype = transform(e.rtype);
+        ELNode rtype = transform(e.rtype);
         ELNode.DEFINE[] vars = transform(e.vars);
         ELNode body = transform(e.body);
         if (name == e.name && rtype == e.rtype && vars == e.vars && body == e.body)
@@ -118,7 +118,7 @@ public class TreeTransformer extends ELNode.Visitor
 
     public void visit(ELNode.DEFINE e) {
         String id = transform(e.id);
-        String type = transform(e.type);
+        ELNode type = transform(e.type);
         ELNode.METASET meta = (ELNode.METASET)transform(e.meta);
         ELNode expr = transform(e.expr);
         if (id == e.id && type == e.type && meta == e.meta && expr == e.expr)
@@ -644,12 +644,14 @@ public class TreeTransformer extends ELNode.Visitor
 
     public void visit(ELNode.TRY e) {
         ELNode body = transform(e.body);
+        ELNode[] types = transform(e.types);
         ELNode[] handlers = transform(e.handlers);
         ELNode finalizer = transform(e.finalizer);
-        if (body == e.body && handlers == e.handlers && finalizer == e.finalizer)
+        if (body == e.body && types == e.types && handlers == e.handlers &&
+            finalizer == e.finalizer)
             result = e;
         else
-            result = new ELNode.TRY(e.pos, body, e.types, handlers, finalizer);
+            result = new ELNode.TRY(e.pos, body, types, handlers, finalizer);
     }
 
     public void visit(ELNode.SYNCHRONIZED e) {
