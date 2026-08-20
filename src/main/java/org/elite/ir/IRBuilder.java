@@ -1416,7 +1416,7 @@ public class IRBuilder extends ELNode.Visitor {
           build(args[idx]);
         } else {
           // Remap local variable to new slot.
-          current.emit(v.opcode(), v.payload(), newSlot.slot);
+          newSlot.load();
         }
       } else if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP) {
         Slot newSlot = slots[v.varIndex()];
@@ -1806,6 +1806,20 @@ public class IRBuilder extends ELNode.Visitor {
 
   private boolean buildStepBuiltin(ELNode begin, ELNode end, ELNode body,
                                    int step, int cmpop) {
+    int indKind = K_DYNAMIC;
+    Class<?> indType = null;
+    if (begin instanceof ELNode.NUMBER a && end instanceof ELNode.NUMBER b) {
+      if (a.value instanceof Integer && b.value instanceof Integer) {
+        indKind = K_INT;
+        indType = int.class;
+      } else {
+        begin = new ELNode.NUMBER(begin.pos, a.value.longValue());
+        end = new ELNode.NUMBER(end.pos, b.value.longValue());
+        indKind = K_LONG;
+        indType = long.class;
+      }
+    }
+
     // Build body to make sure one-shot lambda is built.
     build(body);
 
@@ -1829,8 +1843,8 @@ public class IRBuilder extends ELNode.Visitor {
     Method global = direct ? null : getGlobalForStepBody(body);
 
     // Initialize temporary variables.
-    Slot indSlot = new Slot();
-    Slot endSlot = new Slot();
+    RawSlot indSlot = new RawSlot(indType);
+    RawSlot endSlot = new RawSlot(indType);
     Slot bodySlot = null;
 
     if (direct || global != null) {
@@ -1844,11 +1858,9 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     build(begin);
-    indSlot.store();
-    current.emitPop();
+    indSlot.storeInd();
     build(end);
-    endSlot.store();
-    current.emitPop();
+    endSlot.storeInd();
 
     // Begin loop.
     int headerB = allocBlockId();
@@ -1860,9 +1872,9 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Generate loop condition.
     startBlock(headerB);
-    indSlot.load();
-    endSlot.load();
-    emitDynBinOp(cmpop);
+    indSlot.loadInd();
+    endSlot.loadInd();
+    emitBinOp(indKind, cmpop);
     current.emitJumpIfTrue(bodyB);
     current.emitJump(exitB);
 
@@ -1892,11 +1904,20 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // Increment induction variable.
-    indSlot.load();
-    buildConst(Math.abs(step));
-    emitDynBinOp(step > 0 ? Token.ADD : Token.SUB);
-    indSlot.store();
-    current.emitPop();
+    if (indType == int.class) {
+      current.emitIncInd(indSlot.slot, step);
+    } else if (indType == long.class) {
+      indSlot.loadInd();
+      buildConstUnbox((long)Math.abs(step));
+      emitBinOp(K_LONG, step > 0 ? Token.ADD : Token.SUB);
+      indSlot.storeRaw();
+    } else {
+      indSlot.load();
+      buildConst(Math.abs(step));
+      emitDynBinOp(step > 0 ? Token.ADD : Token.SUB);
+      indSlot.store();
+      current.emitPop();
+    }
     current.emitJump(headerB);
 
     // Cleanup.
@@ -2024,12 +2045,10 @@ public class IRBuilder extends ELNode.Visitor {
 
     if (node.dims == null || node.dims.length == 1) {
       if (node.dims == null) {
-        buildConst(node.init != null ? node.init.elems.length : 0);
-        current.emitUnbox(int.class);
+        buildConstUnbox(node.init != null ? node.init.elems.length : 0);
       } else if (node.dims[0] instanceof ELNode.NUMBER n &&
                  n.value instanceof Integer) {
-        buildConst(n.value);
-        current.emitUnbox(int.class);
+        buildConstUnbox(n.value);
       } else {
         current.emitPushCtx();
         build(node.dims[0]);
@@ -2048,8 +2067,7 @@ public class IRBuilder extends ELNode.Visitor {
       for (int i = 0; i < node.dims.length; i++) {
         if (node.dims[i] instanceof ELNode.NUMBER n &&
                 n.value instanceof Integer) {
-          buildConst(n.value);
-          current.emitUnbox(int.class);
+          buildConstUnbox(n.value);
         } else {
           current.emitPushCtx();
           build(node.dims[i]);
@@ -2191,29 +2209,33 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void emitDynBinOp(int op) {
+    emitBinOp(K_DYNAMIC, op);
+  }
+
+  private void emitBinOp(int kind, int op) {
     switch (op) {
-    case Token.ADD    -> current.emitAdd();
-    case Token.SUB    -> current.emitSub();
-    case Token.MUL    -> current.emitMul();
-    case Token.DIV    -> current.emitDiv();
-    case Token.IDIV   -> current.emitIDiv();
-    case Token.REM    -> current.emitRem();
+    case Token.ADD    -> current.emitAdd(kind);
+    case Token.SUB    -> current.emitSub(kind);
+    case Token.MUL    -> current.emitMul(kind);
+    case Token.DIV    -> current.emitDiv(kind);
+    case Token.IDIV   -> current.emitIDiv(kind);
+    case Token.REM    -> current.emitRem(kind);
     case Token.POW    -> current.emitPow();
     case Token.CAT    -> current.emitCat();
-    case Token.SHL    -> current.emitShl();
-    case Token.SHR    -> current.emitShr();
-    case Token.USHR   -> current.emitUShr();
-    case Token.BITAND -> current.emitBitAnd();
-    case Token.BITOR  -> current.emitBitOr();
-    case Token.XOR    -> current.emitXor();
-    case Token.EQ     -> current.emitEq();
-    case Token.NE     -> current.emitNe();
+    case Token.SHL    -> current.emitShl(kind);
+    case Token.SHR    -> current.emitShr(kind);
+    case Token.USHR   -> current.emitUShr(kind);
+    case Token.BITAND -> current.emitBitAnd(kind);
+    case Token.BITOR  -> current.emitBitOr(kind);
+    case Token.XOR    -> current.emitXor(kind);
+    case Token.EQ     -> current.emitEq(kind);
+    case Token.NE     -> current.emitNe(kind);
     case Token.IDEQ   -> current.emitIdEq();
     case Token.IDNE   -> current.emitIdNe();
-    case Token.LT     -> current.emitLt();
-    case Token.LE     -> current.emitLe();
-    case Token.GT     -> current.emitGt();
-    case Token.GE     -> current.emitGe();
+    case Token.LT     -> current.emitLt(kind);
+    case Token.LE     -> current.emitLe(kind);
+    case Token.GT     -> current.emitGt(kind);
+    case Token.GE     -> current.emitGe(kind);
     case Token.CMP    -> current.emitCmp();
     default -> throw new UnsupportedOperationException();
     }
@@ -2502,14 +2524,14 @@ public class IRBuilder extends ELNode.Visitor {
 
     rhsSlot.load();
     emitInvokeMethod(Array.class, "getLength", Object.class);
-    buildConst(lhs.elems.length);
+    current.emitUnbox(int.class);
+    buildConstUnbox(lhs.elems.length);
     current.emitEq(K_INT);
     current.emitJumpIfFalse(failBlock);
 
     for (int i = 0; i < lhs.elems.length; i++) {
       rhsSlot.load();
-      buildConst(i);
-      current.emitUnbox(Integer.TYPE);
+      buildConstUnbox(i);
       emitInvokeMethod(Array.class, "get", Object.class, int.class);
       if (lhs.elems[i] instanceof ELNode.IDENT ident)
         buildStoreVariable(ident);
@@ -2665,14 +2687,37 @@ public class IRBuilder extends ELNode.Visitor {
       }
     }
 
+    int      indKind;
+    Class<?> indType;
+    RawSlot  indSlot;
+    if (count == -1) {  // unbounded
+      indKind = K_NONE;
+      indType = null;
+      indSlot = null;
+    } else if ((int)count == count) {
+      indKind = K_INT;
+      indType = int.class;
+      indSlot = new RawSlot(indType);
+      buildConst((int)count);
+      indSlot.storeInd();
+    } else {
+      indKind = K_LONG;
+      indType = long.class;
+      indSlot = new RawSlot(indType);
+      buildConst(count);
+      indSlot.storeInd();
+    }
+
     // Register loop variable first to claim its pre-allocated slot, then
     // allocate temp vars after it to avoid slot collisions.
     Slot varSlot = var.symbol != null ? new Slot(var) : null;
-    Slot idxSlot = new Slot(index);
+    Slot idxSlot = index != null ? new Slot(index) : null;
 
-    buildConst(0L);
-    idxSlot.define();
-    current.emitPop();
+    if (idxSlot != null) {
+      buildConst(0L);
+      idxSlot.define();
+      current.emitPop();
+    }
     if (varSlot != null) {
       buildConst(begin);
       varSlot.define();
@@ -2681,7 +2726,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Begin loop.
     int bodyB = allocBlockId();
-    int headerB = range.end != null ? allocBlockId() : bodyB;
+    int headerB = indSlot != null ? allocBlockId() : bodyB;
     int contB = allocBlockId();
     int exitB = allocBlockId();
 
@@ -2689,11 +2734,15 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitJump(headerB);
 
     // Generate loop condition.
-    if (range.end != null) {
+    if (indSlot != null) {
       startBlock(headerB);
-      idxSlot.load();
-      buildConst(count);
-      current.emitLt(K_INT);
+      indSlot.loadInd();
+      if (indKind == K_INT)
+        buildConst(0);
+      else
+        buildConst(0L);
+      current.emitUnbox(indType);
+      current.emitNe(indKind);
       current.emitJumpIfTrue(bodyB);
       current.emitJump(exitB);
     }
@@ -2706,19 +2755,38 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Generate loop step.
     startBlock(contB);
-    idxSlot.load();
-    buildConst(1L);
-    current.emitAdd(K_LONG);
-    idxSlot.store();
-    current.emitPop();
+
+    if (indSlot != null) {
+      if (indKind == K_INT) {
+        current.emitIncInd(indSlot.slot, -1);
+      } else {
+        indSlot.loadInd();
+        buildConstUnbox(1L);
+        current.emitSub(indKind);
+        indSlot.storeRaw();
+      }
+    }
+
+    if (idxSlot != null) {
+      idxSlot.load();
+      current.emitUnbox(long.class);
+      buildConstUnbox(1L);
+      current.emitAdd(K_LONG);
+      current.emitBox(long.class);
+      idxSlot.store();
+      current.emitPop();
+    }
 
     if (varSlot != null) {
       varSlot.load();
-      buildConst(step);
+      current.emitUnbox(long.class);
+      buildConstUnbox(step);
       current.emitAdd(K_LONG);
+      current.emitBox(long.class);
       varSlot.store();
       current.emitPop();
     }
+
     current.emitJump(headerB);
 
     // Cleanup
@@ -2727,6 +2795,7 @@ public class IRBuilder extends ELNode.Visitor {
     loopStack.pop();
     release(varSlot);
     release(idxSlot);
+    release(indSlot);
   }
 
   private void buildDynamicRangedFor(ELNode.DEFINE var, ELNode.DEFINE index,
@@ -2743,7 +2812,7 @@ public class IRBuilder extends ELNode.Visitor {
       build(range.next);
       build(range.begin);
       varSlot.define();
-      current.emitSub(K_LONG);
+      current.emitSub();
       stepSlot.store(); // step = next - begin
       current.emitPop();
     } else {
@@ -2757,16 +2826,16 @@ public class IRBuilder extends ELNode.Visitor {
       build(range.end);
       if (range.exclude) {
         buildConst(1L);
-        current.emitSub(K_LONG);
+        current.emitSub();
       }
       varSlot.load();
-      current.emitSub(K_LONG);
+      current.emitSub();
       if (stepSlot != null) {
         stepSlot.load();
-        current.emitDiv(K_LONG);
+        current.emitDiv();
       }
       buildConst(1L);
-      current.emitAdd(K_LONG);
+      current.emitAdd();
       countSlot.store(); // count = (end - begin) / step + 1
       current.emitPop();
     }
@@ -2788,7 +2857,7 @@ public class IRBuilder extends ELNode.Visitor {
       startBlock(headerB);
       idxSlot.load();
       countSlot.load();
-      current.emitLt(K_LONG);
+      current.emitLt();
       current.emitJumpIfTrue(bodyB);
       current.emitJump(exitB);
     }
@@ -2803,7 +2872,7 @@ public class IRBuilder extends ELNode.Visitor {
     startBlock(contB);
     idxSlot.load();
     buildConst(1L);
-    current.emitAdd(K_LONG);
+    current.emitAdd();
     idxSlot.store();
     current.emitPop();
 
@@ -2873,7 +2942,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (node.index != null) {
       idxSlot.load();
       buildConst(1L);
-      current.emitAdd(K_INT);
+      current.emitAdd();
       idxSlot.store();
       current.emitPop();
     }
@@ -3499,7 +3568,8 @@ public class IRBuilder extends ELNode.Visitor {
 
       argSlot.load();
       emitInvokeMethod(Array.class, "getLength", Object.class);
-      buildConst(t.elems.length);
+      current.emitUnbox(int.class);
+      buildConstUnbox(t.elems.length);
       current.emitEq(K_INT);
       current.emitJumpIfFalse(failBlock);
 
@@ -3507,8 +3577,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (ELNode.isWildcard(t.elems[i]))
           continue;
         argSlot.load();
-        buildConst(i);
-        current.emitUnbox(Integer.TYPE);
+        buildConstUnbox(i);
         emitInvokeMethod(Array.class, "get", Object.class, int.class);
         if (!isSimplePattern(t.elems[i])) {
           if (tmpSlot == null)
@@ -3865,9 +3934,9 @@ public class IRBuilder extends ELNode.Visitor {
   // ── Local management ──
 
   private class Slot {
-    private final int slot;
-    private final boolean captured;
-    private final boolean isTemporary;
+    final int slot;
+    final boolean captured;
+    final boolean isTemporary;
 
     Slot() {
       slot = allocLocalVar();
@@ -3927,7 +3996,7 @@ public class IRBuilder extends ELNode.Visitor {
         freeSlots.push(slot);
     }
 
-    private int allocLocalVar() {
+    int allocLocalVar() {
       if (!freeSlots.isEmpty()) {
         return freeSlots.pop();
       }
@@ -3940,6 +4009,67 @@ public class IRBuilder extends ELNode.Visitor {
   private void release(Slot slot) {
     if (slot != null)
       slot.release();
+  }
+
+  class RawSlot extends Slot {
+    private final Class<?> type;
+    private final int extraSlot;
+
+    RawSlot(Class<?> type) {
+      this.type = type;
+      if (type == long.class || type == double.class)
+        extraSlot = allocLocalVar();
+      else
+        extraSlot = -1;
+    }
+
+    void storeRaw() {
+      assert type != null;
+      current.emitStoreInd(slot, type);
+    }
+
+    void storeInd() {
+      if (type != null) {
+        current.emitUnbox(type);
+        current.emitStoreInd(slot, type);
+      } else {
+        current.emitStoreVar(slot);
+      }
+    }
+
+    void loadInd() {
+      if (type != null)
+        current.emitPushInd(slot, type);
+      else
+        current.emitPushVar(slot);
+    }
+
+    @Override
+    void store() {
+      if (type != null) {
+        current.emitUnbox(type);
+        current.emitStoreInd(slot, type);
+      } else {
+        current.emitStoreVar(slot);
+      }
+    }
+
+    @Override
+    void load() {
+      if (type != null) {
+        current.emitPushInd(slot, type);
+        current.emitBox(type);
+      } else {
+        current.emitPushVar(slot);
+      }
+    }
+
+    @Override
+    void release() {
+      freeSlots.push(slot);
+      if (extraSlot != -1)
+        freeSlots.push(extraSlot);
+    }
   }
 
   /**
@@ -4404,6 +4534,11 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPushTrue();
     else
       current.emitPushFalse();
+  }
+
+  private void buildConstUnbox(Object value) {
+    buildConst(value);
+    current.emitUnbox(getUnboxedType(value.getClass()));
   }
 
   private void buildCoerce(Class<?> type) {

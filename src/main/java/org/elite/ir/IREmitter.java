@@ -148,6 +148,10 @@ final class IREmitter {
     emit(MUL, K_DYNAMIC, 0);
   }
 
+  public void emitMul(int kind) {
+    emit(MUL, kind, 0);
+  }
+
   public void emitDiv() {
     emit(DIV, K_DYNAMIC, 0);
   }
@@ -160,8 +164,16 @@ final class IREmitter {
     emit(IDIV, K_DYNAMIC, 0);
   }
 
+  public void emitIDiv(int kind) {
+    emit(IDIV, kind, 0);
+  }
+
   public void emitRem() {
     emit(REM, K_DYNAMIC, 0);
+  }
+
+  public void emitRem(int kind) {
+    emit(REM, kind, 0);
   }
 
   public void emitPow() {
@@ -173,15 +185,23 @@ final class IREmitter {
   }
 
   public void emitCat() {
-    emit(CAT, 0);
+    emit(CAT, K_DYNAMIC, 0);
   }
 
   public void emitBitAnd() {
     emit(BITAND, K_DYNAMIC, 0);
   }
 
+  public void emitBitAnd(int kind) {
+    emit(BITAND, kind, 0);
+  }
+
   public void emitBitOr() {
     emit(BITOR, K_DYNAMIC, 0);
+  }
+
+  public void emitBitOr(int kind) {
+    emit(BITOR, kind, 0);
   }
 
   public void emitBitNot() {
@@ -192,16 +212,32 @@ final class IREmitter {
     emit(XOR, K_DYNAMIC, 0);
   }
 
+  public void emitXor(int kind) {
+    emit(XOR, kind, 0);
+  }
+
   public void emitShl() {
     emit(SHL, K_DYNAMIC, 0);
+  }
+
+  public void emitShl(int kind) {
+    emit(SHL, kind, 0);
   }
 
   public void emitShr() {
     emit(SHR, K_DYNAMIC, 0);
   }
 
+  public void emitShr(int kind) {
+    emit(SHR, kind, 0);
+  }
+
   public void emitUShr() {
     emit(USHR, K_DYNAMIC, 0);
+  }
+
+  public void emitUShr(int kind) {
+    emit(USHR, kind, 0);
   }
 
   public void emitEq() {
@@ -214,6 +250,10 @@ final class IREmitter {
 
   public void emitNe() {
     emit(NE, K_DYNAMIC, 0);
+  }
+
+  public void emitNe(int kind) {
+    emit(NE, kind, 0);
   }
 
   public void emitIdEq() {
@@ -236,12 +276,24 @@ final class IREmitter {
     emit(LE, K_DYNAMIC, 0);
   }
 
+  public void emitLe(int kind) {
+    emit(LE, kind, 0);
+  }
+
   public void emitGt() {
     emit(GT, K_DYNAMIC, 0);
   }
 
+  public void emitGt(int kind) {
+    emit(GT, kind, 0);
+  }
+
   public void emitGe() {
     emit(GE, K_DYNAMIC, 0);
+  }
+
+  public void emitGe(int kind) {
+    emit(GE, kind, 0);
   }
 
   public void emitCmp() {
@@ -262,6 +314,18 @@ final class IREmitter {
 
   public void emitNot() {
     emit(NOT, 0);
+  }
+
+  public void emitPushInd(int slot, Class<?> type) {
+    emit(PUSH_IND, slot, builder.putConstant(type));
+  }
+
+  public void emitStoreInd(int slot, Class<?> type) {
+    emit(STORE_IND, slot, builder.putConstant(type));
+  }
+
+  public void emitIncInd(int slot, int step) {
+    emit(INC_IND, slot, builder.putConstant(step));
   }
 
   // ── Control flow ──

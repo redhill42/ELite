@@ -1180,7 +1180,14 @@ public class BytecodeCompiler {
             .BOX(Boolean.TYPE);
         }
       }
-  
+
+      case PUSH_IND ->
+        mc.XLOAD(SLOT(v.payload()), (Class<?>)fn.getConstant(v.poolIndex()));
+      case STORE_IND ->
+        mc.XSTORE(SLOT(v.payload()), (Class<?>)fn.getConstant(v.poolIndex()));
+      case INC_IND ->
+        mc.IINC(SLOT(v.payload()), (int)fn.getConstant(v.poolIndex()));
+
       case JUMP ->
         mc.GOTO(blockLabels[v.jumpTarget()]);
       case JUMP_IF_TRUE ->
@@ -1453,11 +1460,25 @@ public class BytecodeCompiler {
                            m.getParameterTypes());
         }
 
-        if (m.getReturnType() == Boolean.TYPE)
+        if (m.getReturnType() == Boolean.TYPE) {
           emitJumpAfterCond(v);
-        else if (m.getReturnType().isPrimitive() &&
-                 m.getReturnType() != Void.TYPE)
-          mc.BOX(m.getReturnType());
+        } else if (m.getReturnType().isPrimitive() &&
+                   m.getReturnType() != Void.TYPE) {
+          InstructionView next = peekNext(v);
+          if (next != null && next.opcode() == UNBOX) {
+            v.advance();
+          } else if (next != null && next.opcode() == POP) {
+            if (m.getReturnType() == long.class ||
+                m.getReturnType() == double.class) {
+              mc.POP2();
+            } else {
+              mc.POP();
+            }
+            v.advance();
+          } else {
+            mc.BOX(m.getReturnType());
+          }
+        }
       }
 
       case INVOKE_DYNAMIC -> {
@@ -1993,12 +2014,153 @@ public class BytecodeCompiler {
     }
 
     private void emitBinary(InstructionView v, String name, Class<?> returnType) {
-      mc.ALOAD(S_ENV());
-      mc.INVOKEDYNAMIC(BINARY_BOOTSTRAP, mangle(name),
-        AsmType.getMethodDescriptor(returnType, Object.class, Object.class,
-                                    EvaluationContext.class));
-      if (returnType == Boolean.TYPE)
-        emitJumpAfterCond(v);
+      if (v.payload() == IRFormat.K_DYNAMIC) {
+        mc.ALOAD(S_ENV());
+        mc.INVOKEDYNAMIC(BINARY_BOOTSTRAP, mangle(name),
+          AsmType.getMethodDescriptor(returnType, Object.class, Object.class,
+                                      EvaluationContext.class));
+        if (returnType == Boolean.TYPE)
+          emitJumpAfterCond(v);
+      } else {
+        emitBuiltinBinary(v, returnType);
+      }
+    }
+
+    private void emitBuiltinBinary(InstructionView v, Class<?> returnType) {
+      if (returnType == boolean.class) {
+        InstructionView next = peekNext(v);
+        if (next != null && (next.opcode() == JUMP_IF_TRUE ||
+                             next.opcode() == JUMP_IF_FALSE)) {
+          int opcode = v.opcode();
+          if (next.opcode() == JUMP_IF_FALSE) {
+            opcode = switch (opcode) {
+              case EQ -> NE;
+              case NE -> EQ;
+              case LT -> GE;
+              case LE -> GT;
+              case GT -> LE;
+              case GE -> LT;
+              default -> throw new AssertionError();
+            };
+          }
+          emitCompare(opcode, v.payload(), blockLabels[next.jumpTarget()]);
+          v.advance();
+        } else {
+          Label t = new Label(), e = new Label();
+          emitCompare(v.opcode(), v.payload(), t);
+          mc.FALSE()
+            .GOTO(e)
+            .label(t)
+            .TRUE()
+            .label(e);
+        }
+        return;
+      }
+
+      if (v.payload() == IRFormat.K_INT) {
+        switch (v.opcode()) {
+        case ADD    -> mc.IADD();
+        case SUB    -> mc.ISUB();
+        case MUL    -> mc.IMUL();
+        case IDIV   -> mc.IDIV();
+        case REM    -> mc.IREM();
+        case BITAND -> mc.IAND();
+        case BITOR  -> mc.IOR();
+        case XOR    -> mc.IXOR();
+        case SHL    -> mc.ISHL();
+        case SHR    -> mc.ISHR();
+        case USHR   -> mc.IUSHR();
+        default     -> throw new AssertionError();
+        }
+        return;
+      }
+
+      if (v.payload() == IRFormat.K_LONG) {
+        switch (v.opcode()) {
+        case ADD    -> mc.LADD();
+        case SUB    -> mc.LSUB();
+        case MUL    -> mc.LMUL();
+        case IDIV   -> mc.LDIV();
+        case REM    -> mc.LREM();
+        case BITAND -> mc.LAND();
+        case BITOR  -> mc.LOR();
+        case XOR    -> mc.LXOR();
+        case SHL    -> mc.LSHL();
+        case SHR    -> mc.LSHR();
+        case USHR   -> mc.LUSHR();
+        default     -> throw new AssertionError();
+        }
+        return;
+      }
+
+      if (v.payload() == IRFormat.K_FLOAT) {
+        switch (v.opcode()) {
+        case ADD -> mc.FADD();
+        case SUB -> mc.FSUB();
+        case MUL -> mc.FMUL();
+        case DIV -> mc.FDIV();
+        case REM -> mc.FREM();
+        default  -> throw new AssertionError();
+        }
+        return;
+      }
+
+      if (v.payload() == IRFormat.K_DOUBLE) {
+        switch (v.opcode()) {
+        case ADD -> mc.DADD();
+        case SUB -> mc.DSUB();
+        case MUL -> mc.DMUL();
+        case DIV -> mc.DDIV();
+        case REM -> mc.DREM();
+        default  -> throw new AssertionError();
+        }
+        return;
+      }
+
+      if (v.payload() == IRFormat.K_BOOL) {
+        switch (v.opcode()) {
+        case BITAND -> mc.IAND();
+        case BITOR  -> mc.IOR();
+        case XOR    -> mc.IXOR();
+        default     -> throw new AssertionError();
+        }
+        return;
+      }
+
+      throw new AssertionError("Not yet implemented");
+    }
+
+    private void emitCompare(int opcode, int kind, Label target) {
+      if (kind == IRFormat.K_INT || kind == IRFormat.K_BOOL) {
+        switch (opcode) {
+        case EQ -> mc.IF_ICMPEQ(target);
+        case NE -> mc.IF_ICMPNE(target);
+        case LT -> mc.IF_ICMPLT(target);
+        case LE -> mc.IF_ICMPLE(target);
+        case GT -> mc.IF_ICMPGT(target);
+        case GE -> mc.IF_ICMPGE(target);
+        default -> throw new AssertionError();
+        }
+      } else {
+        if (kind == IRFormat.K_LONG)
+          mc.LCMP();
+        else if (kind == IRFormat.K_FLOAT)
+          mc.FCMPL();
+        else if (kind == IRFormat.K_DOUBLE)
+          mc.DCMPL();
+        else
+          throw new AssertionError();
+
+        switch (opcode) {
+        case EQ -> mc.IFEQ(target);
+        case NE -> mc.IFNE(target);
+        case LT -> mc.IFLT(target);
+        case LE -> mc.IFLE(target);
+        case GT -> mc.IFGT(target);
+        case GE -> mc.IFGE(target);
+        default -> throw new AssertionError();
+        }
+      }
     }
 
     private void emitUnary(InstructionView v, String name, Class<?> returnType) {

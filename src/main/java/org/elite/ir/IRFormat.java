@@ -40,8 +40,8 @@ final class IRFormat {
   public static final int K_NONE    = 0;
   public static final int K_INT     = 1;
   public static final int K_LONG    = 2;
-  public static final int K_DOUBLE  = 3;
-  public static final int K_STRING  = 4;
+  public static final int K_FLOAT   = 3;
+  public static final int K_DOUBLE  = 4;
   public static final int K_BOOL    = 5;
   public static final int K_DYNAMIC = 6;
 

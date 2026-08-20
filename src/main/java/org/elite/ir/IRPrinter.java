@@ -98,6 +98,11 @@ final class IRPrinter {
     case Opcode.PUSH_VAR, Opcode.STORE_VAR, Opcode.STORE_VAR_POP ->
       sb.append(" v").append(v.varIndex());
 
+    case Opcode.PUSH_IND, Opcode.STORE_IND, Opcode.INC_IND -> {
+      sb.append(" v").append(v.payload()).append(",");
+      formatConstPool(sb, constants, v.poolIndex());
+    }
+
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
          Opcode.INVOKE_DIRECT, Opcode.INVOKE_DYNAMIC, Opcode.INVOKE_METHOD,

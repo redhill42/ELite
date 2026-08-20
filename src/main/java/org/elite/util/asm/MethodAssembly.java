@@ -92,6 +92,7 @@ public class MethodAssembly {
   public MethodAssembly FADD()          { impl.visitInsn(FADD);          return this; }
   public MethodAssembly DADD()          { impl.visitInsn(DADD);          return this; }
   public MethodAssembly ISUB()          { impl.visitInsn(ISUB);          return this; }
+  public MethodAssembly LSUB()          { impl.visitInsn(LSUB);          return this; }
   public MethodAssembly FSUB()          { impl.visitInsn(FSUB);          return this; }
   public MethodAssembly DSUB()          { impl.visitInsn(DSUB);          return this; }
   public MethodAssembly IMUL()          { impl.visitInsn(IMUL);          return this; }
@@ -477,6 +478,7 @@ public class MethodAssembly {
   public MethodAssembly IF_ICMPLT(Label label)  { impl.visitJumpInsn(IF_ICMPLT, label); return this; }
   public MethodAssembly IF_ICMPGT(Label label)  { impl.visitJumpInsn(IF_ICMPGT, label); return this; }
   public MethodAssembly IF_ICMPLE(Label label)  { impl.visitJumpInsn(IF_ICMPLE, label); return this; }
+  public MethodAssembly IF_ICMPGE(Label label)  { impl.visitJumpInsn(IF_ICMPGE, label); return this; }
   public MethodAssembly IF_ACMPEQ(Label label)  { impl.visitJumpInsn(IF_ACMPEQ, label); return this; }
   public MethodAssembly IF_ACMPNE(Label label)  { impl.visitJumpInsn(IF_ACMPNE, label); return this; }
   public MethodAssembly IFNULL(Label label)     { impl.visitJumpInsn(IFNULL, label);    return this; }
