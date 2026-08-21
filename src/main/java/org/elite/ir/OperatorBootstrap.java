@@ -66,6 +66,7 @@ public final class OperatorBootstrap {
 
   private static final MethodHandle MH_intAdd,
                                     MH_longAdd,
+                                    MH_longAddPromote,
                                     MH_floatAdd,
                                     MH_doubleAdd,
                                     MH_bigIntegerAdd,
@@ -75,6 +76,7 @@ public final class OperatorBootstrap {
 
   private static final MethodHandle MH_intSub,
                                     MH_longSub,
+                                    MH_longSubPromote,
                                     MH_floatSub,
                                     MH_doubleSub,
                                     MH_bigIntegerSub,
@@ -84,6 +86,7 @@ public final class OperatorBootstrap {
 
   private static final MethodHandle MH_intMul,
                                     MH_longMul,
+                                    MH_longMulPromote,
                                     MH_floatMul,
                                     MH_doubleMul,
                                     MH_bigIntegerMul,
@@ -260,6 +263,9 @@ public final class OperatorBootstrap {
         MethodType.methodType(Number.class, int.class, int.class));
       MH_longAdd = lookup.findStatic(
         OperatorBootstrap.class, "longAdd",
+        MethodType.methodType(long.class, long.class, long.class));
+      MH_longAddPromote = lookup.findStatic(
+        OperatorBootstrap.class, "longAddPromote",
         MethodType.methodType(Number.class, long.class, long.class));
       MH_floatAdd = lookup.findStatic(
         OperatorBootstrap.class, "floatAdd",
@@ -287,6 +293,9 @@ public final class OperatorBootstrap {
         MethodType.methodType(Number.class, int.class, int.class));
       MH_longSub = lookup.findStatic(
         OperatorBootstrap.class, "longSub",
+        MethodType.methodType(long.class, long.class, long.class));
+      MH_longSubPromote = lookup.findStatic(
+        OperatorBootstrap.class, "longSubPromote",
         MethodType.methodType(Number.class, long.class, long.class));
       MH_floatSub = lookup.findStatic(
         OperatorBootstrap.class, "floatSub",
@@ -314,6 +323,9 @@ public final class OperatorBootstrap {
         MethodType.methodType(Number.class, int.class, int.class));
       MH_longMul = lookup.findStatic(
         OperatorBootstrap.class, "longMul",
+        MethodType.methodType(long.class, long.class, long.class));
+      MH_longMulPromote = lookup.findStatic(
+        OperatorBootstrap.class, "longMulPromote",
         MethodType.methodType(Number.class, long.class, long.class));
       MH_floatMul = lookup.findStatic(
         OperatorBootstrap.class, "floatMul",
@@ -1095,10 +1107,17 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchAdd(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "+", lhs, rhs,
-                              MH_intAdd, MH_longAdd, MH_floatAdd, MH_doubleAdd,
-                              MH_bigIntegerAdd, MH_bigDecimalAdd, MH_decimalAdd,
-                              MH_rationalAdd);
+    if (GlobalScope.isBigIntegerEnabled(env.getELContext())) {
+      return dispatchArithmetic(lookup, env, "+", lhs, rhs, MH_intAdd,
+                                MH_longAddPromote, MH_floatAdd, MH_doubleAdd,
+                                MH_bigIntegerAdd, MH_bigDecimalAdd,
+                                MH_decimalAdd, MH_rationalAdd);
+    } else {
+      return dispatchArithmetic(lookup, env, "+", lhs, rhs, MH_intAdd,
+                                MH_longAdd, MH_floatAdd, MH_doubleAdd,
+                                MH_bigIntegerAdd, MH_bigDecimalAdd,
+                                MH_decimalAdd, MH_rationalAdd);
+    }
   }
 
   private static Number intAdd(int x, int y) {
@@ -1109,7 +1128,11 @@ public final class OperatorBootstrap {
       return z;
   }
 
-  private static Number longAdd(long x, long y) {
+  private static long longAdd(long x, long y) {
+    return x + y;
+  }
+
+  private static Number longAddPromote(long x, long y) {
     long z = x + y;
     if ((~(x ^ y) & (x ^ z) & LONG_SIG_BIT) != 0)
       return BigInteger.valueOf(x).add(BigInteger.valueOf(y));
@@ -1128,10 +1151,19 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchSub(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "-", lhs, rhs,
-                              MH_intSub, MH_longSub, MH_floatSub, MH_doubleSub,
-                              MH_bigIntegerSub, MH_bigDecimalSub, MH_decimalSub,
-                              MH_rationalSub);
+
+    if (GlobalScope.isBigIntegerEnabled(env.getELContext())) {
+      return dispatchArithmetic(lookup, env, "-", lhs, rhs, MH_intSub,
+                                MH_longSubPromote, MH_floatSub, MH_doubleSub,
+                                MH_bigIntegerSub, MH_bigDecimalSub,
+                                MH_decimalSub, MH_rationalSub);
+    } else {
+      return dispatchArithmetic(lookup, env, "-", lhs, rhs, MH_intSub,
+                                MH_longSub, MH_floatSub, MH_doubleSub,
+                                MH_bigIntegerSub, MH_bigDecimalSub,
+                                MH_decimalSub, MH_rationalSub);
+
+    }
   }
 
   private static Number intSub(int x, int y) {
@@ -1142,7 +1174,11 @@ public final class OperatorBootstrap {
       return z;
   }
 
-  private static Number longSub(long x, long y) {
+  private static long longSub(long x, long y) {
+    return x - y;
+  }
+
+  private static Number longSubPromote(long x, long y) {
     long z = x - y;
     if ((~(x ^ -y) & (x ^ z) & LONG_SIG_BIT) != 0)
       return BigInteger.valueOf(x).subtract(BigInteger.valueOf(y));
@@ -1161,10 +1197,17 @@ public final class OperatorBootstrap {
   private static MethodHandle dispatchMul(MethodHandles.Lookup lookup,
                                           EvaluationContext env,
                                           Object lhs, Object rhs) {
-    return dispatchArithmetic(lookup, env, "*", lhs, rhs,
-                              MH_intMul, MH_longMul, MH_floatMul, MH_doubleMul,
-                              MH_bigIntegerMul, MH_bigDecimalMul, MH_decimalMul,
-                              MH_rationalMul);
+    if (GlobalScope.isBigIntegerEnabled(env.getELContext())) {
+      return dispatchArithmetic(lookup, env, "*", lhs, rhs, MH_intMul,
+                                MH_longMulPromote, MH_floatMul, MH_doubleMul,
+                                MH_bigIntegerMul, MH_bigDecimalMul,
+                                MH_decimalMul, MH_rationalMul);
+    } else {
+      return dispatchArithmetic(lookup, env, "*", lhs, rhs, MH_intMul,
+                                MH_longMul, MH_floatMul, MH_doubleMul,
+                                MH_bigIntegerMul, MH_bigDecimalMul,
+                                MH_decimalMul, MH_rationalMul);
+    }
   }
 
   private static Number intMul(int x, int y) {
@@ -1174,7 +1217,11 @@ public final class OperatorBootstrap {
     return z;
   }
 
-  private static Number longMul(long x, long y) {
+  private static long longMul(long x, long y) {
+    return x * y;
+  }
+
+  private static Number longMulPromote(long x, long y) {
     long z = x * y;
     if (y != 0L && z / y != x)  // overflow
       return BigInteger.valueOf(x).multiply(BigInteger.valueOf(y));
@@ -1335,7 +1382,7 @@ public final class OperatorBootstrap {
     if (n == 1)
       return m;
 
-    if (n > 0) {
+    if (n > 0 && GlobalScope.isBigIntegerEnabled(elctx)) {
       BigInteger z = BigInteger.valueOf(m).pow(n);
       return z.bitLength() < 32 ? z.intValue() :
              z.bitLength() < 64 ? z.longValue()

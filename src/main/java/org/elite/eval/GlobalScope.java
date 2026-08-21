@@ -17,6 +17,7 @@
 package org.elite.eval;
 
 import java.io.Serial;
+import java.math.BigInteger;
 import java.math.MathContext;
 import java.io.Serializable;
 import javax.el.ELContext;
@@ -51,6 +52,15 @@ public class GlobalScope implements PropertyDelegate, Serializable
     @SuppressWarnings("unused")
     public static void setMathContext(ELContext elctx, MathContext mc) {
         elctx.putContext(MathContext.class, mc);
+    }
+
+    public static boolean isBigIntegerEnabled(ELContext elctx) {
+        return Boolean.TRUE.equals(elctx.getContext(BigInteger.class));
+    }
+
+    @SuppressWarnings("unused")
+    public static void setBigIntegerEnabled(ELContext elctx, boolean value) {
+        elctx.putContext(BigInteger.class, value);
     }
 
     public static boolean isRationalEnabled(ELContext elctx) {

@@ -3165,6 +3165,9 @@ public abstract class ELNode implements Serializable {
     }
 
     protected Number eval(ELContext elctx, long x, long y) {
+      if (!GlobalScope.isBigIntegerEnabled(elctx))
+        return x + y;
+
       long z = x + y;
       if ((~(x ^ y) & (x ^ z) & LONG_SIG_BIT) != 0) {
         return BigInteger.valueOf(x).add(BigInteger.valueOf(y));
@@ -3234,6 +3237,9 @@ public abstract class ELNode implements Serializable {
     }
 
     protected Number eval(ELContext elctx, long x, long y) {
+      if (!GlobalScope.isBigIntegerEnabled(elctx))
+        return x - y;
+
       long z = x - y;
       if ((~(x ^ ~y) & (x ^ z) & LONG_SIG_BIT) != 0) {
         return BigInteger.valueOf(x).subtract(BigInteger.valueOf(y));
@@ -3290,6 +3296,9 @@ public abstract class ELNode implements Serializable {
     }
 
     protected Number eval(ELContext elctx, long x, long y) {
+      if (!GlobalScope.isBigIntegerEnabled(elctx))
+        return x * y;
+
       long z = x * y;
       if (y != 0L && z / y != x) {       // overflowed
         return BigInteger.valueOf(x).multiply(BigInteger.valueOf(y));
@@ -3532,10 +3541,11 @@ public abstract class ELNode implements Serializable {
           return 1;
         } else if (n == 1) {
           return m;
-        } else if (n > 0) {
+        } else if (n > 0 && GlobalScope.isBigIntegerEnabled(elctx)) {
           BigInteger z = BigInteger.valueOf(m).pow(n);
-          return z.bitLength() < 32 ? z.intValue()
-                                    : z.bitLength() < 64 ? z.longValue() : z;
+          return z.bitLength() < 32 ? z.intValue() :
+                 z.bitLength() < 64 ? z.longValue()
+                                    : z;
         } else if (GlobalScope.isRationalEnabled(elctx)) {
           return Rational.make(BigInteger.ONE, BigInteger.valueOf(m).pow(-n));
         } else {
