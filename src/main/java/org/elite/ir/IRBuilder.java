@@ -685,11 +685,11 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildGetValueIndy(ELNode target, ELNode index) {
-    if (index instanceof ELNode.STRINGVAL) {
+    if (index instanceof ELNode.STRINGVAL key) {
       current.emitPushEnv();
       build(target);
       current.emitInvokeDynamic(new Descriptors.Indy(
-        getValueBootstrap, ((ELNode.STRINGVAL)index).value, Object.class,
+        getValueBootstrap, mangle(key.value), Object.class,
         EvaluationContext.class, Object.class));
     } else {
       current.emitPushEnv();
@@ -774,12 +774,12 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Set object property at runtime. Note that parameter order is reversed
     // because value is pushed first to stack.
-    if (node.index instanceof ELNode.STRINGVAL) {
+    if (node.index instanceof ELNode.STRINGVAL key) {
       current.emitDup();
       build(node.right);
       current.emitPushEnv();
       current.emitInvokeDynamic(new Descriptors.Indy(
-        setValueBootstrap, ((ELNode.STRINGVAL)node.index).value, void.class,
+        setValueBootstrap, mangle(key.value), void.class,
         Object.class, Object.class, EvaluationContext.class));
     } else {
       current.emitDup();
@@ -963,7 +963,7 @@ public class IRBuilder extends ELNode.Visitor {
         return;
 
       // Resolve method at runtime.
-      if (acc.index instanceof ELNode.STRINGVAL) {
+      if (acc.index instanceof ELNode.STRINGVAL key) {
         current.emitPushEnv();
         build(acc.right);
         buildTuple(node.args);
@@ -979,7 +979,7 @@ public class IRBuilder extends ELNode.Visitor {
         bootstrapArgs[0] = false;
 
         current.emitInvokeDynamic(new Descriptors.Indy(
-          invokeBootstrap, ((ELNode.STRINGVAL)acc.index).value, bootstrapArgs,
+          invokeBootstrap, mangle(key.value), bootstrapArgs,
           Object.class, EvaluationContext.class, Object.class, Object[].class));
       } else {
         current.emitPushEnv();
@@ -1558,7 +1558,7 @@ public class IRBuilder extends ELNode.Visitor {
       bootstrapArgs[0] = isSuper && !isStatic;
 
       current.emitInvokeDynamic(new Descriptors.Indy(
-        invokeBootstrap, key, bootstrapArgs, Object.class,
+        invokeBootstrap, mangle(key), bootstrapArgs, Object.class,
         EvaluationContext.class, Object.class, Object[].class));
       return true;
     }
@@ -3862,7 +3862,7 @@ public class IRBuilder extends ELNode.Visitor {
           tmpSlot.load();
           current.emitPushEnv();
           current.emitInvokeDynamic(new Descriptors.Indy(
-            setValueBootstrap, key.value, void.class, Object.class,
+            setValueBootstrap, mangle(key.value), void.class, Object.class,
             Object.class, EvaluationContext.class));
         } else {
           build(node.props.values[i]);

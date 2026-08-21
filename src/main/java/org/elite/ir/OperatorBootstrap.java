@@ -831,7 +831,7 @@ public final class OperatorBootstrap {
       case ">>"       -> dispatchShr    (lookup, env, lhs, rhs);
       case ">>>"      -> dispatchUshr   (lookup, env, lhs, rhs);
       case "~"        -> dispatchCat    (lookup, env, lhs, rhs);
-      case "<-"       -> dispatchIn     (lookup, lhs, rhs);
+      case "<-"       -> dispatchIn     (lookup, env, lhs, rhs);
       default -> throw new AssertionError("Unknown operator: " + name);
     };
 
@@ -1978,6 +1978,7 @@ public final class OperatorBootstrap {
   //=------------------------------------------------------------------------=//
 
   private static MethodHandle dispatchIn(MethodHandles.Lookup lookup,
+                                         EvaluationContext env,
                                          Object lhs, Object rhs) {
     if (lhs == null || rhs == null)
       return dropArguments(constant(boolean.class, false), 0,
@@ -1993,16 +1994,10 @@ public final class OperatorBootstrap {
       }
     }
 
-    try {
-      MethodHandle mh = lookup.findVirtual(
-        rhs.getClass(), "contains", methodType(boolean.class, Object.class));
-      return permuteArguments(mh, 1, 0);
-    } catch (NoSuchMethodException | IllegalAccessException e) {
-      // fallthrough
-    }
-
-    return dropArguments(constant(boolean.class, false), 0,
-                         Object.class, Object.class, EvaluationContext.class);
+    MethodHandle mh = DynamicBootstrap.dispatchInvoke(
+      lookup, env, "contains", false, new String[0], rhs, new Object[]{lhs});
+    mh = mh.asCollector(Object[].class, 1);
+    return permuteArguments(mh, 2, 1, 0);
   }
 
   private static boolean arrayContains(Object x, Object[] a) {
@@ -2059,7 +2054,7 @@ public final class OperatorBootstrap {
     MethodHandle target = switch (demangle(name)) {
       case "__neg__"    -> dispatchNeg(lookup, env, rhs);
       case "`!"         -> dispatchBitNot(lookup, env, rhs);
-      case "__empty__"  -> dispatchEmpty(lookup, rhs);
+      case "__empty__"  -> dispatchEmpty(lookup, env, rhs);
       default           -> throw new AssertionError("Unknown operator: " + name);
     };
 
@@ -2255,7 +2250,7 @@ public final class OperatorBootstrap {
   //=------------------------------------------------------------------------=//
 
   private static MethodHandle dispatchEmpty(MethodHandles.Lookup lookup,
-                                            Object rhs) {
+                                            EvaluationContext env, Object rhs) {
     if (rhs == null) {
       MethodHandle cst = constant(boolean.class, false);
       return dropArguments(cst, 0, Object.class);
@@ -2264,34 +2259,10 @@ public final class OperatorBootstrap {
     if (rhs.getClass().isArray())
       return MH_arrayEmpty;
 
-    if (isELiteObject(rhs)) {
-      try {
-        // Find the isEmpty() instance procedure in ELite class. The procedure
-        // must return a boolean value otherwise a ClassCastException will be
-        // thrown.
-        Method m = rhs.getClass().getMethod("isEmpty", EvaluationContext.class,
-                                            Object[].class);
-        MetaMethod ann = m.getAnnotation(MetaMethod.class);
-        if (!Modifier.isStatic(m.getModifiers()) &&
-            ann != null && ann.arity() == 0 && !ann.varargs()) {
-          return lookup.unreflect(m).asCollector(Object[].class, 0);
-        }
-      } catch (NoSuchMethodException | IllegalAccessException e) {
-        // fallthrough
-      }
-    }
-
-    // The convention of empty operator is an object has an isEmpty() method
-    // defined and returns a boolean. This covers the String, Collection, Map,
-    // and Optional.
-    try {
-      MethodHandle mh = lookup.findVirtual(rhs.getClass(), "isEmpty",
-                                           methodType(boolean.class));
-      return dropArguments(mh, 1, EvaluationContext.class);
-    } catch (NoSuchMethodException | IllegalAccessException e) {
-      MethodHandle cst = constant(boolean.class, false);
-      return dropArguments(cst, 0, Object.class);
-    }
+    MethodHandle mh = DynamicBootstrap.dispatchInvoke(
+      lookup, env, "isEmpty", false, new String[0], rhs, new Object[0]);
+    mh = insertArguments(mh, 2, (Object)null);
+    return permuteArguments(mh, 1, 0);
   }
 
   private static boolean arrayEmpty(Object x) {

@@ -234,7 +234,7 @@ public final class DynamicBootstrap {
                                            MethodType callSiteType) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
     MethodHandle target = insertArguments(MH_getValueDispatcher, 0,
-                                          lookup, cs, name);
+                                          lookup, cs, demangle(name));
     target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
@@ -580,12 +580,20 @@ public final class DynamicBootstrap {
       if (obj.getClass().isArray()) {
         MethodHandle mh = MethodHandles.arrayElementGetter(obj.getClass());
         mh = dropArguments(mh, 0, EvaluationContext.class);
-        return makeCoerce(mh, 2, index);
+        mh = makeCoerce(mh, 2, index);
+        return catchException(
+          mh, ArrayIndexOutOfBoundsException.class,
+          dropArguments(constant(Object.class, null),
+                        0, ArrayIndexOutOfBoundsException.class));
       }
 
       if (obj instanceof List) {
         MethodHandle mh = dropArguments(MH_listGet, 0, EvaluationContext.class);
-        return makeCoerce(mh, 2, index);
+        mh = makeCoerce(mh, 2, index);
+        return catchException(
+          mh, IndexOutOfBoundsException.class,
+          dropArguments(constant(Object.class, null), 0,
+                        IndexOutOfBoundsException.class));
       }
     }
 
@@ -605,7 +613,7 @@ public final class DynamicBootstrap {
                                            MethodType callSiteType) {
     MutableCallSite cs = new MutableCallSite(callSiteType);
     MethodHandle target = insertArguments(MH_setValueDispatcher, 0,
-                                          lookup, cs, name);
+                                          lookup, cs, demangle(name));
     target = target.asType(callSiteType);
     cs.setTarget(target);
     return cs;
@@ -912,7 +920,7 @@ public final class DynamicBootstrap {
                                          int isSuper, String... keys) {
     MutableCallSite cs = new MutableCallSite(callsiteType);
     MethodHandle target = insertArguments(MH_invokeDispatcher, 0, lookup, cs,
-                                          name, isSuper != 0, keys);
+                                          demangle(name), isSuper != 0, keys);
     target = target.asType(callsiteType);
     cs.setTarget(target);
     return cs;
@@ -958,11 +966,11 @@ public final class DynamicBootstrap {
       1, Object.class, Object[].class);
   }
 
-  private static MethodHandle dispatchInvoke(MethodHandles.Lookup lookup,
-                                             EvaluationContext env,
-                                             String name, boolean isSuper,
-                                             String[] keys, Object obj,
-                                             Object[] args) {
+  static MethodHandle dispatchInvoke(MethodHandles.Lookup lookup,
+                                     EvaluationContext env,
+                                     String name, boolean isSuper,
+                                     String[] keys, Object obj,
+                                     Object[] args) {
     if (obj == null)
       return dropArguments(throwNullPointerException(), 1, Object.class,
                            Object[].class);
@@ -1010,6 +1018,8 @@ public final class DynamicBootstrap {
             return dispatchJavaMethod(lookup, env, mc, true, obj, args);
         } else {
           MethodClosure mc = resolver.resolveMethod(obj.getClass(), name);
+          if (mc == null && lookup.lookupClass() == obj.getClass())
+            mc = resolver.resolveProtectedMethod(obj.getClass(), name);
           if (mc != null)
             return dispatchJavaMethod(lookup, env, mc, false, obj, args);
         }

@@ -19,7 +19,6 @@ package elite.lang;
 import elite.lang.annotation.Expando;
 import org.elite.eval.CharRanges;
 import org.elite.eval.Control;
-import org.elite.eval.DelegatingELContext;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
@@ -2163,25 +2162,6 @@ public final class Builtin {
    */
   public static Object eval(String exp, EvaluationContext env) {
     return Parser.parseExpression(env.getELContext(), exp).getValue(env);
-  }
-
-  /**
-   * 创建一个线程, 线程启动时调用给定的过程.
-   */
-  public static Thread thread(final ELContext elctx, final Closure proc) {
-    return new Thread(() -> {
-      // invoke procedure in the current context
-      proc.call(DelegatingELContext.get(elctx));
-    });
-  }
-
-  /**
-   * 创建并启动一个线程, 线程启动时调用给定的过程.
-   */
-  public static Thread start_thread(ELContext elctx, Closure proc) {
-    Thread t = thread(elctx, proc);
-    t.start();
-    return t;
   }
 
   /**

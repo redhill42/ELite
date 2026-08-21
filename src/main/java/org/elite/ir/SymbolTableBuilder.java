@@ -483,6 +483,7 @@ public final class SymbolTableBuilder {
 
       if (pat instanceof ELNode.DEFINE def) {
         scan(def.type);
+        scan(def.expr);
         if (!"_".equals(def.id)) {
           if (bind) {
             def.symbol = table.define(def);
@@ -516,6 +517,8 @@ public final class SymbolTableBuilder {
         scan(data.base);
         for (ELNode v : data.args)
           collectPatternBindings(v, bind);
+      } else if (pat instanceof ELNode.EXPR) {
+        scan(pat);
       }
     }
 

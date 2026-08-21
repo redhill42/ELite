@@ -115,8 +115,7 @@ public final class XelcMain {
       else if (base.endsWith(".elite"))
         base = base.substring(0, base.length() - 6);
       // Sanitize to valid Java identifier.
-      base = toJavaIdentifier(base);
-      className = "elite.program." + base;
+      className = toJavaIdentifier(base);
     }
 
     // Compile.

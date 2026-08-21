@@ -16,7 +16,6 @@
 package org.elite.ir;
 
 import elite.lang.Symbol;
-import org.elite.eval.DelegatingELContext;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
@@ -628,9 +627,9 @@ public class BytecodeCompiler {
         Arrays.stream(meta.metadata).anyMatch(md -> md.type.equals("data"));
     }
 
-    private record MethodRecord(String name, Class<?>[] paramTypes) {
+    private record MethodRecord(String name, List<Class<?>> paramTypes) {
       MethodRecord(Method m) {
-        this(m.getName(), m.getParameterTypes());
+        this(m.getName(), Arrays.asList(m.getParameterTypes()));
       }
     }
 
@@ -649,9 +648,7 @@ public class BytecodeCompiler {
           int ctxSlot = paramTypes.length + 1; // this, params..., ctx
 
           mc.THIS()
-            .GETFIELD(rootBaseClass, "$context", ELContext.class)
-            .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                          ELContext.class);
+            .GETFIELD(rootBaseClass, "$context", ELContext.class);
           if (returnType != Void.TYPE && returnType != Object.class)
             mc.DUP(); // for coerce
           mc.ASTORE(ctxSlot);
@@ -691,14 +688,16 @@ public class BytecodeCompiler {
     }
 
     private void collectOverrideMethods(Map<MethodRecord, Method> methods) {
-      if (clazz.base instanceof Class && clazz.base != Object.class) {
-        for (Method m : ((Class<?>)clazz.base).getMethods()) {
-          int modifiers = m.getModifiers();
-          if ((Modifier.isPublic(modifiers) ||
-               Modifier.isProtected(modifiers)) &&
-              !Modifier.isStatic(modifiers) && !Modifier.isFinal(modifiers) &&
-              m.getDeclaringClass() != Object.class) {
-            methods.put(new MethodRecord(m), m);
+      if (clazz.base instanceof Class<?> c && c != Object.class) {
+        for (; c != Object.class; c = c.getSuperclass()) {
+          for (Method m : c.getDeclaredMethods()) {
+            int modifiers = m.getModifiers();
+            if ((Modifier.isPublic(modifiers) ||
+                 Modifier.isProtected(modifiers)) &&
+                !Modifier.isStatic(modifiers) &&
+                !Modifier.isFinal(modifiers)) {
+              methods.putIfAbsent(new MethodRecord(m), m);
+            }
           }
         }
       }
@@ -710,7 +709,7 @@ public class BytecodeCompiler {
             if ((Modifier.isPublic(modifiers) ||
                  Modifier.isProtected(modifiers)) &&
                 !Modifier.isStatic(modifiers))
-              methods.put(new MethodRecord(m), m);
+              methods.putIfAbsent(new MethodRecord(m), m);
           }
         }
       }
@@ -725,8 +724,6 @@ public class BytecodeCompiler {
           .DUP()
           .THIS()
           .GETFIELD(rootBaseClass, "$context", ELContext.class)
-          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ASTORE(1)
@@ -737,8 +734,6 @@ public class BytecodeCompiler {
       } else {
         mc.THIS()
           .GETFIELD(rootBaseClass, "$context", ELContext.class)
-          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                         ELContext.class)
           .ASTORE(1);
 
         mc.NEW_INSTANCE(StringBuilder.class)
@@ -792,8 +787,6 @@ public class BytecodeCompiler {
           .DUP()
           .THIS()
           .GETFIELD(rootBaseClass, "$context", ELContext.class)
-          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ASTORE(1)
@@ -846,8 +839,6 @@ public class BytecodeCompiler {
           .DUP()
           .THIS()
           .GETFIELD(rootBaseClass, "$context", ELContext.class)
-          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ASTORE(1)
@@ -888,8 +879,6 @@ public class BytecodeCompiler {
           .DUP()
           .THIS()
           .GETFIELD(rootBaseClass, "$context", ELContext.class)
-          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ICONST_1()
@@ -922,8 +911,6 @@ public class BytecodeCompiler {
           .DUP()
           .THIS()
           .GETFIELD(rootBaseClass, "$context", ELContext.class)
-          .INVOKESTATIC(DelegatingELContext.class, "get", ELContext.class,
-                        ELContext.class)
           .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
                          ELContext.class)
           .ICONST_1()

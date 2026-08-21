@@ -117,7 +117,7 @@ class GameOfLife extends Panel implements Runnable
         cellSize = getParamInteger("cellsize", 11);
         cellCols = getParamInteger("cellcols", 50);
         cellRows = getParamInteger("cellrows", 30);
-        genTime  = getParamInteger("gentime", 1000);
+        genTime  = getParamInteger("gentime", 500);
     }
 
     /**
@@ -314,7 +314,7 @@ class GameOfLife extends Panel implements Runnable
          * Load shape from disk
          * @param filename filename to load shape from, or null when no filename given.
          */
-        public void openShape(filename = null) {
+        public void openShape(filename) {
             define file;
             try {
                 if (filename != null) {
@@ -427,12 +427,12 @@ class GameOfLife extends Panel implements Runnable
             define colStart = dim.width;
             define rowStart = dim.height;
 
-            define lineSeperator = System.getProperty("line.separator");
+            define lineSeparator = System.getProperty("line.separator");
             define text = new StringBuilder();
             text << "!Generator: Game of Life (http://www.bitstorm.org/gameoflife/)";
-            text << lineSeperator;
+            text << lineSeparator;
             text << "!Variation: 23/3";
-            text << lineSeperator;
+            text << lineSeparator;
 
             for (row in [0..<dim.height]) {
                 for (col in [0..<dim.width]) {
@@ -453,7 +453,7 @@ class GameOfLife extends Panel implements Runnable
                 for (col in [colStart..colEnd]) {
                     text << (grid.getCell(col, row) ? 'O' : '-');
                 }
-                text << lineSeperator;
+                text << lineSeparator;
             }
 
             writeText(text.toString());
@@ -505,43 +505,22 @@ class GameOfLifeFrame extends Frame
         define menubar = new MenuBar();
         define fileMenu = new Menu("File", true);
         define readMenuItem = new MenuItem("Open...");
-        readMenuItem.addActionListener(new ActionListener() {
-            void actionPerformed(e) {
-                getGameOfLife().getGridIO().openShape();
-                getGameOfLife().reset();
-            }
+        readMenuItem.addActionListener({_ =>
+            getGameOfLife().getGridIO().openShape(null);
+            getGameOfLife().reset();
         });
         define writeMenuItem = new MenuItem("Save...");
-        writeMenuItem.addActionListener(new ActionListener() {
-            void actionPerformed(e) {
-                getGameOfLife().getGridIO().saveShape();
-            }
-        });
+        writeMenuItem.addActionListener(
+            \_ => getGameOfLife().getGridIO().saveShape());
         define quitMenuItem = new MenuItem("Exit");
-        quitMenuItem.addActionListener(new ActionListener() {
-            void actionPerformed(e) {
-                System.exit(0);
-            }
-        });
+        quitMenuItem.addActionListener(\_ => System.exit(0))
         define helpMenu = new Menu("Help", true);
         define manualMenuItem = new MenuItem("Manual");
-        manualMenuItem.addActionListener(new ActionListener() {
-            void actionPerformed(e) {
-                showManualDialog();
-            }
-        });
+        manualMenuItem.addActionListener(\_ => showManualDialog());
         define licenseMenuItem = new MenuItem("License");
-        licenseMenuItem.addActionListener(new ActionListener() {
-            void actionPerformed(e) {
-                showLicenseDialog();
-            }
-        });
+        licenseMenuItem.addActionListener(\_ => showLicenseDialog());
         define aboutMenuItem = new MenuItem("About");
-        aboutMenuItem.addActionListener(new ActionListener() {
-            void actionPerformed(e) {
-                showAboutDialog();
-            }
-        });
+        aboutMenuItem.addActionListener(\_ => showAboutDialog());
 
         fileMenu.add(readMenuItem);
         fileMenu.add(writeMenuItem);
@@ -633,20 +612,6 @@ class Cell(final col, final row) {
      * Determines the next state.
      */
     define neighbour = 0;
-
-    /**
-     * Compare cell-objects for use in hashtables
-     */
-    define equals(o) {
-        return o is Cell and col==o.col and row == o.row;
-    }
-
-    /**
-     * Calculate hash for use in hashtables
-     */
-    define hashCode() {
-        return 5000*row+col;
-    }
 }
 
 /**
@@ -658,8 +623,8 @@ class CellGridCanvas extends Canvas
     private cellUnderMouse = false;
     private offScreenImage;
     private offScreenGraphics;
-    private offScreenGraphicsDrawed;
-    private offScreenImageDrawed;
+    private offScreenGraphicsDrew;
+    private offScreenImageDrew;
     private cellSize;
     private cellGrid;
     private listeners;
@@ -685,10 +650,7 @@ class CellGridCanvas extends Canvas
             void mouseDragged(e) => draw(e.x, e.y);
         });
         addComponentListener(new ComponentListener() {
-            void componentResized(e) {
-                resized();
-                repaint();
-            }
+            void componentResized(e) => resized();
             void componentMoved(e) {}
             void componentHidden(e) {}
             void componentShown(e) {}
@@ -702,7 +664,6 @@ class CellGridCanvas extends Canvas
     public void setCellSize(cellSize) {
         this.cellSize = cellSize;
         resized();
-        repaint();
     }
 
     /**
@@ -716,11 +677,12 @@ class CellGridCanvas extends Canvas
         }
         define canvasDim = this.size();
         offScreenImage = null;
-        offScreenImageDrawed = null;
+        offScreenImageDrew = null;
         cellGrid.resize(canvasDim.width div cellSize, canvasDim.height div cellSize);
         if (newShape != null) {
             setShape(newShape);
         }
+        repaint();
     }
 
     /**
@@ -762,25 +724,25 @@ class CellGridCanvas extends Canvas
      */
     public void paint(g) {
         // Draw grid on background image, which is faster
-        if (offScreenImageDrawed == null) {
+        if (offScreenImageDrew == null) {
             define dim = cellGrid.dimension;
             define d = getSize();
-            offScreenImageDrawed = createImage(d.width, d.height);
-            offScreenGraphicsDrawed = offScreenImageDrawed.getGraphics();
+            offScreenImageDrew = createImage(d.width, d.height);
+            offScreenGraphicsDrew = offScreenImageDrew.getGraphics();
             // draw background
-            offScreenGraphicsDrawed.color = getBackground();
-            offScreenGraphicsDrawed.fillRect(0, 0, d.width, d.height);
-            offScreenGraphicsDrawed.color = Color.gray;
-            offScreenGraphicsDrawed.fillRect(0, 0, cellSize*dim.width-1, cellSize*dim.height-1);
-            offScreenGraphicsDrawed.color = getBackground();
+            offScreenGraphicsDrew.color = getBackground();
+            offScreenGraphicsDrew.fillRect(0, 0, d.width, d.height);
+            offScreenGraphicsDrew.color = Color.gray;
+            offScreenGraphicsDrew.fillRect(0, 0, cellSize*dim.width-1, cellSize*dim.height-1);
+            offScreenGraphicsDrew.color = getBackground();
             for (x in [1..<dim.width]) {
-                offScreenGraphicsDrawed.drawLine(x*cellSize-1, 0, x*cellSize-1, cellSize*dim.height-1);
+                offScreenGraphicsDrew.drawLine(x*cellSize-1, 0, x*cellSize-1, cellSize*dim.height-1);
             }
             for (y in [1..<dim.height]) {
-                offScreenGraphicsDrawed.drawLine(0, y*cellSize-1, cellSize*dim.width-1, y*cellSize-1);
+                offScreenGraphicsDrew.drawLine(0, y*cellSize-1, cellSize*dim.width-1, y*cellSize-1);
             }
         }
-        g.drawImage(offScreenImageDrawed, 0, 0, null);
+        g.drawImage(offScreenImageDrew, 0, 0, null);
         // draw populated cells
         g.color = Color.yellow;
         for (c in cellGrid.cells) {
@@ -873,7 +835,7 @@ class GameOfLifeControls extends Panel
      * Constructs the controls.
      */
     public GameOfLifeControls() {
-        // pulldown menu with shapes
+        // pull down menu with shapes
         shapesChoice = new Choice();
 
         // Put names of shapes in menu
@@ -882,13 +844,9 @@ class GameOfLifeControls extends Panel
         }
 
         // when shape is selected
-        shapesChoice.addItemListener(new ItemListener() {
-            void itemStateChanged(e) {
-                shapeSelected(e.item);
-            }
-        });
+        shapesChoice.addItemListener(\e => shapeSelected(e.item));
 
-        // pulldown menu with speeds
+        // pull down menu with speeds
         define speedChoice = new Choice();
 
         // add speeds
@@ -897,17 +855,15 @@ class GameOfLifeControls extends Panel
         speedChoice.addItem(HYPER);
 
         // when item is selected
-        speedChoice.addItemListener(new ItemListener() {
-            void itemStateChanged(e) {
-                switch (e.item) {
-                case SLOW:  speedChanged(1000);
-                case FAST:  speedChanged(100);
-                case HYPER: speedChanged(10);
-                }
-            }
+        speedChoice.addItemListener({
+            e => switch (e.item) {
+                 case SLOW:  speedChanged(500);
+                 case FAST:  speedChanged(100);
+                 case HYPER: speedChanged(10);
+                 }
         });
 
-        // pulldown menu with speeds
+        // pull down menu with speeds
         zoomChoice = new Choice();
 
         // add items
@@ -916,14 +872,12 @@ class GameOfLifeControls extends Panel
         zoomChoice.addItem(SMALL);
 
         // when item is selected
-        zoomChoice.addItemListener(new ItemListener() {
-            void itemStateChanged(e) {
-                switch (e.item) {
-                case BIG:    zoomChanged(SIZE_BIG);
-                case MEDIUM: zoomChanged(SIZE_MEDIUM);
-                case SMALL:  zoomChanged(SIZE_SMALL);
-                }
-            }
+        zoomChoice.addItemListener({
+            e => switch (e.item) {
+                 case BIG:    zoomChanged(SIZE_BIG);
+                 case MEDIUM: zoomChanged(SIZE_MEDIUM);
+                 case SMALL:  zoomChanged(SIZE_SMALL);
+                 }
         });
 
         // number of generations
@@ -931,15 +885,11 @@ class GameOfLifeControls extends Panel
 
         // start and stop button
         startstopButton = new Button(startLabelText);
-        startstopButton.addActionListener(new ActionListener() {
-            void actionPerformed(e) => startStopButtonClicked();
-        });
+        startstopButton.addActionListener(\e => startStopButtonClicked());
 
         // next generation button
         nextButton = new Button(nextLabelText);
-        nextButton.addActionListener(new ActionListener() {
-            void actionPerformed(e) => nextButtonClicked();
-        });
+        nextButton.addActionListener(\e => nextButtonClicked());
 
         // create panel with controls
         this.add(shapesChoice);
@@ -1174,8 +1124,8 @@ class GameOfLifeGrid
         // Bury the dead
         currentShape.removeIf(\x=>x.neighbour not in [2..3]);
 
-        // Bring out the new borns
-        nextShape.each { x@Cell(col,row) =>
+        // Bring out the new born
+        nextShape.each { x@Cell(col, row) =>
             if (x.neighbour == 3) {
                 setCell(col, row, true);
             }
@@ -1191,7 +1141,7 @@ class GameOfLifeGrid
     public void addNeighbour(col, row) {
         define c = grid[col][row];
         if (c != null) {
-            if (c in nextShape) {
+            if (nextShape.contains(c)) {
                 c.neighbour++;
             } else {
                 c.neighbour = 1;
@@ -1214,7 +1164,7 @@ class GameOfLifeGrid
      * @return value of cell
      */
     public getCell(col, row) {
-        grid[col][row] in currentShape;
+        currentShape.contains(grid[col][row]);
     }
 
     /**
@@ -1438,9 +1388,7 @@ class TextFileDialog extends Dialog
         super(parent, title);
 
         define okButton = new Button(" Close ");
-        okButton.addActionListener(new ActionListener() {
-            void actionPerformed(e) => close();
-        });
+        okButton.addActionListener(\e => close());
 
         define buf = new StringBuilder();
         new File(filename).eachLine { buf << $ << "\n" };

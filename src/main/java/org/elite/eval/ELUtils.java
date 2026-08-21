@@ -190,19 +190,22 @@ public class ELUtils
         return true;
     }
 
+    // https://docs.oracle.com/javase/specs/jvms/se9/html/jvms-4.html#jvms-4.2.2
     public static String mangle(String name) {
         return name.replace("<", "%lt%")
                    .replace(">", "%gt%")
+                   .replace(".", "%dot%")
+                   .replace(";", "%semi%")
                    .replace("[", "%lb%")
-                   .replace("]", "%rb%")
                    .replace("/", "%div%");
     }
 
     public static String demangle(String name) {
         return name.replace("%lt%", "<")
                    .replace("%gt%", ">")
+                   .replace("%dot%", ".")
+                   .replace("%semi%", ";")
                    .replace("%lb%", "[")
-                   .replace("%rb%", "]")
                    .replace("%div%", "/");
     }
 
