@@ -144,7 +144,7 @@ public class Utils
         if (type == null) {
             try {
                 if (loader != null) {
-                    type = Class.forName(name, true, loader);
+                    type = Class.forName(name, false, loader);
                 } else {
                     type = Class.forName(name);
                 }
