@@ -61,7 +61,8 @@ class SingleMethodClosure extends JavaMethodClosure {
     }
   }
 
-  public Method getJavaMethod() {
+  @Override
+  public Method getJavaMethod(int arity) {
     return method;
   }
 

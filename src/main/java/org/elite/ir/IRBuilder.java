@@ -1571,7 +1571,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (mc == null)
       return false;
 
-    Method method = mc.getJavaMethod();
+    Method method = mc.getJavaMethod(args.length);
     if (method == null)
       return false;
 
@@ -1580,11 +1580,11 @@ public class IRBuilder extends ELNode.Visitor {
 
   private boolean tryBuildDirectMethodCall(ELNode base, String name,
                                            ELNode[] args) {
-    Method method = resolveStaticMethod(base, name);
+    Method method = resolveStaticMethod(base, name, args);
     if (method != null)
       return buildMethodCall(method, null, args);
 
-    method = resolveInstanceMethod(base, name);
+    method = resolveInstanceMethod(base, name, args);
     if (method != null)
       return buildMethodCall(method, base, args);
 
@@ -1606,7 +1606,7 @@ public class IRBuilder extends ELNode.Visitor {
       Object.class, Object[].class));
   }
 
-  private Method resolveStaticMethod(ELNode base, String name) {
+  private Method resolveStaticMethod(ELNode base, String name, ELNode[] args) {
     Class<?> cls = resolveJavaClass(base);
     if (cls == null)
       return null;
@@ -1616,7 +1616,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (mc == null)
       return null;
 
-    Method method = mc.getJavaMethod();
+    Method method = mc.getJavaMethod(args.length);
     if (method == null)
       return null;
 
@@ -1628,7 +1628,7 @@ public class IRBuilder extends ELNode.Visitor {
     return method;
   }
 
-  private Method resolveInstanceMethod(ELNode base, String name) {
+  private Method resolveInstanceMethod(ELNode base, String name, ELNode[] args) {
     Class<?> baseClass = null;
     if (base instanceof ELNode.Constant) {
       Object value = base.getValue(null);
@@ -1650,7 +1650,7 @@ public class IRBuilder extends ELNode.Visitor {
     var mc = MethodResolver.getInstance(elctx).resolveMethod(baseClass, name);
     if (mc == null)
       return null;
-    return mc.getJavaMethod();
+    return mc.getJavaMethod(args.length);
   }
 
   private boolean buildMethodCall(Method method, ELNode base, ELNode[] args) {
@@ -1941,7 +1941,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (mc == null)
       return null;
 
-    Method method = mc.getJavaMethod();
+    Method method = mc.getJavaMethod(1);
     if (method == null)
       return null;
 

@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import javax.el.ELContext;
 import javax.el.ELException;
@@ -50,6 +51,24 @@ class MultiMethodClosure extends JavaMethodClosure
 
     public String getName() {
         return name;
+    }
+
+    @Override
+    public Method getJavaMethod(int arity) {
+        Method candidate = null;
+        for (Method method : methods) {
+            if (method.isVarArgs())
+                continue;
+            int paramCount = method.getParameterCount();
+            if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
+                --paramCount;
+            if (paramCount == arity) {
+                if (candidate != null)
+                    return null;
+                candidate = method;
+            }
+        }
+        return candidate;
     }
 
     public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {

@@ -49,9 +49,10 @@ class ExpandoMethodClosure extends MethodClosure
         }
     }
 
-    public Method getJavaMethod() {
+    @Override
+    public Method getJavaMethod(int arity) {
         if (delegate instanceof MethodClosure)
-            return ((MethodClosure)delegate).getJavaMethod();
+            return ((MethodClosure)delegate).getJavaMethod(arity + 1);
         return null;
     }
 

@@ -35,7 +35,7 @@ public abstract class MethodClosure extends AbstractClosure
     /**
      * 返回Java方法，如果方法不存在或存在多个重载方法，则返回null.
      */
-    public Method getJavaMethod() {
+    public Method getJavaMethod(int arity) {
         return null;
     }
 
