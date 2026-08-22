@@ -3153,15 +3153,12 @@ public class IRBuilder extends ELNode.Visitor {
    * Extract default parameter values from lambda definitions.
    */
   private Object[] getDefaultValues(ELNode.DEFINE[] vars) {
-    Object[] defs = null;
-    for (int i = 0; i < vars.length; i++) {
-      if (vars[i].expr != null) {
-        if (defs == null)
-          defs = new Object[vars.length];
-        defs[i] = const_value(vars[i].expr);
-      }
+    List<Object> values = new ArrayList<>();
+    for (ELNode.DEFINE var : vars) {
+      if (var.expr != null)
+        values.add(const_value(var.expr));
     }
-    return defs;
+    return values.isEmpty() ? null : values.toArray();
   }
 
   private Object const_value(ELNode node) {
@@ -3194,6 +3191,17 @@ public class IRBuilder extends ELNode.Visitor {
       Object t = const_value(x.tail);
       if (t instanceof Seq)
         return new Cons(h, (Seq)t);
+    }
+
+    if (node instanceof ELNode.MAP m) {
+      LinkedHashMap<Object, Object> map = new LinkedHashMap<>();
+      for (int i = 0; i < m.keys.length; i++)
+        map.put(const_value(m.keys[i]), const_value(m.values[i]));
+      return map;
+    }
+
+    if (node instanceof ELNode.RANGE r && r.isConstant()) {
+      return r.getValue(null);
     }
 
     if (node instanceof ELNode.IDENT var && var.symbol != null &&

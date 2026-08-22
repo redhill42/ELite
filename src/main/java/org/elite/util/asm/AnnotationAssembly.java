@@ -37,7 +37,7 @@ public class AnnotationAssembly {
 
   public AnnotationAssembly ANNOTATION(String name, Class<?> type) {
     return new AnnotationAssembly(
-      this, impl.visitAnnotation(name, AsmType.toInternalName(type)));
+      this, impl.visitAnnotation(name, AsmType.getDescriptor(type)));
   }
 
   public AnnotationAssembly ARRAY(String name) {

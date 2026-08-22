@@ -23,7 +23,6 @@ import javax.el.ELContext;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Type;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodHandles.filterArguments;

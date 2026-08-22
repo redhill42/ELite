@@ -30,6 +30,7 @@ import org.elite.eval.UserException;
 import org.elite.parser.ELNode;
 import org.elite.resources.Resources;
 import org.elite.util.DynamicClassLoader;
+import org.elite.util.asm.AnnotationAssembly;
 import org.elite.util.asm.AsmType;
 import org.elite.util.asm.ClassAssembly;
 import org.elite.util.asm.MethodAssembly;
@@ -209,14 +210,107 @@ public class BytecodeCompiler {
       ACC_PUBLIC | ACC_STATIC | ACC_FINAL, f.internalName, Object.class,
       EvaluationContext.class, Object[].class);
 
-    mc.ANNOTATION(MetaMethod.class, true)
-      .FIELD("name", f.name())
+    AnnotationAssembly ac = mc.ANNOTATION(MetaMethod.class, true);
+    ac.FIELD("name", f.name())
       .FIELD("arity", f.paramCount())
       .FIELD("varargs", f.isVarArgs())
-      .ARRAY("parameterNames", f.paramNames())
-      .end();
+      .ARRAY("parameterNames", f.paramNames());
+    emitDefaultValues(ac, f.defaultValues());
+    ac.end();
 
     new FunctionCompiler(f, ProgramClassName, true, Object.class, mc).compile();
+  }
+
+  private void emitDefaultValues(AnnotationAssembly ac, Object[] defaultValues) {
+    if (defaultValues == null)
+      return;
+
+    AnnotationAssembly dv = ac.ARRAY("defaultValues");
+    for (Object value : defaultValues) {
+      if (value == null) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "NULL")
+          .end();
+      } else if (value instanceof List<?> ls && ls.isEmpty()) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "NIL")
+          .end();
+      } else if (value instanceof Boolean) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "BOOL")
+          .FIELD("boolValue", value)
+          .end();
+      } else if (value instanceof Character) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CHAR")
+          .FIELD("charValue", value)
+          .end();
+      } else if (value instanceof Integer || value instanceof Byte ||
+                 value instanceof Short) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "INT")
+          .FIELD("intValue", ((Number)value).intValue())
+          .end();
+      } else if (value instanceof Long) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "LONG")
+          .FIELD("longValue", value)
+          .end();
+      } else if (value instanceof Float) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "FLOAT")
+          .FIELD("floatValue", value)
+          .end();
+      } else if (value instanceof Double) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "DOUBLE")
+          .FIELD("doubleValue", value)
+          .end();
+      } else if (value instanceof String) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "STRING")
+          .FIELD("stringValue", value)
+          .end();
+      } else if (value instanceof Symbol symbol) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "SYMBOL")
+          .FIELD("stringValue", symbol.getName())
+          .end();
+      } else if (value instanceof Class) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CLASS")
+          .FIELD("classValue", Type.getType((Class<?>)value))
+          .end();
+      } else if (value instanceof IRClass irc) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CLASS")
+          .FIELD("classValue", Type.getType(
+            AsmType.toDescriptor(irc.internalName)))
+          .end();
+      } else if (value instanceof Field field) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "FIELD")
+          .FIELD("classValue", Type.getType(field.getDeclaringClass()))
+          .FIELD("stringValue", field.getName())
+          .end();
+      } else if (value instanceof Descriptors.Field field) {
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "FIELD")
+          .FIELD("classValue", Type.getType(
+            AsmType.toDescriptor(field.clazz().internalName)))
+          .FIELD("stringValue", field.field())
+          .end();
+      } else {
+        int index = putConstant(value);
+        dv.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CONST")
+          .FIELD("classValue", Type.getType(
+            AsmType.toDescriptor(ProgramClassName)))
+          .FIELD("intValue", index)
+          .end();
+      }
+    }
+    dv.end();
   }
 
   private void compileClass(IRClass clazz) {
@@ -227,7 +321,7 @@ public class BytecodeCompiler {
     if (constantMap.isEmpty())
       return;
 
-    cc.addField(ACC_PRIVATE | ACC_STATIC | ACC_FINAL, CONSTANT_POOL_NAME,
+    cc.addField(ACC_PUBLIC | ACC_STATIC | ACC_FINAL, CONSTANT_POOL_NAME,
                 Object[].class);
 
     MethodAssembly mc = cc.newMethod(ACC_STATIC, "<clinit>", "()V", null);
@@ -259,8 +353,12 @@ public class BytecodeCompiler {
       .end();
   }
 
+  private int putConstant(Object value) {
+    return constantMap.computeIfAbsent(value, k -> constantMap.size());
+  }
+
   private void loadConstant(MethodAssembly mc, Object value) {
-    int index = constantMap.computeIfAbsent(value, k -> constantMap.size());
+    int index = putConstant(value);
     mc.GETSTATIC(ProgramClassName, CONSTANT_POOL_NAME, Object[].class)
       .PUSH(index)
       .AALOAD();
@@ -508,12 +606,13 @@ public class BytecodeCompiler {
                           Object[].class);
       }
 
-      mc.ANNOTATION(MetaMethod.class, true)
-        .FIELD("name", clazz.name)
+      AnnotationAssembly ac = mc.ANNOTATION(MetaMethod.class, true);
+      ac.FIELD("name", clazz.name)
         .FIELD("arity", initFunc.paramCount())
         .FIELD("varargs", initFunc.isVarArgs())
-        .ARRAY("parameterNames", initFunc.paramNames())
-        .end();
+        .ARRAY("parameterNames", initFunc.paramNames());
+      emitDefaultValues(ac, initFunc.defaultValues());
+      ac.end();
 
       if (className.equals(rootBaseClass)) {
         // Add $context field to save the ELContext for methods invoked without
@@ -581,12 +680,13 @@ public class BytecodeCompiler {
                           EvaluationContext.class, Object[].class);
 
         // Add annotation for member attributes.
-        mc.ANNOTATION(MetaMethod.class, true)
-          .FIELD("name", fn.name())
+        ac = mc.ANNOTATION(MetaMethod.class, true);
+        ac.FIELD("name", fn.name())
           .FIELD("arity", fn.paramCount())
           .FIELD("varargs", fn.isVarArgs())
-          .ARRAY("parameterNames", fn.paramNames())
-          .end();
+          .ARRAY("parameterNames", fn.paramNames());
+        emitDefaultValues(ac, fn.defaultValues());
+        ac.end();
 
         if ((access & ACC_ABSTRACT) == 0) {
           new FunctionCompiler(fn, className, (access & ACC_STATIC) != 0,
@@ -1703,55 +1803,18 @@ public class BytecodeCompiler {
       // Constructor.
       mc.THIS()
         .ALOAD(1)
-        .LDC(closure.name())
-        .PUSH(closure.paramCount());
-
-      if (closure.defaultValues() == null)
-        mc.ACONST_NULL();
-      else {
-        Object[] defaults = closure.defaultValues();
-        mc.PUSH(defaults.length)
-          .ANEWARRAY(Object.class);
-        for (int i = 0; i < defaults.length; i++) {
-          Object value = defaults[i];
-          mc.DUP();
-          mc.PUSH(i);
-          if (value == null) {
-            mc.ACONST_NULL();
-          } else if (value instanceof Boolean || value instanceof Byte ||
-                     value instanceof Short   || value instanceof Character ||
-                     value instanceof Integer || value instanceof Long) {
-            mc.BOX(value);
-          } else if (value instanceof String) {
-            mc.LDC(value);
-          } else if (value instanceof Symbol) {
-            mc.LDC(((Symbol)value).getName())
-              .INVOKESTATIC(Symbol.class, "valueOf", Symbol.class, String.class);
-          } else if (value instanceof Class) {
-            mc.LDC(Type.getType((Class<?>)value));
-          } else if (value instanceof IRClass c) {
-            mc.LDC(Type.getType(AsmType.toDescriptor(c.internalName)));
-          } else if (value instanceof Field f) {
-            mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
-          } else if (value instanceof Descriptors.Field f) {
-            mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
-          } else {
-            // Load constant from constant pool.
-            loadConstant(mc, value);
-          }
-          mc.AASTORE();
-        }
-      }
-
-      mc.INVOKESPECIAL(IRCompiledClosure.class, "<init>", Void.TYPE,
-                       EvaluationContext.class, String.class, int.class,
-                       Object[].class)
+        .INVOKESPECIAL(IRCompiledClosure.class, "<init>", Void.TYPE,
+                       EvaluationContext.class)
         .RETURN()
         .end();
 
-      // protected Object execute(EvaluationContext env, Object[] args) {
-      //     return ELiteProgram$1.fn$2(env.pushContext(), args);
-      // }
+      // Arity, returns the number of parameters.
+      cc.newMethod(ACC_PUBLIC, "arity", int.class, ELContext.class)
+        .PUSH(closure.paramCount())
+        .IRETURN()
+        .end();
+
+      // The main execution entry point. Delegate to actual closure method.
       mc = cc.newMethod(ACC_PROTECTED, "execute", Object.class,
                         EvaluationContext.class, Object[].class);
       String ownerName = closure.owner() != null ? closure.owner().internalName
@@ -1762,7 +1825,16 @@ public class BytecodeCompiler {
           .ALOAD(1)
           .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
                          EvaluationContext.class)
+          .DUP()
+          .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
+                         ELContext.class)
+          .PUSH(closure.paramCount())
+          .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
+          .LDC(closure.internalName)
           .ALOAD(2)
+          .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
+                        ELContext.class, int.class, Class.class, String.class,
+                        Object[].class)
           .INVOKEVIRTUAL(ownerName, closure.internalName, Object.class,
                          EvaluationContext.class, Object[].class)
           .ARETURN()
@@ -1771,12 +1843,30 @@ public class BytecodeCompiler {
         mc.ALOAD(1)
           .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
                          EvaluationContext.class)
+          .DUP()
+          .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
+                         ELContext.class)
+          .PUSH(closure.paramCount())
+          .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
+          .LDC(closure.internalName)
           .ALOAD(2)
+          .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
+                          ELContext.class, int.class, Class.class, String.class,
+                          Object[].class)
           .INVOKESTATIC(ownerName, closure.internalName, Object.class,
                         EvaluationContext.class, Object[].class)
           .ARETURN()
           .end();
       }
+
+      // toString
+      mc = cc.newMethod(ACC_PUBLIC, "toString", String.class);
+      if (closure.name() == null || closure.name().equals("<lambda>"))
+        mc.LDC("#<procedure>");
+      else
+        mc.LDC("#<procedure: " + closure.name() + ">");
+      mc.ARETURN();
+      mc.end();
 
       createdClosures.add(closure);
       consumer.acceptClass(name, cc.end());
