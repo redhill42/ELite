@@ -131,10 +131,15 @@ public abstract class IRCompiledClosure extends Closure
    */
   @SuppressWarnings("unused")
   protected static Object[]
-  getArgs(ELContext elctx, int nvars, Class<?> declaringClass,
+  getArgs(ELContext elctx, int nvars, boolean isBlock, Class<?> declaringClass,
           String methodName, Object[] args) {
     if (args.length == nvars)
       return args;
+
+    if (isBlock) {
+      assert nvars == 1;
+      return new Object[]{args};
+    }
 
     try {
       Method method = declaringClass.getMethod(

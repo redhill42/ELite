@@ -632,6 +632,16 @@ public abstract class ELNode implements Serializable {
       int nvars = vars.length;
       Closure[] xargs = null;
 
+      // A lambda block that has an implicit "$" parameter.
+      if (nvars == 1 && vars[0].id.equals("$")) {
+        if (args.length == 1)
+          return args;
+
+        xargs = new Closure[1];
+        xargs[0] = new LiteralClosure(args);
+        return xargs;
+      }
+
       if (argc < nvars && dvals) {
         // pad with default values
         xargs = new Closure[nvars];

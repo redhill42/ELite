@@ -505,21 +505,21 @@ class GameOfLifeFrame extends Frame
         define menubar = new MenuBar();
         define fileMenu = new Menu("File", true);
         define readMenuItem = new MenuItem("Open...");
-        readMenuItem.addActionListener({_ =>
+        readMenuItem.addActionListener {
             getGameOfLife().getGridIO().openShape();
             getGameOfLife().reset();
-        });
+        }
         define writeMenuItem = new MenuItem("Save...");
-        writeMenuItem.addActionListener(\_ => getGameOfLife().getGridIO().saveShape());
+        writeMenuItem.addActionListener { getGameOfLife().getGridIO().saveShape() }
         define quitMenuItem = new MenuItem("Exit");
-        quitMenuItem.addActionListener(\_ => System.exit(0))
+        quitMenuItem.addActionListener { System.exit(0) }
         define helpMenu = new Menu("Help", true);
         define manualMenuItem = new MenuItem("Manual");
-        manualMenuItem.addActionListener(\_ => showManualDialog());
+        manualMenuItem.addActionListener { showManualDialog() }
         define licenseMenuItem = new MenuItem("License");
-        licenseMenuItem.addActionListener(\_ => showLicenseDialog());
+        licenseMenuItem.addActionListener { showLicenseDialog() }
         define aboutMenuItem = new MenuItem("About");
-        aboutMenuItem.addActionListener(\_ => showAboutDialog());
+        aboutMenuItem.addActionListener { showAboutDialog() }
 
         fileMenu.add(readMenuItem);
         fileMenu.add(writeMenuItem);
@@ -843,7 +843,7 @@ class GameOfLifeControls extends Panel
         }
 
         // when shape is selected
-        shapesChoice.addItemListener(\e => shapeSelected(e.item));
+        shapesChoice.addItemListener { shapeSelected($.item) }
 
         // pull down menu with speeds
         define speedChoice = new Choice();
@@ -884,11 +884,11 @@ class GameOfLifeControls extends Panel
 
         // start and stop button
         startstopButton = new Button(startLabelText);
-        startstopButton.addActionListener(\e => startStopButtonClicked());
+        startstopButton.addActionListener { startStopButtonClicked() }
 
         // next generation button
         nextButton = new Button(nextLabelText);
-        nextButton.addActionListener(\e => nextButtonClicked());
+        nextButton.addActionListener { nextButtonClicked() }
 
         // create panel with controls
         this.add(shapesChoice);
@@ -1311,9 +1311,7 @@ class AboutDialog extends Dialog
         super(parent, title, false);
 
         okButton = new Button("   OK   ");
-        okButton.addActionListener(new ActionListener() {
-            actionPerformed(e) => close();
-        });
+        okButton.addActionListener { close(); }
 
         define gridbag = new GridBagLayout();
         setLayout(gridbag);
@@ -1387,7 +1385,7 @@ class TextFileDialog extends Dialog
         super(parent, title);
 
         define okButton = new Button(" Close ");
-        okButton.addActionListener(\e => close());
+        okButton.addActionListener { close() }
 
         define buf = new StringBuilder();
         new File(filename).eachLine { buf << $ << "\n" };

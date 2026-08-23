@@ -1783,6 +1783,9 @@ public class BytecodeCompiler {
       if (createdClosures.contains(closure))
         return name;
 
+      boolean isLambdaBlock = closure.paramCount() == 1 &&
+                              closure.paramNames()[0].equals("$");
+
       ClassAssembly cc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
                                            IRCompiledClosure.class, null);
       attachSource(cc, closure.debugInfo());
@@ -1830,12 +1833,13 @@ public class BytecodeCompiler {
           .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
                          ELContext.class)
           .PUSH(closure.paramCount())
+          .PUSH(isLambdaBlock ? 1 : 0)
           .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
           .LDC(closure.internalName)
           .ALOAD(2)
           .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
-                        ELContext.class, int.class, Class.class, String.class,
-                        Object[].class)
+                        ELContext.class, int.class, boolean.class, Class.class,
+                        String.class, Object[].class)
           .INVOKEVIRTUAL(ownerName, closure.internalName, Object.class,
                          EvaluationContext.class, Object[].class)
           .ARETURN()
@@ -1848,12 +1852,13 @@ public class BytecodeCompiler {
           .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
                          ELContext.class)
           .PUSH(closure.paramCount())
+          .PUSH(isLambdaBlock ? 1 : 0)
           .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
           .LDC(closure.internalName)
           .ALOAD(2)
           .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
-                          ELContext.class, int.class, Class.class, String.class,
-                          Object[].class)
+                        ELContext.class, int.class, boolean.class, Class.class,
+                        String.class, Object[].class)
           .INVOKESTATIC(ownerName, closure.internalName, Object.class,
                         EvaluationContext.class, Object[].class)
           .ARETURN()
