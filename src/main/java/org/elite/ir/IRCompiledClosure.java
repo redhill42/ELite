@@ -216,4 +216,8 @@ public abstract class IRCompiledClosure extends Closure
   public int hashCode() {
     return System.identityHashCode(this);
   }
+
+  public String toString() {
+    return "#<procedure>";
+  }
 }

@@ -2303,7 +2303,7 @@ public final class OperatorBootstrap {
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
-    return target.invoke(lhs, rhs, env);
+    return target.invokeExact(lhs, rhs, env);
   }
 
   private static MethodHandle dispatchAssignOp(MethodHandles.Lookup lookup,
@@ -2320,8 +2320,7 @@ public final class OperatorBootstrap {
     if (isELiteObject(lhs)) {
       try {
         Method m = lhs.getClass()
-          .getMethod(mangle(opname), EvaluationContext.class,
-                     Object[].class);
+          .getMethod(mangle(opname), EvaluationContext.class, Object[].class);
         MetaMethod ann = m.getAnnotation(MetaMethod.class);
         if (!Modifier.isStatic(m.getModifiers()) && ann != null &&
             ann.arity() == 1 && !ann.varargs()) {
@@ -2367,7 +2366,8 @@ public final class OperatorBootstrap {
       }
     }
 
-    // Do standard evaluation.
-    return dispatchBinary(lookup, env, name, lhs, rhs);
+    // Return null if no assignment operator performed.
+    return dropArguments(constant(Object.class, null), 0, Object.class,
+                         Object.class, EvaluationContext.class);
   }
 }

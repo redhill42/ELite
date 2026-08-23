@@ -1866,13 +1866,12 @@ public class BytecodeCompiler {
       }
 
       // toString
-      mc = cc.newMethod(ACC_PUBLIC, "toString", String.class);
-      if (closure.name() == null || closure.name().equals("<lambda>"))
-        mc.LDC("#<procedure>");
-      else
-        mc.LDC("#<procedure: " + closure.name() + ">");
-      mc.ARETURN();
-      mc.end();
+      if (closure.name() != null && !closure.name().equals("<lambda>")) {
+        cc.newMethod(ACC_PUBLIC, "toString", String.class)
+          .LDC("#<procedure: " + closure.name() + ">")
+          .ARETURN()
+          .end();
+      }
 
       createdClosures.add(closure);
       consumer.acceptClass(name, cc.end());

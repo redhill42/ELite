@@ -1,80 +1,61 @@
-class Builder {
-    private buf = new StringBuilder();
-    private level = 0;
+class XMLBuilder {
+  private root = null
 
-    private void indent_plus() => level += 2;
-    private void indent_minus() => level -= 2;
+  public void __invoke__(name, args...) {
+    define doc = <$name/>
+    define body = null
 
-    private void indent() {
-        for (i in [1..level]) {
-            buf << ' ';
-        }
+    for (i,key in args.keys) {
+      if (!empty key)
+        doc["@$key"] = args[i] // named attribute
+      else
+        body = args[i] // the body
     }
 
-    public void __invoke__(name, args...) {
-        indent();
-        buf << "<${name}";
-
-        define body = null;
-        for (i in [0..args.size()-1]) {
-            if (!empty args.keys[i]) {
-                // named attribute
-                buf << " ${args.keys[i]}='${args[i]}'";
-            } else {
-                // the body
-                body = args[i];
-            }
-        }
-
-        if (body != null) {
-            buf << ">";
-            if (body is Closure) {
-                buf << "\n";
-                indent_plus();
-                body(this);
-                indent_minus();
-                indent();
-            } else {
-                buf << body;
-            }
-            buf << "</${name}>\n";
-        } else {
-            buf << "/>\n";
-        }
+    if (body != null) {
+      if (body is Closure) {
+        define previous = root
+        root = doc
+        body(this)
+        root = previous
+      } else {
+        doc.@@value = body
+      }
     }
 
-    public toString() {
-        return buf.toString();
-    }
+    if (root == null)
+      root = doc
+    else
+      root[name] += doc
+  }
+
+  public toXML() => root
+  public toString() => toXML().toString()
 }
 
 // --------------------------
 
-define builder = new Builder();
+define builder = XMLBuilder()
 
 builder.book(isbn="999-99999-9-X") {
-    $.title("Mary's XML Primer")
-
-    $.author {
-        $.firstName("Mary")
-        $.lastName("White")
+  $.title("Mary's XML Primer")
+  $.author {
+    $.firstName("Mary")
+    $.lastName("White")
+  }
+  $.chapters {
+    $.frontMatter {
+      $.preface(pages="2")
+      $.contents(pages="5")
+      $.illustrations(pages="4")
     }
-
-    $.chapters {
-        $.frontMatter {
-            $.preface(pages="2")
-            $.contents(pages="5")
-            $.illustrations(pages="4")
-        }
-
-        $.chapter(number="1", pages="28", "XML Fundamentals")
-        $.chapter(number="2", pages="35", "Intermediate XML")
-        $.chapter(number="3", pages="44", "Advanced XML")
-        $.appendix(number="A", pages="7", "Entities")
-        $.appendix(number="B", pages="26", "Parsers and Tools")
-    }
-
-    $.media(type="CD")
+    $.chapter(number="1", pages="28", "XML Fundamentals")
+    $.chapter(number="2", pages="35", "Intermediate XML")
+    $.chapter(number="3", pages="44", "Advanced XML")
+    $.appendix(number="A", pages="7", "Entities")
+    $.appendix(number="B", pages="26", "Parsers and Tools")
+  }
+  $.media(type="CD")
 }
 
-print(builder)
+print(builder.toXML())

@@ -2388,15 +2388,30 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.ASSIGNOP node) {
-    // Invoke dynamic assignment operator
+    Slot leftSlot = new Slot(), rightSlot = new Slot();
+    int done = allocBlockId();
+
+    // Save operands in temporary slots.
     build(node.left);
+    leftSlot.store();
     build(node.right);
+    rightSlot.store();
+
+    // Invoke dynamic assignment operator
     current.emitPushEnv();
     current.emitInvokeDynamic(new Descriptors.Indy(
       assignOpBootstrap, mangle(ELNode.opIdentifiers[node.binary.op]),
       Object.class, Object.class, Object.class, EvaluationContext.class));
 
-    // Now perform assignment.
+    // Skip if dynamic assignment operator is invoked.
+    current.emitDup();
+    current.emitJumpIfNonNull(done);
+
+    // Perform standard arithmetic and assign the result.
+    current.emitPop();
+    leftSlot.load();
+    rightSlot.load();
+    emitDynBinOp(node.binary.op);
     if (node.left instanceof ELNode.IDENT ident) {
       buildStoreVariable(ident);
     } else if (node.left instanceof ELNode.ACCESS access) {
@@ -2405,6 +2420,11 @@ public class IRBuilder extends ELNode.Visitor {
       // should not happen, parser disabled other assignop syntax
       throw new AssertionError();
     }
+    current.emitJump(done);
+
+    startBlock(done);
+    leftSlot.release();
+    rightSlot.release();
   }
 
   public void visit(ELNode.INC node) {
