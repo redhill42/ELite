@@ -314,7 +314,7 @@ class GameOfLife extends Panel implements Runnable
          * Load shape from disk
          * @param filename filename to load shape from, or null when no filename given.
          */
-        public void openShape(filename) {
+        public void openShape(filename = null) {
             define file;
             try {
                 if (filename != null) {
@@ -506,12 +506,11 @@ class GameOfLifeFrame extends Frame
         define fileMenu = new Menu("File", true);
         define readMenuItem = new MenuItem("Open...");
         readMenuItem.addActionListener({_ =>
-            getGameOfLife().getGridIO().openShape(null);
+            getGameOfLife().getGridIO().openShape();
             getGameOfLife().reset();
         });
         define writeMenuItem = new MenuItem("Save...");
-        writeMenuItem.addActionListener(
-            \_ => getGameOfLife().getGridIO().saveShape());
+        writeMenuItem.addActionListener(\_ => getGameOfLife().getGridIO().saveShape());
         define quitMenuItem = new MenuItem("Exit");
         quitMenuItem.addActionListener(\_ => System.exit(0))
         define helpMenu = new Menu("Help", true);

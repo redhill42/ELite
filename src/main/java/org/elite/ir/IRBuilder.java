@@ -3204,9 +3204,14 @@ public class IRBuilder extends ELNode.Visitor {
       return r.getValue(null);
     }
 
-    if (node instanceof ELNode.IDENT var && var.symbol != null &&
-        var.symbol.clazz != null) {
-      return var.symbol.clazz;
+    if (node instanceof ELNode.IDENT && node.symbol != null) {
+      if (node.symbol.clazz != null)
+        return node.symbol.clazz;
+      if (node.symbol.scope.isClassScope() && node.symbol.isStatic() &&
+          node.symbol.func == null) {
+        IRClass ownerClass = node.symbol.scope.frontier.symbol.clazz;
+        return new Descriptors.Field(ownerClass, node.symbol.name);
+      }
     }
 
     if (node instanceof ELNode.ACCESS acc &&

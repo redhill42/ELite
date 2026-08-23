@@ -19,6 +19,7 @@ package org.elite.ir;
 import elite.lang.Closure;
 import elite.lang.Decimal;
 import elite.lang.Rational;
+import elite.lang.Symbol;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
@@ -28,6 +29,7 @@ import org.elite.eval.SystemScope;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TargetMethodClosure;
+import org.elite.eval.seq.Cons;
 import org.elite.resolver.MethodResolver;
 import org.elite.util.BeanUtils;
 import javax.el.ELContext;
@@ -84,6 +86,8 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_setValueTypesEqual;
   private static final MethodHandle MH_invokeTypesEqual;
   private static final MethodHandle MH_permuteNamedArgs;
+  private static final MethodHandle MH_fillDefaultArgs;
+  private static final MethodHandle MH_fillConstantDefaultArgs;
   private static final MethodHandle MH_buildVarArgs;
   private static final MethodHandle MH_coerceArgs;
   private static final MethodHandle MH_invokeMethodResolvable;
@@ -167,8 +171,16 @@ public final class DynamicBootstrap {
 
       MH_permuteNamedArgs = lookup.findStatic(
         DynamicBootstrap.class, "permuteNamedArgs",
-        methodType(Object[].class, Object[].class, int[].class, int.class,
-                   boolean.class));
+        methodType(Object[].class, Object[].class, int[].class,
+                   boolean.class, Value[].class));
+
+      MH_fillDefaultArgs = lookup.findStatic(
+        DynamicBootstrap.class, "fillDefaultArgs",
+        methodType(Object[].class, Object[].class, int.class, Value[].class));
+
+      MH_fillConstantDefaultArgs = lookup.findStatic(
+        DynamicBootstrap.class, "fillConstantDefaultArgs",
+        methodType(Object[].class, Object[].class, Object[].class));
 
       MH_buildVarArgs = lookup.findStatic(
         DynamicBootstrap.class, "buildVarArgs",
@@ -1055,9 +1067,11 @@ public final class DynamicBootstrap {
       MetaMethod meta = m.getAnnotation(MetaMethod.class);
       int arity = meta.arity();
       boolean varargs = meta.varargs();
+      Value[] defaults = meta.defaultValues();
       int argc = args.length;
 
-      if (varargs ? (argc < arity - 1) : (argc != arity)) {
+      if (varargs ? (argc < arity - 1)
+                  : (argc > arity || argc + defaults.length < arity)) {
         return dropArguments(
           throwEvaluationException(_T(EL_FN_BAD_ARG_COUNT, name, arity, argc)),
           1, Object.class, Object[].class);
@@ -1074,7 +1088,8 @@ public final class DynamicBootstrap {
         mh = permuteArguments(mh, 1, 0, 2);
       }
 
-      return reorderArguments(mh, meta.parameterNames(), keys, arity, varargs);
+      return reorderArguments(mh, meta.parameterNames(), keys, varargs,
+                              defaults, argc);
     } catch (IllegalAccessException e) {
       return reportMethodNotFound(c, name);
     }
@@ -1092,9 +1107,11 @@ public final class DynamicBootstrap {
       MetaMethod meta = cons.getAnnotation(MetaMethod.class);
       int arity = meta.arity();
       boolean varargs = meta.varargs();
+      Value[] defaults = meta.defaultValues();
       int argc = args.length;
 
-      if (varargs ? (argc < arity - 1) : (argc != arity)) {
+      if (varargs ? (argc < arity - 1)
+                  : (argc > arity || argc + defaults.length < arity)) {
         return dropArguments(
           throwEvaluationException(_T(EL_FN_BAD_ARG_COUNT, name, arity, argc)),
           1, Object.class, Object[].class);
@@ -1102,7 +1119,8 @@ public final class DynamicBootstrap {
 
       MethodHandle mh = lookup.unreflectConstructor(cons);
       mh = dropArguments(mh, 1, Object.class);
-      return reorderArguments(mh, meta.parameterNames(), keys, arity, varargs);
+      return reorderArguments(mh, meta.parameterNames(), keys, varargs,
+                              defaults, argc);
     } catch (NoSuchMethodException | IllegalAccessException e) {
       return reportMethodNotFound(c, name);
     }
@@ -1122,13 +1140,13 @@ public final class DynamicBootstrap {
   }
 
   private static MethodHandle reorderArguments(MethodHandle mh, String[] names,
-                                               String[] keys, int arity,
-                                               boolean varargs) {
+                                               String[] keys, boolean varargs,
+                                               Value[] defaults, int argc) {
     // Build the permutation table for named arguments.
     int[] perm = null;
     if (keys.length != 0) {
       try {
-        perm = buildPermutation(names, keys, varargs);
+        perm = buildPermutation(names, keys, varargs, defaults);
       } catch (IllegalArgumentException e) {
         return dropArguments(throwEvaluationException(e.getMessage()), 1,
                              Object.class, Object[].class);
@@ -1137,12 +1155,29 @@ public final class DynamicBootstrap {
 
     if (perm != null) {
       // Reorder named arguments using the permutation table.
-      MethodHandle filter = insertArguments(MH_permuteNamedArgs, 1, perm, arity,
-                                            varargs);
+      MethodHandle filter = insertArguments(MH_permuteNamedArgs, 1, perm,
+                                            varargs, defaults);
       mh = filterArguments(mh, 2, filter);
+    } else if (!varargs && argc != names.length) {
+      if (Arrays.stream(defaults).allMatch(DynamicBootstrap::isConstantValue)) {
+        int delta = names.length - argc;
+        Object[] defaultValues = new Object[delta];
+        for (int i = 0; i < delta; i++) {
+          defaultValues[i] = getDefaultValue(
+            defaults[defaults.length - delta + i]);
+        }
+
+        MethodHandle filter = insertArguments(MH_fillConstantDefaultArgs, 1,
+                                              (Object)defaultValues);
+        mh = filterArguments(mh, 2, filter);
+      } else {
+        MethodHandle filter = insertArguments(MH_fillDefaultArgs, 1,
+                                              names.length, defaults);
+        mh = filterArguments(mh, 2, filter);
+      }
     } else if (varargs) {
       // Build argument list for varargs.
-      MethodHandle filter = insertArguments(MH_buildVarArgs, 1, arity);
+      MethodHandle filter = insertArguments(MH_buildVarArgs, 1, names.length);
       mh = filterArguments(mh, 2, filter);
     }
 
@@ -1159,9 +1194,9 @@ public final class DynamicBootstrap {
   }
 
   private static int[] buildPermutation(String[] names, String[] keys,
-                                        boolean varargs) {
+                                        boolean varargs, Value[] defaults) {
     int argc = keys.length;
-    int[] perm = new int[argc];
+    int[] perm = new int[names.length];
     Arrays.fill(perm, -1);
 
     // Rearrange named arguments.
@@ -1184,8 +1219,18 @@ public final class DynamicBootstrap {
       }
     }
 
+    // Fill default values;
+    int fixed = names.length - defaults.length;
+    for (; j < perm.length; j++) {
+      if (perm[j] == -1) {
+        if (j < fixed)
+          throw new IllegalArgumentException(_T(EL_MISSING_ARG_VALUE, names[j]));
+        perm[j] = -(j - fixed + 1); // Use negative index for default values
+      }
+    }
+
     // Check if the permutation is ordered.
-    for (int i = 0; i < argc; i++) {
+    for (int i = 0; i < perm.length; i++) {
       if (perm[i] != i)
         return perm;
     }
@@ -1194,23 +1239,46 @@ public final class DynamicBootstrap {
   }
 
   private static Object[] permuteNamedArgs(Object[] args, int[] perm,
-                                           int arity, boolean varargs) {
+                                           boolean varargs, Value[] defaults) {
     int argc = args.length;
+    int arity = perm.length;
     int nvargs = varargs ? argc - arity + 1 : 0;
     Object[] xargs = new Object[arity];
     Object[] vargs = varargs ? new Object[nvargs] : null;
 
-    for (int i = 0; i < argc; i++) {
+    for (int i = 0; i < arity; i++) {
       int j = perm[i];
-      if (!varargs || i < arity - 1)
-        xargs[i] = args[j];
-      else
+      if (!varargs || i < arity - 1) {
+        if (j >=0)
+          xargs[i] = args[j];
+        else
+          xargs[i] = getDefaultValue(defaults[-j - 1]);
+      } else {
         vargs[i - arity + 1] = args[j];
+      }
     }
 
     if (varargs)
       xargs[arity - 1] = vargs;
 
+    return xargs;
+  }
+
+  private static Object[] fillDefaultArgs(Object[] args, int arity,
+                                          Value[] defaults) {
+    Object[] xargs = new Object[arity];
+    System.arraycopy(args, 0, xargs, 0, args.length);
+    for (int i = args.length, j = defaults.length - (arity - args.length);
+         i < arity; i++, j++)
+      xargs[i] = getDefaultValue(defaults[j]);
+    return xargs;
+  }
+
+  private static Object[] fillConstantDefaultArgs(Object[] args,
+                                                  Object[] defaults) {
+    Object[] xargs = new Object[args.length + defaults.length];
+    System.arraycopy(args, 0, xargs, 0, args.length);
+    System.arraycopy(defaults, 0, xargs, args.length, defaults.length);
     return xargs;
   }
 
@@ -1222,6 +1290,48 @@ public final class DynamicBootstrap {
     System.arraycopy(args, arity - 1, vargs, 0, nvargs);
     xargs[arity - 1] = vargs;
     return xargs;
+  }
+
+  private static Object getDefaultValue(Value value) {
+    return switch (value.kind()) {
+    case NULL   -> null;
+    case NIL    -> Cons.nil();
+    case BOOL   -> value.boolValue();
+    case CHAR   -> value.charValue();
+    case INT    -> value.intValue();
+    case LONG   -> value.longValue();
+    case FLOAT  -> value.floatValue();
+    case DOUBLE -> value.doubleValue();
+    case STRING -> value.stringValue();
+    case SYMBOL -> Symbol.valueOf(value.stringValue());
+    case CLASS  -> value.classValue();
+    case FIELD  -> getFieldValue(value.classValue(), value.stringValue());
+    case CONST  -> getConstValue(value.classValue(), value.intValue());
+    };
+  }
+
+  private static Object getFieldValue(Class<?> c, String name) {
+    try {
+      return c.getField(name).get(null);
+    } catch (NoSuchFieldException | IllegalAccessException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static Object getConstValue(Class<?> c, int index) {
+    Object[] constants = (Object[])getFieldValue(c, "$C");
+    return constants[index];
+  }
+
+  private static boolean isConstantValue(Value value) {
+    if (value.kind() != ValueKind.FIELD)
+      return true;
+    try {
+      Field f = value.classValue().getField(value.stringValue());
+      return Modifier.isFinal(f.getModifiers());
+    } catch (NoSuchFieldException e) {
+      return false;
+    }
   }
 
   private static MethodHandle dispatchJavaMethod(Lookup lookup,
