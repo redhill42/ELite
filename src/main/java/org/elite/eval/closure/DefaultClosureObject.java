@@ -179,7 +179,7 @@ class DefaultClosureObject extends AbstractClosure
         }
 
         // invoke dynamic closure procedure
-        Closure proc = get_closure(elctx, "invoke");
+        Closure proc = get_closure(elctx, "__invoke__");
         if (proc != null) {
             Closure[] xargs = new Closure[args.length+1];
             xargs[0] = new LiteralClosure(name);

@@ -32,7 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class SampleScriptTest {
 
     private static final List<String> SAMPLES = List.of(
-        "C", "dsl", "hello", "list", "rbtree", "scheme", "seq", "uri", "xml"
+        "C", "dsl", "hello", "list", "rbtree", "scheme", "seq", "uri", "xml", "xmlbuilder"
     );
 
     private static final String SAMPLE_DIR = "src/sample/";

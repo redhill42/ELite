@@ -11,13 +11,13 @@ class Builder {
         }
     }
 
-    public void invoke(name, args...) {
+    public void __invoke__(name, args...) {
         indent();
         buf << "<${name}";
 
         define body = null;
-        for (i in [0..args.length-1]) {
-            if (args.keys[i] != null) {
+        for (i in [0..args.size()-1]) {
+            if (!empty args.keys[i]) {
                 // named attribute
                 buf << " ${args.keys[i]}='${args[i]}'";
             } else {
@@ -31,7 +31,7 @@ class Builder {
             if (body is Closure) {
                 buf << "\n";
                 indent_plus();
-                body.call_with(this);
+                body(this);
                 indent_minus();
                 indent();
             } else {
@@ -53,28 +53,28 @@ class Builder {
 define builder = new Builder();
 
 builder.book(isbn="999-99999-9-X") {
-    title("Mary's XML Primer")
+    $.title("Mary's XML Primer")
 
-    author {
-        firstName("Mary")
-        lastName("White")
+    $.author {
+        $.firstName("Mary")
+        $.lastName("White")
     }
 
-    chapters {
-        frontMatter {
-            preface(pages="2")
-            contents(pages="5")
-            illustrations(pages="4")
+    $.chapters {
+        $.frontMatter {
+            $.preface(pages="2")
+            $.contents(pages="5")
+            $.illustrations(pages="4")
         }
 
-        chapter(number="1", pages="28", "XML Fundamentals")
-        chapter(number="2", pages="35", "Intermediate XML")
-        chapter(number="3", pages="44", "Advanced XML")
-        appendix(number="A", pages="7", "Entities")
-        appendix(number="B", pages="26", "Parsers and Tools")
+        $.chapter(number="1", pages="28", "XML Fundamentals")
+        $.chapter(number="2", pages="35", "Intermediate XML")
+        $.chapter(number="3", pages="44", "Advanced XML")
+        $.appendix(number="A", pages="7", "Entities")
+        $.appendix(number="B", pages="26", "Parsers and Tools")
     }
 
-    media(type="CD")
+    $.media(type="CD")
 }
 
 print(builder)

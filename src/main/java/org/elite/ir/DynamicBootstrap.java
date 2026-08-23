@@ -89,6 +89,7 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_fillDefaultArgs;
   private static final MethodHandle MH_fillConstantDefaultArgs;
   private static final MethodHandle MH_buildVarArgs;
+  private static final MethodHandle MH_buildDynamicVarArgs;
   private static final MethodHandle MH_coerceArgs;
   private static final MethodHandle MH_invokeMethodResolvable;
   private static final MethodHandle MH_getCallArgs;
@@ -185,6 +186,11 @@ public final class DynamicBootstrap {
       MH_buildVarArgs = lookup.findStatic(
         DynamicBootstrap.class, "buildVarArgs",
         methodType(Object[].class, Object[].class, int.class));
+
+      MH_buildDynamicVarArgs = lookup.findStatic(
+        DynamicBootstrap.class, "buildDynamicVarArgs",
+        methodType(Object[].class, Object[].class, String.class,
+                   String[].class));
 
       MH_invokeMethodResolvable = lookup.findVirtual(
         MethodResolvable.class, "invoke",
@@ -993,6 +999,12 @@ public final class DynamicBootstrap {
         lookup, obj.getClass(), name, isSuper, keys, obj, args);
       if (mh != null)
         return mh;
+
+      if (!isSuper) {
+        mh = dispatchELiteDynamicInvoke(lookup, obj.getClass(), name, keys, args);
+        if (mh != null)
+          return mh;
+      }
     } else if (obj instanceof Class<?> c && isELiteClass(c)) {
       MethodHandle mh = dispatchELiteMethod(
         lookup, c, name, false, keys, null, args);
@@ -1044,8 +1056,8 @@ public final class DynamicBootstrap {
       // obj.(MethodResolvable.invoke)(elctx, name, args)
       MethodHandle mh = MH_invokeMethodResolvable;
       mh = insertArguments(mh, 2, name);
-      mh = filterArguments(mh, 3, MH_getCallArgs);
-      return permuteArguments(mh, 1, 0, 2, 3);
+      mh = filterArguments(mh, 1, MH_getELContext, MH_getCallArgs);
+      return permuteArguments(mh, 1, 0, 2);
     }
 
     return reportMethodNotFound(obj, name);
@@ -1090,6 +1102,37 @@ public final class DynamicBootstrap {
 
       return reorderArguments(mh, meta.parameterNames(), keys, varargs,
                               defaults, argc);
+    } catch (IllegalAccessException e) {
+      return reportMethodNotFound(c, name);
+    }
+  }
+
+  private static MethodHandle
+  dispatchELiteDynamicInvoke(MethodHandles.Lookup lookup, Class<?> c,
+                             String name, String[] keys, Object[] args) {
+    try {
+      Method m = getELiteMethod(c, "__invoke__");
+      if (m == null)
+        return null;
+      if (Modifier.isStatic(m.getModifiers()))
+        return reportMethodNotFound(c, name);
+
+      // Check arguments.
+      // The dynamic invoke method must have the prototype:
+      //     __invoke__(name, args...)
+      MetaMethod meta = m.getAnnotation(MetaMethod.class);
+      if (!meta.varargs() || meta.arity() != 2)
+        return reportMethodNotFound(c, name);
+
+      if (keys.length == 0 && args.length != 0) {
+        keys = new String[args.length];
+        Arrays.fill(keys, "");
+      }
+
+      // (obj, env, args) -> (env, obj, args)
+      MethodHandle mh = permuteArguments(lookup.unreflect(m), 1, 0, 2);
+      MethodHandle filter = insertArguments(MH_buildDynamicVarArgs, 1, name, keys);
+      return filterArguments(mh, 2, filter);
     } catch (IllegalAccessException e) {
       return reportMethodNotFound(c, name);
     }
@@ -1290,6 +1333,11 @@ public final class DynamicBootstrap {
     System.arraycopy(args, arity - 1, vargs, 0, nvargs);
     xargs[arity - 1] = vargs;
     return xargs;
+  }
+
+  private static Object[] buildDynamicVarArgs(Object[] args, String name,
+                                              String[] keys) {
+    return new Object[] { name, new VarArgList(keys, args) };
   }
 
   private static Object getDefaultValue(Value value) {

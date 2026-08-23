@@ -21,7 +21,7 @@ public class IRCompiledFunction {
     try {
       EvaluationContext env = new EvaluationContext(elctx);
       return target.invokeExact(env, args);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException | Error e) {
       throw e;
     } catch (Throwable e) {
       throw new EvaluationException(elctx, e);

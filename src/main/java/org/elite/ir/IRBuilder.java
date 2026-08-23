@@ -363,7 +363,7 @@ public class IRBuilder extends ELNode.Visitor {
         // If the variable defined in a class scope, and current enclosing scope
         // (it must be a lambda scope) is directly enclosed in this class scope,
         // then the variable is referencing the class' instance variable.
-        if (node.id.equals("this"))
+        if (node.id.equals("this") || node.id.equals("self"))
           current.emitPushThis();
         else if (node.symbol.def.expr instanceof ELNode.LAMBDA) {
           current.emitClosure(node.symbol.func);
