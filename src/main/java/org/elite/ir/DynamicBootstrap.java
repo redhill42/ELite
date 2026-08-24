@@ -161,14 +161,10 @@ public final class DynamicBootstrap {
       MH_listSet = lookup.findVirtual(
         List.class, "set", methodType(Object.class, int.class, Object.class));
 
-      MH_callClosure =
-        permuteArguments(
-          filterArguments(
-            lookup.findVirtual(Closure.class, "call",
-                               methodType(Object.class, ELContext.class,
-                                          Object[].class)),
-            1, MH_getELContext),
-          1, 0, 2);
+      MH_callClosure = lookup.findVirtual(
+        Closure.class, "call",
+        methodType(Object.class, ELContext.class, String[].class,
+                   Object[].class));
 
       MH_permuteNamedArgs = lookup.findStatic(
         DynamicBootstrap.class, "permuteNamedArgs",
@@ -1522,8 +1518,11 @@ public final class DynamicBootstrap {
       return dropArguments(throwNullPointerException(), 1, Object.class,
                            Object[].class);
 
-    if (obj instanceof Closure)
-      return MH_callClosure;
+    if (obj instanceof Closure) {
+      MethodHandle mh = filterArguments(MH_callClosure, 1, MH_getELContext);
+      mh = insertArguments(mh, 2, (Object)keys);
+      return permuteArguments(mh, 1, 0, 2);
+    }
 
     if (obj instanceof Class<?> c) {
       MethodHandle mh = dispatchClassCall(lookup, env, c, keys, args);

@@ -1783,15 +1783,19 @@ public class BytecodeCompiler {
       if (createdClosures.contains(closure))
         return name;
 
-      boolean isLambdaBlock = closure.paramCount() == 1 &&
-                              closure.paramNames()[0].equals("$");
+      boolean isStatic = closure.owner() == null || closure.isStatic();
+      boolean isBlock  = closure.paramCount() == 1 &&
+                         closure.paramNames()[0].equals("$");
 
       ClassAssembly cc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, name,
                                            IRCompiledClosure.class, null);
       attachSource(cc, closure.debugInfo());
 
       MethodAssembly mc;
-      if (closure.owner() != null && !closure.isStatic()) {
+      if (isStatic) {
+        mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
+                          EvaluationContext.class);
+      } else {
         String ownerName = closure.owner().internalName;
         cc.addField(ACC_PRIVATE, "$this", AsmType.toDescriptor(ownerName));
         mc = cc.newMethod(ACC_PUBLIC, "<init>", AsmType.toMethodDescriptor(
@@ -1799,9 +1803,6 @@ public class BytecodeCompiler {
         mc.THIS()
           .ALOAD(2)
           .PUTFIELD(name, "$this", AsmType.toDescriptor(ownerName));
-      } else {
-        mc = cc.newMethod(ACC_PUBLIC, "<init>", Void.TYPE,
-                          EvaluationContext.class);
       }
 
       // Constructor.
@@ -1823,47 +1824,38 @@ public class BytecodeCompiler {
                         EvaluationContext.class, Object[].class);
       String ownerName = closure.owner() != null ? closure.owner().internalName
                                                  : currentClassName;
-      if (closure.owner() != null && !closure.isStatic()) {
-        mc.THIS()
-          .GETFIELD(name, "$this", AsmType.toDescriptor(ownerName))
-          .ALOAD(1)
-          .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
-                         EvaluationContext.class)
-          .DUP()
-          .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
-                         ELContext.class)
-          .PUSH(closure.paramCount())
-          .PUSH(isLambdaBlock ? 1 : 0)
-          .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
-          .LDC(closure.internalName)
-          .ALOAD(2)
-          .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
-                        ELContext.class, int.class, boolean.class, Class.class,
-                        String.class, Object[].class)
-          .INVOKEVIRTUAL(ownerName, closure.internalName, Object.class,
-                         EvaluationContext.class, Object[].class)
-          .ARETURN()
-          .end();
+
+      if (!isStatic)
+        mc.THIS().GETFIELD(name, "$this", AsmType.toDescriptor(ownerName));
+
+      // Fill in default values. See IRCompiledClosure.getArgs for details.
+      mc.ALOAD(1)
+        .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
+                       EvaluationContext.class)
+        .DUP()
+        .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
+                       ELContext.class)
+        .PUSH(closure.paramCount())
+        .PUSH(isBlock ? 1 : 0)
+        .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
+        .LDC(closure.internalName)
+        .ALOAD(2)
+        .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
+                      ELContext.class, int.class, boolean.class, Class.class,
+                      String.class, Object[].class);
+
+      // Closure implementation method is an instance method if it's declared
+      // in an instance procedure.  Otherwise, it's a static method.
+      if (isStatic) {
+        mc.INVOKESTATIC(ownerName, closure.internalName, Object.class,
+                        EvaluationContext.class, Object[].class);
       } else {
-        mc.ALOAD(1)
-          .INVOKEVIRTUAL(EvaluationContext.class, "pushContext",
-                         EvaluationContext.class)
-          .DUP()
-          .INVOKEVIRTUAL(EvaluationContext.class, "getELContext",
-                         ELContext.class)
-          .PUSH(closure.paramCount())
-          .PUSH(isLambdaBlock ? 1 : 0)
-          .LDC(Type.getType(AsmType.toDescriptor(ownerName)))
-          .LDC(closure.internalName)
-          .ALOAD(2)
-          .INVOKESTATIC(IRCompiledClosure.class, "getArgs", Object[].class,
-                        ELContext.class, int.class, boolean.class, Class.class,
-                        String.class, Object[].class)
-          .INVOKESTATIC(ownerName, closure.internalName, Object.class,
-                        EvaluationContext.class, Object[].class)
-          .ARETURN()
-          .end();
+        mc.INVOKEVIRTUAL(ownerName, closure.internalName, Object.class,
+                         EvaluationContext.class, Object[].class);
       }
+
+      mc.ARETURN()
+        .end();
 
       // toString
       if (closure.name() != null && !closure.name().equals("<lambda>")) {

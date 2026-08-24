@@ -130,7 +130,7 @@ public abstract class Closure extends ValueExpression
     public void removeAnnotation(String type) {}
 
     /**
-     * Set the meta data information for this closure.
+     * Set the metadata information for this closure.
      */
     public void setMetaData(MetaData metadata) {}
 
@@ -140,10 +140,17 @@ public abstract class Closure extends ValueExpression
     public abstract Object invoke(ELContext elctx, Closure[] args);
 
     /**
+     * Call the procedure with the given arguments and argument keys.
+     */
+    public Object call(ELContext elctx, String[] keys, Object... args) {
+        return invoke(elctx, getCallArgs(keys, args));
+    }
+
+    /**
      * Call the procedure with the given arguments.
      */
-    public Object call(ELContext elctx, Object... args) {
-        return invoke(elctx, getCallArgs(args));
+    public final Object call(ELContext elctx, Object... args) {
+        return call(elctx, null, args);
     }
 
     /**

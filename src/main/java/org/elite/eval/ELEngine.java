@@ -24,6 +24,7 @@ import org.elite.eval.closure.ClosureObject;
 import org.elite.eval.closure.DataClass;
 import org.elite.eval.closure.LiteralClosure;
 import org.elite.eval.closure.MethodClosure;
+import org.elite.eval.closure.NamedClosure;
 import org.elite.ir.MetaClass;
 import org.elite.ir.MetaMethod;
 import org.elite.parser.ELNode;
@@ -537,6 +538,17 @@ public final class ELEngine {
    */
   public static Closure[] getCallArgs(Object[] args) {
     return getCallArgs(args, ELUtils.NO_PARAMS);
+  }
+
+  public static Closure[] getCallArgs(String[] keys, Object[] args) {
+    Closure[] callArgs = new Closure[args.length];
+    for (int i = 0; i < args.length; i++) {
+      if (keys != null && keys.length != 0 && !keys[i].isEmpty())
+        callArgs[i] = new NamedClosure(keys[i], new LiteralClosure(args[i]));
+      else
+        callArgs[i] = new LiteralClosure(args[i]);
+    }
+    return callArgs;
   }
 
   /**

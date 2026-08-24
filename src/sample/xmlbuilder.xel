@@ -16,7 +16,7 @@ class XMLBuilder {
       if (body is Closure) {
         define previous = root
         root = doc
-        body(this)
+        body.call_with(this)
         root = previous
       } else {
         doc.@@value = body
@@ -38,24 +38,24 @@ class XMLBuilder {
 define builder = XMLBuilder()
 
 builder.book(isbn="999-99999-9-X") {
-  $.title("Mary's XML Primer")
-  $.author {
-    $.firstName("Mary")
-    $.lastName("White")
+  title("Mary's XML Primer")
+  author {
+    firstName("Mary")
+    lastName("White")
   }
-  $.chapters {
-    $.frontMatter {
-      $.preface(pages="2")
-      $.contents(pages="5")
-      $.illustrations(pages="4")
+  chapters {
+    frontMatter {
+      preface(pages="2")
+      contents(pages="5")
+      illustrations(pages="4")
     }
-    $.chapter(number="1", pages="28", "XML Fundamentals")
-    $.chapter(number="2", pages="35", "Intermediate XML")
-    $.chapter(number="3", pages="44", "Advanced XML")
-    $.appendix(number="A", pages="7", "Entities")
-    $.appendix(number="B", pages="26", "Parsers and Tools")
+    chapter(number="1", pages="28", "XML Fundamentals")
+    chapter(number="2", pages="35", "Intermediate XML")
+    chapter(number="3", pages="44", "Advanced XML")
+    appendix(number="A", pages="7", "Entities")
+    appendix(number="B", pages="26", "Parsers and Tools")
   }
-  $.media(type="CD")
+  media(type="CD")
 }
 
 print(builder.toXML())

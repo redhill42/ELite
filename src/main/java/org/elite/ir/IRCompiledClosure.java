@@ -62,6 +62,7 @@ public abstract class IRCompiledClosure extends Closure
     throw new PropertyNotWritableException();
   }
 
+  @Override
   public boolean isReadOnly(ELContext elctx) {
     return true;
   }
@@ -90,7 +91,7 @@ public abstract class IRCompiledClosure extends Closure
   }
 
   @Override
-  public Object call(ELContext elctx, Object[] args) {
+  public Object call(ELContext elctx, String[] keys, Object... args) {
     return execute(getContext(elctx), args);
   }
 
@@ -104,6 +105,7 @@ public abstract class IRCompiledClosure extends Closure
    * @return result of procedure execution
    */
   @SuppressWarnings("unused")
+  @Override
   public Object call_with(ELContext elctx, Object scope) {
     EvaluationContext env = getContext(elctx);
     env = env.pushContext(new EnvExtent(env, scope));
@@ -229,6 +231,7 @@ public abstract class IRCompiledClosure extends Closure
       this.scope = scope;
     }
 
+    @Override
     public ValueExpression resolveVariable(String name) {
       ValueExpression value = super.resolveVariable(name);
       if (value != null)
@@ -262,13 +265,13 @@ public abstract class IRCompiledClosure extends Closure
     }
 
     @Override
-    public Object call(ELContext elctx, Object[] args) {
+    public Object call(ELContext elctx, String[] keys, Object... args) {
       try {
         CallSite cs = DynamicBootstrap.invokeBootstrap(
           MethodHandles.lookup(), name, MethodType.methodType(
             Object.class, EvaluationContext.class, Object.class,
             Object[].class),
-          0);
+          0, keys != null ? keys : new String[0]);
         return cs.getTarget().invoke(env, scope, args);
       } catch (RuntimeException | Error e) {
         throw e;
