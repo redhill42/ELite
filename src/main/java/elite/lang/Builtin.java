@@ -1446,46 +1446,18 @@ public final class Builtin {
 
   @Expando(name = "do")
   public static Object __do(ELContext elctx, Object arg, CallableClosure proc) {
-    if (arg == null) {
+    if (arg == null)
       return null;
-    }
 
     if (arg instanceof Iterable<?> it) {
-      for (Object e : it) {
-        try {
-          proc.call_with(elctx, e);
-        } catch (Control.Continue c) {
-          continue;
-        } catch (Control.Break b) {
-          break;
-        }
-      }
+      for (Object e : it)
+        proc.call_with(elctx, e);
       return null;
     }
 
     if (arg instanceof Object[] a) {
-      for (Object e : a) {
-        try {
-          proc.call_with(elctx, e);
-        } catch (Control.Continue c) {
-          continue;
-        } catch (Control.Break b) {
-          break;
-        }
-      }
-      return null;
-    }
-
-    if (arg.getClass().isArray()) {
-      for (int i = 0, len = Array.getLength(arg); i < len; i++) {
-        try {
-          proc.call_with(elctx, Array.get(arg, i));
-        } catch (Control.Continue c) {
-          continue;
-        } catch (Control.Break b) {
-          break;
-        }
-      }
+      for (Object e : a)
+        proc.call_with(elctx, e);
       return null;
     }
 

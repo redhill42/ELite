@@ -5,14 +5,18 @@ import elite.lang.Symbol;
 import org.elite.eval.ELEngine;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
+import org.elite.eval.VariableMapperImpl;
+import org.elite.eval.closure.AbstractClosure;
 import org.elite.eval.closure.CallableClosure;
-import org.elite.eval.closure.ClosureObject;
-import org.elite.eval.closure.EnvExtent;
 import org.elite.eval.seq.Cons;
 import javax.el.ELContext;
 import javax.el.MethodInfo;
 import javax.el.PropertyNotWritableException;
+import javax.el.ValueExpression;
 import javax.el.VariableMapper;
+import java.lang.invoke.CallSite;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 
 import static org.elite.resources.Resources.*;
@@ -97,18 +101,13 @@ public abstract class IRCompiledClosure extends Closure
    *
    * @param elctx the evaluation context
    * @param scope the scoped object
-   * @param args  the procedure arguments
    * @return result of procedure execution
    */
-  @Override
-  public Object call_with(ELContext elctx, Object scope, Closure... args) {
-    if (scope instanceof ClosureObject) {
-      scope = ((ClosureObject)scope).get_owner();
-    }
-
+  @SuppressWarnings("unused")
+  public Object call_with(ELContext elctx, Object scope) {
     EvaluationContext env = getContext(elctx);
     env = env.pushContext(new EnvExtent(env, scope));
-    return execute(env, ELEngine.getArgValues(elctx, args));
+    return execute(env, new Object[]{scope});
   }
 
   /**
@@ -219,5 +218,91 @@ public abstract class IRCompiledClosure extends Closure
 
   public String toString() {
     return "#<procedure>";
+  }
+
+  private static class EnvExtent extends VariableMapperImpl {
+    final EvaluationContext env;
+    final Object scope;
+
+    EnvExtent(EvaluationContext env, Object scope) {
+      this.env = env;
+      this.scope = scope;
+    }
+
+    public ValueExpression resolveVariable(String name) {
+      ValueExpression value = super.resolveVariable(name);
+      if (value != null)
+        return value;
+
+      value = env.resolveVariable(name);
+      if (value != null)
+        return value;
+
+      // Create a wrapper to call into scoped object.
+      Closure wrapper = new ScopedClosure(env, scope, name);
+      super.setVariable(name, wrapper);
+      return wrapper;
+    }
+  }
+
+  private static class ScopedClosure extends AbstractClosure {
+    final EvaluationContext env;
+    final Object scope;
+    final String name;
+
+    ScopedClosure(EvaluationContext env, Object scope, String name) {
+      this.env = env;
+      this.scope = scope;
+      this.name = name;
+    }
+
+    @Override
+    public Object invoke(ELContext elctx, Closure[] args) {
+      return call(elctx, ELEngine.getArgValues(elctx, args));
+    }
+
+    @Override
+    public Object call(ELContext elctx, Object[] args) {
+      try {
+        CallSite cs = DynamicBootstrap.invokeBootstrap(
+          MethodHandles.lookup(), name, MethodType.methodType(
+            Object.class, EvaluationContext.class, Object.class,
+            Object[].class),
+          0);
+        return cs.getTarget().invoke(env, scope, args);
+      } catch (RuntimeException | Error e) {
+        throw e;
+      } catch (Throwable t) {
+        throw new EvaluationException(elctx, t);
+      }
+    }
+
+    @Override
+    public Object getValue(ELContext elctx) {
+      try {
+        CallSite cs = DynamicBootstrap.getValueBootstrap(
+          MethodHandles.lookup(), name, MethodType.methodType(
+            Object.class, EvaluationContext.class, Object.class));
+        return cs.getTarget().invoke(env, scope);
+      } catch (RuntimeException | Error e) {
+        throw e;
+      } catch(Throwable t) {
+        throw new EvaluationException(elctx, t);
+      }
+    }
+
+    @Override
+    public void setValue(ELContext elctx, Object value) {
+      try {
+        CallSite cs = DynamicBootstrap.setValueBootstrap(
+          MethodHandles.lookup(), name, MethodType.methodType(
+            void.class, Object.class, Object.class, EvaluationContext.class));
+        cs.getTarget().invoke(value, scope, env);
+      } catch (RuntimeException | Error e) {
+        throw e;
+      } catch(Throwable t) {
+        throw new EvaluationException(elctx, t);
+      }
+    }
   }
 }

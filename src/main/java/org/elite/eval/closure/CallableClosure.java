@@ -16,9 +16,16 @@
 
 package org.elite.eval.closure;
 
-import elite.lang.Closure;
 import javax.el.ELContext;
 
+/**
+ * This interface defines a CallableClosure that can be called with a scoped
+ * object. The closure can implicitly access scoped object property or invoke
+ * scoped object method without an explicit object reference.
+ */
 public interface CallableClosure {
-  Object call_with(ELContext elctx, Object scope, Closure... args);
+  /**
+   * Call the closure with given scoped object.
+   */
+  Object call_with(ELContext elctx, Object scope);
 }

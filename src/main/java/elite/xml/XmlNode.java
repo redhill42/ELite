@@ -30,6 +30,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.ParserConfigurationException;
 
+import org.elite.eval.closure.CallableClosure;
 import org.w3c.dom.Node;
 import org.w3c.dom.Document;
 import org.w3c.dom.DocumentFragment;
@@ -39,7 +40,6 @@ import org.elite.eval.Coercible;
 import org.elite.eval.ELUtils;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.ClosureObject;
-import org.elite.eval.closure.Procedure;
 import org.elite.util.DOMWriter;
 
 /**
@@ -138,9 +138,9 @@ public abstract class XmlNode implements PropertyResolvable, MethodResolvable, C
         }
     }
 
-    public Object apply_to(ELContext elctx, Procedure proc) {
+    public Object apply_to(ELContext elctx, CallableClosure proc) {
         if (this instanceof Iterable) {
-            List<Object> res = new ArrayList<Object>();
+            List<Object> res = new ArrayList<>();
             for (Object e : (Iterable)this) {
                 res.add(proc.call_with(elctx, e));
             }
