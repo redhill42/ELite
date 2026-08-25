@@ -15,6 +15,7 @@ import javax.el.PropertyNotWritableException;
 import javax.el.ValueExpression;
 import javax.el.VariableMapper;
 import java.lang.invoke.CallSite;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
@@ -124,44 +125,29 @@ public abstract class IRCompiledClosure extends Closure
    * Fill procedure execution arguments with default values.
    *
    * @param elctx the evaluation context
-   * @param nvars number of procedure parameters
-   * @param declaringClass where the actual closure method declared
-   * @param methodName the actual closure method name
+   * @param implHandle the implementation closure method handle
    * @param args the procedure arguments
    * @return arguments with default values filled.
    */
   @SuppressWarnings("unused")
-  protected static Object[]
-  getArgs(ELContext elctx, int nvars, boolean isBlock, Class<?> declaringClass,
-          String methodName, Object[] args) {
-    if (args.length == nvars)
-      return args;
+  protected static Object[] getArgs(ELContext elctx, MethodHandle implHandle,
+                                    Object[] args) {
+    Method method = MethodHandles.reflectAs(Method.class, implHandle);
+    MetaMethod meta = method.getAnnotation(MetaMethod.class);
+    int arity = meta.arity();
+    Value[] defaults = meta.defaults();
 
-    if (isBlock) {
-      assert nvars == 1;
-      return new Object[]{args};
-    }
+    int argc = args.length;
+    if ((argc > arity) || (argc + defaults.length < arity))
+      throw new EvaluationException(
+        elctx, _T(EL_FN_BAD_ARG_COUNT, meta.name(), arity, argc));
 
-    try {
-      Method method = declaringClass.getMethod(
-        methodName, EvaluationContext.class, Object[].class);
-      MetaMethod meta = method.getAnnotation(MetaMethod.class);
-      Value[] defaults = meta.defaults();
-
-      int argc = args.length;
-      if ((argc > nvars) || (argc + defaults.length < nvars))
-        throw new EvaluationException(
-          elctx, _T(EL_FN_BAD_ARG_COUNT, meta.name(), nvars, argc));
-
-      int delta = nvars - argc;
-      Object[] xargs = new Object[nvars];
-      System.arraycopy(args, 0, xargs, 0, argc);
-      for (int i = argc, j = defaults.length - delta; i < nvars; i++, j++)
-        xargs[i] = getDefaultValue(elctx, defaults[j]);
-      return xargs;
-    } catch (NoSuchMethodException e) {
-      throw new EvaluationException(elctx, e);
-    }
+    int delta = arity - argc;
+    Object[] xargs = new Object[arity];
+    System.arraycopy(args, 0, xargs, 0, argc);
+    for (int i = argc, j = defaults.length - delta; i < arity; i++, j++)
+      xargs[i] = getDefaultValue(elctx, defaults[j]);
+    return xargs;
   }
 
   private static Object getDefaultValue(ELContext elctx, Value value) {
