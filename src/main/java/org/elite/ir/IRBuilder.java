@@ -1292,9 +1292,11 @@ public class IRBuilder extends ELNode.Visitor {
     BitSet readSlots = new BitSet();
     BitSet modSlots = new BitSet();
     for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
-      if (v.opcode() == PUSH_VAR)
+      if (v.opcode() == PUSH_VAR || v.opcode() == PUSH_IND ||
+          v.opcode() == INC_IND)
         readSlots.set(v.varIndex());
-      if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP)
+      if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP ||
+          v.opcode() == STORE_IND || v.opcode() == INC_IND)
         modSlots.set(v.varIndex());
     }
 
@@ -1357,9 +1359,11 @@ public class IRBuilder extends ELNode.Visitor {
     BitSet readSlots = new BitSet();
     BitSet modSlots = new BitSet();
     for (var v = new InstructionView(fn.code(), 0); v.inBounds(); v.advance()) {
-      if (v.opcode() == PUSH_VAR)
+      if (v.opcode() == PUSH_VAR || v.opcode() == PUSH_IND ||
+          v.opcode() == INC_IND)
         readSlots.set(v.varIndex());
-      if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP)
+      if (v.opcode() == STORE_VAR || v.opcode() == STORE_VAR_POP ||
+          v.opcode() == STORE_IND || v.opcode() == INC_IND)
         modSlots.set(v.varIndex());
     }
 
@@ -1426,6 +1430,12 @@ public class IRBuilder extends ELNode.Visitor {
             current.emitPop();
         } else {
           // Remap local variable to new slot.
+          current.emit(v.opcode(), v.payload(), newSlot.slot);
+        }
+      } else if (v.opcode() == PUSH_IND || v.opcode() == STORE_IND ||
+                 v.opcode() == INC_IND) {
+        Slot newSlot = slots[v.varIndex()];
+        if (newSlot != null) {
           current.emit(v.opcode(), v.payload(), newSlot.slot);
         }
       } else if (v.isJump()) {
@@ -1905,7 +1915,14 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Increment induction variable.
     if (indType == int.class) {
-      current.emitIncInd(indSlot.slot, step);
+      if (Math.abs(step) < 256) {
+        current.emitIncInd(indSlot.slot, step);
+      } else {
+        indSlot.loadInd();
+        buildConstUnbox(Math.abs(step));
+        emitBinOp(K_INT, step > 0 ? Token.ADD : Token.SUB);
+        indSlot.storeRaw();
+      }
     } else if (indType == long.class) {
       indSlot.loadInd();
       buildConstUnbox((long)Math.abs(step));
@@ -4269,7 +4286,9 @@ public class IRBuilder extends ELNode.Visitor {
         final int n = block.code.size();
         for (int i = 0; i < n; i++) {
           // We only check read slot, write only slots are dead.
-          if (IRFormat.opcode(data[i]) == PUSH_VAR)
+          if (IRFormat.opcode(data[i]) == PUSH_VAR ||
+              IRFormat.opcode(data[i]) == PUSH_IND ||
+              IRFormat.opcode(data[i]) == INC_IND)
             usedSlots.set(IRFormat.operand(data[i]));
         }
       }
@@ -4304,19 +4323,23 @@ public class IRBuilder extends ELNode.Visitor {
         int inst = data[i];
         int op = IRFormat.opcode(inst);
         int varIndex = IRFormat.operand(inst);
+        int payload = IRFormat.payload(inst);
 
         switch (op) {
         case PUSH_VAR:
-          data[i] = IRFormat.pack(PUSH_VAR, 0, slotMap[varIndex]);
+        case PUSH_IND:
+        case INC_IND:
+          data[i] = IRFormat.pack(op, payload, slotMap[varIndex]);
           break;
 
         case STORE_VAR:
+        case STORE_IND:
           if ((varIndex = slotMap[varIndex]) == -1) {
             // Remove dead store.
             data[i] = IRFormat.pack(NOP, 0, 0);
             changed = true;
           } else {
-            data[i] = IRFormat.pack(STORE_VAR, 0, varIndex);
+            data[i] = IRFormat.pack(op, payload, varIndex);
           }
           break;
 
@@ -4326,7 +4349,7 @@ public class IRBuilder extends ELNode.Visitor {
             data[i] = IRFormat.pack(POP, 0, 0);
             changed = true;
           } else {
-            data[i] = IRFormat.pack(STORE_VAR_POP, 0, varIndex);
+            data[i] = IRFormat.pack(op, payload, varIndex);
           }
           break;
         }

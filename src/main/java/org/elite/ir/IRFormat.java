@@ -51,7 +51,9 @@ final class IRFormat {
    * Pack a 1-word instruction.
    */
   public static int pack(int opcode, int payload, int operand) {
-    return opcode | (payload << PAYLOAD_SHIFT) | (operand << OPERAND_SHIFT);
+    return opcode |
+           ((payload & 0x1FF) << PAYLOAD_SHIFT) |
+           (operand << OPERAND_SHIFT);
   }
 
   // ── Decoding helpers ──
@@ -61,7 +63,10 @@ final class IRFormat {
   }
 
   public static int payload(int header) {
-    return (header >>> PAYLOAD_SHIFT) & 0x1FF;
+    int payload = (header >>> PAYLOAD_SHIFT) & 0x1FF;
+    if ((payload & 0x100) != 0)
+      payload |= 0xFFFFF700;
+    return payload;
   }
 
   public static int operand(int header) {

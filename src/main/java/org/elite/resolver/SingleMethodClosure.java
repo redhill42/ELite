@@ -63,11 +63,16 @@ class SingleMethodClosure extends JavaMethodClosure {
 
   @Override
   public Method getJavaMethod(int arity) {
-    return method;
+    int paramCount = method.getParameterCount();
+    if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
+      --paramCount;
+    if (method.isVarArgs() ? (arity >= paramCount - 1) : (arity == paramCount))
+      return method;
+    return null;
   }
 
   public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
-    return method;
+    return getJavaMethod(args.length);
   }
 
   public int arity(ELContext elctx) {

@@ -16,6 +16,7 @@
 
 package org.elite.ir;
 
+import org.objectweb.asm.Type;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -317,15 +318,15 @@ final class IREmitter {
   }
 
   public void emitPushInd(int slot, Class<?> type) {
-    emit(PUSH_IND, slot, builder.putConstant(type));
+    emit(PUSH_IND, Type.getType(type).getSort(), slot);
   }
 
   public void emitStoreInd(int slot, Class<?> type) {
-    emit(STORE_IND, slot, builder.putConstant(type));
+    emit(STORE_IND, Type.getType(type).getSort(), slot);
   }
 
   public void emitIncInd(int slot, int step) {
-    emit(INC_IND, slot, builder.putConstant(step));
+    emit(INC_IND, step, slot);
   }
 
   // ── Control flow ──

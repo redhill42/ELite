@@ -1270,11 +1270,11 @@ public class BytecodeCompiler {
       }
 
       case PUSH_IND ->
-        mc.XLOAD(SLOT(v.payload()), (Class<?>)fn.getConstant(v.poolIndex()));
+        mc.XLOAD(SLOT(v.varIndex()), getTypeFromSort(v.payload()));
       case STORE_IND ->
-        mc.XSTORE(SLOT(v.payload()), (Class<?>)fn.getConstant(v.poolIndex()));
+        mc.XSTORE(SLOT(v.varIndex()), getTypeFromSort(v.payload()));
       case INC_IND ->
-        mc.IINC(SLOT(v.payload()), (int)fn.getConstant(v.poolIndex()));
+        mc.IINC(SLOT(v.varIndex()), v.payload());
 
       case JUMP ->
         mc.GOTO(blockLabels[v.jumpTarget()]);
@@ -1976,6 +1976,20 @@ public class BytecodeCompiler {
         AsmType.getMethodDescriptor(CallSite.class, MethodHandles.Lookup.class,
                                     String.class, MethodType.class),
         false);
+
+    private static Class<?> getTypeFromSort(int sort) {
+      return switch (sort) {
+      case Type.BOOLEAN -> boolean.class;
+      case Type.CHAR -> char.class;
+      case Type.BYTE -> byte.class;
+      case Type.SHORT -> short.class;
+      case Type.INT -> int.class;
+      case Type.LONG -> long.class;
+      case Type.FLOAT -> float.class;
+      case Type.DOUBLE -> double.class;
+      default -> throw new AssertionError();
+      };
+    }
 
     private void emitPushPrimitive(InstructionView v, Object value) {
       InstructionView next = peekNext(v);
