@@ -42,13 +42,6 @@ class ControlFlowTest extends EliteTestBase {
         assertEquals(55L, evalL("sum(10)"));
     }
 
-    @Test
-    @org.junit.jupiter.api.Disabled("Multi-generator for-in syntax not supported")
-    void forInWithIndex() {
-        exec("define sum(n) { define s = 0; for (x in [1..n], i in [0..]) { s = s + x }; s }");
-        assertEquals(55L, evalL("sum(10)"));
-    }
-
     // ---- while loop ----
 
     @Test

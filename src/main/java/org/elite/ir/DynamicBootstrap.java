@@ -980,11 +980,11 @@ public final class DynamicBootstrap {
       1, Object.class, Object[].class);
   }
 
-  static MethodHandle dispatchInvoke(MethodHandles.Lookup lookup,
-                                     EvaluationContext env,
-                                     String name, boolean isSuper,
-                                     String[] keys, Object obj,
-                                     Object[] args) {
+  public static MethodHandle dispatchInvoke(MethodHandles.Lookup lookup,
+                                            EvaluationContext env,
+                                            String name, boolean isSuper,
+                                            String[] keys, Object obj,
+                                            Object[] args) {
     if (obj == null)
       return dropArguments(throwNullPointerException(), 1, Object.class,
                            Object[].class);

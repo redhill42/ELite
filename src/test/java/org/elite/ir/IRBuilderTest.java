@@ -59,12 +59,6 @@ class IRBuilderTest {
         assertEquals(true, eval("100 == 100"));
     }
 
-    @Disabled("Constant condition optimized out")
-    @Test void conditionalHasMultipleBlocks() {
-        IRFunction fn = IRBuilder.compile(elctx, parse("true ? 1 : 2"));
-        assertTrue(fn.blockCount() >= 3);
-    }
-
     @Test void whileLoopHasBackEdge() {
         exec("define whileSum(n) { define x = 0; while (x < n) { x = x + 1 }; x }");
     }
@@ -75,23 +69,6 @@ class IRBuilderTest {
 
     @Test void indexAccessCompiles() {
         assertNotNull(IRBuilder.compile(elctx, parse("x[0]")));
-    }
-
-    @Disabled("Constant condition optimized out")
-    @Test void conditionalCompilesWithBlocks() {
-        IRFunction fn = IRBuilder.compile(elctx, parse("true ? 100 : 200"));
-        assertTrue(fn.blockCount() >= 3);
-        assertTrue(scanOp(fn, Opcode.JUMP_IF_TRUE));
-    }
-
-    @Disabled("constant folded")
-    @Test void logicalAndCompilesWithJumps() {
-        assertTrue(IRBuilder.compile(elctx, parse("true && false")).blockCount() >= 2);
-    }
-
-    @Disabled("constant folded")
-    @Test void logicalOrCompilesWithJumps() {
-        assertTrue(IRBuilder.compile(elctx, parse("true || false")).blockCount() >= 2);
     }
 
     @Test void coalesceCompilesWithNullCheck() {

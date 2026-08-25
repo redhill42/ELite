@@ -8,7 +8,6 @@ define qsort([])     => []
                       ~ qsort([y | y <- xs, y >= x])
 
 define lst = shuffle([1..10]);
-print(lst);
 print(qsort(lst));
 
 
