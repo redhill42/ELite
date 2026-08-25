@@ -1075,7 +1075,7 @@ public final class DynamicBootstrap {
       MetaMethod meta = m.getAnnotation(MetaMethod.class);
       int arity = meta.arity();
       boolean varargs = meta.varargs();
-      Value[] defaults = meta.defaultValues();
+      Value[] defaults = meta.defaults();
       int argc = args.length;
 
       if (varargs ? (argc < arity - 1)
@@ -1096,8 +1096,7 @@ public final class DynamicBootstrap {
         mh = permuteArguments(mh, 1, 0, 2);
       }
 
-      return reorderArguments(mh, meta.parameterNames(), keys, varargs,
-                              defaults, argc);
+      return reorderArguments(mh, meta.keys(), keys, varargs, defaults, argc);
     } catch (IllegalAccessException e) {
       return reportMethodNotFound(c, name);
     }
@@ -1146,7 +1145,7 @@ public final class DynamicBootstrap {
       MetaMethod meta = cons.getAnnotation(MetaMethod.class);
       int arity = meta.arity();
       boolean varargs = meta.varargs();
-      Value[] defaults = meta.defaultValues();
+      Value[] defaults = meta.defaults();
       int argc = args.length;
 
       if (varargs ? (argc < arity - 1)
@@ -1158,8 +1157,7 @@ public final class DynamicBootstrap {
 
       MethodHandle mh = lookup.unreflectConstructor(cons);
       mh = dropArguments(mh, 1, Object.class);
-      return reorderArguments(mh, meta.parameterNames(), keys, varargs,
-                              defaults, argc);
+      return reorderArguments(mh, meta.keys(), keys, varargs, defaults, argc);
     } catch (NoSuchMethodException | IllegalAccessException e) {
       return reportMethodNotFound(c, name);
     }

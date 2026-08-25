@@ -146,18 +146,18 @@ public abstract class IRCompiledClosure extends Closure
       Method method = declaringClass.getMethod(
         methodName, EvaluationContext.class, Object[].class);
       MetaMethod meta = method.getAnnotation(MetaMethod.class);
-      Value[] defaultValues = meta.defaultValues();
+      Value[] defaults = meta.defaults();
 
       int argc = args.length;
-      if ((argc > nvars) || (argc + defaultValues.length < nvars))
+      if ((argc > nvars) || (argc + defaults.length < nvars))
         throw new EvaluationException(
           elctx, _T(EL_FN_BAD_ARG_COUNT, meta.name(), nvars, argc));
 
       int delta = nvars - argc;
       Object[] xargs = new Object[nvars];
       System.arraycopy(args, 0, xargs, 0, argc);
-      for (int i = argc, j = defaultValues.length - delta; i < nvars; i++, j++)
-        xargs[i] = getDefaultValue(elctx, defaultValues[j]);
+      for (int i = argc, j = defaults.length - delta; i < nvars; i++, j++)
+        xargs[i] = getDefaultValue(elctx, defaults[j]);
       return xargs;
     } catch (NoSuchMethodException e) {
       throw new EvaluationException(elctx, e);

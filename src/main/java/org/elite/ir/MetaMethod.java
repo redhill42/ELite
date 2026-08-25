@@ -47,10 +47,10 @@ public @interface MetaMethod {
   /**
    * Return a list of parameter names.
    */
-  String[] parameterNames();
+  String[] keys();
 
   /**
    * The default argument values.
    */
-  Value[] defaultValues() default {};
+  Value[] defaults() default {};
 }

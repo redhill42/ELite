@@ -215,7 +215,7 @@ public class BytecodeCompiler {
     ac.FIELD("name", f.name())
       .FIELD("arity", f.paramCount())
       .FIELD("varargs", f.isVarArgs())
-      .ARRAY("parameterNames", f.paramNames());
+      .ARRAY("keys", f.paramNames());
     emitDefaultValues(ac, f.defaultValues());
     ac.end();
 
@@ -226,7 +226,7 @@ public class BytecodeCompiler {
     if (defaultValues == null)
       return;
 
-    AnnotationAssembly dv = ac.ARRAY("defaultValues");
+    AnnotationAssembly dv = ac.ARRAY("defaults");
     for (Object value : defaultValues) {
       if (value == null) {
         dv.ANNOTATION(null, Value.class)
@@ -611,7 +611,7 @@ public class BytecodeCompiler {
       ac.FIELD("name", clazz.name)
         .FIELD("arity", initFunc.paramCount())
         .FIELD("varargs", initFunc.isVarArgs())
-        .ARRAY("parameterNames", initFunc.paramNames());
+        .ARRAY("keys", initFunc.paramNames());
       emitDefaultValues(ac, initFunc.defaultValues());
       ac.end();
 
@@ -685,7 +685,7 @@ public class BytecodeCompiler {
         ac.FIELD("name", fn.name())
           .FIELD("arity", fn.paramCount())
           .FIELD("varargs", fn.isVarArgs())
-          .ARRAY("parameterNames", fn.paramNames());
+          .ARRAY("keys", fn.paramNames());
         emitDefaultValues(ac, fn.defaultValues());
         ac.end();
 

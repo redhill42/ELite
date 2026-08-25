@@ -18,9 +18,7 @@ package org.elite.resolver;
 
 import elite.lang.Closure;
 import org.elite.eval.ELEngine;
-import org.elite.eval.EvaluationContext;
 import org.elite.eval.closure.NamedClosure;
-import org.elite.ir.MetaClass;
 import org.elite.ir.MetaMethod;
 import org.elite.util.Utils;
 import javax.el.ELContext;
