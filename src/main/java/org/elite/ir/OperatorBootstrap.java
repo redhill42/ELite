@@ -227,6 +227,9 @@ public final class OperatorBootstrap {
   private static final MethodHandle MH_arrayContains;
   private static final MethodHandle MH_primitiveArrayContains;
 
+  private static final MethodHandle MH_EitherLeft;
+  private static final MethodHandle MH_EitherRight;
+
   static {
     try {
       MethodHandles.Lookup lookup = MethodHandles.lookup();
@@ -250,7 +253,7 @@ public final class OperatorBootstrap {
 
       MH_assignOpDispatcher = lookup.findStatic(
         OperatorBootstrap.class, "assignOpDispatcher",
-        methodType(Object.class, MethodHandles.Lookup.class,
+        methodType(Either.class, MethodHandles.Lookup.class,
                    MutableCallSite.class, String.class, Object.class,
                    Object.class, EvaluationContext.class));
 
@@ -751,6 +754,11 @@ public final class OperatorBootstrap {
       MH_primitiveArrayContains = lookup.findStatic(
         OperatorBootstrap.class, "primitiveArrayContains",
         methodType(boolean.class, Object.class, Object.class));
+
+      MH_EitherLeft = lookup.findStatic(
+        Either.class, "left", methodType(Either.class, Object.class));
+      MH_EitherRight = lookup.findStatic(
+        Either.class, "right", methodType(Either.class, Object.class));
 
     } catch (NoSuchMethodException | IllegalAccessException ex) {
       throw new ExceptionInInitializerError(ex);
@@ -2283,7 +2291,7 @@ public final class OperatorBootstrap {
     return cs;
   }
 
-  private static Object assignOpDispatcher(MethodHandles.Lookup lookup,
+  private static Either assignOpDispatcher(MethodHandles.Lookup lookup,
                                            MutableCallSite cs, String name,
                                            Object lhs, Object rhs,
                                            EvaluationContext env)
@@ -2303,7 +2311,7 @@ public final class OperatorBootstrap {
     cs.setTarget(guarded);
 
     // Directly invoke target for current call.
-    return target.invokeExact(lhs, rhs, env);
+    return (Either)target.invokeExact(lhs, rhs, env);
   }
 
   private static MethodHandle dispatchAssignOp(MethodHandles.Lookup lookup,
@@ -2326,7 +2334,9 @@ public final class OperatorBootstrap {
             ann.arity() == 1 && !ann.varargs()) {
           // (lhs, env, [rhs]) -> (lhs, rhs, env)
           MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
-          return permuteArguments(mh, 0, 2, 1);
+          mh = permuteArguments(mh, 0, 2, 1);
+          mh = mh.asType(mh.type().changeReturnType(Object.class));
+          return filterReturnValue(mh, MH_EitherLeft);
         }
       } catch (NoSuchMethodException | IllegalAccessException e) {
         // fallthrough
@@ -2359,15 +2369,18 @@ public final class OperatorBootstrap {
           } else {
             mh = dropArguments(mh, 2, EvaluationContext.class);
           }
-          return makeCoerce(mh, 0, lhs, rhs);
+          mh = makeCoerce(mh, 0, lhs, rhs);
+          mh = mh.asType(mh.type().changeReturnType(Object.class));
+          return filterReturnValue(mh, MH_EitherLeft);
         } catch (IllegalAccessException e) {
           // fallthrough
         }
       }
     }
 
-    // Return null if no assignment operator performed.
-    return dropArguments(constant(Object.class, null), 0, Object.class,
-                         Object.class, EvaluationContext.class);
+    // Do standard evaluation.
+    MethodHandle mh = dispatchBinary(lookup, env, name, lhs, rhs);
+    mh = mh.asType(mh.type().changeReturnType(Object.class));
+    return filterReturnValue(mh, MH_EitherRight);
   }
 }
