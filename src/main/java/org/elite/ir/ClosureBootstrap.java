@@ -17,11 +17,13 @@
 package org.elite.ir;
 
 import org.elite.eval.EvaluationContext;
+import org.elite.util.asm.AnnotationAssembly;
 import org.elite.util.asm.AsmType;
 import org.elite.util.asm.ClassAssembly;
 import org.elite.util.asm.MethodAssembly;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
+import org.objectweb.asm.Type;
 import javax.el.ELContext;
 import java.lang.invoke.CallSite;
 import java.lang.invoke.ConstantCallSite;
@@ -84,6 +86,9 @@ public final class ClosureBootstrap {
 
     ClassAssembly cc = new ClassAssembly(ACC_PRIVATE | ACC_SUPER, className,
                                          IRCompiledClosure.class, null);
+
+    // Copy MetaMethod annotation to closure class.
+    copyMetaData(cc, meta);
 
     if (!isStatic)
       cc.addField(ACC_PRIVATE, "$this", ownerClass);
@@ -162,7 +167,7 @@ public final class ClosureBootstrap {
     // toString for named closures.
     if (!name.equals("<lambda>")) {
       cc.newMethod(ACC_PUBLIC, "toString", String.class)
-        .LDC("#<procedure: " + name + ">")
+        .LDC("#<procedure: " + name + "/" + meta.arity() + ">")
         .ARETURN()
         .end();
     }
@@ -170,5 +175,87 @@ public final class ClosureBootstrap {
     // This class is linked at the indy callsite; so define a hidden nestmate.
     Lookup lookup = caller.defineHiddenClass(cc.end(), false, NESTMATE, STRONG);
     return lookup.lookupClass();
+  }
+
+  private static void copyMetaData(ClassAssembly cc, MetaMethod meta) {
+    AnnotationAssembly ac = cc.ANNOTATION(MetaMethod.class, true);
+    ac.FIELD("name", meta.name())
+      .FIELD("arity", meta.arity())
+      .FIELD("varargs", meta.varargs())
+      .ARRAY("keys", meta.keys());
+
+    AnnotationAssembly vc = ac.ARRAY("defaults");
+    for (Value value : meta.defaults()) {
+      switch (value.kind()) {
+      case NULL ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "NULL")
+          .end();
+      case NIL ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "NIL")
+          .end();
+      case BOOL ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "BOOL")
+          .FIELD("boolValue", value.boolValue())
+          .end();
+      case CHAR ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CHAR")
+          .FIELD("charValue", value.charValue())
+          .end();
+      case INT ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "INT")
+          .FIELD("intValue", value.intValue())
+          .end();
+      case LONG ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "LONG")
+          .FIELD("longValue", value.longValue())
+          .end();
+      case FLOAT ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "FLOAT")
+          .FIELD("floatValue", value.floatValue())
+          .end();
+      case DOUBLE ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "DOUBLE")
+          .FIELD("doubleValue", value.doubleValue())
+          .end();
+      case STRING ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "STRING")
+          .FIELD("stringValue", value.stringValue())
+          .end();
+      case SYMBOL ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "SYMBOL")
+          .FIELD("stringValue", value.stringValue())
+          .end();
+      case CLASS ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CLASS")
+          .FIELD("classValue", Type.getType(value.classValue()))
+          .end();
+      case FIELD ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "FIELD")
+          .FIELD("classValue", Type.getType(value.classValue()))
+          .FIELD("stringValue", value.stringValue())
+          .end();
+      case CONST ->
+        vc.ANNOTATION(null, Value.class)
+          .ENUM("kind", ValueKind.class, "CONST")
+          .FIELD("classValue", Type.getType(value.classValue()))
+          .FIELD("intValue", value.intValue())
+          .end();
+      }
+    }
+
+    vc.end();
+    ac.end();
   }
 }

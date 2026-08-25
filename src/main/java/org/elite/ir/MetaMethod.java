@@ -25,7 +25,7 @@ import java.lang.annotation.Target;
  * Annotate an ELite method.
  */
 @Documented
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface MetaMethod {
   /**

@@ -1516,10 +1516,30 @@ public final class DynamicBootstrap {
       return dropArguments(throwNullPointerException(), 1, Object.class,
                            Object[].class);
 
-    if (obj instanceof Closure) {
-      MethodHandle mh = filterArguments(MH_callClosure, 1, MH_getELContext);
-      mh = insertArguments(mh, 2, (Object)keys);
-      return permuteArguments(mh, 1, 0, 2);
+    if (obj instanceof Closure closure) {
+      MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+      if (meta != null && !isLambdaBlock(meta)) {
+        int arity = meta.arity();
+        boolean varargs = meta.varargs();
+        Value[] defaults = meta.defaults();
+        int argc = args.length;
+
+        if (varargs ? (argc < arity - 1)
+                    : (argc > arity || argc + defaults.length < arity)) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_BAD_ARG_COUNT, meta.name(), arity, argc)),
+            1, Object.class, Object[].class);
+        }
+
+        MethodHandle mh = filterArguments(MH_callClosure, 1, MH_getELContext);
+        mh = insertArguments(mh, 2, (Object)null); // keys unused
+        mh = permuteArguments(mh, 1, 0, 2);
+        return reorderArguments(mh, meta.keys(), keys, varargs, defaults, argc);
+      } else {
+        MethodHandle mh = filterArguments(MH_callClosure, 1, MH_getELContext);
+        mh = insertArguments(mh, 2, (Object)keys);
+        return permuteArguments(mh, 1, 0, 2);
+      }
     }
 
     if (obj instanceof Class<?> c) {
@@ -1545,6 +1565,10 @@ public final class DynamicBootstrap {
     }
 
     return reportMethodNotFound(obj, "__call__");
+  }
+
+  private static boolean isLambdaBlock(MetaMethod meta) {
+    return meta.arity() == 1 && meta.keys()[0].equals("$");
   }
 
   private static MethodHandle dispatchClassCall(MethodHandles.Lookup lookup,

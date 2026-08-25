@@ -45,7 +45,7 @@ class ClosureBootstrapTest {
 
         assertEquals(1, closure.arity(elctx));
         assertEquals(42, closure.execute(ctx, new Object[]{41}));
-        assertEquals("#<procedure: addOne>", closure.toString());
+        assertEquals("#<procedure: addOne/1>", closure.toString());
     }
 
     int value = 7;
@@ -123,6 +123,6 @@ class ClosureBootstrapTest {
         EvaluationContext ctx = new EvaluationContext(elctx);
         IRCompiledClosure closure = (IRCompiledClosure)
             cs.getTarget().invokeExact(ctx, (Object)null);
-        assertEquals("#<procedure: addOne>", closure.toString());
+        assertEquals("#<procedure: addOne/1>", closure.toString());
     }
 }
