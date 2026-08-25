@@ -1784,7 +1784,7 @@ public class BytecodeCompiler {
 
     private void emitSuperConstructor(Class<?> baseClass, int arity) {
       List<Constructor<?>> constructors = new ArrayList<>();
-      for (Constructor<?> c : baseClass.getDeclaredConstructors()) {
+      for (Constructor<?> c : DynamicBootstrap.getSortedConstructors(baseClass)) {
         if (c.getParameterCount() == arity &&
             (Modifier.isPublic(c.getModifiers()) ||
              Modifier.isProtected(c.getModifiers())))

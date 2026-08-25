@@ -1771,18 +1771,34 @@ public final class DynamicBootstrap {
     return index;
   }
 
-  private static int resolveConstructor(Class<?> superClass, Object[] args) {
+  static Constructor<?>[] getSortedConstructors(Class<?> clazz) {
+    Constructor<?>[] constructors = clazz.getDeclaredConstructors();
+    Arrays.sort(constructors, (c1, c2) -> {
+      Class<?>[] p1 = c1.getParameterTypes();
+      Class<?>[] p2 = c2.getParameterTypes();
+      int cmp = Integer.compare(p1.length, p2.length);
+      if (cmp != 0) return cmp;
+      for (int i = 0; i < p1.length; i++) {
+        cmp = p1[i].getName().compareTo(p2[i].getName());
+        if (cmp != 0) return cmp;
+      }
+      return 0;
+    });
+    return constructors;
+  }
+
+  static int resolveConstructor(Class<?> superClass, Object[] args) {
     int candidateIndex = -1;
     int shortestDistance = Integer.MAX_VALUE;
     int index = 0;
 
-    for (Constructor<?> cons : superClass.getDeclaredConstructors()) {
-      if (cons.getParameterCount() != args.length ||
-          !(Modifier.isPublic(cons.getModifiers()) ||
-            Modifier.isProtected(cons.getModifiers())))
+    for (Constructor<?> ctor : getSortedConstructors(superClass)) {
+      if (ctor.getParameterCount() != args.length ||
+          !(Modifier.isPublic(ctor.getModifiers()) ||
+            Modifier.isProtected(ctor.getModifiers())))
         continue;
 
-      Class<?>[] types = cons.getParameterTypes();
+      Class<?>[] types = ctor.getParameterTypes();
       int d = distanceof(types, args);
       if (d == 0)
         return index;
