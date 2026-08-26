@@ -16,11 +16,9 @@
 
 package org.elite.parser;
 
-import java.io.Reader;
 import java.io.IOException;
+import java.io.Reader;
 
-public interface ResourceResolver
-{
-    public Reader open(String path)
-        throws IOException;
+public interface ResourceResolver {
+  Reader open(String path) throws IOException;
 }

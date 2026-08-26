@@ -1,10 +1,11 @@
 target
 .idea
 .claude
+docs/superpowers
 *.ipr
 *.iml
 *.iws
 *.swp
 *.class
 .DS_Store
-bench/*.class
+

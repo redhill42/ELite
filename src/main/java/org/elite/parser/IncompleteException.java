@@ -16,9 +16,9 @@
 
 package org.elite.parser;
 
-public class IncompleteException extends ParseException
-{
-    public IncompleteException(String file, int line, int column, String message) {
-        super(file, line, column, message);
-    }
+public class IncompleteException extends ParseException {
+  public IncompleteException(String file, int line, int column,
+                             String message) {
+    super(file, line, column, message);
+  }
 }

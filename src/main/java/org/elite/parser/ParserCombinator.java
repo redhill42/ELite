@@ -16,57 +16,59 @@
 
 package org.elite.parser;
 
-import java.io.*;
-
 import elite.ast.Expression;
-
 import javax.el.ELContext;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.Serial;
+import java.io.Serializable;
 
-public final class ParserCombinator implements Serializable
-{
-    private final Grammar grammar;
+public final class ParserCombinator implements Serializable {
+  private final Grammar grammar;
 
-    @Serial
-    private static final long serialVersionUID = 6681093034146902331L;
+  @Serial
+  private static final long serialVersionUID = 6681093034146902331L;
 
-    ParserCombinator(Grammar grammar) {
-        this.grammar = grammar;
+  ParserCombinator(Grammar grammar) {
+    this.grammar = grammar;
+  }
+
+  public Object parse(ELContext elctx, String text) {
+    Object result = grammar.parse(elctx, text);
+    if (result instanceof ELNode)
+      result = Expression.valueOf((ELNode)result);
+    return result;
+  }
+
+  public Object parse(ELContext elctx, File file) throws IOException {
+    return parse(elctx, readText(file, null));
+  }
+
+  public Object parse(ELContext elctx, File file, String charset)
+    throws IOException {
+    return parse(elctx, readText(file, charset));
+  }
+
+  private String readText(File file, String charset) throws IOException {
+    Reader reader;
+    StringBuilder buf;
+    char[] cbuf;
+    int n;
+
+    if (charset == null) {
+      reader = new InputStreamReader(new FileInputStream(file));
+    } else {
+      reader = new InputStreamReader(new FileInputStream(file), charset);
     }
 
-    public Object parse(ELContext elctx, String text) {
-        Object result = grammar.parse(elctx, text);
-        if (result instanceof ELNode)
-            result = Expression.valueOf((ELNode)result);
-        return result;
-    }
-
-    public Object parse(ELContext elctx, File file) throws IOException {
-        return parse(elctx, readText(file, null));
-    }
-
-    public Object parse(ELContext elctx, File file, String charset) throws IOException {
-        return parse(elctx, readText(file, charset));
-    }
-
-    private String readText(File file, String charset)
-        throws IOException
-    {
-        Reader          reader;
-        StringBuilder   buf;
-        char[]          cbuf;
-        int             n;
-
-        if (charset == null) {
-            reader = new InputStreamReader(new FileInputStream(file));
-        } else {
-            reader = new InputStreamReader(new FileInputStream(file), charset);
-        }
-
-        buf = new StringBuilder();
-        cbuf = new char[8192];
-        while ((n = reader.read(cbuf)) != -1)
-            buf.append(cbuf, 0, n);
-        reader.close();
-        return buf.toString();
-    }
+    buf = new StringBuilder();
+    cbuf = new char[8192];
+    while ((n = reader.read(cbuf)) != -1)
+      buf.append(cbuf, 0, n);
+    reader.close();
+    return buf.toString();
+  }
 }

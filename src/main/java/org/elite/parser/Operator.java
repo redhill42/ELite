@@ -16,15 +16,14 @@
 
 package org.elite.parser;
 
-public final class Operator
-{
-    public String name;     // The operator name
-    public int token;       // The operator numeric token value
-    public int token2;      // The alternate token value
+public final class Operator {
+  public String name;     // The operator name
+  public int token;       // The operator numeric token value
+  public int token2;      // The alternate token value
 
-    public Operator(String name, int token, int token2) {
-        this.name = name;
-        this.token = token;
-        this.token2 = token2;
-    }
+  public Operator(String name, int token, int token2) {
+    this.name = name;
+    this.token = token;
+    this.token2 = token2;
+  }
 }

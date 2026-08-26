@@ -18,36 +18,35 @@ package org.elite.parser;
 
 import javax.el.ELException;
 
-public class ParseException extends ELException
-{
-    private final String file;
-    private final int line;
-    private final int column;
+public class ParseException extends ELException {
+  private final String file;
+  private final int line;
+  private final int column;
 
-    public ParseException(String file, int line, int column, String message) {
-        super(message);
-        this.file = file;
-        this.line = line;
-        this.column = column;
-    }
+  public ParseException(String file, int line, int column, String message) {
+    super(message);
+    this.file = file;
+    this.line = line;
+    this.column = column;
+  }
 
-    public String getFileName() {
-        return file;
-    }
+  public String getFileName() {
+    return file;
+  }
 
-    public int getLineNumber() {
-        return line;
-    }
+  public int getLineNumber() {
+    return line;
+  }
 
-    public int getColumnNumber() {
-        return column;
-    }
+  public int getColumnNumber() {
+    return column;
+  }
 
-    public String getMessage() {
-        if (file != null) {
-            return file + ":" + line + ":" + column + ": " + super.getMessage();
-        } else {
-            return "line " + line + ": " + super.getMessage();
-        }
+  public String getMessage() {
+    if (file != null) {
+      return file + ":" + line + ":" + column + ": " + super.getMessage();
+    } else {
+      return "line " + line + ": " + super.getMessage();
     }
+  }
 }

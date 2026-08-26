@@ -21,40 +21,39 @@ package org.elite.parser;
  * are internally represented as integers that contain both column
  * and line number information.
  */
-public class Position
-{
-    public static final int LINESHIFT   = 10;
-    public static final int LINEINC     = (1 << LINESHIFT);
-    public static final int COLUMNMASK  = (1 << LINESHIFT) - 1;
-    public static final int NOPOS       = 0;
-    public static final int FIRSTPOS    = (1 << LINESHIFT) + 1;
-    public static final int MAXPOS      = Integer.MAX_VALUE;
+public class Position {
+  public static final int LINESHIFT = 10;
+  public static final int LINEINC = (1 << LINESHIFT);
+  public static final int COLUMNMASK = (1 << LINESHIFT) - 1;
+  public static final int NOPOS = 0;
+  public static final int FIRSTPOS = (1 << LINESHIFT) + 1;
+  public static final int MAXPOS = Integer.MAX_VALUE;
 
-    /**
-     * The line number of the given position.
-     */
-    public static int line(int pos) {
-        return pos >>> LINESHIFT;
-    }
+  /**
+   * The line number of the given position.
+   */
+  public static int line(int pos) {
+    return pos >>> LINESHIFT;
+  }
 
-    /**
-     * The column number of the given position.
-     */
-    public static int column(int pos) {
-        return pos & COLUMNMASK;
-    }
+  /**
+   * The column number of the given position.
+   */
+  public static int column(int pos) {
+    return pos & COLUMNMASK;
+  }
 
-    /**
-     * Form a position from a line number and a column number.
-     */
-    public static int make(int line, int col) {
-        return (line << LINESHIFT) + col;
-    }
+  /**
+   * Form a position from a line number and a column number.
+   */
+  public static int make(int line, int col) {
+    return (line << LINESHIFT) + col;
+  }
 
-    /**
-     * Get the position in the begining of next line.
-     */
-    public static int nextline(int pos) {
-        return (pos & ~COLUMNMASK) + LINEINC + 1;
-    }
+  /**
+   * Get the position with the begining of next line.
+   */
+  public static int nextline(int pos) {
+    return (pos & ~COLUMNMASK) + LINEINC + 1;
+  }
 }
