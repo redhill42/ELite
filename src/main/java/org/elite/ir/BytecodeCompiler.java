@@ -1153,13 +1153,51 @@ public class BytecodeCompiler {
         mc.ALOAD(S_ENV());
       case PUSH_CTX ->
         mc.ALOAD(S_CTX());
-  
-      case PUSH_VAR ->
-        mc.ALOAD(SLOT(v.varIndex()));
-      case STORE_VAR ->
-        mc.DUP().ASTORE(SLOT(v.varIndex()));
-      case STORE_VAR_POP ->
-        mc.ASTORE(SLOT(v.varIndex()));
+
+      case PUSH_VAR -> {
+        switch (v.payload()) {
+          case IRFormat.K_INT ->
+            mc.ILOAD(SLOT(v.varIndex()));
+          case IRFormat.K_LONG ->
+            mc.LLOAD(SLOT(v.varIndex()));
+          case IRFormat.K_FLOAT ->
+            mc.FLOAD(SLOT(v.varIndex()));
+          case IRFormat.K_DOUBLE ->
+            mc.DLOAD(SLOT(v.varIndex()));
+          default ->
+            mc.ALOAD(SLOT(v.varIndex()));
+        }
+      }
+
+      case STORE_VAR -> {
+        switch (v.payload()) {
+        case IRFormat.K_INT ->
+          mc.DUP().ISTORE(SLOT(v.varIndex()));
+        case IRFormat.K_LONG ->
+          mc.DUP2().LSTORE(SLOT(v.varIndex()));
+        case IRFormat.K_FLOAT ->
+          mc.DUP().FSTORE(SLOT(v.varIndex()));
+        case IRFormat.K_DOUBLE ->
+          mc.DUP2().DSTORE(SLOT(v.varIndex()));
+        default ->
+          mc.DUP().ASTORE(SLOT(v.varIndex()));
+        }
+      }
+
+      case STORE_VAR_POP -> {
+        switch (v.payload()) {
+        case IRFormat.K_INT ->
+          mc.ISTORE(SLOT(v.varIndex()));
+        case IRFormat.K_LONG ->
+          mc.LSTORE(SLOT(v.varIndex()));
+        case IRFormat.K_FLOAT ->
+          mc.FSTORE(SLOT(v.varIndex()));
+        case IRFormat.K_DOUBLE ->
+          mc.DSTORE(SLOT(v.varIndex()));
+        default ->
+          mc.ASTORE(SLOT(v.varIndex()));
+        }
+      }
   
       case DEFINE_GLOBAL ->
         mc.LDC(fn.getConstant(v.poolIndex()))
@@ -1255,13 +1293,6 @@ public class BytecodeCompiler {
             .BOX(Boolean.TYPE);
         }
       }
-
-      case PUSH_IND ->
-        mc.XLOAD(SLOT(v.varIndex()), getTypeFromSort(v.payload()));
-      case STORE_IND ->
-        mc.XSTORE(SLOT(v.varIndex()), getTypeFromSort(v.payload()));
-      case INC_IND ->
-        mc.IINC(SLOT(v.varIndex()), v.payload());
 
       case JUMP ->
         mc.GOTO(blockLabels[v.jumpTarget()]);
@@ -1888,21 +1919,6 @@ public class BytecodeCompiler {
                                   String.class, MethodType.class,
                                   MethodHandle.class),
       false);
-
-
-    private static Class<?> getTypeFromSort(int sort) {
-      return switch (sort) {
-      case Type.BOOLEAN -> boolean.class;
-      case Type.CHAR -> char.class;
-      case Type.BYTE -> byte.class;
-      case Type.SHORT -> short.class;
-      case Type.INT -> int.class;
-      case Type.LONG -> long.class;
-      case Type.FLOAT -> float.class;
-      case Type.DOUBLE -> double.class;
-      default -> throw new AssertionError();
-      };
-    }
 
     private void emitPushPrimitive(InstructionView v, Object value) {
       InstructionView next = peekNext(v);

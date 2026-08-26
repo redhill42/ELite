@@ -70,11 +70,6 @@ public final class Opcode {
   public static final int EMPTY             = 0x2B;
   public static final int NOT               = 0x2C;
 
-  // ── Loop inductor operations ──
-  public static final int PUSH_IND          = 0x2D;
-  public static final int STORE_IND         = 0x2E;
-  public static final int INC_IND           = 0x2F;
-
   // ── Control flow ──
   public static final int JUMP              = 0x30;
   public static final int JUMP_IF_TRUE      = 0x31;
@@ -169,10 +164,6 @@ public final class Opcode {
       case INSTANCEOF     -> "INSTANCEOF";
       case EMPTY          -> "EMPTY";
       case NOT            -> "NOT";
-
-      case PUSH_IND       -> "PUSH_IND";
-      case STORE_IND      -> "STORE_IND";
-      case INC_IND        -> "INC_IND";
 
       case JUMP           -> "JUMP";
       case JUMP_IF_TRUE   -> "JUMP_IF_TRUE";

@@ -95,9 +95,15 @@ final class IRPrinter {
     sb.append(String.format("%-14s", Opcode.name(op)));
 
     switch (op) {
-    case Opcode.PUSH_VAR, Opcode.STORE_VAR, Opcode.STORE_VAR_POP,
-         Opcode.PUSH_IND, Opcode.STORE_IND, Opcode.INC_IND ->
+    case Opcode.PUSH_VAR, Opcode.STORE_VAR, Opcode.STORE_VAR_POP -> {
       sb.append(" v").append(v.varIndex());
+      switch (v.payload()) {
+      case IRFormat.K_INT -> sb.append(", INT");
+      case IRFormat.K_LONG -> sb.append(", LONG");
+      case IRFormat.K_FLOAT -> sb.append(", FLOAT");
+      case IRFormat.K_DOUBLE -> sb.append(", DOUBLE");
+      }
+    }
 
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,

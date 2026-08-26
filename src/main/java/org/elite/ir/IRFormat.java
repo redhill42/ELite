@@ -45,6 +45,20 @@ final class IRFormat {
   public static final int K_BOOL    = 5;
   public static final int K_DYNAMIC = 6;
 
+  public static int typeKind(Class<?> type) {
+    if (type == int.class)
+      return K_INT;
+    if (type == long.class)
+      return K_LONG;
+    if (type == float.class)
+      return K_FLOAT;
+    if (type == double.class)
+      return K_DOUBLE;
+    if (type == boolean.class)
+      return K_BOOL;
+    throw new AssertionError();
+  }
+
   // ── Packing helpers ──
 
   /**

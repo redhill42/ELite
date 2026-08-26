@@ -107,8 +107,12 @@ final class IREmitter {
     emit(PUSH_CTX, 0, 0);
   }
 
-  public void emitPushVar(int varIndex) {
-    emit(PUSH_VAR, 0, varIndex);
+  public void emitPushVar(int slot) {
+    emit(PUSH_VAR, K_NONE, slot);
+  }
+
+  public void emitPushVar(int slot, Class<?> type) {
+    emit(PUSH_VAR, typeKind(type), slot);
   }
 
   public void emitPushGlobal(int slot) {
@@ -317,18 +321,6 @@ final class IREmitter {
     emit(NOT, 0);
   }
 
-  public void emitPushInd(int slot, Class<?> type) {
-    emit(PUSH_IND, Type.getType(type).getSort(), slot);
-  }
-
-  public void emitStoreInd(int slot, Class<?> type) {
-    emit(STORE_IND, Type.getType(type).getSort(), slot);
-  }
-
-  public void emitIncInd(int slot, int step) {
-    emit(INC_IND, step, slot);
-  }
-
   // ── Control flow ──
 
   public void emitJump(int blockId) {
@@ -399,12 +391,20 @@ final class IREmitter {
     emit(STORE_GLOBAL, 0, builder.putConstant(name));
   }
 
-  public void emitStoreVar(int varIndex) {
-    emit(STORE_VAR, 0, varIndex);
+  public void emitStoreVar(int slot) {
+    emit(STORE_VAR, K_NONE, slot);
   }
 
-  public void emitStoreVarPop(int varIndex) {
-    emit(STORE_VAR_POP, 0, varIndex);
+  public void emitStoreVarPop(int slot) {
+    emit(STORE_VAR_POP, K_NONE, slot);
+  }
+
+  public void emitStoreVar(int slot, Class<?> type) {
+    emit(STORE_VAR, IRFormat.typeKind(type), slot);
+  }
+
+  public void emitStoreVarPop(int slot, Class<?> type) {
+    emit(STORE_VAR_POP, IRFormat.typeKind(type), slot);
   }
 
   public void emitClosure(IRFunction func) {

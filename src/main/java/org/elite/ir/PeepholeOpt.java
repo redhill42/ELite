@@ -35,7 +35,7 @@ final class PeepholeOpt {
      if (opcode == NOP)
       return true;
 
-    if (code.isEmpty() || ELProgram.OPT_LEVEL == 0)
+    if (code.isEmpty() || ELProgram.OPT_LEVEL < 2)
       return false;
 
     int last = code.size() - 1;
