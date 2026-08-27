@@ -408,7 +408,7 @@ public class ClassDefinition extends AnnotatedClosure
     private Closure[] getDelegates(Map<String,Closure> vmap) {
         List<Closure> delegates = null;
         for (Closure c : vmap.values()) {
-            if (c.isAnnotationPresent("delegate")) {
+            if (c.isAnnotationPresent("Delegate")) {
                 if (delegates == null)
                     delegates = new ArrayList<Closure>();
                 delegates.add(c);

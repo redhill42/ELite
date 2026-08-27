@@ -877,6 +877,24 @@ public abstract class ELNode implements Serializable {
       return type == null ? null : getFullClassName(type);
     }
 
+    public boolean isAnnotationPresent(String type) {
+      if (meta == null)
+        return false;
+      for (METADATA md : meta.metadata)
+        if (md.type.equals(type))
+          return true;
+      return false;
+    }
+
+    public METADATA getAnnotation(String type) {
+      if (meta == null)
+        return null;
+      for (METADATA md : meta.metadata)
+        if (md.type.equals(type))
+          return md;
+      return null;
+    }
+
     public Object getValue(EvaluationContext context) {
       context.setVariable(id, defineClosure(context));
       return null;

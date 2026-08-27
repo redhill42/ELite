@@ -40,6 +40,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -2617,6 +2618,15 @@ public class Parser extends Scanner {
                     Modifier.PRIVATE | Modifier.PROTECTED);
       checkDisjoint(var.pos, mod, Modifier.PRIVATE,
                     Modifier.PUBLIC | Modifier.PROTECTED);
+
+      if (var.isAnnotationPresent("Delegate")) {
+        if (Modifier.isStatic(mod) || var.expr instanceof ELNode.CLASSDEF)
+          throw parseError(var.pos, _T(EL_NON_INSTANCE_DELEGATE));
+        if (var.expr instanceof ELNode.LAMBDA fn && fn.vars.length != 0)
+          throw parseError(var.pos, _T(EL_ILLEGAL_DELEGATE_METHOD));
+        if (vars.stream().anyMatch(def -> def.isAnnotationPresent("Delegate")))
+          throw parseError(var.pos, _T(EL_MULTIPLE_DELEGATE));
+      }
     }
 
     return var;

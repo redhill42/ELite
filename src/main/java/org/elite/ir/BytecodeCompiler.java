@@ -513,6 +513,16 @@ public class BytecodeCompiler {
           interfaces.add(i.getName());
       }
 
+      List<ELNode.DEFINE> delegates =
+        Stream.concat(clazz.node.vars == null ? Stream.empty()
+                                              : Arrays.stream(clazz.node.vars),
+                      Arrays.stream(clazz.node.ivars))
+          .filter(def -> def.isAnnotationPresent("Delegate"))
+          .toList();
+      assert delegates.size() <= 1;
+      if (!delegates.isEmpty())
+        interfaces.add(Delegated.class.getName());
+
       if (isDataClass(clazz))
         interfaces.add("java.io.Serializable");
 
@@ -690,6 +700,10 @@ public class BytecodeCompiler {
       // Compile override methods derived from base class and interfaces.
       compileOverrideMethods(cc);
 
+      // Generate $delegate method.
+      if (!delegates.isEmpty())
+        compileDelegateMethod(cc, delegates.get(0));
+
       // Generate toString method.
       if (vmap.containsKey("toString") || clazz.node.vars != null) {
         compileToStringMethod(cc);
@@ -715,9 +729,7 @@ public class BytecodeCompiler {
     }
 
     private static boolean isDataClass(IRClass clazz) {
-      ELNode.METASET meta = clazz.node.symbol.def.meta;
-      return meta != null &&
-        Arrays.stream(meta.metadata).anyMatch(md -> md.type.equals("data"));
+      return clazz.node.symbol.def.isAnnotationPresent("data");
     }
 
     private record MethodRecord(String name, List<Class<?>> paramTypes) {
@@ -778,6 +790,28 @@ public class BytecodeCompiler {
           mc.end();
         }
       }
+    }
+
+    private void compileDelegateMethod(ClassAssembly cc,
+                                       ELNode.DEFINE delegate) {
+      MethodAssembly mc = cc.newMethod(ACC_PUBLIC, "$delegate", Object.class);
+      if (delegate.expr instanceof ELNode.LAMBDA) {
+        mc.THIS()
+          .NEW(EvaluationContext.class)
+          .DUP()
+          .THIS()
+          .GETFIELD(rootBaseClass, "$context", ELContext.class)
+          .INVOKESPECIAL(EvaluationContext.class, "<init>", Void.TYPE,
+                         ELContext.class)
+          .ACONST_NULL()
+          .INVOKEVIRTUAL(className, delegate.id, Object.class,
+                         EvaluationContext.class, Object[].class);
+      } else {
+        mc.THIS()
+          .GETFIELD(className, delegate.id, Object.class);
+      }
+      mc.ARETURN()
+        .end();
     }
 
     private void collectOverrideMethods(Map<MethodRecord, Method> methods) {

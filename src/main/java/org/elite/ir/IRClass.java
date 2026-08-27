@@ -85,15 +85,7 @@ public class IRClass {
   }
 
   public boolean isSingleton() {
-    if (node.symbol.def.meta == null)
-      return false;
-
-    for (ELNode.METADATA meta : node.symbol.def.meta.metadata) {
-      if (meta.type.equals("Singleton"))
-        return true;
-    }
-
-    return false;
+    return node.symbol.def.isAnnotationPresent("Singleton");
   }
 
   public IRClass host() {

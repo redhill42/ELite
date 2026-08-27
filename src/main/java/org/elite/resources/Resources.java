@@ -124,6 +124,9 @@ public final class Resources
     public static final String EL_MISPLACED_SUPER = "EL_MISPLACED_SUPER";
     public static final String EL_ILLEGAL_ACCESS  = "EL_ILLEGAL_ACCESS";
     public static final String EL_MISSING_ARRAY_DIMENSION = "EL_MISSING_ARRAY_DIMENSION";
+    public static final String EL_NON_INSTANCE_DELEGATE = "EL_NON_INSTANCE_DELEGATE";
+    public static final String EL_ILLEGAL_DELEGATE_METHOD = "EL_ILLEGAL_DELEGATE_METHOD";
+    public static final String EL_MULTIPLE_DELEGATE = "EL_MULTIPLE_DELEGATE";
 
     public static final String JSPRT_COERCE_ERROR = "JSPRT_COERCE_ERROR";
     public static final String JSPRT_UNSUPPORTED_EVAL_TYPE = "JSPRT_UNSUPPORTED_EVAL_TYPE";

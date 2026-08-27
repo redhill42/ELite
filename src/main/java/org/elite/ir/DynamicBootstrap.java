@@ -93,6 +93,7 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_coerceArgs;
   private static final MethodHandle MH_invokeMethodResolvable;
   private static final MethodHandle MH_getCallArgs;
+  private static final MethodHandle MH_delegate;
 
   static {
     try {
@@ -211,6 +212,9 @@ public final class DynamicBootstrap {
         DynamicBootstrap.class, "invokeTypesEqual",
         methodType(boolean.class, Object.class, Object[].class, Class[].class));
 
+      MH_delegate = lookup.findVirtual(
+        Delegated.class, "$delegate", methodType(Object.class));
+
     } catch (NoSuchMethodException | IllegalAccessException e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -281,6 +285,18 @@ public final class DynamicBootstrap {
   private static MethodHandle dispatchGetValue(MethodHandles.Lookup lookup,
                                                EvaluationContext env,
                                                Object obj, String name) {
+    MethodHandle target = dispatchGetValue0(lookup, env, obj, name);
+    if (target == null) {
+      // Fallback to dynamic getValue.
+      MethodHandle fallback = insertArguments(MH_dynamicGetValue, 2, name);
+      target = filterArguments(fallback, 0, MH_getELContext);
+    }
+    return target;
+  }
+
+  private static MethodHandle dispatchGetValue0(MethodHandles.Lookup lookup,
+                                                EvaluationContext env,
+                                                Object obj, String name) {
     if (obj == null) {
       MethodHandle mh = constant(Object.class, null);
       return dropArguments(mh, 0, EvaluationContext.class, Object.class);
@@ -328,6 +344,20 @@ public final class DynamicBootstrap {
       }
     }
 
+    // Try delegate object.
+    if (obj instanceof Delegated) {
+      Object delegate = ((Delegated)obj).$delegate();
+      if (delegate != null) {
+        MethodHandle mh = dispatchGetValue0(lookup, env, delegate, name);
+        if (mh != null) {
+          mh = mh.asType(methodType(Object.class, EvaluationContext.class,
+                                    Object.class));
+          mh = filterArguments(mh, 1, MH_delegate);
+          return mh;
+        }
+      }
+    }
+
     if (obj instanceof Class<?> c) {
       // Get the static field with the given name.
       try {
@@ -367,9 +397,7 @@ public final class DynamicBootstrap {
     if (mh != null)
       return insertArguments(mh, 2, name);
 
-    // Fallback to dynamic getValue.
-    MethodHandle fallback = insertArguments(MH_dynamicGetValue, 2, name);
-    return filterArguments(fallback, 0, MH_getELContext);
+    return null;
   }
 
   private static MethodHandle dispatchGetValueExpando(MethodHandles.Lookup lookup,
@@ -664,6 +692,21 @@ public final class DynamicBootstrap {
                                                EvaluationContext env,
                                                String name, Object obj,
                                                Object value) {
+    MethodHandle target = dispatchSetValue0(lookup, env, name, obj, value);
+    if (target == null) {
+      // Fallback to dynamic setValue.
+      // (elctx, obj, index, value) -> (value, obj, (name), env)
+      MethodHandle fallback = permuteArguments(MH_dynamicSetValue, 3, 1, 2, 0);
+      fallback = insertArguments(fallback, 2, name);
+      target = filterArguments(fallback, 2, MH_getELContext);
+    }
+    return target;
+  }
+
+  private static MethodHandle dispatchSetValue0(MethodHandles.Lookup lookup,
+                                                EvaluationContext env,
+                                                String name, Object obj,
+                                                Object value) {
     if (obj == null) {
       return dropArguments(throwNullPointerException(), 0,
                            Object.class, Object.class);
@@ -698,6 +741,20 @@ public final class DynamicBootstrap {
         }
       } catch (NoSuchMethodException | IllegalAccessException e) {
         // fallthrough
+      }
+    }
+
+    // Try delegate object.
+    if (obj instanceof Delegated) {
+      Object delegate = ((Delegated)obj).$delegate();
+      if (delegate != null) {
+        MethodHandle mh = dispatchSetValue(lookup, env, name, delegate, value);
+        if (mh != null) {
+          mh = mh.asType(methodType(void.class, Object.class, Object.class,
+                                    EvaluationContext.class));
+          mh = filterArguments(mh, 1, MH_delegate);
+          return mh;
+        }
       }
     }
 
@@ -737,11 +794,7 @@ public final class DynamicBootstrap {
     if (mh != null)
       return insertArguments(mh, 2, name);
 
-    // Fallback to dynamic setValue.
-    // (elctx, obj, index, value) -> (value, obj, (name), env)
-    MethodHandle fallback = permuteArguments(MH_dynamicSetValue, 3, 1, 2, 0);
-    fallback = insertArguments(fallback, 2, name);
-    return filterArguments(fallback, 2, MH_getELContext);
+    return null;
   }
 
   private static MethodHandle permuteReceiverAndValue(MethodHandle mh,
@@ -985,6 +1038,18 @@ public final class DynamicBootstrap {
                                             String name, boolean isSuper,
                                             String[] keys, Object obj,
                                             Object[] args) {
+    MethodHandle target = dispatchInvoke0(
+      lookup, env, name, isSuper, keys, obj, args);
+    if (target == null)
+      return reportMethodNotFound(obj, name);
+    return target;
+  }
+
+  private static MethodHandle dispatchInvoke0(MethodHandles.Lookup lookup,
+                                              EvaluationContext env,
+                                              String name, boolean isSuper,
+                                              String[] keys, Object obj,
+                                              Object[] args) {
     if (obj == null)
       return dropArguments(throwNullPointerException(), 1, Object.class,
                            Object[].class);
@@ -997,6 +1062,12 @@ public final class DynamicBootstrap {
         return mh;
 
       if (!isSuper) {
+        if (obj instanceof Delegated) {
+          mh = dispatchDelegateInvoke(lookup, env, name, keys, obj, args);
+          if (mh != null)
+            return mh;
+        }
+
         mh = dispatchELiteDynamicInvoke(lookup, obj.getClass(), name, keys, args);
         if (mh != null)
           return mh;
@@ -1056,7 +1127,7 @@ public final class DynamicBootstrap {
       return permuteArguments(mh, 1, 0, 2);
     }
 
-    return reportMethodNotFound(obj, name);
+    return null;
   }
 
   private static MethodHandle dispatchELiteMethod(MethodHandles.Lookup lookup,
@@ -1100,6 +1171,23 @@ public final class DynamicBootstrap {
     } catch (IllegalAccessException e) {
       return reportMethodNotFound(c, name);
     }
+  }
+
+  private static MethodHandle
+  dispatchDelegateInvoke(MethodHandles.Lookup lookup, EvaluationContext env,
+                         String name, String[] keys, Object obj, Object[] args) {
+    Object delegate = ((Delegated)obj).$delegate();
+    if (delegate != null) {
+      MethodHandle target = dispatchInvoke0(
+        lookup, env, name, false, keys, delegate, args);
+      if (target != null) {
+        target = target.asType(methodType(Object.class,
+          EvaluationContext.class, Object.class, Object[].class));
+        target = filterArguments(target, 1, MH_delegate);
+        return target;
+      }
+    }
+    return null;
   }
 
   private static MethodHandle
