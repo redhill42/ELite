@@ -87,6 +87,10 @@ public class SymbolTable {
     int maxSlots;          // max slot index used across this scope and all
                            // nested sub-scopes
 
+    // A flag to indicate a program scope. Symbols defined in this scope
+    // implemented as a static filed in program class.
+    boolean programScope;
+
     Scope(Scope parent, int depth, ELNode frontier, int startSlot) {
       this.parent   = parent;
       this.depth    = depth;
@@ -101,6 +105,10 @@ public class SymbolTable {
 
     public boolean isTopLevel() {
       return parent == null;
+    }
+
+    public boolean isProgramScope() {
+      return programScope;
     }
 
     public boolean hasCaptures() {
@@ -211,6 +219,11 @@ public class SymbolTable {
 
   void enterScope(ELNode node) {
     enterScope(node, null);
+  }
+
+  void enterProgramScope() {
+    enterScope(null);
+    current.programScope = true;
   }
 
   void enterScope(ELNode node, ELNode fresh) {

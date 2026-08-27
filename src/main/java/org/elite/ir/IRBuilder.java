@@ -345,9 +345,20 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Define global or local variable according to it's captured flag.
     if (node.symbol.captured) {
-      current.emitDefineGlobal(node.id, node.symbol.isFinal() ||
-                                        node.symbol.clazz != null);
-      current.emitPushNull();
+      if (node.symbol.scope.isProgramScope()) {
+        // CLASS nodes and CLASSDEF node needn't store to a variable. They are
+        // already resolved at compile time.
+        if (node.expr instanceof ELNode.CLASS ||
+            node.expr instanceof ELNode.CLASSDEF)
+          return;
+
+        program.addGlobal(node.id);
+        current.emitPutStatic(null, node.id);
+      } else {
+        current.emitDefineGlobal(node.id, node.symbol.isFinal() ||
+                                          node.symbol.clazz != null);
+        current.emitPushNull();
+      }
     } else {
       current.emitStoreVar(node.symbol.slot);
     }
@@ -391,7 +402,10 @@ public class IRBuilder extends ELNode.Visitor {
     } else {
       if (node.symbol == null && buildLoadClassMember(node.pos, node.id, false))
         return;
-      if (node.symbol == null || node.symbol.captured)
+      if (node.symbol != null && node.symbol.captured &&
+          node.symbol.scope.isProgramScope())
+        current.emitGetStatic(null, node.id);
+      else if (node.symbol == null || node.symbol.captured)
         current.emitPushGlobal(node.id);
       else
         current.emitPushVar(node.symbol.slot);
@@ -442,7 +456,10 @@ public class IRBuilder extends ELNode.Visitor {
         throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
       if (node.symbol == null && buildStoreClassMember(node.pos, node.id, false))
         return;
-      if (node.symbol == null || node.symbol.captured)
+      if (node.symbol != null && node.symbol.captured &&
+          node.symbol.scope.isProgramScope())
+        current.emitPutStatic(null, node.id);
+      else if (node.symbol == null || node.symbol.captured)
         current.emitStoreGlobal(node.id);
       else
         current.emitStoreVar(node.symbol.slot);
@@ -3315,12 +3332,16 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Recursively build nested classes.
     for (ELNode.DEFINE var : node.cvars) {
-      if (var.expr instanceof ELNode.CLASSDEF)
+      if (var.expr instanceof ELNode.CLASSDEF) {
         build(var.expr);
+        current.emitPop();
+      }
     }
     for (ELNode.DEFINE var : node.ivars) {
-      if (var.expr instanceof ELNode.CLASSDEF)
+      if (var.expr instanceof ELNode.CLASSDEF) {
         build(var.expr);
+        current.emitPop();
+      }
     }
 
     // Build class and instance procedures.
@@ -3494,10 +3515,14 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (pat instanceof ELNode.IDENT var) {
-      if (var.symbol.captured)
-        current.emitPushGlobal(var.id);
-      else
+      if (var.symbol.captured) {
+        if (var.symbol.scope.isProgramScope())
+          current.emitGetStatic(null, var.id);
+        else
+          current.emitPushGlobal(var.id);
+      } else {
         current.emitPushVar(var.symbol.slot);
+      }
       emitDynBinOp(Token.EQ);
       return;
     }
@@ -3961,10 +3986,12 @@ public class IRBuilder extends ELNode.Visitor {
   private class Slot {
     final int slot;
     final boolean captured;
+    final String field;
     final boolean isTemporary;
 
     Slot() {
       slot = allocLocalVar();
+      field = null;
       captured = false;
       isTemporary = true;
     }
@@ -3972,10 +3999,12 @@ public class IRBuilder extends ELNode.Visitor {
     Slot(ELNode.DEFINE var) {
       if (var != null && var.symbol != null) {
         captured = var.symbol.captured;
+        field = captured && var.symbol.scope.isProgramScope() ? var.id : null;
         slot = captured ? putConstant(var.id) : var.symbol.slot;
         isTemporary = false;
       } else {
         slot = allocLocalVar();
+        field = null;
         captured = false;
         isTemporary = true;
       }
@@ -3984,16 +4013,19 @@ public class IRBuilder extends ELNode.Visitor {
     Slot(ELNode.IDENT var) {
       if (var != null && var.symbol != null) {
         captured = var.symbol.captured;
+        field = captured && var.symbol.scope.isProgramScope() ? var.id : null;
         slot = captured ? putConstant(var.id) : var.symbol.slot;
         isTemporary = false;
       } else {
         slot = allocLocalVar();
+        field = null;
         captured = false;
         isTemporary = true;
       }
     }
 
     void define() {
+      assert field == null;
       if (captured) {
         current.emitDefineGlobal(slot);
         current.emitPushNull();
@@ -4003,14 +4035,18 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     void store() {
-      if (captured)
+      if (field != null)
+        current.emitPutStatic(null, field);
+      else if (captured)
         current.emitStoreGlobal(slot);
       else
         current.emitStoreVar(slot);
     }
 
     void load() {
-      if (captured)
+      if (field != null)
+        current.emitGetStatic(null, field);
+      else if (captured)
         current.emitPushGlobal(slot);
       else
         current.emitPushVar(slot);
@@ -4659,7 +4695,7 @@ public class IRBuilder extends ELNode.Visitor {
   public static IRFunction compile(ELContext elctx, ELNode node) {
     SymbolTable symTable = SymbolTableBuilder.build(node);
     IRFunction func = new IRFunction("<expr>", 0, new String[0], false);
-    IRBuilder b = new IRBuilder(elctx, new IRProgram(null), func,
+    IRBuilder b = new IRBuilder(elctx, new IRProgram(null, false), func,
                                 symTable.currentScope());
     b.build(node);
     b.current.emitReturn();
@@ -4674,7 +4710,7 @@ public class IRBuilder extends ELNode.Visitor {
     List<ELNode> exps = program.getExpressions();
 
     IRFunction func = new IRFunction("<program>", 0, new String[0], false);
-    IRProgram output = new IRProgram(func);
+    IRProgram output = new IRProgram(func, program.isStandalone());
     IRBuilder b = new IRBuilder(elctx, output, func, symTable.currentScope());
     b.setFile(program.getFilename());
 

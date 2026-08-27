@@ -21,11 +21,14 @@ import java.util.Collections;
 import java.util.List;
 
 public class IRProgram {
+  private final boolean standalone;
   private final IRFunction entry;
+  private final List<String> globals = new ArrayList<>();
   private final List<IRFunction> functions = new ArrayList<>();
   private final List<IRClass> classes = new ArrayList<>();
 
-  IRProgram(IRFunction entry) {
+  IRProgram(IRFunction entry, boolean standalone) {
+    this.standalone = standalone;
     this.entry = entry;
     functions.add(entry);
   }
@@ -38,6 +41,14 @@ public class IRProgram {
     classes.add(clazz);
   }
 
+  void addGlobal(String global) {
+    globals.add(global);
+  }
+
+  public boolean isStandalone() {
+    return standalone;
+  }
+  
   public IRFunction entry() {
     return entry;
   }
@@ -48,6 +59,10 @@ public class IRProgram {
 
   public List<IRClass> classes() {
     return Collections.unmodifiableList(classes);
+  }
+
+  public List<String> globals() {
+    return Collections.unmodifiableList(globals);
   }
 
   public String dump() {

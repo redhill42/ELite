@@ -166,6 +166,11 @@ public class BytecodeCompiler {
       .RETURN()
       .end();
 
+    // Add program global static fields.
+    for (String global : program.globals()) {
+      cc.addField(ACC_PUBLIC | ACC_STATIC, global, Object.class);
+    }
+
     // Compile program functions. This includes program entry function.
     for (IRFunction f : program.functions()) {
       compileFunction(cc, f);
@@ -1198,7 +1203,7 @@ public class BytecodeCompiler {
           mc.ASTORE(SLOT(v.varIndex()));
         }
       }
-  
+
       case DEFINE_GLOBAL ->
         mc.LDC(fn.getConstant(v.poolIndex()))
           .PUSH(v.payload())
@@ -1724,7 +1729,9 @@ public class BytecodeCompiler {
       case GETSTATIC -> {
         Object field = fn.getConstant(v.poolIndex());
         if (field instanceof Descriptors.Field f) {
-          mc.GETSTATIC(f.clazz().internalName, f.field(), Object.class);
+          mc.GETSTATIC(f.clazz() != null ? f.clazz().internalName
+                                         : ProgramClassName,
+                       f.field(), Object.class);
         } else if (field instanceof Field f) {
           mc.GETSTATIC(f.getDeclaringClass(), f.getName(), f.getType());
           if (f.getType().isPrimitive())
@@ -1740,7 +1747,8 @@ public class BytecodeCompiler {
         Class<?> type;
 
         if (field instanceof Descriptors.Field f) {
-          className = f.clazz().internalName;
+          className = f.clazz() != null ? f.clazz().internalName
+                                        : ProgramClassName;
           fieldName = f.field();
           type = Object.class;
         } else if (field instanceof Field f) {

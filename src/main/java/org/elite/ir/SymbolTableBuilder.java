@@ -30,7 +30,7 @@ public final class SymbolTableBuilder {
     BuilderVisitor visitor = new BuilderVisitor(table);
     table.enterScope(null);
     if (program.isStandalone()) // set local scope for standalone program
-      table.enterScope(null);
+      table.enterProgramScope();
     for (ELNode def : program.getDefinitions())
       def.accept(visitor);
     for (ELNode exp : program.getExpressions())
