@@ -129,6 +129,33 @@ class DelegateTest extends EliteTestBase {
         assertEvalThrows("my.noSuchProperty = 1");
     }
 
+    // ---- chained delegation ----------------------------------------------
+
+    @Test
+    void chainedDelegationAcrossClasses() {
+        // A delegates to B, B delegates to C: lookups may hop several
+        // levels until a definition is found.
+        exec("""
+            class Foo {
+              foo() => "foo"
+              tag = "deep"
+            }
+            class Bar {
+              private @Delegate foo = Foo();
+              bar() => "bar:" ~ foo.foo()
+            }
+            class Baz {
+              private @Delegate bar = Bar();
+              baz() => "baz"
+            }
+            define x = Baz()
+            """);
+        assertEquals("foo", eval("x.foo()"));       // Baz -> Bar -> Foo.foo
+        assertEquals("bar:foo", eval("x.bar()"));   // Baz -> Bar.bar
+        assertEquals("baz", eval("x.baz()"));       // own definition
+        assertEquals("deep", eval("x.tag"));        // property, two hops
+    }
+
     // ---- restrictions ----------------------------------------------------
 
     @Test
