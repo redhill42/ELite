@@ -1218,6 +1218,56 @@ When `a + b` is evaluated and `a`'s class does not define `+`, the runtime attem
 a **reverse lookup**: it checks if `b`'s class defines `?+` (reverse operator). This
 enables expressions like `1 + point` where `Integer` does not know about `Point`.
 
+### 9.7 Delegation (`@Delegate`)
+
+The delegation pattern (also known as the Decorator or Adapter pattern) is
+ubiquitous in Java engineering: an object forwards most of its behavior to
+another object, overriding only a few members. Hand-writing such forwarding
+methods is tedious and error-prone — every delegated method must be
+repeated verbatim, and forgetting one silently changes behavior.
+
+The `@Delegate` annotation eliminates this boilerplate. A class that
+annotates a member with `@Delegate` forwards every property and method
+lookup that is **not defined by the class itself** to the delegate object:
+
+```elite
+class MyDate(@Delegate d) {
+  define getYear()   => d.year + 1900
+  define setYear(y)  => d.year = y - 1900
+  define getMonth()  => d.month + 1
+  define setMonth(m) => d.month = m - 1
+}
+```
+
+`java.util.Date` numbers years from 1900; `MyDate` wants calendar years. The
+four overridden members adjust the convention, while all of `Date`'s other
+members (`getTime`, `setTime`, `toString`, ...) are delegated automatically:
+
+```elite
+define d = MyDate(java.util.Date(0))
+d.getYear()          // 1970 — MyDate's own definition
+d.getTime()          // 0 — delegated to java.util.Date
+d.time = 5000        // property write, delegated to setTime
+```
+
+`@Delegate` may annotate:
+
+- a class constructor variable — `class MyDate(@Delegate d) { ... }`
+- an instance variable — `@Delegate target = java.util.Date(0)`
+- a zero-argument instance method — `@Delegate define getTarget() => target`
+
+Lookup order: the class's own definitions always win; only unresolved
+members fall through to the delegate. A member defined by neither the
+class nor the delegate raises an error.
+
+Restrictions:
+
+- `@Delegate` may not annotate static members or class definitions.
+- A delegate method must take no arguments.
+- A class may have at most one delegate object. (The AST interpreter
+  currently supports multiple delegates; this divergence will be removed
+  in a future version.)
+
 ---
 
 ## 10. Lazy Evaluation
