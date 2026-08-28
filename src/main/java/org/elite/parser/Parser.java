@@ -40,8 +40,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -900,6 +900,7 @@ public class Parser extends Scanner {
           body = tmp;
         }
 
+        checkMembers(null, body);
         return translateNewObject(p, cls, clstag, body);
       }
     }
@@ -932,6 +933,7 @@ public class Parser extends Scanner {
       String clstag = clstag();
       ELNode.DEFINE[] body = parseClassBody();
       close_scope();
+      checkMembers(null, body);
       return translateNewObject(p, cls, clstag, body);
     }
   }
@@ -2283,7 +2285,7 @@ public class Parser extends Scanner {
       List<ELNode.DEFINE> vlist = new ArrayList<>();
       if (token != RPAREN) {
         do {
-          vlist.add(checkMember(parseClassicParameter(), vlist));
+          vlist.add(parseClassicParameter());
         } while (scan(COMMA));
       }
       expect(RPAREN);
@@ -2321,6 +2323,7 @@ public class Parser extends Scanner {
       body = EMPTY_DEFS;
     }
 
+    checkMembers(vars, body);
     cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_node(p, base),
                                     ifaces, vars, body);
     return cdef;
@@ -2360,13 +2363,11 @@ public class Parser extends Scanner {
         if (rule instanceof ELNode.NULL) {
           // ignore empty definition list
         } else if (rule instanceof ELNode.DEFINE) {
-          ELNode.DEFINE def = add_symbol(adjoin((ELNode.DEFINE)rule, meta));
-          body.add(checkMember(def, body));
+          body.add(add_symbol(adjoin((ELNode.DEFINE)rule, meta)));
         } else if (rule instanceof ELNode.COMPOUND) {
           for (ELNode e : ((ELNode.COMPOUND)rule).exps) {
             if (e instanceof ELNode.DEFINE) {
-              ELNode.DEFINE def = add_symbol(adjoin((ELNode.DEFINE)e, meta));
-              body.add(checkMember(def, body));
+              body.add(add_symbol(adjoin((ELNode.DEFINE)e, meta)));
             } else {
               throw parseError(e.pos, _T(EL_IDENTIFIER_EXPECTED));
             }
@@ -2379,12 +2380,10 @@ public class Parser extends Scanner {
       }
 
       if (token == IDENT || token == VOID || token == CLASSDEF) {
-        for (ELNode.DEFINE e : parseDefinitions(meta)) {
-          body.add(checkMember(e, body));
-        }
+        body.addAll(parseDefinitions(meta));
       } else {
         ELNode.DEFINE def = parseOperatorProcedure(meta);
-        body.add(checkMember(def, body));
+        body.add(def);
         expect(SEMI);
       }
     } while (true);
@@ -2513,19 +2512,19 @@ public class Parser extends Scanner {
       String id = scanQName();
       expect(IDENT);
 
-      List<ELNode.DEFINE> vars = new ArrayList<>();
+      List<ELNode.DEFINE> vlist = new ArrayList<>();
       if (scan(LPAREN)) {
         if (token != RPAREN) {
           do {
-            ELNode.DEFINE var = checkMember(parseClassicParameter(), vars);
+            ELNode.DEFINE var = parseClassicParameter();
             if (immutable)
               var.meta = adjoin(var.meta, Modifier.FINAL);
-            vars.add(var);
+            vlist.add(var);
           } while (scan(COMMA));
         }
         expect(RPAREN);
       }
-      if (vars.isEmpty()) {
+      if (vlist.isEmpty()) {
         cmeta = adjoin(p, cmeta, "Singleton");
       }
 
@@ -2534,7 +2533,7 @@ public class Parser extends Scanner {
       ELNode.DEFINE[] body;
       if (scan(LBRACE)) {
         open_scope();
-        for (ELNode.DEFINE var : vars)
+        for (ELNode.DEFINE var : vlist)
           add_symbol(var);
         body = parseClassBody();
         close_scope();
@@ -2542,8 +2541,10 @@ public class Parser extends Scanner {
         body = EMPTY_DEFS;
       }
 
+      ELNode.DEFINE[] vars = to_def_a(vlist);
+      checkMembers(vars, body);
       cdef.expr = new ELNode.CLASSDEF(p, filename, id, class_node(p, base),
-                                      null, to_def_a(vars), body);
+                                      null, vars, body);
       defs.add(cdef);
     } while (scan(BAR));
 
@@ -2572,6 +2573,7 @@ public class Parser extends Scanner {
       }
     }
 
+    checkMembers(null, basebody);
     cdef = new_symbol(p, base, null, adjoin(meta, Modifier.ABSTRACT));
     cdef.expr = new ELNode.CLASSDEF(p, filename, base, class_node(p, basecls),
                                     baseifs, null, basebody);
@@ -2580,17 +2582,43 @@ public class Parser extends Scanner {
     return defs;
   }
 
-  private ELNode.DEFINE checkMember(ELNode.DEFINE var,
-                                    List<ELNode.DEFINE> vars) {
-    // check duplicate member
-    String name = var.id;
-    for (ELNode.DEFINE v : vars) {
-      if (name.equals(v.id)) {
-        throw parseError(var.pos, _T(EL_DUPLICATE_VAR_NAME, name));
+  private void checkMembers(ELNode.DEFINE[] vars, ELNode.DEFINE[] body) {
+    // Check for duplicate member names.
+    Set<String> names = new HashSet<>();
+    if (vars != null) {
+      for (ELNode.DEFINE var : vars) {
+        if (names.contains(var.id))
+          throw parseError(_T(EL_DUPLICATE_VAR_NAME, var.id));
+        names.add(var.id);
       }
     }
+    for (ELNode.DEFINE var : body) {
+      if (names.contains(var.id))
+        throw parseError(_T(EL_DUPLICATE_VAR_NAME, var.id));
+      names.add(var.id);
+    }
 
-    // check modifier combination
+    // Check for member modifier combination.
+    int numDelegates = 0;
+    if (vars != null) {
+      for (ELNode.DEFINE var : vars) {
+        checkMember(var);
+        if (var.isAnnotationPresent("Delegate")) {
+          if (++numDelegates > 1)
+            throw parseError(var.pos, _T(EL_MULTIPLE_DELEGATE));
+        }
+      }
+    }
+    for (ELNode.DEFINE var : body) {
+      checkMember(var);
+      if (var.isAnnotationPresent("Delegate")) {
+        if (++numDelegates > 1)
+          throw parseError(var.pos, _T(EL_MULTIPLE_DELEGATE));
+      }
+    }
+  }
+
+  private void checkMember(ELNode.DEFINE var) {
     if (var.meta != null) {
       int mod = var.meta.modifiers;
 
@@ -2624,12 +2652,8 @@ public class Parser extends Scanner {
           throw parseError(var.pos, _T(EL_NON_INSTANCE_DELEGATE));
         if (var.expr instanceof ELNode.LAMBDA fn && fn.vars.length != 0)
           throw parseError(var.pos, _T(EL_ILLEGAL_DELEGATE_METHOD));
-        if (vars.stream().anyMatch(def -> def.isAnnotationPresent("Delegate")))
-          throw parseError(var.pos, _T(EL_MULTIPLE_DELEGATE));
       }
     }
-
-    return var;
   }
 
   private void checkVar(ELNode.DEFINE var, boolean toplevel) {

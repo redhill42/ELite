@@ -197,9 +197,6 @@ class DelegateTest extends EliteTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("pending maintainer decision: cross-list "
-        + "double delegate (ctor var + instance var) currently slips past "
-        + "the parser check; see report 2026-08-27")
     void multipleDelegatesAcrossCtorAndBodyRejected() {
         // Spec: a class can have only one delegate object — regardless of
         // where the annotation appears.
