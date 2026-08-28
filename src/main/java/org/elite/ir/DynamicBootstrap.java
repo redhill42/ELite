@@ -623,19 +623,24 @@ public final class DynamicBootstrap {
         MethodHandle mh = MethodHandles.arrayElementGetter(obj.getClass());
         mh = dropArguments(mh, 0, EvaluationContext.class);
         mh = makeCoerce(mh, 2, index);
+
+        MethodHandle handler = dropArguments(
+          constant(Object.class, null), 0, ArrayIndexOutOfBoundsException.class);
+        handler = handler.asType(
+          handler.type().changeReturnType(mh.type().returnType()));
         return catchException(
-          mh, ArrayIndexOutOfBoundsException.class,
-          dropArguments(constant(Object.class, null),
-                        0, ArrayIndexOutOfBoundsException.class));
+          mh, ArrayIndexOutOfBoundsException.class, handler);
       }
 
       if (obj instanceof List) {
         MethodHandle mh = dropArguments(MH_listGet, 0, EvaluationContext.class);
         mh = makeCoerce(mh, 2, index);
-        return catchException(
-          mh, IndexOutOfBoundsException.class,
-          dropArguments(constant(Object.class, null), 0,
-                        IndexOutOfBoundsException.class));
+
+        MethodHandle handler = dropArguments(
+          constant(Object.class, null), 0, IndexOutOfBoundsException.class);
+        handler = handler.asType(
+          handler.type().changeReturnType(mh.type().returnType()));
+        return catchException(mh, IndexOutOfBoundsException.class, handler);
       }
     }
 
