@@ -13,7 +13,9 @@ import java.util.concurrent.TimeUnit;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 
+import org.jscience.mathematics.vector.Matrix;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -111,5 +113,15 @@ class SampleScriptTest {
         assertEquals(0, exit,
             () -> name + ".xel exited with " + exit + " at opt level " + optLevel);
         return out;
+    }
+
+    @Test
+    void matrixTest() throws Exception {
+        engine.eval("""
+            require 'matrix'
+            let A = Matrix.random(16, 16)
+            let B = Matrix.random(16, 16)
+            A * B
+            """);
     }
 }

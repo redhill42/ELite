@@ -226,7 +226,7 @@ class XMLParser {
     if (next == '/') {
       endSlash = true;
       if ((next = read()) != '>') {
-        throw s.parseError(pos, _T(XML_NO_GT_AFTER_SLASH));
+        s.fail(pos, _T(XML_NO_GT_AFTER_SLASH));
       }
     } else if (next != '>') {
       atts = new LinkedHashMap<String, ELNode>();
@@ -250,14 +250,13 @@ class XMLParser {
 
   private void parseCloseTag(int pos, String tag, Node body) {
     if (next != '>') {
-      throw s.parseError(pos, _T(XML_NO_GT_IN_CLOSE_TAG, tag));
+      s.fail(pos, _T(XML_NO_GT_IN_CLOSE_TAG, tag));
     }
 
     if (body == null || body.type == ROOT) {
-      throw s.parseError(pos, _T(XML_NO_START_TAG, tag));
+      s.fail(pos, _T(XML_NO_START_TAG, tag));
     } else if (!tag.equals(((TagNode)body).name)) {
-      throw s.parseError(pos, _T(XML_CLOSE_TAG_NOT_MATCH, tag,
-                                 ((TagNode)body).name));
+      s.fail(pos, _T(XML_CLOSE_TAG_NOT_MATCH, tag, ((TagNode)body).name));
     }
   }
 
@@ -273,7 +272,7 @@ class XMLParser {
           next = read();
         }
       } else {
-        throw s.parseError(pos, _T(XML_ILLEGAL_NAME_CHAR, next));
+        s.fail(pos, _T(XML_ILLEGAL_NAME_CHAR, next));
       }
     } else if (Character.isLetter(next) || next == ':' || next == '_') {
       while (Character.isLetterOrDigit(next) ||
@@ -283,7 +282,7 @@ class XMLParser {
         next = read();
       }
     } else {
-      throw s.parseError(pos, _T(XML_ILLEGAL_NAME_CHAR, next));
+      s.fail(pos, _T(XML_ILLEGAL_NAME_CHAR, next));
     }
 
     return buf.toString();
@@ -307,7 +306,8 @@ class XMLParser {
         if ((next = read()) == '>') {
           return true;
         } else {
-          throw s.parseError(pos, _T(XML_NO_GT_AFTER_SLASH));
+          s.fail(pos, _T(XML_NO_GT_AFTER_SLASH));
+          return true;
         }
       }
 
@@ -316,7 +316,7 @@ class XMLParser {
       value = scanValue();
 
       if (table.containsKey(name)) {
-        throw s.parseError(pos, _T(XML_DUPLICATE_ATTRIBUTE, name));
+        s.fail(pos, _T(XML_DUPLICATE_ATTRIBUTE, name));
       } else {
         table.put(name, value);
       }
@@ -335,7 +335,7 @@ class XMLParser {
       next = read();
     }
     if (!seenEqualSign) {
-      throw s.parseError(pos, _T(XML_NO_EQ_IN_NAME_VALUE_PAIR));
+      s.error(pos, _T(XML_NO_EQ_IN_NAME_VALUE_PAIR));
     }
   }
 
@@ -345,7 +345,7 @@ class XMLParser {
     StringBuilder buf = new StringBuilder();
 
     if (q != '"' && q != '\'') {
-      throw s.parseError(p, _T(XML_UNQUOTED_VALUE));
+      s.fail(p, _T(XML_UNQUOTED_VALUE));
     }
 
     for (; ; ) {
@@ -368,7 +368,7 @@ class XMLParser {
   private char read() {
     int c = s.ch;
     if (c == Token.EOI) {
-      throw s.incomplete(_T(XML_UNEXPECTED_EOI));
+      s.incomplete(_T(XML_UNEXPECTED_EOI));
     } else if (c == '\r') {
       if (s.nextchar() == '\n') {
         c = '\n';

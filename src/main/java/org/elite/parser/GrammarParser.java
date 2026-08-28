@@ -451,7 +451,7 @@ public class GrammarParser {
         if (S.token == STRINGVAL) {
           tok = _literals.get(new YYSTOK(S.stringValue, S.pos, false));
           if (tok == null)
-            throw S.parseError(format("%s undefined", S.stringValue));
+            S.fail(format("%s undefined", S.stringValue));
           S.scan();
         } else {
           tok = S.idValue;
@@ -586,9 +586,8 @@ public class GrammarParser {
                           sym.name, Position.line(sym.set));
 
       if (sym.set == 0)
-        throw S.parseError(
-          format("<%s> not defined (used on line %d)", sym.name,
-                 Position.line(sym.used)));
+        S.fail(format("<%s> not defined (used on line %d)", sym.name,
+                      Position.line(sym.used)));
     }
 
     for (SYMBOL sym : _nontermtab.values()) {
@@ -597,9 +596,8 @@ public class GrammarParser {
                           sym.name, Position.line(sym.set));
 
       if (sym.set == 0 && !isact(sym))
-        throw S.parseError(
-          format("<%s> not defined (used on line %d)", sym.name,
-                 Position.line(sym.used)));
+        S.fail(format("<%s> not defined (used on line %d)", sym.name,
+                      Position.line(sym.used)));
     }
   }
 
@@ -608,7 +606,7 @@ public class GrammarParser {
 
     if ((p = _termtab.get(name)) == null) {
       if (_cur_term >= MAXTERM)
-        throw S.parseError("Too many terminal symbols (" + MAXTERM + " max.)");
+        S.fail("Too many terminal symbols (" + MAXTERM + " max.)");
 
       p = new SYMBOL();
       p.name = name;
@@ -694,8 +692,7 @@ public class GrammarParser {
 
     if ((p = _nontermtab.get(name)) == null) {
       if (_cur_nonterm >= MAXNONTERM)
-        throw S.parseError(
-          "Too many nonterminal symbols (" + MAXNONTERM + " max.)");
+        S.fail("Too many nonterminal symbols (" + MAXNONTERM + " max.)");
 
       p = new SYMBOL();
       p.name = name;
@@ -946,7 +943,7 @@ public class GrammarParser {
     SYMBOL sym;
 
     if ((sym = _termtab.get(name)) == null)
-      throw S.parseError(format("%s (used in %%prec) undefined", name));
+      S.fail(format("%s (used in %%prec) undefined", name));
 
     _sp.rhs.prec = sym.level;
   }
@@ -1185,7 +1182,7 @@ public class GrammarParser {
           continue;
 
         if (_cur_nonterm >= MAXNONTERM)
-          throw S.parseError("Too many nonterminals & actions");
+          S.fail("Too many nonterminals & actions");
         else {
           // Transform the action into a nonterminal
 
@@ -1392,7 +1389,7 @@ public class GrammarParser {
     STATE state;
 
     if (nitems > MAXKERNEL)
-      throw S.parseError("Kernel of new state " + _nstates + " too large");
+      S.fail("Kernel of new state " + _nstates + " too large");
 
     if ((state = _states.get(new STATE_KEY(items, nitems))) != null) {
       if (state.closed == NEW)
@@ -1512,12 +1509,12 @@ public class GrammarParser {
      */
 
     if (_goal_symbol == null)
-      throw S.parseError("No goal symbol.");
+      S.fail("No goal symbol.");
 
     start_prod = _goal_symbol.productions;
 
     if (start_prod.next != null)
-      throw S.parseError("Start symbol must have only one right-hand side.");
+      S.fail("Start symbol must have only one right-hand side.");
 
     items = new ITEM[1];                // Make item for start production
     items[0] = newitem(start_prod);
@@ -1643,7 +1640,7 @@ public class GrammarParser {
     for (int i = 0; i < nitems; i++) {
       if (dst_items[i].prod != src_items[i].prod ||
           dst_items[i].dot_posn != src_items[i].dot_posn) {
-        throw S.parseError("INTERNAL [merge_lookaheads], item mismatch");
+        S.fail("INTERNAL [merge_lookaheads], item mismatch");
       }
 
       if (!subset(dst_items[i].lookaheads, src_items[i].lookaheads)) {
@@ -1672,8 +1669,7 @@ public class GrammarParser {
 
     for (int i = 0; i < nclose && closure_items[i].prod.rhs_len == 0; i++) {
       if (++moved > MAXEPSILON)
-        throw S.parseError(
-          "Too many epsilon productions in state " + cur_state.num);
+        S.fail("Too many epsilon productions in state " + cur_state.num);
 
       if (nitems != 0) {
         eps_items[i].lookaheads.or(closure_items[i].lookaheads);
@@ -1706,7 +1702,7 @@ public class GrammarParser {
         citem.lookaheads = (BitSet)item.lookaheads.clone();
 
         if (--maxitems < 0)
-          throw S.parseError("Too many closure items in state");
+          S.fail("Too many closure items in state");
 
         closure_items[nclose++] = citem;
       }
@@ -1805,7 +1801,7 @@ public class GrammarParser {
                                                                        /* (2) */
       if ((close_item = in_closure_items(prod, closure_items, nitems)) == null) {
         if (--maxitems <= 0)
-          throw S.parseError("LR(1) closure set too large");
+          S.fail("LR(1) closure set too large");
 
         closure_items[nitems++] = close_item = newitem(prod);          /* (3) */
         ++n;

@@ -31,6 +31,7 @@ class DefaultLexerTest {
     private static Scanner first(String source) {
         Scanner s = scanner(source);
         s.scan();
+        s.failIfErrors();
         return s;
     }
 
@@ -202,7 +203,7 @@ class DefaultLexerTest {
         assertThrows(ParseException.class, () -> first("\"abc"));
         assertThrows(ParseException.class, () -> first("'abc"));
         // Multiline unterminated is Incomplete (REPL continuation signal).
-        assertThrows(IncompleteException.class, () -> first("\"\"\"abc"));
+        assertThrows(ParseException.class, () -> first("\"\"\"abc"));
     }
 
     // ---- characters ------------------------------------------------------
@@ -353,6 +354,7 @@ class DefaultLexerTest {
     void unterminatedBlockComment() {
         Scanner s = scanner("42 /* comment");
         s.allowComment(true);
+        s.setInteractive(true);
         s.scan();       // 42
         assertThrows(IncompleteException.class, s::scan);   // EOF in comment
     }

@@ -433,7 +433,7 @@ class Grammar implements Serializable {
       errmsg = "syntax error";
     }
 
-    throw S.parseError(errmsg);
+    S.fail(errmsg);
   }
 
   private int yy_nexttoken() {

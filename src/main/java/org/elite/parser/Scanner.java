@@ -18,7 +18,10 @@ package org.elite.parser;
 
 import org.elite.eval.ELUtils;
 import javax.el.ELException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.elite.parser.Token.*;
@@ -232,6 +235,7 @@ public class Scanner implements Cloneable {
     next = 0;
     pos = Position.FIRSTPOS;
     mark = save();
+    lineStarts.add(0);
   }
 
   /**
@@ -248,34 +252,178 @@ public class Scanner implements Cloneable {
     this.pos = Position.make(line, 1);
   }
 
+  //=------------------------------------------------------------------------=//
+  // Error report and recovery
+
   /**
-   * Raise a parse exception.
+   * The default maximum number of errors to record before aborting.
    */
-  protected ELException parseError(String message) {
-    return parseError(prevPos, message);
+  public static final int DEFAULT_ERROR_LIMIT = 20;
+
+  /**
+   * The maximum number of errors to record before aborting.
+   */
+  private int errorLimit = DEFAULT_ERROR_LIMIT;
+
+  /**
+   * Throw IncompleteException for interactive REPL.
+   */
+  private boolean interactive = false;
+
+  /**
+   * Errors recorded during parsing. When the error limit is reached, an
+   * unrecoverable error occurs, or parsing completes with errors recorded,
+   * a {@link ParseException} exception is thrown.
+   */
+  private final List<ParseError> errors = new ArrayList<>();
+
+  /**
+   * The start offset of each line in the input buffer, used to display
+   * the source line in error messages. Built lazily and deterministically
+   * from the buffer, since scanning may be rewound by mark/reset.
+   */
+  private final List<Integer> lineStarts = new ArrayList<>();
+
+  /**
+   * Set the maximum number of errors to record before aborting.
+   */
+  public void setErrorLimit(int limit) {
+    this.errorLimit = limit;
+  }
+
+  public void setInteractive(boolean interactive) {
+    this.interactive = interactive;
   }
 
   /**
-   * Raise a parse exception.
+   * Record a semantic error. This kind of error doesn't affect syntax
+   * analysis, so parsing continues without recovery.
    */
-  protected ELException parseError(int pos, String message) {
-    return new ParseException(filename, Position.line(pos),
-                              Position.column(pos), message);
+  protected void error(int pos, String message) {
+    recordError(pos, message);
+  }
+
+  protected void error(String message) {
+    error(prevPos, message);
   }
 
   /**
-   * Raise an incomplete parse exception.
+   * Record a syntax error and recover by skipping tokens to a statement
+   * boundary: a ';', a significant newline, or the closing bracket of the
+   * enclosing bracket-delimited construct.
    */
-  protected ELException incomplete(String message) {
-    return incomplete(prevPos, message);
+  protected void errorRecover(int pos, String message) {
+    recordError(pos, message);
+    while (!scanLayout()) {
+      if (token == UNKNOWN)
+        nextchar();
+      scan();
+    }
+  }
+
+  protected void errorRecover(String message) {
+    errorRecover(prevPos, message);
   }
 
   /**
-   * Raise an incomplete parse exception.
+   * Record an unrecoverable error and throw immediately. If other errors
+   * were recorded, a {@link ParseException} exception aggregating them all
+   * is thrown.
    */
-  protected ELException incomplete(int pos, String message) {
-    return new IncompleteException(filename, Position.line(pos),
-                                   Position.column(pos), message);
+  protected void fail(int pos, String message) {
+    recordError(pos, message);
+    throwErrorList();
+  }
+
+  protected void fail(String message) {
+    fail(prevPos, message);
+  }
+
+  /**
+   * Record an incomplete-input error and throw immediately.
+   */
+  protected void incomplete(int pos, String message) {
+    if (interactive)
+      throw new IncompleteException(filename, Position.line(pos),
+                                    Position.column(pos), message);
+    else
+      error(pos, message);
+  }
+
+  protected void incomplete(String message) {
+    incomplete(prevPos, message);
+  }
+
+  /**
+   * Mark the number of recorded errors, for speculative parsing.
+   */
+  protected int errorMark() {
+    return errors.size();
+  }
+
+  /**
+   * Discard the errors recorded since the given mark. Used when a
+   * speculative parse attempt failed and must leave no trace.
+   */
+  protected void errorReset(int mark) {
+    errors.subList(mark, errors.size()).clear();
+  }
+
+  /**
+   * Throw the recorded errors as a compound exception, if any.
+   */
+  protected void failIfErrors() {
+    if (!errors.isEmpty())
+      throwErrorList();
+  }
+
+  /**
+   * Whether any errors have been recorded so far.
+   */
+  protected boolean hasErrors() {
+    return !errors.isEmpty();
+  }
+
+  /**
+   * The text of the source line at the given position.
+   */
+  protected String sourceLine(int pos) {
+    int start = lineStart(Position.line(pos));
+    int end = start;
+    while (end < buflen && buf[end] != '\n' && buf[end] != '\r')
+      end++;
+    return new String(buf, start, end - start);
+  }
+
+  /**
+   * Record the start offset of each line up to the given 1-based line
+   * number. The line starts are derived deterministically from the input
+   * buffer, because scanning may be rewound by mark/reset and the same
+   * newline can be visited more than once.
+   */
+  private int lineStart(int line) {
+    int from = lineStarts.get(lineStarts.size() - 1);
+    while (lineStarts.size() < line && from < buflen) {
+      int i = from;
+      while (i < buflen && buf[i] != '\n' && buf[i] != '\r')
+        i++;
+      if (i + 1 < buflen && buf[i] == '\r' && buf[i + 1] == '\n')
+        i++;
+      from = i + 1;
+      lineStarts.add(from);
+    }
+    return line <= lineStarts.size() ? lineStarts.get(line - 1) : buflen;
+  }
+
+  private void recordError(int pos, String message) {
+    errors.add(new ParseError(pos, message, sourceLine(pos)));
+    if (errors.size() >= errorLimit)
+      throwErrorList();
+  }
+
+  private void throwErrorList() {
+    errors.sort(Comparator.comparingInt(ParseError::pos));
+    throw new ParseException(filename, errors);
   }
 
   /**
@@ -319,19 +467,19 @@ public class Scanner implements Cloneable {
    * Restore saved state.
    */
   protected void restore(Scanner state) {
-    this.next        = state.next;
-    this.prev        = state.prev;
-    this.ch          = state.ch;
-    this.prevch      = state.prevch;
-    this.pos         = state.pos;
-    this.prevPos     = state.prevPos;
-    this.token       = state.token;
-    this.idValue     = state.idValue;
-    this.operator    = state.operator;
-    this.charValue   = state.charValue;
-    this.numberValue = state.numberValue;
-    this.stringValue = state.stringValue;
-    this.layout      = state.layout;
+    this.next          = state.next;
+    this.prev          = state.prev;
+    this.ch            = state.ch;
+    this.prevch        = state.prevch;
+    this.pos           = state.pos;
+    this.prevPos       = state.prevPos;
+    this.token         = state.token;
+    this.idValue       = state.idValue;
+    this.operator      = state.operator;
+    this.charValue     = state.charValue;
+    this.numberValue   = state.numberValue;
+    this.stringValue   = state.stringValue;
+    this.layout        = state.layout;
   }
 
   /**
@@ -357,7 +505,8 @@ public class Scanner implements Cloneable {
     while (true) {
       switch (ch) {
       case EOI: case '\n': case '\r':
-        throw parseError(_T(EL_UNTERMINATED_STRING));
+        error(_T(EL_UNTERMINATED_STRING));
+        return buf.toString();
 
       case '/':
         nextchar();
@@ -429,7 +578,8 @@ public class Scanner implements Cloneable {
               }
             }
             if (c == EOI) {
-              throw incomplete(p, "End of file in comment");
+              incomplete(p, "End of file in comment");
+              return;
             }
           } else {
             return;
@@ -453,13 +603,14 @@ public class Scanner implements Cloneable {
    * Scan the next token.
    */
   public int scan() {
-    prevPos = pos;
     prev = next;
     prevch = ch;
     idValue = null;
     operator = null;
 
     skipWhitespaces();
+    prevPos = pos;
+
     if ((layout & NEWLINE_LAYOUT) != 0) {
       Operator op = lexer.getOperator("\n");
       if (op != null) {
@@ -510,7 +661,11 @@ public class Scanner implements Cloneable {
 
   /**
    * Expect a token, return its value, scan the next token or
-   * throw an exception.
+   * record an error.
+   * <p>
+   * On error, the token is assumed to have been scanned, so that
+   * parsing can continue. At end of input an incomplete exception
+   * is thrown, since there is no way to recover.
    */
   protected void expect(int t) {
     if (token == t) {
@@ -528,27 +683,27 @@ public class Scanner implements Cloneable {
 
     switch (t) {
     case SEMI:
-      if (!scanLayout()) {
-        throw parseError(_T(EL_TOKEN_EXPECTED, ";", token_value()));
-      }
+      if (!scanLayout())
+        errorRecover(_T(EL_TOKEN_EXPECTED, ";"));
       return;
 
     case IDENT:
-      if (token == EOI) {
-        throw incomplete(_T(EL_IDENTIFIER_EXPECTED));
-      } else {
-        throw parseError(_T(EL_IDENTIFIER_EXPECTED));
-      }
+      if (token == EOI)
+        incomplete(_T(EL_IDENTIFIER_EXPECTED));
+      else
+        error(_T(EL_IDENTIFIER_EXPECTED));
+      return;
 
     case EOI:
-      throw parseError(_T(EL_EXTRA_CHAR_IN_INPUT));
+      error(_T(EL_EXTRA_CHAR_IN_INPUT));
+      return;
 
     default:
-      if (token == EOI) {
-        throw incomplete(_T(EL_TOKEN_EXPECTED, opNames[t], "<EOF>"));
-      } else {
-        throw parseError(_T(EL_TOKEN_EXPECTED, opNames[t], token_value()));
-      }
+      if (token == EOI)
+        incomplete(_T(EL_TOKEN_EXPECTED, opNames[t]));
+      else
+        error(_T(EL_TOKEN_EXPECTED, opNames[t]));
+      return;
     }
   }
 

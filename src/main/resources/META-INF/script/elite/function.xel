@@ -528,7 +528,7 @@ abstract class Function
         }
 
         public equals(that) {
-            return that is Integrate and f==that.f and v==that.v;
+            return that is Integral and f==that.f and v==that.v;
         }
 
         public hashCode() {

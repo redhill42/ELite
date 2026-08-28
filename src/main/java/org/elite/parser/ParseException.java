@@ -17,36 +17,46 @@
 package org.elite.parser;
 
 import javax.el.ELException;
+import java.util.Collections;
+import java.util.List;
 
 public class ParseException extends ELException {
   private final String file;
-  private final int line;
-  private final int column;
+  private final List<ParseError> errors;
 
   public ParseException(String file, int line, int column, String message) {
-    super(message);
+    this(file, Collections.singletonList(
+      new ParseError(Position.make(line, column), message, null)));
+  }
+
+  public ParseException(String file, List<ParseError> errors) {
     this.file = file;
-    this.line = line;
-    this.column = column;
+    this.errors = errors;
   }
 
   public String getFileName() {
     return file;
   }
 
-  public int getLineNumber() {
-    return line;
+  public List<ParseError> getErrors() {
+    return errors;
   }
 
-  public int getColumnNumber() {
-    return column;
-  }
-
+  @Override
   public String getMessage() {
-    if (file != null) {
-      return file + ":" + line + ":" + column + ": " + super.getMessage();
-    } else {
-      return "line " + line + ": " + super.getMessage();
+    StringBuilder sb = new StringBuilder();
+    for (ParseError err : errors) {
+      if (file != null)
+        sb.append(file).append(':').append(err.line()).append(':')
+          .append(err.column()).append(": ");
+      else
+        sb.append("line ").append(err.line()).append(": ");
+      sb.append(err.message());
+      if (!err.snippet().isEmpty()) {
+        sb.append('\n').append(err.snippet());
+      }
+      sb.append('\n');
     }
+    return sb.toString();
   }
 }

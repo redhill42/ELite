@@ -427,7 +427,7 @@ public class DefaultLexer extends Lexer {
       lastChar = sbuf[sp - 1];
       if (lastChar == 'e' || lastChar == 'E' || lastChar == '+' ||
           lastChar == '-') {
-        throw s.parseError(_T(EL_FLOATING_LITERAL_FORMAT_ERROR));
+        s.error(_T(EL_FLOATING_LITERAL_FORMAT_ERROR));
       } else if (s.ch == 'm' || s.ch == 'M') {
         s.nextchar();
         s.numberValue = Decimal.valueOf(sbuf());
@@ -441,16 +441,16 @@ public class DefaultLexer extends Lexer {
         String str = sbuf();
         double dbl = Double.parseDouble(str);
         if (Double.isInfinite(dbl)) {
-          throw s.parseError(_T(EL_FLOATING_LITERAL_OVERFLOW));
+          s.error(_T(EL_FLOATING_LITERAL_OVERFLOW));
         } else if (dbl == 0 && !looksLikeZero(str)) {
-          throw s.parseError(_T(EL_FLOATING_LITERAL_UNDERFLOW));
+          s.error(_T(EL_FLOATING_LITERAL_UNDERFLOW));
         }
         s.numberValue = dbl;
       }
     } catch (ArithmeticException ex) {
-      throw s.parseError(_T(EL_FLOATING_LITERAL_OVERFLOW));
+      s.error(_T(EL_FLOATING_LITERAL_OVERFLOW));
     } catch (NumberFormatException ex) {
-      throw s.parseError(_T(EL_FLOATING_LITERAL_FORMAT_ERROR));
+       s.error(_T(EL_FLOATING_LITERAL_FORMAT_ERROR));
     }
   }
 
@@ -492,7 +492,7 @@ public class DefaultLexer extends Lexer {
         }
       }
       if (n > 0xff)
-        throw s.parseError(_T(EL_ILLEGAL_ESCAPE_CHAR));
+        s.error(_T(EL_ILLEGAL_ESCAPE_CHAR));
       s.nextchar();
       return n;
 
@@ -514,7 +514,8 @@ public class DefaultLexer extends Lexer {
           break;
 
         default:
-          throw s.parseError(_T(EL_ILLEGAL_ESCAPE_CHAR));
+          s.error(_T(EL_ILLEGAL_ESCAPE_CHAR));
+          break;
         }
       }
       s.nextchar();
@@ -531,7 +532,8 @@ public class DefaultLexer extends Lexer {
     case '\'': s.nextchar(); return '\'';
     }
 
-    throw s.parseError(_T(EL_ILLEGAL_ESCAPE_CHAR));
+    s.error(_T(EL_ILLEGAL_ESCAPE_CHAR));
+    return 0;
   }
 
   /**
@@ -559,11 +561,12 @@ public class DefaultLexer extends Lexer {
     while (true) {
       switch (s.ch) {
       case EOI:
-        if (multiline) {
-          throw s.incomplete(spos, _T(EL_UNTERMINATED_STRING));
-        } else {
-          throw s.parseError(spos, _T(EL_UNTERMINATED_STRING));
-        }
+        if (multiline)
+          s.incomplete(spos, _T(EL_UNTERMINATED_STRING));
+        else
+          s.error(spos, _T(EL_UNTERMINATED_STRING));
+        s.stringValue = sbuf();
+        return;
 
       case '\'': case '"':
         if (s.ch == delim) {
@@ -617,25 +620,26 @@ public class DefaultLexer extends Lexer {
       }
 
       case '\r':
-        if (multiline) {
-          putc('\r');
-          if (s.nextchar() == '\n') {
-            putc('\n');
-            s.nextchar();
-          }
-          s.pos = Position.nextline(s.pos);
-        } else {
-          throw s.parseError(spos, _T(EL_UNTERMINATED_STRING));
+        putc('\r');
+        if (s.nextchar() == '\n')
+          putc('\n');
+        s.nextchar();
+        s.pos = Position.nextline(s.pos);
+        if (!multiline) {
+          s.error(spos, _T(EL_UNTERMINATED_STRING));
+          s.stringValue = sbuf();
+          return;
         }
         break;
 
       case '\n':
-        if (multiline) {
-          putc('\n');
-          s.nextchar();
-          s.pos = Position.nextline(s.pos);
-        } else {
-          throw s.parseError(spos, _T(EL_UNTERMINATED_STRING));
+        putc('\n');
+        s.nextchar();
+        s.pos = Position.nextline(s.pos);
+        if (!multiline) {
+          s.error(spos, _T(EL_UNTERMINATED_STRING));
+          s.stringValue = sbuf();
+          return;
         }
         break;
 
@@ -659,7 +663,8 @@ public class DefaultLexer extends Lexer {
       break;
 
     case '\r': case '\n':
-      throw s.parseError("Invalid character literal.");
+      s.error("Invalid character literal.");
+      break;
 
     default:
       s.charValue = (char)s.ch;
@@ -668,8 +673,9 @@ public class DefaultLexer extends Lexer {
     }
 
     if (s.ch != '\'')
-      throw s.parseError("Invalid character literal.");
-    s.nextchar();
+      s.error("Invalid character literal.");
+    else
+      s.nextchar();
   }
 
   /**

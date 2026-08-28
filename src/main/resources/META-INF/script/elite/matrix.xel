@@ -57,7 +57,7 @@ class Vector
      */
     public static build(n, f) {
         define V = new Object[n];
-        for (define i in [1..n]) {
+        for (let i in [1..n]) {
             V[i-1] = f(i);
         }
         return new Vector(V);
@@ -189,9 +189,9 @@ class Vector
      * @param type the array element type.
      * @return the array containing all elements in the vector.
      */
-    public toArray(type = Object) {
-        define a = Array.newInstance(type, _values.length);
-        for (define i in [0..*_values.length]) {
+    public toArray() {
+        define a = new Object[_values.length];
+        for (let i in [0..<_values.length]) {
             a[i] = _values[i];
         }
         return a;
@@ -210,7 +210,7 @@ class Vector
         define len = _values.length;
         if (len != that._values.length)
             return false;
-        for (define i in [0..*len]) {
+        for (let i in [0..<len]) {
             if (_values[i] != that._values[i])
                 return false;
         }
@@ -224,7 +224,7 @@ class Vector
      */
     public hashCode() {
         define h = 0;
-        for (define i in [0..*_values.length]) {
+        for (let i in [0..<_values.length]) {
             h = h * 31 + _values[i].hashCode();
         }
         return h;
@@ -255,7 +255,7 @@ class Matrix
             define rows = new Object[n];
 
             define i = 0;
-            for (define row in values) {
+            for (let row in values) {
                 if (row is List) {
                     row = row.toArray();
                 } else if (row is Vector) {
@@ -304,8 +304,8 @@ class Matrix
      */
     public static build(n, m, f) {
         define M = new Object[n][m];
-        for (define i in [0..*n]) {
-            for (define j in [0..*m]) {
+        for (let i in [0..<n]) {
+            for (let j in [0..<m]) {
                 M[i][j] = f(i+1, j+1);
             }
         }
@@ -321,7 +321,7 @@ class Matrix
     public static diagonal(values...) {
         define n = values.length;
         define M = new Object[n][n];
-        for (define i in [0..*n]) {
+        for (let i in [0..<n]) {
             M[i][0..n] = 0;
             M[i][i] = values[i];
         }
@@ -337,7 +337,7 @@ class Matrix
      */
     public static scalar(n, value) {
         define M = new Object[n][n];
-        for (define i in [0..*n]) {
+        for (let i in [0..<n]) {
             M[i][0..n] = 0;
             M[i][i] = value;
         }
@@ -354,8 +354,8 @@ class Matrix
      */
     public static fill(n, m, value) {
         define M = new Object[n][m];
-        for (define i in [0..*n]) {
-            M[i][0..*m] = value;
+        for (let i in [0..<n]) {
+            M[i][0..<m] = value;
         }
         return new Matrix(M, false);
     }
@@ -389,8 +389,8 @@ class Matrix
      */
     public static random(n, m) {
         define M = new Object[n][m];
-        for (define i in [0..*n]) {
-            for (define j in [0..*m]) {
+        for (let i in [0..<n]) {
+            for (let j in [0..<m]) {
                 M[i][j] = Math.random();
             }
         }
@@ -466,7 +466,7 @@ class Matrix
         }
         define n = _rows.length;
         define V = new Object[n];
-        for (define i in [0..*n]) {
+        for (let i in [0..<n]) {
             V[i] = _rows[i][j];
         }
         return Vector.wrap(V);
@@ -636,12 +636,12 @@ class Matrix
         define size = src.length - 1;
 
         define dst = new Object[size+1][size+1];
-        for (define i in [0..size]) {
-            dst[i][0..*] = 0;
+        for (let i in [0..size]) {
+            dst[i][0..<] = 0;
             dst[i][i] = 1;
         }
 
-        for (define k in [0..size]) {
+        for (let k in [0..size]) {
             define akk = src[k][k];
             if (akk == 0) {
                 define i = k;
@@ -655,23 +655,23 @@ class Matrix
                 akk = src[k][k];
             }
 
-            for (define i in [0..size]) {
+            for (let i in [0..size]) {
                 if (i != k) {
                     define q = src[i][k] / akk;
                     src[i][k] = 0;
-                    for (define j in [k+1..size]) {
+                    for (let j in [k+1..size]) {
                         src[i][j] -= src[k][j] * q;
                     }
-                    for (define j in [0..size]) {
+                    for (let j in [0..size]) {
                         dst[i][j] -= dst[k][j] * q;
                     }
                 }
             }
 
-            for (define j in [k+1..size]) {
+            for (let j in [k+1..size]) {
                 src[k][j] /= akk;
             }
-            for (define j in [0..size]) {
+            for (let j in [0..size]) {
                 dst[k][j] /= akk;
             }
         }
@@ -693,7 +693,7 @@ class Matrix
         define size = a.length - 1;
         define det = 1;
 
-        for (define k in [0..size]) {
+        for (let k in [0..size]) {
             define akk = a[k][k];
             if (akk == 0) {
                 define i = k;
@@ -706,9 +706,9 @@ class Matrix
                 det = -det;
             }
 
-            for (define i in [k+1..size]) {
+            for (let i in [k+1..size]) {
                 define q = a[i][k] / akk;
-                for (define j in [k+1..size]) {
+                for (let j in [k+1..size]) {
                     a[i][j] -= a[k][j] * q;
                 }
             }
@@ -753,8 +753,8 @@ class Matrix
         define n = _rows.length;
         define m = _m;
         define M = new Object[m][n];
-        for (define i in [0..*n]) {
-            for (define j in [0..*m]) {
+        for (let i in [0..<n]) {
+            for (let j in [0..<m]) {
                 define cofactor = this.cofactor(i, j);
                 M[j][i] = (i+j)%2 == 0 ? cofactor : -cofactor;
             }
@@ -770,7 +770,7 @@ class Matrix
     public trace() {
         define n = Math.min(_rows.length, _m);
         define tr = _rows[0][0];
-        for (define i in [1..*n]) {
+        for (let i in [1..<n]) {
             tr += _rows[i][i];
         }
         return tr;
@@ -785,8 +785,8 @@ class Matrix
         define m = this._m;
         define n = this._rows.length;
         define M = new Object[m][n];
-        for (define i in [0..*m]) {
-            for (define j in [0..*n]) {
+        for (let i in [0..<m]) {
+            for (let j in [0..<n]) {
                 M[i][j] = _rows[j][i];
             }
         }
@@ -799,10 +799,10 @@ class Matrix
      * @param type the array element type.
      * @return the array containing all elements in the matrix.
      */
-    public toArray(type = Object) {
-        define a = Array.newInstance(type, new int[]{_rows.length, _m});
-        for (define i in [0..*_rows.length]) {
-            for (define j in [0..*_m]) {
+    public toArray() {
+        define a = new Object[_rows.length][_m];
+        for (let i in [0..<_rows.length]) {
+            for (let j in [0..<_m]) {
                 a[i][j] = _rows[i][j];
             }
         }
@@ -827,8 +827,8 @@ class Matrix
      */
     public hashCode() {
         define h = 0;
-        for (define i in [0..*_rows.length]) {
-            for (define j in [0..*_m]) {
+        for (let i in [0..<_rows.length]) {
+            for (let j in [0..<_m]) {
                 h = h*31 + _rows[i][j];
             }
         }

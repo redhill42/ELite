@@ -132,7 +132,7 @@ public class Parser extends Scanner {
       return;
     }
 
-    throw parseError(e.pos, _T(EL_READONLY_EXPRESSION));
+    error(e.pos, _T(EL_READONLY_EXPRESSION));
   }
 
   /**
@@ -230,7 +230,8 @@ public class Parser extends Scanner {
         String id = stringValue;
         return new ELNode.SYMBOL(scan(), Symbol.valueOf(id));
       } else {
-        throw parseError(_T(EL_MISSING_TERM));
+        error(_T(EL_MISSING_TERM));
+        return new ELNode.NULL(pos);
       }
     }
 
@@ -425,11 +426,20 @@ public class Parser extends Scanner {
     }
 
     case UNKNOWN:
-      throw parseError(_T(EL_ILLEGAL_CHARACTER, (char)ch));
+      error(_T(EL_ILLEGAL_CHARACTER, (char)ch));
+      do {
+        nextchar();
+        scan();
+      } while (token == UNKNOWN);
+      return new ELNode.NULL(pos);
+
     case EOI:
-      throw incomplete(_T(EL_MISSING_TERM));
+      incomplete(_T(EL_MISSING_TERM));
+      return new ELNode.NULL(pos);
+
     default:
-      throw parseError(_T(EL_MISSING_TERM));
+      errorRecover(_T(EL_MISSING_TERM));
+      return new ELNode.NULL(pos);
     }
   }
 
@@ -456,7 +466,8 @@ public class Parser extends Scanner {
   String scanQName() {
     String id = idValue;
     if (id == null)
-      return null;
+      return "<error>";
+
     // ambiguity with ?: expression, so do lookahead
     if (ch == ':' && Character.isJavaIdentifierStart((char)lookahead(0))) {
       scan(); // skip prefix identifier
@@ -475,7 +486,9 @@ public class Parser extends Scanner {
   String scanQAName() {
     if (idValue != null) {
       return scanQName();
-    } else if (token == ATSIGN) {
+    }
+
+    if (token == ATSIGN) {
       scan();
       String id = "@";
       while (token == ATSIGN) {
@@ -488,7 +501,8 @@ public class Parser extends Scanner {
         return id;
       }
     }
-    return null;
+
+    return "<error>";
   }
 
   /**
@@ -595,9 +609,11 @@ public class Parser extends Scanner {
       } else if (scan(IN)) {
         return new ELNode.IN(p, e, parseTerm(), true);
       } else if (token == EOI) {
-        throw incomplete(_T(EL_TOKEN_EXPECTED, "in, instanceof", "<EOF>"));
+        incomplete(_T(EL_TOKEN_EXPECTED, "in, instanceof"));
+        return null;
       } else {
-        throw parseError(_T(EL_TOKEN_EXPECTED, "in, instanceof", token_value()));
+        error(_T(EL_TOKEN_EXPECTED, "in, instanceof"));
+        return null;
       }
     }
 
@@ -605,7 +621,8 @@ public class Parser extends Scanner {
       expect_lvalue(e, false);
       int p = scan();
       ELNode right = parseTerm();
-      checkTupleAssign(e, right);
+      if (checkTupleAssign(e, right))
+        error(p, _T(EL_TUPLE_PATTERN_NOT_MATCH));
       return new ELNode.ASSIGN(p, e, right);
     }
 
@@ -703,7 +720,7 @@ public class Parser extends Scanner {
     }
   }
 
-  private void checkTupleAssign(ELNode left, ELNode right) {
+  private boolean checkTupleAssign(ELNode left, ELNode right) {
     if (left instanceof ELNode.TUPLE lhs) {
       if (right instanceof ELNode.Constant ||
           right instanceof ELNode.Composite ||
@@ -711,18 +728,21 @@ public class Parser extends Scanner {
           right instanceof ELNode.RANGE ||
           right instanceof ELNode.CONS ||
           right instanceof ELNode.LAMBDA ||
-          right instanceof ELNode.XML)
-        throw parseError(_T(EL_TUPLE_PATTERN_NOT_MATCH));
+          right instanceof ELNode.XML) {
+        return true;
+      }
 
       if (right instanceof ELNode.TUPLE rhs) {
         if (lhs.elems.length != rhs.elems.length) {
-          throw parseError(_T(EL_TUPLE_PATTERN_NOT_MATCH));
+          return true;
         }
         for (int i = 0; i < lhs.elems.length; i++) {
-          checkTupleAssign(lhs.elems[i], rhs.elems[i]);
+          if (checkTupleAssign(lhs.elems[i], rhs.elems[i]))
+            return true;
         }
       }
     }
+    return false;
   }
 
   /**
@@ -914,8 +934,10 @@ public class Parser extends Scanner {
         scan();
         init = parseArrayInitializer();
       }
-      if (dims == null && init == null)
-        throw parseError(_T(EL_MISSING_ARRAY_DIMENSION));
+      if (dims == null && init == null) {
+        error(_T(EL_MISSING_ARRAY_DIMENSION));
+        dims = EMPTY_EXPS;
+      }
       return new ELNode.ARRAY(p, cls, dims, init);
     }
 
@@ -953,7 +975,7 @@ public class Parser extends Scanner {
       String key = parseArgumentName();
       ELNode arg = parseSyntaxExpression();
       if (key != null && keys.contains(key))
-        throw parseError(_T(EL_DUPLICATE_ARG_NAME, key));
+        error(_T(EL_DUPLICATE_ARG_NAME, key));
       keys.add(key);
       args.add(arg);
     } while (scan(COMMA));
@@ -1365,7 +1387,7 @@ public class Parser extends Scanner {
       expect(IDENT);
       return id;
     } else {
-      id = idValue;
+      id = idValue != null ? idValue : "<error>";
       expect(IDENT);
     }
 
@@ -1588,7 +1610,7 @@ public class Parser extends Scanner {
       } else {
         for (int j = 0; j < i; j++) {
           if (id.equals(vars[j].id)) {
-            throw parseError(p, _T(EL_DUPLICATE_VAR_NAME, id));
+            error(p, _T(EL_DUPLICATE_VAR_NAME, id));
           }
         }
       }
@@ -1654,11 +1676,12 @@ public class Parser extends Scanner {
       boolean isAbstract = (meta != null) &&
                            (meta.modifiers & Modifier.ABSTRACT) != 0;
       if (isAbstract && body != null) {
-        throw parseError(p, _T(EL_INVALID_METHOD_BODY));
+        error(p, _T(EL_INVALID_METHOD_BODY));
       } else if (!isAbstract && body == null) {
-        throw parseError(p, _T(EL_NO_METHOD_BODY));
+        error(p, _T(EL_NO_METHOD_BODY));
+        body = new ELNode.NULL(p);
       } else if (isAbstract && !plist.classic) {
-        throw parseError(p, "Abstract procedure cannot have pattern parameters");
+        error(p, "Abstract procedure cannot have pattern parameters");
       }
 
       if (!isAbstract && allow_alts && token == BAR) {
@@ -1703,10 +1726,12 @@ public class Parser extends Scanner {
 
       if (!id.equals(name) ||
           plist.params.length != first_plist.params.length) {
-        throw parseError(p2, "Procedure head mismatch");
+        error(p2, "Procedure head mismatch");
+        continue;
       }
       if (body == null) {
-        throw parseError(p2, _T(EL_NO_METHOD_BODY));
+        error(p2, _T(EL_NO_METHOD_BODY));
+        continue;
       }
 
       branch_plists.add(plist);
@@ -1750,7 +1775,7 @@ public class Parser extends Scanner {
                                                  ELNode.METASET meta,
                                                  ParamList plist) {
     if ((meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0) {
-      throw parseError(p, "Abstract procedure doesn't support curried parameters");
+      error(p, "Abstract procedure doesn't support curried parameters");
     }
 
     List<ParamList> curried_plist = new ArrayList<>();
@@ -1769,7 +1794,8 @@ public class Parser extends Scanner {
 
     body = parseProcedureBody(plist);
     if (body == null) {
-      throw parseError(p, _T(EL_NO_METHOD_BODY));
+      error(p, _T(EL_NO_METHOD_BODY));
+      body = new ELNode.NULL(p);
     }
 
     // for curried function definition:
@@ -1790,7 +1816,10 @@ public class Parser extends Scanner {
   private ELNode parseProcedureBody(ParamList plist) {
     ELNode body;
 
-    if (scan(ARROW)) {
+    if (token == ARROW || token == ASSIGN || token == XFORM) {
+      if (token != ARROW)
+        error(prevPos, _T(EL_TOKEN_EXPECTED, "=>"));
+      scan();
       body = parseExpressionStatement();
     } else if (scan(LBRACE)) {
       if (plist.classic && token == BAR) {
@@ -1858,15 +1887,15 @@ public class Parser extends Scanner {
           has_deflt = true;
         }
         if (has_deflt && (param.deflt == null || varargs)) {
-          throw parseError(pos, _T(EL_NON_DFLT_ARG_FOLLOWS_DFLT_ARG));
+          error(pos, _T(EL_NON_DFLT_ARG_FOLLOWS_DFLT_ARG));
         }
         if (!classic && (param.deflt != null || varargs)) {
-          throw parseError(pos, "Mixed use of pattern and classic parameters");
+          error(pos, "Mixed use of pattern and classic parameters");
         }
       } else {
         classic = false;
         if (has_deflt) {
-          throw parseError(pos, "Mixed use of pattern and classic parameters");
+          error(pos, "Mixed use of pattern and classic parameters");
         }
       }
 
@@ -1893,7 +1922,7 @@ public class Parser extends Scanner {
             if (id.equals(plist.params[j].name)) {
               dups = true;
               if (plist.classic) {
-                throw parseError(p.pos, _T(EL_DUPLICATE_VAR_NAME, id));
+                error(p.pos, _T(EL_DUPLICATE_VAR_NAME, id));
               } else {
                 id = tempvar();
               }
@@ -2151,7 +2180,7 @@ public class Parser extends Scanner {
   }
 
   private ELNode.DEFINE parseSingleDefinition(ELNode.METASET meta) {
-    int p = pos;
+    int p = prevPos;
     ELNode.DEFINE var;
     ELNode type;
 
@@ -2165,8 +2194,10 @@ public class Parser extends Scanner {
     var = scanVar(p, meta);
     type = parseTypeNameOpt();
 
-    if (token == ASSIGN) {
+    if (token == ASSIGN || token == ARROW || token == XFORM) {
       // define id=exp;
+      if (token != ASSIGN)
+        error(prevPos, _T(EL_TOKEN_EXPECTED, "="));
       scan();
       var.type = type;
       var.expr = parseExpressionStatement();
@@ -2241,7 +2272,8 @@ public class Parser extends Scanner {
                data.values[0] instanceof ELNode.NUMBER) {
       return ((ELNode.NUMBER)data.values[0]).value.intValue();
     } else {
-      throw parseError(data.pos, "Invalid precedence declaration.");
+      error(data.pos, "Invalid precedence declaration.");
+      return ELNode.DEFAULT_PREC;
     }
   }
 
@@ -2369,11 +2401,11 @@ public class Parser extends Scanner {
             if (e instanceof ELNode.DEFINE) {
               body.add(add_symbol(adjoin((ELNode.DEFINE)e, meta)));
             } else {
-              throw parseError(e.pos, _T(EL_IDENTIFIER_EXPECTED));
+              error(e.pos, _T(EL_IDENTIFIER_EXPECTED));
             }
           }
         } else {
-          throw parseError(rule.pos, _T(EL_IDENTIFIER_EXPECTED));
+          error(rule.pos, _T(EL_IDENTIFIER_EXPECTED));
         }
         expect(SEMI);
         continue;
@@ -2383,8 +2415,12 @@ public class Parser extends Scanner {
         body.addAll(parseDefinitions(meta));
       } else {
         ELNode.DEFINE def = parseOperatorProcedure(meta);
-        body.add(def);
-        expect(SEMI);
+        if (def != null) {
+          body.add(def);
+          expect(SEMI);
+        } else if (token == EOI) {
+          break;
+        }
       }
     } while (true);
 
@@ -2467,14 +2503,13 @@ public class Parser extends Scanner {
       scan();
       break;
 
-    case EOI:
-      throw incomplete("Unexpected EOF");
     default:
-      throw parseError("Unexpected token: " + token_value());
+      errorRecover("Unexpected token: " + token_value());
+      return null;
     }
 
     if (reverse && !opname.startsWith("?")) {
-      throw parseError("Unexpected token: " + opname);
+      error("Unexpected token: " + opname);
     }
 
     def = new_symbol(p, opname, null, meta);
@@ -2588,13 +2623,13 @@ public class Parser extends Scanner {
     if (vars != null) {
       for (ELNode.DEFINE var : vars) {
         if (names.contains(var.id))
-          throw parseError(_T(EL_DUPLICATE_VAR_NAME, var.id));
+          error(var.pos, _T(EL_DUPLICATE_VAR_NAME, var.id));
         names.add(var.id);
       }
     }
     for (ELNode.DEFINE var : body) {
       if (names.contains(var.id))
-        throw parseError(_T(EL_DUPLICATE_VAR_NAME, var.id));
+        error(var.pos, _T(EL_DUPLICATE_VAR_NAME, var.id));
       names.add(var.id);
     }
 
@@ -2605,7 +2640,7 @@ public class Parser extends Scanner {
         checkMember(var);
         if (var.isAnnotationPresent("Delegate")) {
           if (++numDelegates > 1)
-            throw parseError(var.pos, _T(EL_MULTIPLE_DELEGATE));
+            error(var.pos, _T(EL_MULTIPLE_DELEGATE));
         }
       }
     }
@@ -2613,7 +2648,7 @@ public class Parser extends Scanner {
       checkMember(var);
       if (var.isAnnotationPresent("Delegate")) {
         if (++numDelegates > 1)
-          throw parseError(var.pos, _T(EL_MULTIPLE_DELEGATE));
+          error(var.pos, _T(EL_MULTIPLE_DELEGATE));
       }
     }
   }
@@ -2631,8 +2666,7 @@ public class Parser extends Scanner {
 
       int illegal = var.meta.modifiers & ~mask;
       if (illegal != 0) {
-        throw parseError(var.pos,
-                         _T(EL_INVALID_MODIFIER, Modifier.toString(illegal)));
+        error(var.pos, _T(EL_INVALID_MODIFIER, Modifier.toString(illegal)));
       }
 
       if (var.expr instanceof ELNode.CLASSDEF) {
@@ -2649,9 +2683,9 @@ public class Parser extends Scanner {
 
       if (var.isAnnotationPresent("Delegate")) {
         if (Modifier.isStatic(mod) || var.expr instanceof ELNode.CLASSDEF)
-          throw parseError(var.pos, _T(EL_NON_INSTANCE_DELEGATE));
+          error(var.pos, _T(EL_NON_INSTANCE_DELEGATE));
         if (var.expr instanceof ELNode.LAMBDA fn && fn.vars.length != 0)
-          throw parseError(var.pos, _T(EL_ILLEGAL_DELEGATE_METHOD));
+          error(var.pos, _T(EL_ILLEGAL_DELEGATE_METHOD));
       }
     }
   }
@@ -2674,8 +2708,7 @@ public class Parser extends Scanner {
 
       int illegal = mod & ~mask;
       if (illegal != 0) {
-        throw parseError(var.pos,
-                         _T(EL_INVALID_MODIFIER, Modifier.toString(illegal)));
+        error(var.pos, _T(EL_INVALID_MODIFIER, Modifier.toString(illegal)));
       }
 
       if (var.expr instanceof ELNode.CLASSDEF) {
@@ -2689,16 +2722,16 @@ public class Parser extends Scanner {
    */
   private void checkDisjoint(int pos, int mod, int set1, int set2) {
     if ((mod & set1) != 0 && (mod & set2) != 0) {
-      throw parseError(pos, _T(EL_INVALID_MODIFIER_COMBINATION,
-                               Modifier.toString(mod & set1),
-                               Modifier.toString(mod & set2)));
+      error(pos, _T(EL_INVALID_MODIFIER_COMBINATION,
+                    Modifier.toString(mod & set1),
+                    Modifier.toString(mod & set2)));
     }
   }
 
   private ELNode parseMetaExpression() {
     if (token == ATSIGN) {
       int p = scan();
-      String type = idValue;
+      String type = idValue != null ? idValue : "<error>";
       expect(IDENT);
 
       if (token != LPAREN) {
@@ -2820,7 +2853,7 @@ public class Parser extends Scanner {
 
       if (nextmod != 0) {
         if ((mod & nextmod) != 0) {
-          throw parseError(_T(EL_REPEATED_MODIFIER, idValue));
+          error(_T(EL_REPEATED_MODIFIER, idValue));
         }
         mod |= nextmod;
         scan();
@@ -3158,7 +3191,7 @@ public class Parser extends Scanner {
           }
         } else if (token == DEFAULT) {
           if (deflt != null || isdeflt) {
-            throw parseError("duplicate default label");
+            error("duplicate default label");
           } else {
             scan();
             expect(COLON);
@@ -3250,7 +3283,7 @@ public class Parser extends Scanner {
         if (nargs == -1) {
           nargs = pats.size();
         } else if (pats.size() != nargs) {
-          throw parseError("argument pattern doesn't match.");
+          error("argument pattern doesn't match.");
         }
       }
 
@@ -3408,9 +3441,18 @@ public class Parser extends Scanner {
   }
 
   private ELNode.Pattern parsePatternOpt() {
+    int err = errorMark();
     try {
-      return parsePattern();
+      ELNode.Pattern pat = parsePattern();
+      if (errorMark() != err) {
+        // the speculative parse recorded errors, so it failed
+        errorReset(err);
+        return null;
+      }
+      return pat;
     } catch (Exception ex) {
+      // speculative parse failed, discard the errors recorded so far
+      errorReset(err);
       return null;
     }
   }
@@ -3427,7 +3469,7 @@ public class Parser extends Scanner {
       int p = scan();
       ELNode next = (ELNode)parseSubPattern(snapshot);
       if (!bindings.keySet().equals(snapshot.keySet()))
-        throw parseError("the patterns must have identical variable bindings");
+        error(p, "the patterns must have identical variable bindings");
       pat = new ELNode.OR(p, pat, next);
     }
     return (ELNode.Pattern)pat;
@@ -3554,7 +3596,8 @@ public class Parser extends Scanner {
       return parseMapPattern(scan(), bindings);
     }
 
-    throw parseError("Invalid pattern.");
+    errorRecover("Invalid pattern.");
+    return new ELNode.NULL(pos);
   }
 
   private ELNode.Pattern parseListPattern(int p,
@@ -3573,7 +3616,7 @@ public class Parser extends Scanner {
     if (token == RANGE) {
       ELNode.RANGE r = parseRangeExpression(p, e1, e2);
       if (!r.isConstant())
-        throw parseError(p, "invalid range pattern");
+        error(p, "invalid range pattern");
       return r;
     }
 
@@ -3641,7 +3684,7 @@ public class Parser extends Scanner {
         String key = parseArgumentName();
         if (key != null) {
           if (keys.contains(key))
-            throw parseError(_T(EL_DUPLICATE_ARG_NAME, key));
+            error(_T(EL_DUPLICATE_ARG_NAME, key));
           keys.add(key);
         }
         args.add((ELNode)parsePattern(bindings));
@@ -3649,7 +3692,7 @@ public class Parser extends Scanner {
     }
 
     if (!keys.isEmpty() && keys.size() != args.size()) {
-      throw parseError(p, "Missing parameter key");
+      error(p, "Missing parameter key");
     }
 
     expect(RPAREN);
@@ -3677,7 +3720,7 @@ public class Parser extends Scanner {
       while (token == CATCH) {
         int p2 = scan();
         expect(LPAREN);
-        String id = idValue;
+        String id = idValue != null ? idValue : "<error>";
         expect(IDENT);
         ELNode type = parseTypeNameOpt();
         expect(RPAREN);
@@ -3704,9 +3747,9 @@ public class Parser extends Scanner {
 
     if (handlers == null && finalizer == null) {
       if (token == EOI) {
-        throw incomplete(_T(EL_TOKEN_EXPECTED, "catch"));
+        incomplete(_T(EL_TOKEN_EXPECTED, "catch"));
       } else {
-        throw parseError(_T(EL_TOKEN_EXPECTED, "catch"));
+        error(_T(EL_TOKEN_EXPECTED, "catch"));
       }
     }
 
@@ -3760,9 +3803,9 @@ public class Parser extends Scanner {
       e = parseCompoundExpression(p);
     }
     if (token == EOI) {
-      throw incomplete(_T(EL_TOKEN_EXPECTED, "}"));
+      incomplete(_T(EL_TOKEN_EXPECTED, "}"));
     } else if (token != RBRACE) {
-      throw parseError(_T(EL_TOKEN_EXPECTED, "}"));
+      error(_T(EL_TOKEN_EXPECTED, "}"));
     }
     return e;
   }
@@ -3812,6 +3855,8 @@ public class Parser extends Scanner {
         parseProgramElement(prog);
       }
     }
+
+    failIfErrors();
   }
 
   void parseProgramElement(ELProgram prog) {
@@ -3824,8 +3869,9 @@ public class Parser extends Scanner {
       scan();
       String file = stringValue;
       expect(STRINGVAL);
+      if (file != null)
+        parseScript(prog, file);
       expect(SEMI);
-      parseScript(prog, file);
       break;
     }
 
@@ -3856,8 +3902,10 @@ public class Parser extends Scanner {
             List<String> lst = new ArrayList<>();
             if (token != RPAREN) {
               do {
-                lst.add(idValue);
+                String slot = idValue;
                 expect(IDENT);
+                if (slot != null)
+                  lst.add(slot);
               } while (scan(COMMA));
             }
             expect(RPAREN);
@@ -3942,6 +3990,8 @@ public class Parser extends Scanner {
     close_scope();
 
     // execute compile time processor
+    if (hasErrors())
+      return null;
     ELContext elctx = getParseContext().getELContext();
     return processor.execute(elctx);
   }
@@ -3971,8 +4021,7 @@ public class Parser extends Scanner {
     Set<String> infix_keys = grammar.getInfixKeywords();
 
     if (prefix_keys.isEmpty() && infix_keys.isEmpty())
-      throw parseError(
-        "the grammar must have at least one leading or infix keyword");
+      error("the grammar must have at least one leading or infix keyword");
 
     for (String key : prefix_keys)
       prefix_grammars.put(key, grammar);
@@ -4028,7 +4077,7 @@ public class Parser extends Scanner {
       parser.parseProgram(prog);
       importSyntaxRules(parser);
     } catch (IOException ex) {
-      throw parseError(ex.getMessage());
+      fail(ex.getMessage());
     }
   }
 
@@ -4073,7 +4122,8 @@ public class Parser extends Scanner {
     if (reader != null) {
       return readScript(reader);
     } else {
-      throw parseError(path + ": resource not found.");
+      fail(path + ": resource not found.");
+      return null;
     }
   }
 
@@ -4115,7 +4165,7 @@ public class Parser extends Scanner {
           if (delimiter == 0) {
             delimiter = delim;
           } else if (delimiter != delim) {
-            throw parseError(_T(EL_MIXED_SYNTAX));
+            error(_T(EL_MIXED_SYNTAX));
           }
           if (buf.length() > 0) {
             elems.add(new ELNode.LITERAL(p, buf.toString()));
@@ -4160,6 +4210,8 @@ public class Parser extends Scanner {
       elems.add(new ELNode.LITERAL(p, buf.toString()));
     }
 
+    failIfErrors();
+
     if (elems.size() == 0) {
       return new ELNode.LITERAL(0, "");
     } else if (elems.size() == 1) {
@@ -4184,6 +4236,7 @@ public class Parser extends Scanner {
     parser.scan();
     ELNode e = parser.parseSyntaxExpression();
     parser.expect(EOI);
+    parser.failIfErrors();
     return e;
   }
 

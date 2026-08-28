@@ -242,6 +242,8 @@ class ELiteScriptEngine extends AbstractScriptEngine
     private ELProgram parse(String script) throws ParseException {
         Parser p = new Parser(getELContext(context), script);
         p.setFileName((String)get(ScriptEngine.FILENAME));
+        if (get("elite.interactive") != null)
+            p.setInteractive((Boolean)get("elite.interactive"));
         if (this.parser != null)
             p.importSyntaxRules(this.parser);
         this.parser = p;
