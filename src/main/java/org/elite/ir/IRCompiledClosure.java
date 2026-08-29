@@ -8,7 +8,10 @@ import org.elite.eval.EvaluationException;
 import org.elite.eval.VariableMapperImpl;
 import org.elite.eval.closure.AbstractClosure;
 import org.elite.eval.closure.CallableClosure;
+import org.elite.eval.closure.LiteralClosure;
+import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
+import org.elite.resolver.MethodResolver;
 import javax.el.ELContext;
 import javax.el.MethodInfo;
 import javax.el.PropertyNotWritableException;
@@ -107,10 +110,14 @@ public abstract class IRCompiledClosure extends Closure
    */
   @SuppressWarnings("unused")
   @Override
-  public Object call_with(ELContext elctx, Object scope) {
+  public Object call_with(ELContext elctx, Object scope, Object... args) {
     EvaluationContext env = getContext(elctx);
     env = env.pushContext(new EnvExtent(env, scope));
-    return execute(env, new Object[]{scope});
+
+    Object[] xargs = new Object[args.length + 1];
+    xargs[0] = scope;
+    System.arraycopy(args, 0, xargs, 1, args.length);
+    return execute(env, xargs);
   }
 
   /**
@@ -219,13 +226,28 @@ public abstract class IRCompiledClosure extends Closure
 
     @Override
     public ValueExpression resolveVariable(String name) {
-      ValueExpression value = super.resolveVariable(name);
-      if (value != null)
-        return value;
+      ELContext elctx = env.getELContext();
 
-      value = env.resolveVariable(name);
-      if (value != null)
-        return value;
+      ValueExpression expr = super.resolveVariable(name);
+      if (expr != null)
+        return expr;
+
+      elctx.setPropertyResolved(false);
+      Object value = elctx.getELResolver().getValue(elctx, null, name);
+      if (elctx.isPropertyResolved()) {
+        if (value instanceof Closure)
+          return (Closure)value;
+        return new LiteralClosure(value);
+      }
+
+      MethodClosure method = MethodResolver.getInstance(elctx)
+       .resolveGlobalMethod(env.getFunctionMapper(), name);
+      if (method != null)
+        return method;
+
+      expr = env.resolveVariable(name);
+      if (expr != null)
+        return expr;
 
       // Create a wrapper to call into scoped object.
       Closure wrapper = new ScopedClosure(env, scope, name);

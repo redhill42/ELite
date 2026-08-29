@@ -71,14 +71,19 @@ public class Procedure extends EvalClosure implements CallableClosure
      * @return result of procedure execution
      */
     @Override
-    public Object call_with(ELContext elctx, Object scope) {
+    public Object call_with(ELContext elctx, Object scope, Object... args) {
         if (scope instanceof ClosureObject) {
             scope = ((ClosureObject)scope).get_owner();
         }
 
         EvaluationContext env = getContext(elctx);
         env = env.pushContext(new EnvExtent(env, scope));
-        return node.invoke(env, new Closure[]{new LiteralClosure(scope)});
+
+        Closure[] xargs = new Closure[args.length + 1];
+        xargs[0] = new LiteralClosure(scope);
+        for (int i = 0; i < args.length; i++)
+            xargs[i + 1] = new LiteralClosure(args[i]);
+        return node.invoke(env, xargs);
     }
 
     private static class EnvExtent extends VariableMapperImpl {

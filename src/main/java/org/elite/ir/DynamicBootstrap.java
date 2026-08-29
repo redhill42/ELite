@@ -27,9 +27,11 @@ import org.elite.eval.MethodDelegate;
 import org.elite.eval.MethodResolvable;
 import org.elite.eval.SystemScope;
 import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.CallableClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.TargetMethodClosure;
 import org.elite.eval.seq.Cons;
+import org.elite.resolver.ExpandoMethodClosure;
 import org.elite.resolver.MethodResolver;
 import org.elite.util.BeanUtils;
 import javax.el.ELContext;
@@ -80,8 +82,6 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_mapPut;
   private static final MethodHandle MH_listGet;
   private static final MethodHandle MH_listSet;
-
-  private static final MethodHandle MH_callClosure;
 
   private static final MethodHandle MH_setValueTypesEqual;
   private static final MethodHandle MH_invokeTypesEqual;
@@ -161,11 +161,6 @@ public final class DynamicBootstrap {
         List.class, "get", methodType(Object.class, int.class));
       MH_listSet = lookup.findVirtual(
         List.class, "set", methodType(Object.class, int.class, Object.class));
-
-      MH_callClosure = lookup.findVirtual(
-        Closure.class, "call",
-        methodType(Object.class, ELContext.class, String[].class,
-                   Object[].class));
 
       MH_permuteNamedArgs = lookup.findStatic(
         DynamicBootstrap.class, "permuteNamedArgs",
@@ -423,6 +418,17 @@ public final class DynamicBootstrap {
       MethodClosure mc = resolver.resolveMethod(obj.getClass(), "[]");
 
       if (mc != null) {
+        if (mc instanceof ExpandoMethodClosure expando &&
+            expando.getDelegate() instanceof CallableClosure closure) {
+          MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+          if (meta != null && meta.arity() == 2 && !meta.varargs()) {
+            MethodHandle mh = MH_callClosureWith.bindTo(closure);
+            mh = mh.asCollector(Object[].class, 1);
+            mh = filterArguments(mh, 0, MH_getELContext);
+            return mh;
+          }
+        }
+
         Method m = mc.getJavaMethod(elctx, obj, index);
         if (m == null) {
           return dropArguments(
@@ -833,6 +839,18 @@ public final class DynamicBootstrap {
       MethodClosure mc = resolver.resolveMethod(obj.getClass(), "[]=");
 
       if (mc != null) {
+        if (mc instanceof ExpandoMethodClosure expando &&
+            expando.getDelegate() instanceof CallableClosure closure) {
+          MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+          if (meta != null && meta.arity() == 3 && !meta.varargs()) {
+            MethodHandle mh = MH_callClosureWith.bindTo(closure);
+            mh = mh.asCollector(Object[].class, 2);
+            mh = filterArguments(mh, 0, MH_getELContext);
+            mh = permuteArguments(mh, 3, 1, 2, 0);
+            return mh;
+          }
+        }
+
         Method m = mc.getJavaMethod(elctx, obj, index, value);
         if (m == null) {
           return dropArguments(
@@ -1084,15 +1102,6 @@ public final class DynamicBootstrap {
         return mh;
     }
 
-    if (keys.length != 0) {
-      String unknowKeys =
-        Arrays.stream(keys).filter(s -> !s.isEmpty())
-          .collect(Collectors.joining(", "));
-      return dropArguments(
-        throwEvaluationException(_T(EL_UNKNOWN_ARG_NAME, unknowKeys)),
-        1, Object.class, Object[].class);
-    }
-
     // Dispatch to Java method.
     if (!(obj instanceof MethodDelegate)) {
       try {
@@ -1102,25 +1111,25 @@ public final class DynamicBootstrap {
           assert obj == SystemScope.SINGLETON;
           MethodClosure mc = resolver.resolveSystemMethod(name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, false, null, args);
+            return dispatchJavaMethod(lookup, env, mc, false, keys, null, args);
         } else if (obj instanceof Class<?> c) {
           MethodClosure mc = resolver.resolveStaticMethod(c, name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, false, null, args);
+            return dispatchJavaMethod(lookup, env, mc, false, keys, null, args);
           mc = resolver.resolveMethod(Class.class, name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, false, obj, args);
+            return dispatchJavaMethod(lookup, env, mc, false, keys, obj, args);
         } else if (isSuper) {
           MethodClosure mc =
             resolver.resolveProtectedMethod(obj.getClass().getSuperclass(), name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, true, obj, args);
+            return dispatchJavaMethod(lookup, env, mc, true, keys, obj, args);
         } else {
           MethodClosure mc = resolver.resolveMethod(obj.getClass(), name);
           if (mc == null && lookup.lookupClass() == obj.getClass())
             mc = resolver.resolveProtectedMethod(obj.getClass(), name);
           if (mc != null)
-            return dispatchJavaMethod(lookup, env, mc, false, obj, args);
+            return dispatchJavaMethod(lookup, env, mc, false, keys, obj, args);
         }
       } catch (MethodNotFoundException e) {
         return reportMethodNotFound(obj, name);
@@ -1475,8 +1484,45 @@ public final class DynamicBootstrap {
   private static MethodHandle dispatchJavaMethod(Lookup lookup,
                                                  EvaluationContext env,
                                                  MethodClosure mc,
-                                                 boolean isSuper, Object obj,
-                                                 Object[] args) {
+                                                 boolean isSuper, String[] keys,
+                                                 Object obj, Object[] args) {
+    // Try dynamic attached expando method.
+    if (mc instanceof ExpandoMethodClosure expando) {
+      Closure closure = expando.getDelegate();
+      MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+      if (meta != null && closure instanceof CallableClosure) {
+        int arity = meta.arity();
+        boolean varargs = meta.varargs();
+        Value[] defaults = meta.defaults();
+        int argc = args.length + 1;
+
+        if (varargs ? (argc < arity - 1)
+                    : (argc > arity || argc + defaults.length < arity)) {
+          return dropArguments(
+            throwEvaluationException(_T(EL_FN_BAD_ARG_COUNT, meta.name(),
+                                        arity, argc)),
+            1, Object.class, Object[].class);
+        }
+
+        String[] names = new String[meta.keys().length - 1];
+        System.arraycopy(meta.keys(), 1, names, 0, names.length);
+
+        MethodHandle mh = MH_callClosureWith.bindTo(closure);
+        mh = filterArguments(mh, 0, MH_getELContext);
+        mh = reorderArguments(mh, names, keys, varargs, defaults, argc - 1);
+        return mh;
+      }
+    }
+
+    if (keys.length != 0) {
+      String unknowKeys =
+        Arrays.stream(keys).filter(s -> !s.isEmpty())
+          .collect(Collectors.joining(", "));
+      return dropArguments(
+        throwEvaluationException(_T(EL_UNKNOWN_ARG_NAME, unknowKeys)),
+        1, Object.class, Object[].class);
+    }
+
     try {
       Method m = mc.getJavaMethod(env.getELContext(), obj, args);
       if (m == null)
@@ -1657,7 +1703,7 @@ public final class DynamicBootstrap {
       MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
       MethodClosure mc = resolver.resolveMethod(obj.getClass(), "__call__");
       if (mc != null)
-        return dispatchJavaMethod(lookup, env, mc, false, obj, args);
+        return dispatchJavaMethod(lookup, env, mc, false, keys, obj, args);
     }
 
     return reportMethodNotFound(obj, "__call__");
@@ -1713,7 +1759,7 @@ public final class DynamicBootstrap {
       MethodResolver resolver = MethodResolver.getInstance(env.getELContext());
       MethodClosure mc = resolver.resolveStaticMethod(c, "valueOf");
       if (mc != null)
-        return dispatchJavaMethod(lookup, env, mc, false, null, args);
+        return dispatchJavaMethod(lookup, env, mc, false, keys, null, args);
 
       MethodHandle mh = dispatchJavaConstructor(lookup, env, c, args);
       if (mh == null)

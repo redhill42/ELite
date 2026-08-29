@@ -23,7 +23,7 @@ import elite.lang.Closure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.closure.LiteralClosure;
 
-class ExpandoMethodClosure extends MethodClosure
+public class ExpandoMethodClosure extends MethodClosure
 {
     protected String name;
     protected Class<?> target;
@@ -41,6 +41,10 @@ class ExpandoMethodClosure extends MethodClosure
 
     public Class<?> getTarget() {
         return target;
+    }
+
+    public Closure getDelegate() {
+        return delegate;
     }
 
     public void addMethod(Method method) {

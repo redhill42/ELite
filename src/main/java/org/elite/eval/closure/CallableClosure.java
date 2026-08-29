@@ -27,5 +27,5 @@ public interface CallableClosure {
   /**
    * Call the closure with given scoped object.
    */
-  Object call_with(ELContext elctx, Object scope);
+  Object call_with(ELContext elctx, Object scope, Object... args);
 }

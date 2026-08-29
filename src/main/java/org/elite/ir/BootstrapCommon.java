@@ -16,9 +16,11 @@
 
 package org.elite.ir;
 
+import elite.lang.Closure;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.CallableClosure;
 import javax.el.ELContext;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -36,6 +38,9 @@ final class BootstrapCommon {
   static final MethodHandle MH_getELContext;
   static final MethodHandle MH_newNullPointerException;
   static final MethodHandle MH_newEvaluationException;
+
+  static final MethodHandle MH_callClosure;
+  static final MethodHandle MH_callClosureWith;
 
   static {
     try {
@@ -60,15 +65,28 @@ final class BootstrapCommon {
         EvaluationException.class,
         methodType(void.class, ELContext.class, String.class));
 
+      MH_callClosure = lookup.findVirtual(
+        Closure.class, "call",
+        methodType(Object.class, ELContext.class, String[].class,
+                   Object[].class));
+
+      MH_callClosureWith = lookup.findVirtual(
+        CallableClosure.class, "call_with",
+        methodType(Object.class, ELContext.class, Object.class, Object[].class));
+
     } catch (NoSuchMethodException | IllegalAccessException e) {
       throw new ExceptionInInitializerError(e);
     }
   }
 
-  static MethodHandle makeCoerce(Object obj, Class<?> type) {
+  static MethodHandle makeCoerce(Object obj, Class<?> type, Class<?> rtype) {
     MethodHandle coerce = CoercionBootstrap.dispatchCoerce(obj, type);
     coerce = insertArguments(coerce, 0, (ELContext)null);
-    return coerce.asType(methodType(type, Object.class));
+    return coerce.asType(methodType(rtype, Object.class));
+  }
+
+  static MethodHandle makeCoerce(Object obj, Class<?> type) {
+    return makeCoerce(obj, type, type);
   }
 
   static MethodHandle makeCoerce(MethodHandle mh, int pos, Object... args) {

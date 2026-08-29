@@ -117,11 +117,61 @@ class SampleScriptTest {
 
     @Test
     void matrixTest() throws Exception {
-        engine.eval("""
+        engine.eval(
+            """
             require 'matrix'
             let A = Matrix.random(16, 16)
             let B = Matrix.random(16, 16)
             A * B
             """);
+    }
+
+    @Test
+    void complexTest() throws Exception {
+        engine.eval(
+            """
+            require 'complex'
+            let a = Complex(1, 2)
+            let b = Complex(3, 4)
+            assert "${a*b}" == "-5+10i"
+            assert "${a/b}" == "0.44+0.08i"
+            assert "${a.sqrt()}" == "1.272019649514069+0.7861513777574233i"
+            """);
+    }
+
+    @Test
+    void rationalComplexTest() throws Exception {
+        engine.eval(
+            """
+            require 'rational'
+            require 'complex'
+            let a = Complex(1, 2)
+            let b = Complex(3, 4)
+            assert "${a/b}" == "11/25+2/25i"
+            """);
+    }
+
+    @Test
+    void complexMatrixTest() throws Exception {
+        engine.eval(
+            """
+            require 'complex'
+            require 'matrix'
+            let A = Matrix.build(4, 4, Complex);
+            let B = Matrix.build(4, 4, Complex);
+            let C = A * B
+            assert "$C" == "Matrix((34i, -10+38i, -20+42i, -30+46i), (10+38i, 46i, -10+54i, -20+62i), (20+42i, 10+54i, 66i, -10+78i), (30+46i, 20+62i, 10+78i, 94i))"
+            """);
+    }
+
+    @Test
+    void functionTest() throws Exception {
+        engine.eval(
+          """
+          require 'function'
+          define f = :x^2 + :x*:y + 1;
+          assert "f(x,y) = $f" == "f(x,y) = x2 + xy + 1"
+          assert "df(x,y)/dx = ${f.d(Variable(:x))}" == "df(x,y)/dx = 2x + y"
+          """);
     }
 }

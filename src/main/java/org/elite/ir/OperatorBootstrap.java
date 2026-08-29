@@ -23,8 +23,10 @@ import elite.lang.Seq;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.GlobalScope;
 import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.CallableClosure;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
+import org.elite.resolver.ExpandoMethodClosure;
 import org.elite.resolver.MethodResolver;
 import javax.el.ELContext;
 import java.lang.invoke.CallSite;
@@ -768,9 +770,11 @@ public final class OperatorBootstrap {
   private static MethodHandle commonCoerce(MethodHandle target, Class<?> type,
                                            Object lhs, Object rhs) {
     if (!type.isInstance(lhs))
-      target = filterArguments(target, 0, makeCoerce(lhs, type));
+      target = filterArguments(target, 0,
+        makeCoerce(lhs, type, target.type().parameterType(0)));
     if (!type.isInstance(rhs))
-      target = filterArguments(target, 1, makeCoerce(rhs, type));
+      target = filterArguments(target, 1,
+        makeCoerce(rhs, type, target.type().parameterType(1)));
     return target;
   }
 
@@ -909,6 +913,18 @@ public final class OperatorBootstrap {
       // Find instance operator method.
       mc = resolver.resolveMethod(lhs.getClass(), opname);
       if (mc != null) {
+        if (mc instanceof ExpandoMethodClosure expando &&
+            expando.getDelegate() instanceof CallableClosure closure) {
+          MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+          if (meta != null && meta.arity() == 2 && !meta.varargs()) {
+            MethodHandle mh = MH_callClosureWith.bindTo(closure);
+            mh = mh.asCollector(Object[].class, 1);
+            mh = filterArguments(mh, 0, MH_getELContext);
+            mh = permuteArguments(mh, 1, 2, 0);
+            return mh;
+          }
+        }
+
         Method m = mc.getJavaMethod(elctx, lhs, rhs);
         if (m == null) {
           return dropArguments(
@@ -1005,6 +1021,18 @@ public final class OperatorBootstrap {
       // Invoke expando reverse operator procedure.
       mc = resolver.resolveMethod(rhs.getClass(), "?".concat(opname));
       if (mc != null) {
+        if (mc instanceof ExpandoMethodClosure expando &&
+            expando.getDelegate() instanceof CallableClosure closure) {
+          MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+          if (meta != null && meta.arity() == 2 && !meta.varargs()) {
+            MethodHandle mh = MH_callClosureWith.bindTo(closure);
+            mh = mh.asCollector(Object[].class, 1);
+            mh = filterArguments(mh, 0, MH_getELContext);
+            mh = permuteArguments(mh, 2, 1, 0);
+            return mh;
+          }
+        }
+
         Method m = mc.getJavaMethod(elctx, rhs, lhs);
         if (m == null) {
           return dropArguments(
@@ -2131,6 +2159,18 @@ public final class OperatorBootstrap {
       // Find instance operator method.
       mc = resolver.resolveMethod(rhs.getClass(), opname);
       if (mc != null) {
+        if (mc instanceof ExpandoMethodClosure expando &&
+            expando.getDelegate() instanceof CallableClosure closure) {
+          MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+          if (meta != null && meta.arity() == 1 && !meta.varargs()) {
+            MethodHandle mh = MH_callClosureWith.bindTo(closure);
+            mh = insertArguments(mh, 2, (Object)new Object[0]);
+            mh = filterArguments(mh, 0, MH_getELContext);
+            mh = permuteArguments(mh, 1, 0);
+            return mh;
+          }
+        }
+
         Method m = mc.getJavaMethod(elctx, rhs);
         if (m == null) {
           return dropArguments(
@@ -2329,9 +2369,9 @@ public final class OperatorBootstrap {
       try {
         Method m = lhs.getClass()
           .getMethod(mangle(opname), EvaluationContext.class, Object[].class);
-        MetaMethod ann = m.getAnnotation(MetaMethod.class);
-        if (!Modifier.isStatic(m.getModifiers()) && ann != null &&
-            ann.arity() == 1 && !ann.varargs()) {
+        MetaMethod meta = m.getAnnotation(MetaMethod.class);
+        if (!Modifier.isStatic(m.getModifiers()) && meta != null &&
+            meta.arity() == 1 && !meta.varargs()) {
           // (lhs, env, [rhs]) -> (lhs, rhs, env)
           MethodHandle mh = lookup.unreflect(m).asCollector(Object[].class, 1);
           mh = permuteArguments(mh, 0, 2, 1);
@@ -2347,6 +2387,20 @@ public final class OperatorBootstrap {
       MethodClosure mc = resolver.resolveMethod(lhs.getClass(), opname);
 
       if (mc != null) {
+        if (mc instanceof ExpandoMethodClosure expando &&
+            expando.getDelegate() instanceof CallableClosure closure) {
+          MetaMethod meta = closure.getClass().getAnnotation(MetaMethod.class);
+          if (meta != null && meta.arity() == 2 && !meta.varargs()) {
+            MethodHandle mh = MH_callClosureWith.bindTo(closure);
+            mh = mh.asCollector(Object[].class, 1);
+            mh = filterArguments(mh, 0, MH_getELContext);
+            mh = permuteArguments(mh, 1, 2, 0);
+            mh = mh.asType(mh.type().changeReturnType(Object.class));
+            mh = filterReturnValue(mh, MH_EitherLeft);
+            return mh;
+          }
+        }
+
         Method m = mc.getJavaMethod(elctx, lhs, rhs);
         if (m == null) {
           return dropArguments(

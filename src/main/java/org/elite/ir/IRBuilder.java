@@ -1295,7 +1295,7 @@ public class IRBuilder extends ELNode.Visitor {
       }
     }
 
-    if (!isEligibleToInline(sym)) {
+    if ((fn.owner() != null && !fn.isStatic()) || !isEligibleToInline(sym)) {
       if (fn.owner() != null && !fn.isStatic())
         current.emitPushThis();
       current.emitPushEnv();
@@ -1604,6 +1604,16 @@ public class IRBuilder extends ELNode.Visitor {
     method = resolveInstanceMethod(base, name, args);
     if (method != null)
       return buildMethodCall(method, base, args);
+
+    Class<?> javaClass = resolveJavaClass(base);
+    if (javaClass != null) {
+      var mc = MethodResolver.getInstance(elctx).resolveMethod(Class.class, name);
+      if (mc != null) {
+        Method m = mc.getJavaMethod(args.length);
+        if (m != null)
+          return buildMethodCall(m, new ELNode.CONST(base.pos, javaClass), args);
+      }
+    }
 
     return false;
   }
