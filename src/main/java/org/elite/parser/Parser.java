@@ -3497,8 +3497,11 @@ public class Parser extends Scanner {
       }
     }
 
-    case COLONCOLON:
-      return new ELNode.CLASS(scan(), parseClassLiteral(false), null);
+    case COLONCOLON: {
+      int p = scan();
+      ELNode name = class_node(p, parseClassLiteral(false));
+      return new ELNode.CLASS(p, name, null);
+    }
 
     case CHARVAL: {
       char val = charValue;
@@ -3918,7 +3921,7 @@ public class Parser extends Scanner {
             expect(IDENT);
           }
 
-          ELNode.CLASS c = new ELNode.CLASS(p, name, slots);
+          ELNode.CLASS c = new ELNode.CLASS(p, class_node(p, name), slots);
           ELNode.METASET meta = new ELNode.METASET(pos, Modifier.FINAL);
           addToProgram(prog, new ELNode.DEFINE(p, id, null, meta, c));
           if (alias != null) {

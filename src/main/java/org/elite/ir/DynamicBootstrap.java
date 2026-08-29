@@ -1107,6 +1107,9 @@ public final class DynamicBootstrap {
           MethodClosure mc = resolver.resolveStaticMethod(c, name);
           if (mc != null)
             return dispatchJavaMethod(lookup, env, mc, false, null, args);
+          mc = resolver.resolveMethod(Class.class, name);
+          if (mc != null)
+            return dispatchJavaMethod(lookup, env, mc, false, obj, args);
         } else if (isSuper) {
           MethodClosure mc =
             resolver.resolveProtectedMethod(obj.getClass().getSuperclass(), name);

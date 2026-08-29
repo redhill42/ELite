@@ -338,7 +338,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // CLASS nodes (from import): push the raw Class constant
     if (node.expr instanceof ELNode.CLASS c) {
-      buildConst(loadClassAtCompileTime(node.pos, c.name));
+      buildConst(loadClassAtCompileTime(node.pos, c.getClassName()));
     } else {
       build(node.expr);
     }
@@ -890,7 +890,7 @@ public class IRBuilder extends ELNode.Visitor {
         }
 
         if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
-          Class<?> cls = loadClassAtCompileTime(ident.pos, c.name);
+          Class<?> cls = loadClassAtCompileTime(ident.pos, c.getClassName());
           if (buildNew(cls, node.args))
             return;
         }
@@ -1063,7 +1063,7 @@ public class IRBuilder extends ELNode.Visitor {
   private Class<?> resolveJavaClass(ELNode node, boolean load) {
     if (node instanceof ELNode.IDENT var && var.symbol != null &&
         var.symbol.def.expr instanceof ELNode.CLASS c) {
-      return loadClassAtCompileTime(node.pos, c.name);
+      return loadClassAtCompileTime(node.pos, c.getClassName());
     }
 
     StringBuilder buf = new StringBuilder();
@@ -3293,7 +3293,7 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.base instanceof ELNode.IDENT ident && ident.symbol != null) {
         if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
           // The base class is an imported java class.
-          base = loadClassAtCompileTime(node.pos, c.name);
+          base = loadClassAtCompileTime(node.pos, c.getClassName());
         } else {
           throw reportError(node.pos, _T(EL_NOT_A_CLASS, ident.id));
         }
@@ -3589,7 +3589,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     if (pat instanceof ELNode.CLASS cls) {
-      current.emitInstanceOf(loadClassAtCompileTime(cls.pos, cls.name));
+      current.emitInstanceOf(resolveClass(cls.type));
       return;
     }
 
@@ -3785,7 +3785,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (base.symbol != null &&
             base.symbol.def.expr instanceof ELNode.CLASS c) {
-          cls = loadClassAtCompileTime(base.pos, c.name);
+          cls = loadClassAtCompileTime(base.pos, c.getClassName());
           slots = c.slots;
         } else {
           cls = loadClassAtCompileTime(base.pos, base.id);

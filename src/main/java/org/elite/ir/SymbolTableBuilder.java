@@ -133,6 +133,7 @@ public final class SymbolTableBuilder {
         } else {
           param.symbol = table.define(param);
         }
+        scan(param.type);
         scan(param.expr);
       }
 
@@ -517,7 +518,7 @@ public final class SymbolTableBuilder {
         scan(data.base);
         for (ELNode v : data.args)
           collectPatternBindings(v, bind);
-      } else if (pat instanceof ELNode.EXPR) {
+      } else if (pat instanceof ELNode.CLASS || pat instanceof ELNode.EXPR) {
         scan(pat);
       }
     }

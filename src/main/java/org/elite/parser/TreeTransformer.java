@@ -709,12 +709,12 @@ public class TreeTransformer extends ELNode.Visitor {
   }
 
   public void visit(ELNode.CLASS e) {
-    String name = transform(e.name);
+    ELNode type = transform(e.type);
     String[] slots = transform(e.slots);
-    if (name == e.name && slots == e.slots)
+    if (type == e.type && slots == e.slots)
       result = e;
     else
-      result = new ELNode.CLASS(e.pos, name, slots);
+      result = new ELNode.CLASS(e.pos, type, slots);
   }
 
   public void visit(ELNode.ARRAY e) {

@@ -119,13 +119,9 @@ public final class ASTDumper {
         sb.append(" '").append(id).append("'");
     } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
 
-    // name field (LAMBDA, APPLY)
-    try {
-      Field nameField = cls.getField("name");
-      Object nm = nameField.get(node);
-      if (nm != null)
-        sb.append(" name='").append(nm).append("'");
-    } catch (NoSuchFieldException | IllegalAccessException e) { /* skip */ }
+    if (node instanceof ELNode.LAMBDA fn && fn.name != null) {
+      sb.append(" '").append(fn.name).append("'");
+    }
 
     if (node.scope != null) {
       sb.append(" scope(depth=").append(node.scope.depth()).append(")");

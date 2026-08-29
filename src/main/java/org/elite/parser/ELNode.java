@@ -5280,17 +5280,22 @@ public abstract class ELNode implements Serializable {
    * Class literal expression.
    */
   public static class CLASS extends Constant implements Pattern {
-    public final String name;
+    public final ELNode type;
     public final String[] slots;
 
-    public CLASS(int pos, String name, String[] slots) {
+    public CLASS(int pos, ELNode type, String[] slots) {
       super(Token.CLASS, pos);
-      this.name = name;
+      this.type = type;
       this.slots = slots;
     }
 
+    public String getClassName() {
+      return getFullClassName(type);
+    }
+
     public Object getValue(EvaluationContext context) {
-      Class<?> cls = ELEngine.resolveJavaClass(context.getELContext(), name);
+      Class<?> cls = ELEngine.resolveJavaClass(context.getELContext(),
+                                               getClassName());
       String[] slots = this.slots;
       if (slots == null && cls.isAnnotationPresent(Data.class)) {
         slots = cls.getAnnotation(Data.class).value();
@@ -5303,7 +5308,7 @@ public abstract class ELNode implements Serializable {
     }
 
     public boolean matches(EvaluationContext context, Object value) {
-      return TypedClosure.typecheck(context, name, value);
+      return TypedClosure.typecheck(context, getClassName(), value);
     }
 
     public void accept(Visitor v) {
