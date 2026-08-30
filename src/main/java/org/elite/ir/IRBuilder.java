@@ -4773,19 +4773,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   private static void reportSymbolTableError(ELProgram prog,
                                              SymbolTable symTable) {
-    if (symTable.getErrors().isEmpty())
-      return;
-
-    StringBuilder sb = new StringBuilder();
-    String file = prog.getFilename();
-    for (SymbolTable.Error e : symTable.getErrors()) {
-      sb.append("\n");
-      if (file != null)
-        sb.append(file).append(':');
-      sb.append(Position.line(e.pos())).append(':')
-        .append(Position.column(e.pos())).append(": ");
-      sb.append(e.message());
-    }
-    throw new ParseException(file, 1, 1, sb.toString());
+    if (!symTable.getErrors().isEmpty())
+      throw new ParseException(prog.getFilename(), symTable.getErrors());
   }
 }

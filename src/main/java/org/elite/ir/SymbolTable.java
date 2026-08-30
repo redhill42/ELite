@@ -1,6 +1,7 @@
 package org.elite.ir;
 
 import org.elite.parser.ELNode;
+import org.elite.parser.ParseError;
 import org.elite.parser.Position;
 
 import java.lang.reflect.Modifier;
@@ -212,10 +213,8 @@ public class SymbolTable {
 
   /*--------------------------------------------------------------------------*/
 
-  public record Error(int pos, String message) {}
-
   private Scope current = null;
-  private final List<Error> errors = new ArrayList<>();
+  private final List<ParseError> errors = new ArrayList<>();
 
   void enterScope(ELNode node) {
     enterScope(node, null);
@@ -283,14 +282,14 @@ public class SymbolTable {
   }
 
   void addError(int pos, String message) {
-    errors.add(new Error(pos, message));
+    errors.add(new ParseError(pos, message, null));
   }
 
   void addRedefinition(String id, int pos, int previousPos) {
     addError(pos, _T(EL_REDEFINED_IDENTIFIER, id, Position.line(previousPos)));
   }
 
-  public List<Error> getErrors() {
+  public List<ParseError> getErrors() {
     return errors;
   }
 }
