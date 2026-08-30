@@ -350,10 +350,10 @@ public final class Builtin {
   }
 
   /**
-   * 向一个Java类附加自定义方法, Java类的所有实例(无论之前或之后创建)都
-   * 将可以调用此方法. 自定义方法可以用闭包实现, 闭包的第一个参数是类实例.
+   * 向一个Java类附加自定义方法, Java类的所有实例都将可以调用此方法. 自定义
+   * 方法可以用闭包实现, 闭包的第一个参数是类实例。
    * <p>
-   * 注意: 附加方法将覆盖类本身的内建方法. 当多次附加同名方式时, 以前附加
+   * 注意: 附加方法不能覆盖类本身的内建方法. 当多次附加同名方式时, 以前附加
    * 的方法将被覆盖.
    * <p>
    * 用法: javaclass.attach(name, closure)
@@ -1448,19 +1448,6 @@ public final class Builtin {
   public static Object __do(ELContext elctx, Object arg, CallableClosure proc) {
     if (arg == null)
       return null;
-
-    if (arg instanceof Iterable<?> it) {
-      for (Object e : it)
-        proc.call_with(elctx, e);
-      return null;
-    }
-
-    if (arg instanceof Object[] a) {
-      for (Object e : a)
-        proc.call_with(elctx, e);
-      return null;
-    }
-
     return proc.call_with(elctx, arg);
   }
 

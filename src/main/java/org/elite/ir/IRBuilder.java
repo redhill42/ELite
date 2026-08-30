@@ -617,14 +617,19 @@ public class IRBuilder extends ELNode.Visitor {
 
       if (node.right instanceof ELNode.IDENT var &&
           (var.id.equals("this") || var.id.equals("super"))) {
-        Scope classScope = currentScope.enclosingClassScope();
-        if (var.symbol == null || classScope == null ||
-            var.symbol.scope != classScope)
-          throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-        if (!buildLoadClassMember(node.pos, key, var.id.equals("super")))
-          throw reportError(node.pos,
-            _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
-        return;
+        if (var.id.equals("this") && var.symbol != null &&
+            var.symbol.scope.isLambdaScope()) {
+          // "this" is a lambda parameter.
+        } else {
+          Scope classScope = currentScope.enclosingClassScope();
+          if (var.symbol == null || classScope == null ||
+              var.symbol.scope != classScope)
+            throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+          if (!buildLoadClassMember(node.pos, key, var.id.equals("super")))
+            throw reportError(node.pos,
+              _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
+          return;
+        }
       }
 
       IRClass irc = resolveIRClass(node.right);
@@ -726,14 +731,19 @@ public class IRBuilder extends ELNode.Visitor {
       // hierarchy to find the member variable.
       if (node.right instanceof ELNode.IDENT var &&
           (var.id.equals("this") || var.id.equals("super"))) {
-        Scope classScope = currentScope.enclosingClassScope();
-        if (var.symbol == null || classScope == null ||
-            var.symbol.scope != classScope)
-          throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-        if (!buildStoreClassMember(node.pos, key, var.id.equals("super")))
-          throw reportError(node.pos,
-            _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
-        return;
+        if (var.id.equals("this") && var.symbol != null &&
+            var.symbol.scope.isLambdaScope()) {
+          // "this" is a lambda parameter.
+        } else {
+          Scope classScope = currentScope.enclosingClassScope();
+          if (var.symbol == null || classScope == null ||
+              var.symbol.scope != classScope)
+            throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+          if (!buildStoreClassMember(node.pos, key, var.id.equals("super")))
+            throw reportError(node.pos,
+              _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
+          return;
+        }
       }
 
       // Access a class static member variable.
@@ -929,14 +939,19 @@ public class IRBuilder extends ELNode.Visitor {
 
         if (acc.right instanceof ELNode.IDENT var &&
             (var.id.equals("this") || var.id.equals("super"))) {
-          Scope classScope = currentScope.enclosingClassScope();
-          if (var.symbol == null || classScope == null ||
-              var.symbol.scope != classScope)
-            throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-          if (!buildThisCall(node, key, var.id.equals("super")))
-            throw reportError(node.pos,
-              _T(EL_METHOD_NOT_FOUND, currentScope.enclosingClass().name, key));
-          return;
+          if (var.id.equals("this") && var.symbol != null &&
+              var.symbol.scope.isLambdaScope()) {
+            // "this" is a lambda parameter.
+          } else {
+            Scope classScope = currentScope.enclosingClassScope();
+            if (var.symbol == null || classScope == null ||
+                var.symbol.scope != classScope)
+              throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+            if (!buildThisCall(node, key, var.id.equals("super")))
+              throw reportError(node.pos,
+                _T(EL_METHOD_NOT_FOUND, currentScope.enclosingClass().name, key));
+            return;
+          }
         }
 
         IRClass irc = resolveIRClass(acc.right);
@@ -4634,6 +4649,11 @@ public class IRBuilder extends ELNode.Visitor {
           current.emitUnbox(type);
         return;
       }
+    }
+
+    if (node instanceof ELNode.LAMBDA && type == Closure.class) {
+      build(node);
+      return;
     }
 
     // Coerce at runtime.

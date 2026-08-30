@@ -16,99 +16,103 @@
 
 package org.elite.resolver;
 
-import java.lang.reflect.Method;
+import elite.lang.Closure;
+import org.elite.eval.ELEngine;
+import org.elite.eval.closure.CallableClosure;
+import org.elite.eval.closure.LiteralClosure;
+import org.elite.eval.closure.MethodClosure;
 import javax.el.ELContext;
 import javax.el.MethodInfo;
-import elite.lang.Closure;
-import org.elite.eval.closure.MethodClosure;
-import org.elite.eval.closure.LiteralClosure;
+import java.lang.reflect.Method;
 
-public class ExpandoMethodClosure extends MethodClosure
-{
-    protected String name;
-    protected Class<?> target;
-    protected Closure delegate;
+public class ExpandoMethodClosure extends MethodClosure {
+  protected String name;
+  protected Class<?> target;
+  protected Closure delegate;
 
-    public ExpandoMethodClosure(String name, Class<?> target, Closure delegate) {
-        this.name = name;
-        this.target = target;
-        this.delegate = delegate;
+  public ExpandoMethodClosure(String name, Class<?> target, Closure delegate) {
+    this.name = name;
+    this.target = target;
+    this.delegate = delegate;
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public Class<?> getTarget() {
+    return target;
+  }
+
+  public Closure getDelegate() {
+    return delegate;
+  }
+
+  public void addMethod(Method method) {
+    if (delegate instanceof JavaMethodClosure) { // FIXME otherwise?
+      delegate = ((JavaMethodClosure)delegate).addMethod(method);
+    }
+  }
+
+  @Override
+  public Method getJavaMethod(int arity) {
+    if (delegate instanceof MethodClosure)
+      return ((MethodClosure)delegate).getJavaMethod(arity + 1);
+    return null;
+  }
+
+  public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
+    if (delegate instanceof MethodClosure) {
+      Object[] expando = new Object[args.length + 1];
+      expando[0] = obj;
+      System.arraycopy(args, 0, expando, 1, args.length);
+      return ((MethodClosure)delegate).getJavaMethod(elctx, null, expando);
+    }
+    return null;
+  }
+
+  public int arity(ELContext elctx) {
+    return delegate.arity(elctx);
+  }
+
+  public MethodInfo getMethodInfo(ELContext elctx) {
+    return delegate.getMethodInfo(elctx);
+  }
+
+  public Object invoke(ELContext elctx, Closure[] args) {
+    return delegate.invoke(elctx, args);
+  }
+
+  public Object invoke(ELContext elctx, Object receiver, Closure[] args) {
+    if (delegate instanceof CallableClosure callable) {
+      return callable.call_with(elctx, receiver,
+                                ELEngine.getArgValues(elctx, args));
+    } else {
+      Closure[] expando = new Closure[args.length + 1];
+      expando[0] = new LiteralClosure(receiver);
+      System.arraycopy(args, 0, expando, 1, args.length);
+      return delegate.invoke(elctx, expando);
+    }
+  }
+
+  public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
     }
 
-    public String getName() {
-        return name;
+    if (obj instanceof ExpandoMethodClosure other) {
+      return name.equals(other.name) && target.equals(other.target) &&
+             delegate.equals(other.delegate);
     }
 
-    public Class<?> getTarget() {
-        return target;
-    }
+    return false;
+  }
 
-    public Closure getDelegate() {
-        return delegate;
-    }
+  public int hashCode() {
+    return name.hashCode() ^ target.hashCode() ^ delegate.hashCode();
+  }
 
-    public void addMethod(Method method) {
-        if (delegate instanceof JavaMethodClosure) { // FIXME otherwise?
-            delegate = ((JavaMethodClosure)delegate).addMethod(method);
-        }
-    }
-
-    @Override
-    public Method getJavaMethod(int arity) {
-        if (delegate instanceof MethodClosure)
-            return ((MethodClosure)delegate).getJavaMethod(arity + 1);
-        return null;
-    }
-
-    public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
-        if (delegate instanceof MethodClosure) {
-            Object[] expando = new Object[args.length + 1];
-            expando[0] = obj;
-            System.arraycopy(args, 0, expando, 1, args.length);
-            return ((MethodClosure)delegate).getJavaMethod(elctx, null, expando);
-        }
-        return null;
-    }
-
-    public int arity(ELContext elctx) {
-        return delegate.arity(elctx);
-    }
-
-    public MethodInfo getMethodInfo(ELContext elctx) {
-        return delegate.getMethodInfo(elctx);
-    }
-
-    public Object invoke(ELContext elctx, Closure[] args) {
-        return delegate.invoke(elctx, args);
-    }
-
-    public Object invoke(ELContext elctx, Object base, Closure[] args) {
-        Closure[] expando = new Closure[args.length+1];
-        expando[0] = new LiteralClosure(base);
-        System.arraycopy(args, 0, expando, 1, args.length);
-        return delegate.invoke(elctx, expando);
-    }
-
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-
-        if (obj instanceof ExpandoMethodClosure) {
-            ExpandoMethodClosure other = (ExpandoMethodClosure)obj;
-            return name.equals(other.name)
-                && target.equals(other.target)
-                && delegate.equals(other.delegate);
-        }
-
-        return false;
-    }
-
-    public int hashCode() {
-        return name.hashCode() ^ target.hashCode() ^ delegate.hashCode();
-    }
-
-    public String toString() {
-        return delegate.toString();
-    }
+  public String toString() {
+    return delegate.toString();
+  }
 }

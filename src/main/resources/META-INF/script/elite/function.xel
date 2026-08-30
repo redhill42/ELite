@@ -127,27 +127,27 @@ class Variable
 }
 
 // Convert Symbol to Variable implicitly.
-Symbol.attach('__coerce__') { self, type =>
-    if (type == Variable) {
-        return Variable.valueOf(self);
-    } else {
-        throw new ClassCastException(type.toString());
-    }
+define Symbol.__coerce__(type) {
+  if (type == Variable) {
+    return Variable.valueOf(this);
+  } else {
+    throw new ClassCastException(type.toString());
+  }
 }
 
-Symbol.attach('__pos__') { x => Variable.valueOf(x) }
-Symbol.attach('__neg__') { x => -Variable.valueOf(x) }
-Symbol.attach('+')  { x,y => Function['+'](x, y) }
-Symbol.attach('?+') { x,y => Function['+'](y, x) }
-Symbol.attach('-')  { x,y => Function['-'](x, y) }
-Symbol.attach('?-') { x,y => Function['-'](y, x) }
-Symbol.attach('*')  { x,y => Function['*'](x, y) }
-Symbol.attach('?*') { x,y => Function['*'](y, x) }
-Symbol.attach('/')  { x,y => Function['/'](x, y) }
-Symbol.attach('?/') { x,y => Function['/'](y, x) }
-Symbol.attach('^')  { x,n => Variable.valueOf(x) ^ n }
-Symbol.attach('~')  { x,y => Function['~'](x, y) }
-Symbol.attach('?~') { x,y => Function['~'](y, x) }
+define Symbol.__pos__() => Variable.valueOf(this)
+define Symbol.__neg__() => -Variable.valueOf(this)
+define Symbol.+(x)    => Function['+'](this, x)
+define Symbol.?+(x)   => Function['+'](x, this)
+define Symbol.-(x)    => Function['-'](this, x)
+define Symbol.?-(x)   => Function['-'](x, this)
+define Symbol.*(x)    => Function['*'](this, x)
+define Symbol.?*(x)   => Function['*'](x, this)
+define Symbol./(x)    => Function['/'](this, x)
+define Symbol.?/(x)   => Function['/'](x, this)
+define Symbol.^(n)    => Variable.valueOf(this) ^ n
+define Symbol.~(x)    => Function['~'](this, x)
+define Symbol.?~(x)   => Function['~'](x, this)
 
 /**
  * This abstract class represents a mapping between two sets such that

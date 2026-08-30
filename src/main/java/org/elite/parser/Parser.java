@@ -1638,11 +1638,12 @@ public class Parser extends Scanner {
                              body);
   }
 
-  private ELNode parseProcedureDefinition(String name, ELNode rtype,
-                                          ELNode.METASET meta) {
+  private ELNode.LAMBDA parseProcedureDefinition(String name, ELNode rtype,
+                                                 ELNode.METASET meta) {
     int p = pos;
     ParamList plist;
     ELNode body;
+    ELNode.LAMBDA lambda;
 
     open_scope();
     expect(LPAREN);
@@ -1654,7 +1655,7 @@ public class Parser extends Scanner {
     expect(RPAREN);
 
     if (token == LPAREN) {
-      body = parseCurriedProcedureDefinition(p, name, rtype, meta, plist);
+      lambda = parseCurriedProcedureDefinition(p, name, rtype, meta, plist);
       close_scope();
     } else {
       // optional return type annotation
@@ -1685,18 +1686,19 @@ public class Parser extends Scanner {
       }
 
       if (!isAbstract && allow_alts && token == BAR) {
-        body = parseBranchedProcedureDefinition(name, rtype, plist, body);
+        lambda = parseBranchedProcedureDefinition(name, rtype, plist, body);
       } else {
-        body = translateEquation(p, name, rtype, plist, body);
+        lambda = translateEquation(p, name, rtype, plist, body);
       }
     }
 
-    return body;
+    return lambda;
   }
 
-  private ELNode parseBranchedProcedureDefinition(String name, ELNode rtype,
-                                                  ParamList first_plist,
-                                                  ELNode first_body) {
+  private ELNode.LAMBDA parseBranchedProcedureDefinition(String name,
+                                                         ELNode rtype,
+                                                         ParamList first_plist,
+                                                         ELNode first_body) {
     List<ParamList> branch_plists = new ArrayList<>();
     List<ELNode> branch_bodies = new ArrayList<>();
 
@@ -1770,10 +1772,10 @@ public class Parser extends Scanner {
     return new ELNode.LAMBDA(p, filename, name, rtype, vars, false, body);
   }
 
-  private ELNode parseCurriedProcedureDefinition(int p, String name,
-                                                 ELNode rtype,
-                                                 ELNode.METASET meta,
-                                                 ParamList plist) {
+  private ELNode.LAMBDA parseCurriedProcedureDefinition(int p, String name,
+                                                        ELNode rtype,
+                                                        ELNode.METASET meta,
+                                                        ParamList plist) {
     if ((meta != null) && (meta.modifiers & Modifier.ABSTRACT) != 0) {
       error(p, "Abstract procedure doesn't support curried parameters");
     }
@@ -1810,7 +1812,7 @@ public class Parser extends Scanner {
       }
     }
 
-    return body;
+    return (ELNode.LAMBDA)body;
   }
 
   private ELNode parseProcedureBody(ParamList plist) {
@@ -1842,12 +1844,67 @@ public class Parser extends Scanner {
     return body;
   }
 
+  private ELNode tryParseExpandoMethod(ELNode.METASET meta) {
+    if (token != IDENT)
+      return null;
+
+    mark();
+    if (!scan(IDENT) || !scan(FIELD)) {
+      reset();
+      return null;
+    }
+    reset();
+
+    int p = pos;
+    StringBuilder sb = new StringBuilder();
+    String lastId;
+    while (true) {
+      if (token == IDENT) {
+        lastId = idValue;
+        scan();
+        if (token == FIELD) {
+          if (!sb.isEmpty())
+            sb.append('.');
+          sb.append(lastId);
+          scan();
+        } else {
+          break;
+        }
+      } else if (token == STRINGVAL) {
+        lastId = stringValue;
+        scan();
+        break;
+      } else {
+        lastId = parseOperatorName();
+        if (lastId == null)
+          return null;
+        break;
+      }
+    }
+
+    ELNode expando = class_node(p, sb.toString());
+    ELNode.DEFINE var = new ELNode.DEFINE(p, lastId, null, meta);
+    checkVar(var, true);
+    ELNode.LAMBDA lambda = parseProcedureDefinition(var.id, null, meta);
+
+    // Add implement "this" parameter.
+    ELNode.DEFINE[] params = new ELNode.DEFINE[lambda.vars.length + 1];
+    params[0] = new ELNode.DEFINE(lambda.pos, "this");
+    System.arraycopy(lambda.vars, 0, params, 1, lambda.vars.length);
+    lambda.vars = params;
+
+    // Translate to expando attach call.
+    return new ELNode.APPLY(
+      p, new ELNode.ACCESS(p, expando, new ELNode.STRINGVAL(p, "attach")),
+      new ELNode[] {new ELNode.STRINGVAL(p, var.id), lambda}, null);
+  }
+
   private static class Param {
-    int pos;         // the position of parameter
-    String name;        // the parameter name
+    int pos;                    // the position of parameter
+    String name;                // the parameter name
     ELNode.Pattern pattern;     // the parameter pattern
     ELNode.METASET meta;        // the parameter's metadata
-    ELNode deflt;       // the default value
+    ELNode deflt;               // the default value
   }
 
   private static class ParamList {
@@ -2438,9 +2495,18 @@ public class Parser extends Scanner {
 
   private ELNode.DEFINE parseOperatorProcedure(ELNode.METASET meta) {
     int p = pos;
+    String opname = parseOperatorName();
+    if (opname == null)
+      return null;
+
+    ELNode.DEFINE def = new_symbol(p, opname, null, meta);
+    def.expr = parseProcedureDefinition(opname, null, meta);
+    return def;
+  }
+
+  private String parseOperatorName() {
     String opname;
     boolean reverse = false;
-    ELNode.DEFINE def;
 
     if (token == QUESTIONMARK) {
       scan();
@@ -2463,9 +2529,8 @@ public class Parser extends Scanner {
     case SHR:
     case USHR:
       opname = operator.name;
-      if (reverse) {
+      if (reverse)
         opname = "?" + opname;
-      }
       scan();
       break;
 
@@ -2508,13 +2573,10 @@ public class Parser extends Scanner {
       return null;
     }
 
-    if (reverse && !opname.startsWith("?")) {
+    if (reverse && !opname.startsWith("?"))
       error("Unexpected token: " + opname);
-    }
 
-    def = new_symbol(p, opname, null, meta);
-    def.expr = parseProcedureDefinition(opname, null, meta);
-    return def;
+    return opname;
   }
 
   private List<ELNode.DEFINE> parseDataDefinition(ELNode.METASET meta) {
@@ -3946,9 +4008,15 @@ public class Parser extends Scanner {
     case STATIC:
     case FINAL:
     case ATSIGN:
-      for (ELNode.DEFINE e : parseDefinitions(parseMetaData())) {
-        checkVar(e, true);
-        addToProgram(prog, e);
+      ELNode.METASET meta = parseMetaData();
+      ELNode expando = tryParseExpandoMethod(meta);
+      if (expando != null) {
+        addToProgram(prog, expando);
+      } else {
+        for (ELNode.DEFINE e : parseDefinitions(meta)) {
+          checkVar(e, true);
+          addToProgram(prog, e);
+        }
       }
       break;
 

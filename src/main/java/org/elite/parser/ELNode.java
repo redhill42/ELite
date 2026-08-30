@@ -510,8 +510,8 @@ public abstract class ELNode implements Serializable {
     public final String file;
     public final String name;
     public ELNode rtype;
-    public final DEFINE[] vars;
-    public final boolean varargs;
+    public DEFINE[] vars;
+    public boolean varargs;
     public final ELNode body;
 
     private boolean dvals;

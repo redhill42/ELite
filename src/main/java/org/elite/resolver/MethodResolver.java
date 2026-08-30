@@ -298,6 +298,7 @@ public final class MethodResolver {
       String name = expando.getName();
       SortedSet<ExpandoMethodClosure> methods =
         map.computeIfAbsent(name, k -> new TreeSet<>(order));
+      methods.remove(expando);
       methods.add(expando);
     }
 

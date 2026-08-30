@@ -6,26 +6,26 @@ import java.awt.event.ActionListener;
 import java.awt.GridLayout;
 
 define celsius_fahrenheit_converter() {
-    define celsius = new JTextField();
-    define fahrenheit = new JLabel('Fahrenheit');
-    define convert = new JButton('Convert');
+  let celsius = JTextField();
+  let fahrenheit = JLabel('Fahrenheit');
+  let convert = JButton('Convert');
 
-    convert.addActionListener({evt =>
-        define c = double(celsius.text);
-        fahrenheit.text = "${1.8*c+32} Fahrenheit";
-    });
+  convert.addActionListener {
+    let c = double(celsius.text);
+    fahrenheit.text = "${1.8*c+32} Fahrenheit";
+  };
 
-    (new JFrame).do {
-	title = 'Celsius Converter'
-	layout = new GridLayout(2,2,3,3)
-	defaultCloseOperation = JFrame.EXIT_ON_CLOSE
-	add(celsius)
-	add(new JLabel('Celsius'))
-	add(convert)
-	add(fahrenheit)
-	setSize(300, 80)
-	visible = true
-    }
+  JFrame().do {
+    title = 'Celsius Converter'
+    layout = GridLayout(2,2,3,3)
+    defaultCloseOperation = JFrame.EXIT_ON_CLOSE
+    add(celsius)
+    add(JLabel('Celsius'))
+    add(convert)
+    add(fahrenheit)
+    setSize(300, 80)
+    visible = true
+  }
 }
 
 celsius_fahrenheit_converter();
