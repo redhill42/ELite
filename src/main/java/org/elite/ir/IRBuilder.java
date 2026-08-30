@@ -38,9 +38,11 @@ import org.elite.parser.Token;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 import org.elite.resources.Resources;
+import org.elite.util.BeanUtils;
 
 import javax.el.ELContext;
 import javax.xml.XMLConstants;
+import java.beans.IntrospectionException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Array;
@@ -82,6 +84,46 @@ public class IRBuilder extends ELNode.Visitor {
 
   // Tracking current scope.
   private Scope currentScope;
+
+  // The class for an expando closure.
+  private Class<?> expandoClass;
+
+  // Expando method map. Record every expando method that registered by
+  // Builtin.attach during compilation. Generate direct call for known expando
+  // method.
+  class ExpandoMap {
+    record Key(Class<?> declaringClass, String name) implements Comparable<Key> {
+      @Override
+      // Most concrete class ordered before most general class.
+      public int compareTo(Key o) {
+        if (declaringClass == o.declaringClass)
+          return name.compareTo(o.name);
+        return declaringClass.isAssignableFrom(o.declaringClass) ? 1 : -1;
+      }
+    }
+
+    final SortedMap<Key, ELNode.LAMBDA> map = new TreeMap<>();
+
+    void put(Class<?> declaringClass, String name, ELNode.LAMBDA expando) {
+      map.put(new Key(declaringClass, name), expando);
+    }
+
+    ELNode.LAMBDA find(Class<?> declaringClass, String name) {
+      for (Map.Entry<Key, ELNode.LAMBDA> entry : map.entrySet()) {
+        if (name.equals(entry.getKey().name) &&
+            entry.getKey().declaringClass.isAssignableFrom(declaringClass))
+          return entry.getValue();
+      }
+      return null;
+    }
+  }
+
+  private final ExpandoMap expandoMap;
+
+  // Used to pass custom build action to another build method.
+  interface CustomAction {
+    void run();
+  }
 
   // Tracking temporary slot allocation.
   private int maxLocals;
@@ -191,6 +233,7 @@ public class IRBuilder extends ELNode.Visitor {
     this.currentScope = scope;
     this.constants = new ArrayList<>();
     this.constIndex = new HashMap<>();
+    this.expandoMap = new ExpandoMap();
   }
 
   /**
@@ -206,6 +249,7 @@ public class IRBuilder extends ELNode.Visitor {
     this.current = new IREmitter(this);
     this.currentScope = scope;
     this.currentFile = parent.currentFile;
+    this.expandoMap = parent.expandoMap;
 
     // Share constants with parent so pool indices are consistent
     this.constants = parent.constants;
@@ -326,7 +370,10 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.CONST node) {
-    buildConst(node.value);
+    if (node.value instanceof CustomAction action)
+      action.run();
+    else
+      buildConst(node.value);
   }
 
   public void visit(ELNode.DEFINE node) {
@@ -400,8 +447,13 @@ public class IRBuilder extends ELNode.Visitor {
         }
       }
     } else {
-      if (node.symbol == null && buildLoadClassMember(node.pos, node.id, false))
-        return;
+      if (node.symbol == null) {
+        if (expandoClass != null && buildLoadExpandoProperty(node.id))
+          return;
+        if (buildLoadBaseClassField(node.pos, node.id, false))
+          return;
+      }
+
       if (node.symbol != null && node.symbol.captured &&
           node.symbol.scope.isProgramScope())
         current.emitGetStatic(null, node.id);
@@ -454,8 +506,14 @@ public class IRBuilder extends ELNode.Visitor {
     } else {
       if (node.symbol != null && node.symbol.isFinal())
         throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
-      if (node.symbol == null && buildStoreClassMember(node.pos, node.id, false))
-        return;
+
+      if (node.symbol == null) {
+        if (expandoClass != null && buildStoreExpandoProperty(node.pos, node.id))
+          return;
+        if (buildStoreBaseClassField(node.pos, node.id, false))
+          return;
+      }
+
       if (node.symbol != null && node.symbol.captured &&
           node.symbol.scope.isProgramScope())
         current.emitPutStatic(null, node.id);
@@ -466,7 +524,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private boolean buildLoadClassMember(int pos, String id, boolean isSuper) {
+  private boolean buildLoadBaseClassField(int pos, String id, boolean isSuper) {
     IRClass clazz = currentScope.enclosingClass();
     if (clazz == null)
       return false;
@@ -538,7 +596,7 @@ public class IRBuilder extends ELNode.Visitor {
     return false;
   }
 
-  private boolean buildStoreClassMember(int pos, String id, boolean isSuper) {
+  private boolean buildStoreBaseClassField(int pos, String id, boolean isSuper) {
     IRClass clazz = currentScope.enclosingClass();
     if (clazz == null)
       return false;
@@ -611,6 +669,73 @@ public class IRBuilder extends ELNode.Visitor {
     return false;
   }
 
+  private boolean buildLoadExpandoProperty(String name) {
+    try {
+      Method method = BeanUtils.getReadMethod(expandoClass, name);
+      if (method != null) {
+        current.emitPushVar(0);
+        current.emitCheckCast(expandoClass);
+        current.emitInvokeMethod(method);
+        return true;
+      }
+    } catch (IntrospectionException e) {
+      // fallthrough
+    }
+
+    try {
+      Field field = expandoClass.getField(name);
+      if (Modifier.isStatic(field.getModifiers())) {
+        current.emitGetStatic(field);
+      } else {
+        current.emitPushVar(0);
+        current.emitCheckCast(expandoClass);
+        current.emitGetField(field);
+      }
+      return true;
+    } catch (NoSuchFieldException e) {
+      // fallthrough
+    }
+
+    return false;
+  }
+
+  private boolean buildStoreExpandoProperty(int pos, String name) {
+    try {
+      if (BeanUtils.getWriteMethod(expandoClass, name) != null) {
+        // FIXME: cannot invoke write method because value pushed to stack
+        //        before receiver.
+        current.emitDup();
+        current.emitPushVar(0);
+        current.emitCheckCast(expandoClass);
+        current.emitPushEnv();
+        current.emitInvokeDynamic(new Descriptors.Indy(
+          setValueBootstrap, mangle(name), void.class,
+          Object.class, Object.class, EvaluationContext.class));
+        return true;
+      }
+    } catch (IntrospectionException e) {
+      // fallthrough
+    }
+
+    try {
+      Field field = expandoClass.getField(name);
+      if (Modifier.isFinal(field.getModifiers()))
+        throw reportError(pos, _T(EL_VARIABLE_NOT_WRITABLE, name, name));
+      if (Modifier.isStatic(field.getModifiers())) {
+        current.emitPutStatic(field);
+      } else {
+        current.emitPushVar(0);
+        current.emitCheckCast(expandoClass);
+        current.emitPutField(field);
+      }
+      return true;
+    } catch (NoSuchFieldException e) {
+      // fallthrough
+    }
+
+    return false;
+  }
+
   public void visit(ELNode.ACCESS node) {
     if (node.index instanceof ELNode.STRINGVAL) {
       String key = ((ELNode.STRINGVAL)node.index).value;
@@ -619,13 +744,18 @@ public class IRBuilder extends ELNode.Visitor {
           (var.id.equals("this") || var.id.equals("super"))) {
         if (var.id.equals("this") && var.symbol != null &&
             var.symbol.scope.isLambdaScope()) {
-          // "this" is a lambda parameter.
+          // "this" may be the expando method receiver parameter.
+          ELNode.LAMBDA lambda = (ELNode.LAMBDA)var.symbol.scope.frontier;
+          if (expandoClass != null && var.symbol == lambda.vars[0].symbol) {
+            if (buildLoadExpandoProperty(key))
+              return;
+          }
         } else {
           Scope classScope = currentScope.enclosingClassScope();
           if (var.symbol == null || classScope == null ||
               var.symbol.scope != classScope)
             throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-          if (!buildLoadClassMember(node.pos, key, var.id.equals("super")))
+          if (!buildLoadBaseClassField(node.pos, key, var.id.equals("super")))
             throw reportError(node.pos,
               _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
           return;
@@ -733,13 +863,18 @@ public class IRBuilder extends ELNode.Visitor {
           (var.id.equals("this") || var.id.equals("super"))) {
         if (var.id.equals("this") && var.symbol != null &&
             var.symbol.scope.isLambdaScope()) {
-          // "this" is a lambda parameter.
+          // "this" may be the expando method receiver parameter.
+          ELNode.LAMBDA lambda = (ELNode.LAMBDA)var.symbol.scope.frontier;
+          if (expandoClass != null && var.symbol == lambda.vars[0].symbol) {
+            if (buildStoreExpandoProperty(node.pos, key))
+              return;
+          }
         } else {
           Scope classScope = currentScope.enclosingClassScope();
           if (var.symbol == null || classScope == null ||
               var.symbol.scope != classScope)
             throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-          if (!buildStoreClassMember(node.pos, key, var.id.equals("super")))
+          if (!buildStoreBaseClassField(node.pos, key, var.id.equals("super")))
             throw reportError(node.pos,
               _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
           return;
@@ -911,6 +1046,11 @@ public class IRBuilder extends ELNode.Visitor {
         if (buildThisCall(node, ident.id, false))
           return;
 
+        // Resolve expando method.
+        if (expandoClass != null &&
+            buildExpandoCall(node.pos, ident.id, node.args, node.keys))
+          return;
+
         // Resolve builtin function.
         if (tryBuildGlobalMethodCall(ident.id, node.args))
           return;
@@ -941,7 +1081,12 @@ public class IRBuilder extends ELNode.Visitor {
             (var.id.equals("this") || var.id.equals("super"))) {
           if (var.id.equals("this") && var.symbol != null &&
               var.symbol.scope.isLambdaScope()) {
-            // "this" is a lambda parameter.
+            // "this" may be the expando method receiver parameter.
+            ELNode.LAMBDA lambda = (ELNode.LAMBDA)var.symbol.scope.frontier;
+            if (expandoClass != null && var.symbol == lambda.vars[0].symbol) {
+              if (buildExpandoCall(node.pos, key, node.args, node.keys))
+                return;
+            }
           } else {
             Scope classScope = currentScope.enclosingClassScope();
             if (var.symbol == null || classScope == null ||
@@ -986,7 +1131,8 @@ public class IRBuilder extends ELNode.Visitor {
           }
         }
 
-        if (tryBuildDirectMethodCall(acc.right, key, node.args))
+        if (tryBuildDirectMethodCall(node.pos, acc.right, key, node.args,
+                                     node.keys))
           return;
       }
 
@@ -999,20 +1145,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitPushEnv();
         build(acc.right);
         buildTuple(node.args);
-
-        Object[] bootstrapArgs;
-        if (node.keys == null)
-          bootstrapArgs = new Object[1];
-        else {
-          bootstrapArgs = new Object[node.keys.length + 1];
-          for (int i = 0; i < node.keys.length; i++)
-            bootstrapArgs[i + 1] = node.keys[i] != null ? node.keys[i] : "";
-        }
-        bootstrapArgs[0] = false;
-
-        current.emitInvokeDynamic(new Descriptors.Indy(
-          invokeBootstrap, mangle(key.value), bootstrapArgs,
-          Object.class, EvaluationContext.class, Object.class, Object[].class));
+        emitInvokeIndy(key.value, node.keys, false);
       } else {
         current.emitPushEnv();
         build(acc);
@@ -1578,24 +1711,76 @@ public class IRBuilder extends ELNode.Visitor {
       else
         current.emitPushThis();
       buildTuple(node.args);
-
-      Object[] bootstrapArgs;
-      if (node.keys == null)
-        bootstrapArgs = new Object[1];
-      else {
-        bootstrapArgs = new Object[node.keys.length + 1];
-        for (int i = 0; i < node.keys.length; i++)
-          bootstrapArgs[i + 1] = node.keys[i] != null ? node.keys[i] : "";
-      }
-      bootstrapArgs[0] = isSuper && !isStatic;
-
-      current.emitInvokeDynamic(new Descriptors.Indy(
-        invokeBootstrap, mangle(key), bootstrapArgs, Object.class,
-        EvaluationContext.class, Object.class, Object[].class));
+      emitInvokeIndy(key, node.keys, isSuper && !isStatic);
       return true;
     }
 
     return false;
+  }
+
+  private boolean buildExpandoCall(int pos, String name, ELNode[] args,
+                                   String[] keys) {
+    ELNode.LAMBDA expando = expandoMap.find(expandoClass, name);
+    if (expando != null) {
+      ELNode.DEFINE[] vars = new ELNode.DEFINE[expando.vars.length - 1];
+      System.arraycopy(expando.vars, 1, vars, 0, vars.length);
+      args = getCallArgs(pos, name, vars, args, keys, expando.varargs);
+
+      ELNode[] xargs = new ELNode[args.length + 1];
+      xargs[0] = new ELNode.CONST(
+        pos, (CustomAction)() -> current.emitPushVar(0));
+      System.arraycopy(args, 0, xargs, 1, args.length);
+
+      current.emitPushEnv();
+      buildCallArgs(expando, xargs);
+      current.emitInvokeDirect(expando.symbol.func);
+      return true;
+    }
+
+    MethodResolver resolver = MethodResolver.getInstance(elctx);
+    MethodClosure mc;
+    boolean isStatic = true;
+
+    mc = resolver.resolveStaticMethod(expandoClass, name);
+    if (mc == null) {
+      mc = resolver.resolveMethod(expandoClass, name);
+      isStatic = false;
+    }
+
+    if (mc == null)
+      return false;
+
+    Method method = mc.getJavaMethod(args.length);
+    if (method != null) {
+      ELNode action = new ELNode.CONST(0, (CustomAction)() -> {
+          current.emitPushVar(0);
+          current.emitCheckCast(expandoClass);
+        });
+      if (buildMethodCall(method, action, args))
+        return true;
+    }
+
+    current.emitPushEnv();
+    if (isStatic)
+      buildConst(expandoClass);
+    else
+      current.emitPushVar(0);
+    buildTuple(args);
+    emitInvokeIndy(name, keys, false);
+    return true;
+  }
+
+  private void emitInvokeIndy(String name, String[] keys, boolean isSuper) {
+    Object[] bootstrapArgs = new Object[keys == null ? 1 : keys.length + 1];
+    bootstrapArgs[0] = isSuper;
+    if (keys != null) {
+      for (int i = 0; i < keys.length; i++)
+        bootstrapArgs[i + 1] = keys[i] != null ? keys[i] : "";
+    }
+
+    current.emitInvokeDynamic(new Descriptors.Indy(
+      invokeBootstrap, mangle(name), bootstrapArgs, Object.class,
+      EvaluationContext.class, Object.class, Object[].class));
   }
 
   private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {
@@ -1610,8 +1795,27 @@ public class IRBuilder extends ELNode.Visitor {
     return buildMethodCall(method, null, args);
   }
 
-  private boolean tryBuildDirectMethodCall(ELNode base, String name,
-                                           ELNode[] args) {
+  private boolean tryBuildDirectMethodCall(int pos, ELNode base, String name,
+                                           ELNode[] args, String[] keys) {
+    Class<?> baseClass = inferNodeType(base);
+    if (baseClass != null) {
+      ELNode.LAMBDA expando = expandoMap.find(baseClass, name);
+      if (expando != null) {
+        ELNode.DEFINE[] vars = new ELNode.DEFINE[expando.vars.length - 1];
+        System.arraycopy(expando.vars, 1, vars, 0, vars.length);
+        args = getCallArgs(pos, name, vars, args, keys, expando.varargs);
+
+        ELNode[] xargs = new ELNode[args.length + 1];
+        xargs[0] = base;
+        System.arraycopy(args, 0, xargs, 1, args.length);
+
+        current.emitPushEnv();
+        buildCallArgs(expando, xargs);
+        current.emitInvokeDirect(expando.symbol.func);
+        return true;
+      }
+    }
+
     Method method = resolveStaticMethod(base, name, args);
     if (method != null)
       return buildMethodCall(method, null, args);
@@ -1671,21 +1875,7 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private Method resolveInstanceMethod(ELNode base, String name, ELNode[] args) {
-    Class<?> baseClass = null;
-    if (base instanceof ELNode.Constant) {
-      Object value = base.getValue(null);
-      if (value != null)
-        baseClass = value.getClass();
-    } else if (base instanceof ELNode.CONS) {
-      baseClass = Cons.class;
-    } else if (base instanceof ELNode.RANGE) {
-      baseClass = Range.class;
-    } else if (base instanceof ELNode.TUPLE) {
-      baseClass = Object[].class;
-    } else if (base instanceof ELNode.MAP) {
-      baseClass = Map.class;
-    }
-
+    Class<?> baseClass = inferNodeType(base);
     if (baseClass == null)
       return null;
 
@@ -1693,6 +1883,31 @@ public class IRBuilder extends ELNode.Visitor {
     if (mc == null)
       return null;
     return mc.getJavaMethod(args.length);
+  }
+
+  private Class<?> inferNodeType(ELNode node) {
+    if (node instanceof ELNode.CLASS)
+      return Class.class;
+
+    if (node instanceof ELNode.Constant) {
+      Object value = node.getValue(null);
+      return value == null ? null : value.getClass();
+    }
+
+    if (node instanceof ELNode.IDENT ident &&
+        ident.symbol != null && ident.symbol.immutable)
+      return inferNodeType(ident.symbol.def.expr);
+
+    if (node instanceof ELNode.CONS)
+      return Cons.class;
+    if (node instanceof ELNode.RANGE)
+      return Range.class;
+    if (node instanceof ELNode.TUPLE)
+      return Object[].class;
+    if (node instanceof ELNode.MAP)
+      return Map.class;
+
+    return null;
   }
 
   private boolean buildMethodCall(Method method, ELNode base, ELNode[] args) {
@@ -1815,6 +2030,16 @@ public class IRBuilder extends ELNode.Visitor {
       case "times":
         return buildStepBuiltin(new ELNode.NUMBER(0, 0), base, args[0], 1,
                                 Token.LT);
+
+      case "attach":
+        assert args.length == 2;
+        if (base instanceof ELNode.CONST cst &&
+            cst.value instanceof Class<?> javaClass &&
+            args[0] instanceof ELNode.STRINGVAL name &&
+            args[1] instanceof ELNode.LAMBDA lambda) {
+          buildExpandoClosure(javaClass, name.value, lambda);
+          return true;
+        }
       }
     }
 
@@ -1996,6 +2221,25 @@ public class IRBuilder extends ELNode.Visitor {
     if (paramCount != 1 || method.isVarArgs())
       return null;
     return method;
+  }
+
+  private void buildExpandoClosure(Class<?> javaClass, String name,
+                                   ELNode.LAMBDA lambda) {
+    current.emitPushCtx();
+    buildConst(javaClass);
+    buildConst(name);
+
+    // Build the expando lambda to attach to Java class. The expando lambda must
+    // be defined at top level, so add the generated IRFunction to program
+    // function list.
+    IRFunction func = buildLambda(lambda, null, javaClass);
+    program.add(func);
+    expandoMap.put(javaClass, name, lambda);
+    current.emitClosure(func);
+
+    emitInvokeMethod(Builtin.class, "attach", ELContext.class, Class.class,
+                     String.class, Closure.class);
+    current.emitPushNull();
   }
 
   private boolean buildMathReduce(ELNode[] args, int op) {
@@ -3112,10 +3356,11 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private IRFunction buildLambda(ELNode.LAMBDA node) {
-    return buildLambda(node, null);
+    return buildLambda(node, null, null);
   }
 
-  private IRFunction buildLambda(ELNode.LAMBDA node, IRClass initClass) {
+  private IRFunction buildLambda(ELNode.LAMBDA node, IRClass initClass,
+                                 Class<?> expandoClass) {
     IRFunction func;
     if (node.symbol != null)
       func = node.symbol.func;
@@ -3127,7 +3372,9 @@ public class IRBuilder extends ELNode.Visitor {
       int modifiers = Modifier.PUBLIC;
       if (owner == null || currentScope.isStaticScope())
         modifiers |= Modifier.STATIC;
-      func = new IRFunction(owner, "<lambda>", node.vars.length,
+      func = new IRFunction(owner,
+                            node.name != null ? node.name : "<lambda>",
+                            node.vars.length,
                             Arrays.stream(node.vars)
                               .map(x -> x.id)
                               .toArray(String[]::new),
@@ -3138,6 +3385,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     IRBuilder nested = new IRBuilder(this, func, node.scope);
+    nested.expandoClass = expandoClass;
 
     // Propagate source file from the AST node
     if (node.file != null)
@@ -3386,7 +3634,7 @@ public class IRBuilder extends ELNode.Visitor {
       buildLambda(clazz.clinit_proc);
 
     // Build instance init proc.
-    buildLambda(clazz.init_proc, clazz);
+    buildLambda(clazz.init_proc, clazz, null);
 
     buildConst(clazz);
   }

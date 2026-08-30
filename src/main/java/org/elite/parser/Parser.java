@@ -1887,9 +1887,9 @@ public class Parser extends Scanner {
     checkVar(var, true);
     ELNode.LAMBDA lambda = parseProcedureDefinition(var.id, null, meta);
 
-    // Add implement "this" parameter.
+    // Add implicit "this" parameter.
     ELNode.DEFINE[] params = new ELNode.DEFINE[lambda.vars.length + 1];
-    params[0] = new ELNode.DEFINE(lambda.pos, "this");
+    params[0] = new ELNode.DEFINE(lambda.pos, "this", expando, null);
     System.arraycopy(lambda.vars, 0, params, 1, lambda.vars.length);
     lambda.vars = params;
 

@@ -1756,7 +1756,7 @@ public class BytecodeCompiler {
         else
           v.advance(); // no DUP, eat POP
         if (type.isPrimitive())
-          mc.UNBOX_UNCHECKED(type);
+          mc.UNBOX(type);
         mc.PUTFIELD(className, fieldName, type);
       }
   

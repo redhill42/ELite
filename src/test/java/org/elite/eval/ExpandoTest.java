@@ -80,11 +80,11 @@ class ExpandoTest extends EliteTestBase {
     }
 
     @Test
-    void expandoWontOverridesBuiltinMethod() throws Exception {
+    void expandoOverridesBuiltinMethod() throws Exception {
         engine.eval(
             """
             define String.toUpperCase() => "overridden"
-            assert "abc".toUpperCase() == "ABC"
+            assert "abc".toUpperCase() == "overridden"
             """);
     }
 
@@ -305,6 +305,66 @@ class ExpandoTest extends EliteTestBase {
             define String.shout() => toUpperCase().concat("!");
             define trace(f) => "trace(${f()})";
             assert trace("hello".shout) == "trace(HELLO!)"
+            """);
+    }
+
+    @Test
+    void expandoInvokeExpando() throws Exception {
+        engine.eval(
+            """
+            define String.ucase() => toUpperCase();
+            define String.shout() => format("%s!", ucase())
+            assert "hello".shout() == "HELLO!"
+            """);
+    }
+
+    @Test
+    void expandoInvokeExpandoWithThis() throws Exception {
+        engine.eval(
+            """
+            define String.ucase() => this.toUpperCase();
+            define String.shout() => format("%s!", this.ucase())
+            assert "hello".shout() == "HELLO!"
+            """);
+    }
+
+    @Test
+    void invokeStaticMethod()  throws Exception {
+        engine.eval(
+            """
+            define Integer.hex() => toHexString(this)
+            assert 123456.hex() == Integer.toHexString(123456)
+            """);
+    }
+
+    @Test
+    void getStaticField()  throws Exception {
+        engine.eval(
+            """
+            define Integer.MAX() => MAX_VALUE;
+            assert 1.MAX() == Integer.MAX_VALUE;
+            """);
+    }
+
+    @Test
+    void getProperty() throws Exception {
+        engine.eval(
+            """
+            define Date.h() => hours
+            let d = Date()
+            assert d.h() == d.getHours()
+            """);
+    }
+
+    @Test
+    void setProperty() throws Exception {
+        engine.eval(
+            """
+            define Date.nextYear() => year += 1;
+            let d = Date()
+            let y = d.getYear()
+            d.nextYear()
+            assert d.getYear() == y + 1
             """);
     }
 }
