@@ -1268,6 +1268,201 @@ Restrictions:
   currently supports multiple delegates; this divergence will be removed
   in a future version.)
 
+### 9.8 Extension Methods (Expando)
+
+An **expando** (extension method) dynamically attaches a method to an
+existing class at runtime, without modifying the class itself. Expandos
+extend both Java classes and ELite classes, can override builtin
+methods, and are the mechanism through which operators are extended.
+
+Expando methods come from two sources:
+
+- ELite scripts — the `define String.shout() => ...` syntax sugar
+  (Section 9.8.1)
+- Java classes — methods annotated with `@Expando` (Section 9.8.3)
+
+#### 9.8.1 Expando Method Definition in ELite
+
+The `define` statement accepts a dotted form that attaches a method to
+a class instead of defining a variable:
+
+```elite
+define String.shout() => toUpperCase().concat("!")
+"hello".shout()     ===>  "HELLO!"
+```
+
+The definition is equivalent to calling the class's `attach` function
+with a closure whose first parameter is the receiver:
+
+```elite
+String.attach("shout", \this => this.toUpperCase().concat("!"))
+```
+
+Inside the body, `this` refers to the receiver. Method calls and member
+references may omit the receiver — `toUpperCase()` is shorthand for
+`this.toUpperCase()`. The usual parameter forms are supported: default
+values, named arguments, varargs, and patterns:
+
+```elite
+define String.repeat(n) => (0 < n) ? this ~ repeat(n - 1) : ""
+"ab".repeat(3)      ===>  "ababab"
+
+define String.f([a, b]) => a + b
+"x".f([1, 2])       ===>  3
+```
+
+The method name may be quoted, which allows names that are not valid
+identifiers (operators, for example — see Section 9.8.2):
+
+```elite
+define String.'shout'() => "quoted"
+"x".shout()         ===>  "quoted"
+```
+
+The body may also be a block:
+
+```elite
+define String.shout() {
+    let s = toUpperCase()
+    s.concat("!")
+}
+```
+
+Semantics:
+
+- **All instances** of the target class see the method — objects created
+  before and after the attachment.
+- **Inheritance** — subclasses inherit expando methods, and an expando
+  attached to a subclass wins over one attached to its superclass.
+- **Overriding** — an expando overrides a builtin method of the same
+  name. For ELite classes, members defined in the class itself take
+  precedence over expando methods.
+- **Re-attachment** — before the method has ever been called, defining
+  it again replaces the previous attachment. Once the method has been
+  called it is frozen: re-defining it raises an error, because keeping
+  re-dispatch dynamic would hurt performance. The freeze is per method —
+  other methods may still be attached to the class.
+- The definition must appear at the top level of a script; expando
+  definitions are not recognized inside blocks.
+- The target class must exist when the script executes — the attachment
+  is performed at runtime, not at parse time.
+- `static` is not a valid modifier for an expando method; other
+  top-level modifiers such as `public` are allowed.
+
+> **Note:** the AST interpreter (`-O0`, used by the REPL) currently does
+> not resolve implicit `this` references inside expando bodies — use an
+> explicit `this.` receiver when running at `-O0`.
+
+#### 9.8.2 Operator Extension
+
+Operators dispatch through method names (Section 9.5). Because expando
+methods participate in ordinary method resolution, an expando whose
+quoted name is an operator extends that operator to the target class:
+
+```elite
+define Symbol.'+'(x)    => Function['+'](this, x)
+define Symbol.'?+'(x)   => Function['+'](x, this)   // reverse operator
+define Symbol.__neg__() => -Variable.valueOf(this)
+```
+
+- Binary operators use their operator symbol as the quoted method name:
+  `'+'`, `'-'`, `'*'`, `'/'`, `'%'`, `'^'`, `'=='`, `'<'`, `'~'`, and
+  so on.
+- Reverse operators are prefixed with `?` — `'?+'`, `'?-'` (see
+  Section 9.6 for reverse resolution).
+- Unary operators use special names: `__pos__` (`+x`), `__neg__` (`-x`),
+  `!`, `~`, `++`, `--`.
+- Bitwise operators use backtick names: `` '`|' ``, `` '`&' ``, `` '`^' ``,
+  `'<<'`, `'>>'`, `'>>>'`.
+
+Java classes extend operators the same way through the `name` attribute
+of `@Expando` — see the `Timestamp` example in Section 9.8.3.
+
+#### 9.8.3 Java-side @Expando Extension
+
+Java classes add expando methods by annotating methods with `@Expando`
+(package `elite.lang.annotation`).
+
+**Instance methods** are discovered automatically. Annotating a public
+method of the class itself extends every instance of the class — no
+registration is needed:
+
+```java
+public class Timestamp {
+    @Expando(name = "+")
+    public Timestamp add(TimeSpan span) {
+        return new Timestamp(getTimeInMillis()
+                             + span.getTotalMilliSeconds());
+    }
+}
+```
+
+```elite
+let t = new elite.lang.Timestamp()
+let s = new elite.lang.TimeSpan(1000)
+t + s       // a Timestamp one second later
+```
+
+**Static methods** live in a helper class and are registered from an
+ELite script with `import module`:
+
+```java
+package com.example;
+
+import elite.lang.annotation.Expando;
+
+public class StringX {
+    @Expando
+    public static String shout(String self) {
+        return self.toUpperCase() + "!";
+    }
+}
+```
+
+```elite
+import module com.example.StringX;
+"hello".shout()     ===>  "HELLO!"
+```
+
+- The target class is the class of the first parameter; an optional
+  leading `ELContext` parameter is allowed:
+
+  ```java
+  @Expando
+  public static XmlNode toXML(ELContext elctx, String self) { ... }
+  ```
+
+- Overloading is supported: several methods with the same name and
+  different signatures form one overloaded expando method.
+- The `name` attribute attaches the method under other names; without
+  it the Java method name is used. `@Expando(name = {"a", "b"})`
+  attaches under several names. Operator names use their operator
+  symbol — see the `Timestamp` example above.
+- The `scope` attribute selects how the method is registered
+  (`elite.lang.annotation.ExpandoScope`):
+
+  | Scope | Effect |
+  |-------|--------|
+  | `EXPANDO` (default) | A member of the target class. Not in the global namespace and not found by static resolution. |
+  | `GLOBAL` | Additionally usable as a global function, found by static resolution: `@Expando(scope = {EXPANDO, GLOBAL})`. |
+  | `OPERATOR` | Registered for operator dispatch only, not in the global namespace. Useful for operators on very general receivers: `@Expando(name = "+", scope = OPERATOR)` on a method whose first parameter is `Object` applies to every class. |
+
+- Registration: `import module some.pkg.Class;` registers every
+  `public static` method annotated with `@Expando` (see Section 14.3).
+  The standard library scripts register the builtin libraries
+  (`elite.lang.Builtin`, `elite.lang.MathLib`, `elite.xml.XMLLib`, ...)
+  this way.
+
+The `attach` function itself is a Java expando on `Class`: the primitive
+form
+
+```elite
+String.attach("shout", \this => this.toUpperCase().concat("!"))
+```
+
+attaches a closure to every instance of `String`, and is what the
+`define String.shout() => ...` sugar expands to.
+
 ---
 
 ## 10. Lazy Evaluation
@@ -1716,6 +1911,8 @@ define_stmt     := 'define' identifier '(' [ param_list ] ')'
                 |  'define' pattern { '|' pattern } [ '::' type ]
                    ( '=>' expression | block )
                 |  'define' identifier '=' expression
+                |  'define' identifier '.' ( identifier | string )
+                   '(' [ param_list ] ')' ( '=>' expression | block )
 
 param_list      := param { ',' param }
 param           := identifier [ '=' expression ] [ '::' type ]
