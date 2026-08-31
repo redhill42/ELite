@@ -33,6 +33,7 @@ import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import org.elite.parser.ELNode;
+import org.elite.parser.ParseError;
 import org.elite.parser.ParseException;
 import org.elite.parser.Position;
 import org.elite.parser.Token;
@@ -177,6 +178,9 @@ public class IRBuilder extends ELNode.Visitor {
   private String currentFile;
   private final Map<Integer, Integer> linePcMapping = new HashMap<>();
 
+  // Recorded errors.
+  private final List<ParseError> errors;
+
   private static final Method getValueBootstrap;
   private static final Method getIndexedValueBootstrap;
   private static final Method setValueBootstrap;
@@ -235,6 +239,7 @@ public class IRBuilder extends ELNode.Visitor {
     this.constants = new ArrayList<>();
     this.constIndex = new HashMap<>();
     this.expandoMap = new ExpandoMap();
+    this.errors = new ArrayList<>();
   }
 
   /**
@@ -251,6 +256,7 @@ public class IRBuilder extends ELNode.Visitor {
     this.currentScope = scope;
     this.currentFile = parent.currentFile;
     this.expandoMap = parent.expandoMap;
+    this.errors = parent.errors;
 
     // Share constants with parent so pool indices are consistent
     this.constants = parent.constants;
@@ -280,13 +286,24 @@ public class IRBuilder extends ELNode.Visitor {
     try {
       return ClassResolver.getInstance(elctx).resolveClass(name);
     } catch (ClassNotFoundException ex) {
-      throw reportError(pos, _T(EL_CLASS_NOT_FOUND, name));
+      reportError(pos, _T(EL_CLASS_NOT_FOUND, name));
+      return Object.class;
     }
   }
 
-  private ParseException reportError(int pos, String message) {
-    return new ParseException(currentFile, Position.line(pos),
-                              Position.column(pos), message);
+  private void reportError(int pos, String message) {
+    errors.add(new ParseError(pos, message, null));
+    if (errors.size() >= 20)
+      throw new ParseException(currentFile, errors);
+
+    // Suppress further code generation.
+    current.clear();
+    current.setDead();
+  }
+
+  private void failIfErrors() {
+    if (!errors.isEmpty())
+      throw new ParseException(currentFile, errors);
   }
 
   // ============ MAIN DISPATCH ============
@@ -474,29 +491,38 @@ public class IRBuilder extends ELNode.Visitor {
 
   private void buildStoreVariable(ELNode.IDENT node) {
     if (node.symbol != null &&
-        (node.symbol.clazz != null || node.symbol.func != null))
-      throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
+        (node.symbol.clazz != null || node.symbol.func != null)) {
+      reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
+      return;
+    }
 
     if (node.symbol != null && node.symbol.scope.isClassScope()) {
       IRClass currentClass = currentScope.enclosingClass();
       IRClass ownerClass = node.symbol.scope.frontier.symbol.clazz;
       if (ownerClass == currentClass) {
-        if (node.id.equals("this"))
-          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
-                                         currentClass.name, node.id));
+        if (node.id.equals("this")) {
+          reportError(node.pos,
+                      _T(EL_PROPERTY_NOT_WRITABLE, currentClass.name, node.id));
+          return;
+        }
+
         if (node.symbol.isFinal() &&
-            !func.name().equals("<init>") && !func.name().equals("<clinit>"))
-          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
-                                         currentClass.name, node.id));
+            !func.name().equals("<init>") && !func.name().equals("<clinit>")) {
+          reportError(node.pos,
+                      _T(EL_PROPERTY_NOT_WRITABLE, currentClass.name, node.id));
+          return;
+        }
 
         if (node.symbol.isStatic())
           current.emitPutStatic(currentClass, node.id);
         else
           current.emitPutField(node.id);
       } else {
-        if (node.symbol.isFinal())
-          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
-                                         currentClass.name, node.id));
+        if (node.symbol.isFinal()) {
+          reportError(node.pos,
+                      _T(EL_PROPERTY_NOT_WRITABLE, currentClass.name, node.id));
+          return;
+        }
 
         if (node.symbol.isStatic())
           current.emitPutStatic(ownerClass, node.id);
@@ -512,8 +538,10 @@ public class IRBuilder extends ELNode.Visitor {
         }
       }
     } else {
-      if (node.symbol != null && node.symbol.isFinal())
-        throw reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
+      if (node.symbol != null && node.symbol.isFinal()) {
+        reportError(node.pos, _T(EL_VARIABLE_NOT_WRITABLE, node.id));
+        return;
+      }
 
       if (node.symbol == null) {
         if (expandoClass != null && buildStoreExpandoProperty(node.pos, node.id))
@@ -554,12 +582,12 @@ public class IRBuilder extends ELNode.Visitor {
         if (var.isPresent()) {
           ELNode.DEFINE def = var.get();
           if (def.expr instanceof ELNode.CLASSDEF)
-            throw reportError(pos, _T(EL_PROPERTY_NOT_FOUND, clazz.name, id));
+            reportError(pos, _T(EL_PROPERTY_NOT_FOUND, clazz.name, id));
           if (isSuperClass && def.symbol.isPrivate())
-            throw reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, id));
+            reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, id));
           if (currentScope.isStaticScope() && !def.symbol.isStatic())
-            throw reportError(pos,
-                              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
+            reportError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
+
           if (def.expr instanceof ELNode.CLASSDEF cdef) {
             buildConst(cdef.symbol.clazz);
           } else if (def.expr instanceof ELNode.LAMBDA fn) {
@@ -626,14 +654,14 @@ public class IRBuilder extends ELNode.Visitor {
         if (var.isPresent()) {
           ELNode.DEFINE def = var.get();
           if (isSuperClass && def.symbol.isPrivate())
-            throw reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, id));
+            reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, id));
           if (currentScope.isStaticScope() && !def.symbol.isStatic())
-            throw reportError(pos,
-                              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
+            reportError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, id));
           if (def.symbol.isFinal() ||
               def.expr instanceof ELNode.CLASSDEF ||
               def.expr instanceof ELNode.LAMBDA)
-            throw reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, clazz.name, id));
+            reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, clazz.name, id));
+
           if (def.symbol.isStatic()) {
             current.emitPutStatic(clazz, id);
           } else {
@@ -659,8 +687,7 @@ public class IRBuilder extends ELNode.Visitor {
         if (Modifier.isPublic(field.getModifiers()) ||
             Modifier.isProtected(field.getModifiers())) {
           if (Modifier.isFinal(field.getModifiers()))
-            throw reportError(
-              pos, _T(EL_PROPERTY_NOT_WRITABLE, baseClass.getName(), id));
+            reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, baseClass.getName(), id));
           if (Modifier.isStatic(field.getModifiers())) {
             current.emitPutStatic(field);
           } else {
@@ -728,7 +755,7 @@ public class IRBuilder extends ELNode.Visitor {
     try {
       Field field = expandoClass.getField(name);
       if (Modifier.isFinal(field.getModifiers()))
-        throw reportError(pos, _T(EL_VARIABLE_NOT_WRITABLE, name, name));
+        reportError(pos, _T(EL_VARIABLE_NOT_WRITABLE, name, name));
       if (Modifier.isStatic(field.getModifiers())) {
         current.emitPutStatic(field);
       } else {
@@ -762,9 +789,9 @@ public class IRBuilder extends ELNode.Visitor {
           Scope classScope = currentScope.enclosingClassScope();
           if (var.symbol == null || classScope == null ||
               var.symbol.scope != classScope)
-            throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+            reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
           if (!buildLoadBaseClassField(node.pos, key, var.id.equals("super")))
-            throw reportError(node.pos,
+            reportError(node.pos,
               _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
           return;
         }
@@ -775,8 +802,7 @@ public class IRBuilder extends ELNode.Visitor {
         for (ELNode.DEFINE def : irc.node.cvars) {
           if (def.id.equals(key)) {
             if (!def.symbol.isPublic())
-              throw reportError(
-                node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
+              reportError(node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
             if (def.symbol.clazz != null) {
               buildConst(def.symbol.clazz);
             } else if (def.symbol.func != null) {
@@ -880,11 +906,16 @@ public class IRBuilder extends ELNode.Visitor {
         } else {
           Scope classScope = currentScope.enclosingClassScope();
           if (var.symbol == null || classScope == null ||
-              var.symbol.scope != classScope)
-            throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-          if (!buildStoreBaseClassField(node.pos, key, var.id.equals("super")))
-            throw reportError(node.pos,
-              _T(EL_PROPERTY_NOT_FOUND, currentScope.enclosingClass().name, key));
+              var.symbol.scope != classScope) {
+            reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+            return;
+          }
+
+          if (!buildStoreBaseClassField(node.pos, key, var.id.equals("super"))) {
+            reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND,
+                                     currentScope.enclosingClass().name, key));
+          }
+
           return;
         }
       }
@@ -895,14 +926,11 @@ public class IRBuilder extends ELNode.Visitor {
         for (ELNode.DEFINE def : irc.node.cvars) {
           if (def.id.equals(key)) {
             if (!def.symbol.isPublic())
-              throw reportError(
-                node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
+              reportError(node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
             if (def.symbol.isFinal())
-              throw reportError(
-                node.pos, _T(EL_PROPERTY_NOT_WRITABLE, irc.name, key));
+              reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE, irc.name, key));
             if (def.symbol.clazz != null || def.symbol.func != null)
-              throw reportError(
-                node.pos, _T(EL_PROPERTY_NOT_WRITABLE, irc.name, key));
+              reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE, irc.name, key));
             current.emitPutStatic(irc, key);
             return;
           }
@@ -912,9 +940,11 @@ public class IRBuilder extends ELNode.Visitor {
       // Access outer class member variable via `Outer.this.name`.
       Symbol outerSym = getOuterClassMember(node.right, key);
       if (outerSym != null) {
-        if (outerSym.func != null || outerSym.isFinal())
-          throw reportError(node.pos,
-                            _T(EL_PROPERTY_NOT_WRITABLE, outerSym.name, key));
+        if (outerSym.func != null || outerSym.isFinal()) {
+          reportError(node.pos,
+                      _T(EL_PROPERTY_NOT_WRITABLE, outerSym.name, key));
+          return;
+        }
 
         IRClass outerClass = outerSym.scope.enclosingClass();
         IRClass currentClass = currentScope.enclosingClass();
@@ -936,8 +966,9 @@ public class IRBuilder extends ELNode.Visitor {
         // Cannot mutate a Java method reference.
         if (Arrays.stream(javaClass.getMethods())
                   .anyMatch(m -> m.getName().equals(key))) {
-          throw reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
-                                         javaClass.getName(), key));
+          reportError(node.pos, _T(EL_PROPERTY_NOT_WRITABLE,
+                                   javaClass.getName(), key));
+          return;
         }
       }
     }
@@ -972,9 +1003,11 @@ public class IRBuilder extends ELNode.Visitor {
       IRClass outerClass = base.symbol.clazz;
       IRClass currentClass = currentScope.enclosingClass();
       for (IRClass c = currentClass; c != outerClass; c = c.outer) {
-        if (c == null)
-          throw reportError(node.pos, base.id + " is not an outer class of " +
-                                      "current class");
+        if (c == null) {
+          reportError(node.pos,
+                      base.id + " is not an outer class of " + "current class");
+          return null;
+        }
       }
 
       Optional<ELNode.DEFINE> var =
@@ -984,9 +1017,10 @@ public class IRBuilder extends ELNode.Visitor {
                       Arrays.stream(outerClass.node.ivars))
           .filter(def -> def.id.equals(key))
           .findFirst();
-      if (var.isEmpty())
-        throw reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, outerClass.name,
-                                       key));
+      if (var.isEmpty()) {
+        reportError(node.pos, _T(EL_PROPERTY_NOT_FOUND, outerClass.name, key));
+        return null;
+      }
       return var.get().symbol;
     }
     return null;
@@ -1010,7 +1044,7 @@ public class IRBuilder extends ELNode.Visitor {
       int mods = field.getModifiers();
       if (Modifier.isPublic(mods) && Modifier.isStatic(mods)) {
         if (Modifier.isFinal(mods))
-          throw reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, cls.getName(), name));
+          reportError(pos, _T(EL_PROPERTY_NOT_WRITABLE, cls.getName(), name));
         current.emitPutStatic(field);
         return true;
       }
@@ -1022,8 +1056,10 @@ public class IRBuilder extends ELNode.Visitor {
     ELNode base = node.right;
 
     if (base instanceof ELNode.IDENT ident) {
-      if (ident.id.equals("super"))
-        throw reportError(node.pos, _T(EL_MISPLACED_SUPER));
+      if (ident.id.equals("super")) {
+        reportError(node.pos, _T(EL_MISPLACED_SUPER));
+        return;
+      }
 
       if (ident.symbol != null) {
         if (ident.symbol.func != null) {
@@ -1117,11 +1153,17 @@ public class IRBuilder extends ELNode.Visitor {
           } else {
             Scope classScope = currentScope.enclosingClassScope();
             if (var.symbol == null || classScope == null ||
-                var.symbol.scope != classScope)
-              throw reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-            if (!buildThisCall(node, key, var.id.equals("super")))
-              throw reportError(node.pos,
-                _T(EL_METHOD_NOT_FOUND, currentScope.enclosingClass().name, key));
+                var.symbol.scope != classScope) {
+              reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
+              return;
+            }
+
+            if (!buildThisCall(node, key, var.id.equals("super"))) {
+              reportError(node.pos, _T(EL_METHOD_NOT_FOUND,
+                                       currentScope.enclosingClass().name,
+                                       key));
+            }
+
             return;
           }
         }
@@ -1130,9 +1172,10 @@ public class IRBuilder extends ELNode.Visitor {
         if (irc != null) {
           for (ELNode.DEFINE def : irc.node.cvars) {
             if (def.id.equals(key)) {
-              if (!def.symbol.isPublic())
-                throw reportError(
-                  node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
+              if (!def.symbol.isPublic()) {
+                reportError(node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
+                return;
+              }
               if (def.symbol.clazz != null) {
                 buildClassCall(node.pos, def.symbol.clazz, node.args, node.keys);
                 return;
@@ -1153,8 +1196,9 @@ public class IRBuilder extends ELNode.Visitor {
             buildDirectCall(fn.symbol, args);
             return;
           } else {
-            throw reportError(node.pos,
-                              _T(EL_METHOD_NOT_FOUND, outerSym.clazz.name, key));
+            reportError(node.pos,
+                        _T(EL_METHOD_NOT_FOUND, outerSym.clazz.name, key));
+            return;
           }
         }
 
@@ -1215,15 +1259,17 @@ public class IRBuilder extends ELNode.Visitor {
         for (ELNode.DEFINE def : c.node.cvars) {
           if (def.id.equals(key.value) && def.symbol.clazz != null) {
             if (!def.symbol.isPublic())
-              throw reportError(node.pos, _T(EL_ILLEGAL_ACCESS, c.name, def.id));
+              reportError(node.pos, _T(EL_ILLEGAL_ACCESS, c.name, def.id));
             return def.symbol.clazz;
           }
         }
 
         for (ELNode.DEFINE def : c.node.ivars) {
-          if (def.id.equals(key.value) && def.symbol.clazz != null)
-            throw reportError(node.pos,
-              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, def.id));
+          if (def.id.equals(key.value) && def.symbol.clazz != null) {
+            reportError(node.pos,
+                        _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, def.id));
+            return null;
+          }
         }
       }
     }
@@ -1260,8 +1306,11 @@ public class IRBuilder extends ELNode.Visitor {
       }
     }
 
-    if (load)
-      throw reportError(node.pos, _T(EL_CLASS_NOT_FOUND, buf.toString()));
+    if (load) {
+      reportError(node.pos, _T(EL_CLASS_NOT_FOUND, buf.toString()));
+      return Object.class;
+    }
+
     return null;
   }
 
@@ -1318,7 +1367,12 @@ public class IRBuilder extends ELNode.Visitor {
       // Pad with default values.
       xargs = new ELNode[nvars];
     } else if (varargs ? (argc < nvars - 1) : (argc != nvars)) {
-      throw reportError(pos, _T(EL_FN_BAD_ARG_COUNT, name, nvars, argc));
+      reportError(pos, _T(EL_FN_BAD_ARG_COUNT, name, nvars, argc));
+
+      // Suppress java.lang.ArrayIndexOutOfBoundsException.
+      xargs = new ELNode[nvars];
+      Arrays.fill(xargs, new ELNode.NULL(0));
+      return xargs;
     }
 
     // Rearrange named arguments
@@ -1326,8 +1380,10 @@ public class IRBuilder extends ELNode.Visitor {
       for (int i = 0; i < argc; i++) {
         if (keys[i] != null) {
           int j = indexOfVar(keys[i], vars, varargs);
-          if (j == -1)
-              throw reportError(pos, _T(EL_UNKNOWN_ARG_NAME, keys[i]));
+          if (j == -1) {
+            reportError(pos, _T(EL_UNKNOWN_ARG_NAME, keys[i]));
+            continue;
+          }
           if (xargs == null)
             xargs = new ELNode[argc];
           xargs[j] = args[i];
@@ -1350,9 +1406,12 @@ public class IRBuilder extends ELNode.Visitor {
       // Assign default values.
       for (; j < xargs.length; j++) {
         if (xargs[j] == null) {
-          if (vars[j].expr == null)
-            throw reportError(pos, _T(EL_MISSING_ARG_VALUE, vars[j].id));
-          xargs[j] = vars[j].expr;
+          if (vars[j].expr == null) {
+            reportError(pos, _T(EL_MISSING_ARG_VALUE, vars[j].id));
+            xargs[j] = new ELNode.NULL(0);
+          } else {
+            xargs[j] = vars[j].expr;
+          }
         }
       }
 
@@ -1643,24 +1702,10 @@ public class IRBuilder extends ELNode.Visitor {
     if (((ELNode.LAMBDA)sym.def.expr).varargs)
       return false; // FIXME: handle varargs
 
-    // Check @inline metadata.
-    boolean forceInline = false;
-    if (sym.def.meta != null) {
-      for (ELNode.METADATA meta : sym.def.meta.metadata) {
-        if (meta.type.equals("inline")) {
-          if (meta.keys.length == 0) {
-            forceInline = true;
-          } else if (meta.keys.length == 1 && meta.keys[0].equals("value") &&
-                     meta.values[0] instanceof ELNode.BOOLEANVAL b) {
-            if (b.value)
-              forceInline = true;
-            else
-              return false;
-          }
-        }
-      }
-    }
-    if (!forceInline && sym.func.code().length > 50)
+    // Check @inline/@noinline metadata.
+    if (sym.def.isAnnotationPresent("noinline"))
+      return false;
+    if (!sym.def.isAnnotationPresent("inline") && sym.func.code().length > 35)
       return false;
 
     // Check self recursion function.
@@ -1694,11 +1739,11 @@ public class IRBuilder extends ELNode.Visitor {
         if (var.isPresent()) {
           ELNode.DEFINE def = var.get();
           if (isSuperClass && def.symbol.isPrivate())
-            throw reportError(node.pos,
-                              _T(EL_ILLEGAL_ACCESS, clazz.name, key));
+            reportError(node.pos,
+                        _T(EL_ILLEGAL_ACCESS, clazz.name, key));
           if (currentScope.isStaticScope() && !def.symbol.isStatic())
-            throw reportError(node.pos,
-                              _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
+            reportError(node.pos,
+                        _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
           ELNode[] args = getCallArgs(node.pos, (ELNode.LAMBDA)def.expr,
                                       node.args, node.keys);
           if (!isSuper && inTailPosition && def.symbol.func == this.func)
@@ -1725,10 +1770,12 @@ public class IRBuilder extends ELNode.Visitor {
     mc = resolver.resolveStaticMethod(baseClass, key);
     if (mc == null) {
       mc = resolver.resolveProtectedMethod(baseClass, key);
-      if (mc != null && currentScope.isStaticScope())
-        throw reportError(node.pos,
-                          _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
       isStatic = false;
+      if (mc != null && currentScope.isStaticScope()) {
+        reportError(node.pos,
+                    _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
+        return true;
+      }
     }
 
     if (mc != null) {
@@ -2127,10 +2174,12 @@ public class IRBuilder extends ELNode.Visitor {
     Symbol sym = (body instanceof ELNode.IDENT ident) ? ident.symbol :
                  (body instanceof ELNode.LAMBDA lambda) ? lambda.symbol : null;
     if (sym != null && sym.func != null) {
-      if (sym.func.paramCount() > 1)
-        throw reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT, sym.func.name(),
-                                       sym.func.paramCount(), 1));
       direct = true;
+      if (sym.func.paramCount() > 1) {
+        reportError(body.pos, _T(EL_FN_BAD_ARG_COUNT, sym.func.name(),
+                                 sym.func.paramCount(), 1));
+        return false;
+      }
     }
 
     // Check if the body is a global function.
@@ -2586,7 +2635,7 @@ public class IRBuilder extends ELNode.Visitor {
         buildDynamicCall(null);
       }
     } else {
-      throw reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
+      reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
     }
   }
 
@@ -2604,7 +2653,7 @@ public class IRBuilder extends ELNode.Visitor {
         buildDynamicCall(null);
       }
     } else {
-      throw reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
+      reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
     }
   }
 
@@ -2764,7 +2813,7 @@ public class IRBuilder extends ELNode.Visitor {
     else if (target instanceof ELNode.ACCESS access)
       buildStoreProperty(access);
     else
-      throw reportError(target.pos, _T(EL_READONLY_EXPRESSION));
+      reportError(target.pos, _T(EL_READONLY_EXPRESSION));
 
     // If preincrement, stack top is the return value, otherwise pop and
     // keep duped value on top.
@@ -3290,14 +3339,16 @@ public class IRBuilder extends ELNode.Visitor {
 
   public void visit(ELNode.BREAK node) {
     if (loopStack.isEmpty())
-      throw reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "break"));
-    current.emitJump(loopStack.peek().breakBlock());
+      reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "break"));
+    else
+      current.emitJump(loopStack.peek().breakBlock());
   }
 
   public void visit(ELNode.CONTINUE node) {
     if (loopStack.isEmpty())
-      throw reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "continue"));
-    current.emitJump(loopStack.peek().continueBlock());
+      reportError(node.pos, _T(EL_STATEMENT_NOT_IN_LOOP, "continue"));
+    else
+      current.emitJump(loopStack.peek().continueBlock());
   }
 
   public void visit(ELNode.RETURN node) {
@@ -3463,8 +3514,10 @@ public class IRBuilder extends ELNode.Visitor {
           constructors.add(c);
       }
 
-      if (constructors.isEmpty())
-        throw reportError(pos, _T(EL_CONSTRUCTOR_NOT_FOUND, baseClass.getName()));
+      if (constructors.isEmpty()) {
+        reportError(pos, _T(EL_CONSTRUCTOR_NOT_FOUND, baseClass.getName()));
+        return;
+      }
 
       if (constructors.size() == 1) {
         // For non-overload constructor, generate the constructor invocation.
@@ -3575,7 +3628,8 @@ public class IRBuilder extends ELNode.Visitor {
     if (c != null)
       return c;
 
-    throw reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
+    reportError(node.pos, _T(EL_DEFAULT_VALUE_NOT_CONSTANT));
+    return new ELNode.NULL(0);
   }
 
   public void visit(ELNode.CLASSDEF node) {
@@ -3595,7 +3649,8 @@ public class IRBuilder extends ELNode.Visitor {
           // The base class is an imported java class.
           base = loadClassAtCompileTime(node.pos, c.getClassName());
         } else {
-          throw reportError(node.pos, _T(EL_NOT_A_CLASS, ident.id));
+          reportError(node.pos, _T(EL_NOT_A_CLASS, ident.id));
+          base = Object.class;
         }
       } else {
         // The base class may be an implicitly imported java class or a full
@@ -3611,7 +3666,7 @@ public class IRBuilder extends ELNode.Visitor {
       for (int i = 0; i < interfaces.length; i++) {
         interfaces[i] = loadClassAtCompileTime(node.pos, node.ifaces[i]);
         if (!interfaces[i].isInterface())
-          throw reportError(node.pos, node.ifaces[i] + " is not an interface");
+          reportError(node.pos, node.ifaces[i] + " is not an interface");
       }
     } else {
       interfaces = new Class<?>[0];
@@ -4199,8 +4254,10 @@ public class IRBuilder extends ELNode.Visitor {
       }
     } else {
       Class<?> cls = resolveJavaClass(node.base, true);
-      if (!buildNew(cls, node.args))
-        throw reportError(node.pos, "Constructor not found: " + cls.getName());
+      if (!buildNew(cls, node.args)) {
+        reportError(node.pos, "Constructor not found: " + cls.getName());
+        return;
+      }
     }
 
     if (node.props != null) {
@@ -4260,7 +4317,8 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visitNode(ELNode node) {
-    throw reportError(node.pos, "Unknown node type");
+    reportError(node.pos, "Unknown node type");
+    failIfErrors();
   }
 
   // ── Block management ──
@@ -5004,6 +5062,7 @@ public class IRBuilder extends ELNode.Visitor {
                                 symTable.currentScope());
     b.build(node);
     b.current.emitReturn();
+    b.failIfErrors();
     return b.finish(null);
   }
 
@@ -5042,6 +5101,7 @@ public class IRBuilder extends ELNode.Visitor {
       b.emitReturn(null);
     }
 
+    b.failIfErrors();
     b.finish(null);
     return output;
   }

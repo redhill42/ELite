@@ -45,6 +45,7 @@ import static org.elite.ir.Opcode.*;
 final class IREmitter {
   private final IntList buf = new IntList();
   private final IRBuilder builder;
+  private boolean dead;
 
   IREmitter(IRBuilder builder) {
     this.builder = builder;
@@ -53,12 +54,18 @@ final class IREmitter {
   // ── Core emit methods ──
 
   public boolean isDead() {
+    if (dead)
+      return true;
     if (!buf.isEmpty()) {
       // Instruction after jump or return is dead.
       int op = IRFormat.opcode(buf.back());
       return op == JUMP || op == RETURN || op == THROW || op == THROW_EXCEPTION;
     }
     return false;
+  }
+
+  public void setDead() {
+    dead = true;
   }
 
   public void emit(int opcode, int payload) {
