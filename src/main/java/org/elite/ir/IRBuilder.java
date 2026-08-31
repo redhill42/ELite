@@ -28,6 +28,7 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
 import org.elite.eval.Runtime;
+import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
@@ -450,8 +451,15 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.symbol == null) {
         if (expandoClass != null && buildLoadExpandoProperty(node.id))
           return;
+
         if (buildLoadBaseClassField(node.pos, node.id, false))
           return;
+
+        Class<?> c = resolveJavaClass(node);
+        if (c != null) {
+          buildConst(c);
+          return;
+        }
       }
 
       if (node.symbol != null && node.symbol.captured &&
@@ -1056,9 +1064,28 @@ public class IRBuilder extends ELNode.Visitor {
           return;
 
         // Resolve java class.
-        Class<?> cls = resolveClassAtCompileTime(ident.id);
-        if (cls != null && buildNew(cls, node.args))
-          return;
+        Class<?> cls = resolveJavaClass(ident);
+        if (cls != null) {
+          if (cls.isPrimitive() && node.args.length == 1) {
+            if (cls == Void.TYPE) {
+              build(node.args[0]);
+              current.emitPop();
+              current.emitPushNull();
+            } else {
+              buildCoerce(node.args[0], TypeCoercion.getBoxedType(cls));
+            }
+            return;
+          } else {
+            if (buildNew(cls, node.args))
+              return;
+
+            current.emitPushEnv();
+            buildConst(cls);
+            buildTuple(node.args);
+            buildDynamicCall(node.keys);
+            return;
+          }
+        }
 
         // Resolve target at runtime if the given id is not a local var
         current.emitPushEnv();

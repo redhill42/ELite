@@ -1167,7 +1167,30 @@ public class BytecodeCompiler {
         } else if (value instanceof String) {
           emitPushString(v, (String)value);
         } else if (value instanceof Class<?> c) {
-          mc.LDC(Type.getType(c));
+          if (c.isPrimitive()) {
+            if (c == Void.TYPE)
+              mc.GETSTATIC(Void.class, "TYPE", Class.class);
+            else if (c == Boolean.TYPE)
+              mc.GETSTATIC(Boolean.class, "TYPE", Class.class);
+            else if (c == Byte.TYPE)
+              mc.GETSTATIC(Byte.class, "TYPE", Class.class);
+            else if (c == Short.TYPE)
+              mc.GETSTATIC(Short.class, "TYPE", Class.class);
+            else if (c == Character.TYPE)
+              mc.GETSTATIC(Character.class, "TYPE", Class.class);
+            else if (c == Integer.TYPE)
+              mc.GETSTATIC(Integer.class, "TYPE", Class.class);
+            else if (c == Long.TYPE)
+              mc.GETSTATIC(Long.class, "TYPE", Class.class);
+            else if (c == Float.TYPE)
+              mc.GETSTATIC(Float.class, "TYPE", Class.class);
+            else if (c == Double.TYPE)
+              mc.GETSTATIC(Double.class, "TYPE", Class.class);
+            else
+              throw new AssertionError();
+          } else {
+            mc.LDC(Type.getType(c));
+          }
         } else if (value instanceof IRClass irc) {
           mc.LDC(Type.getType(AsmType.toDescriptor(irc.internalName)));
         } else if (value instanceof Symbol sym) {

@@ -200,9 +200,11 @@ class ELIntegrationTest extends EliteTestBase {
 
     @Test
     void functionComposition() {
-        exec("define double(x) => x * 2");
-        exec("define addOne(x) => x + 1");
-        assertEquals(11L, evalL("addOne(double(5))"));
+        exec("""
+             define double(x) => x * 2
+             define addOne(x) => x + 1
+             assert addOne(double(5)) == 11
+             """);
     }
 
     @Test
@@ -215,8 +217,10 @@ class ELIntegrationTest extends EliteTestBase {
 
     @Test
     void lambdaExpression() {
-        exec("define double = \\x => x * 2");
-        assertEquals(20L, evalL("double(10)"));
+        exec("""
+             define double = \\x => x * 2
+             assert double(10) == 20
+             """);
     }
 
     @Test
@@ -244,9 +248,11 @@ class ELIntegrationTest extends EliteTestBase {
 
     @Test
     void pipeOperator() {
-        exec("define double(x) => x * 2");
-        exec("define addOne(x) => x + 1");
-        assertEquals(11L, evalL("5 -> double -> addOne"));
+        exec("""
+             define double(x) => x * 2
+             define addOne(x) => x + 1
+             assert (5 -> double -> addOne) == 11
+             """);
     }
 
     // ---- String interpolation ----

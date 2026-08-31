@@ -119,10 +119,12 @@ class OperatorTest extends EliteTestBase {
 
     @Test
     void operatorResolution() {
-        exec("define double(x) => x * 2");
-        exec("define addOne(x) => x + 1");
-        // The transform operator ->
-        assertEquals(11L, evalL("5 -> double -> addOne"));
+        exec("""
+             define double(x) => x * 2
+             define addOne(x) => x + 1
+             // The transform operator ->
+             assert (5 -> double -> addOne) == 11
+             """);
     }
 
     // ---- Spaceship operator ----

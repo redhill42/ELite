@@ -14,8 +14,10 @@ class LambdaClosureTest extends EliteTestBase {
 
     @Test
     void singleParamLambda() {
-        exec("define double = \\x => x * 2");
-        assertEquals(20L, evalL("double(10)"));
+        exec("""
+             define double = \\x => x * 2
+             assert double(10) == 20
+             """);
     }
 
     @Test
@@ -79,9 +81,11 @@ class LambdaClosureTest extends EliteTestBase {
 
     @Test
     void mapOverList() {
-        exec("define double(x) => x * 2");
-        Object result = eval("[1, 2, 3].map(double)");
-        assertNotNull(result);
+        exec("""
+             define double(x) => x * 2
+             let result = [1, 2, 3].map(double)
+             assert result != null
+             """);
     }
 
     // ---- Default parameters ----
@@ -131,9 +135,11 @@ class LambdaClosureTest extends EliteTestBase {
 
     @Test
     void lambdaPipeline() {
-        exec("define double(x) => x * 2");
-        exec("define addOne(x) => x + 1");
-        // Method chain
-        assertEquals(11L, evalL("5 -> double -> addOne"));
+        exec("""
+             define double(x) => x * 2
+             define addOne(x) => x + 1
+             // Method chain
+             assert (5 -> double -> addOne) == 11
+             """);
     }
 }
