@@ -94,6 +94,7 @@ public final class TypeCoercion
         typeMap.put(BigDecimal.class, BIG_DECIMAL_TYPE);
         typeMap.put(Number.class, GENERIC_NUMBER_TYPE);
         typeMap.put(String.class, STRING_TYPE);
+        typeMap.put(CharSequence.class, STRING_TYPE);
         typeMap.put(Object.class, OBJECT_TYPE);
 
         primitives.put(Void.TYPE, Void.class);

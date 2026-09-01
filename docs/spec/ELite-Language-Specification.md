@@ -382,7 +382,6 @@ x                               // identifier
 postfix := primary
         |  postfix '.' identifier              -- field access
         |  postfix '->' identifier             -- pipe/message send
-        |  postfix '@' identifier              -- postfix application
         |  postfix '[' expression ']'          -- index access
         |  postfix '[' expression '..' expression ']'  -- slice
         |  postfix '(' [ arguments ] ')'       -- function call
@@ -533,54 +532,6 @@ x -> f -> g         // message-passing (pipe) style
 All three forms are equivalent when `f` is a unary function. The pipe operator
 `->` is left-associative: `x -> f -> g` is `(x -> f) -> g`, equivalent to `g(f(x))`.
 
-#### 4.10.1 Pipe Operator (`->`) vs Postfix Application (`@`)
-
-Both `->` and `@` enable chaining data through a pipeline of operations,
-avoiding the deeply nested function-call style `f(g(h(x)))`. They share
-the same left-associative semantics but carry different connotations:
-
-|          | `->` (pipe / message send)                     | `@` (postfix application)                       |
-|----------|------------------------------------------------|--------------------------------------------------|
-| Concept  | Message passing — **send** data to a processor  | Function application — **apply** an operation    |
-| Paradigm | Message-passing, actor-style                    | Applicative, data-first                          |
-| Idiom    | `data -> filter -> map -> print`                | `data @filter @map @print`                       |
-| Expands to | `print(map(filter(data)))`                    | Same                                             |
-
-```elite
-// Both forms are equivalent for unary functions:
-"hello" -> greet            // "send this string to greet"
-"hello" @greet              // "apply greet to this string"
-
-// Pipeline chaining — both are left-associative:
-data -> filter -> map -> reduce    // message-passing style
-data @filter @map @reduce          // applicative style
-
-// Both produce the same result:
-5 -> inc -> double           // → 12
-5 @inc @double               // → 12
-```
-
-`->` is often preferred when the emphasis is on **data flow through a
-processing pipeline** (data in, result out), while `@` is favored when
-the emphasis is on **applying operations to a value** in a functional
-style. Choose whichever reads more naturally for the given context.
-
-Both operators can be mixed freely:
-
-```elite
-data @filter @map -> result    // style is a choice, not a constraint
-```
-
-#### 4.10.2 Postfix Application with Tuples
-
-When the left side of `@` is a tuple, the right-side function receives
-the tuple elements as separate arguments:
-
-```elite
-(3, 4) @add                    // equivalent to add(3, 4)
-(a, b, c) @maxOfThree          // equivalent to maxOfThree(a, b, c)
-```
-
 ### 4.11 List Comprehensions
 
 ```
@@ -611,27 +562,27 @@ or bind additional variables.
 
 Operators are ordered from highest (tightest binding) to lowest precedence:
 
-| Prec | Class | Operators                                             | Assoc |
-|------|-------|-------------------------------------------------------|-------|
-| 18 | Postfix | `.` `->` `@` `[` `(` `++` `--`                        | Left |
-| 17 | Power | `^`                                                   | Right |
+| Prec | Class | Operators                                | Assoc |
+|------|-------|------------------------------------------|-------|
+| 18 | Postfix | `.` `->` `[` `(` `++` `--`               | Left |
+| 17 | Power | `^`                                      | Right |
 | 16 | Prefix | `+x` `-x` `!x` `not x` `` `!x`` `++x` `--x` `empty x` | — |
-| 15 | Transform | `x -> f`, `x @ f`                                     | Left |
-| 14 | Multiplicative | `*` `/` `%` `div`                                     | Left |
-| 13 | Additive | `+` `-`                                               | Left |
-| 12 | Shift | `<<` `>>` `>>>`                                       | Left |
-| 11 | Ordinal | `..` (range)                                          | — |
-| 10 | Comparison | `<` `>` `<=` `>=` `in` `not in` `instanceof` `is`     | — |
-| 9 | Equality | `==` `!=` `===` `!==`                                 | — |
-| 8 | Bitwise AND | `` `&``                                               | Left |
-| 7 | Bitwise XOR | `` `^``                                               | Left |
-| 6 | Bitwise OR | `` `\|``                                               | Left |
-| 5 | Logical AND | `&&` `and`                                            | Left |
-| 4 | Logical OR | `\|\|` `or`                                           | Left |
-| 3 | Coalesce | `??`                                                  | Left |
-| 2 | Conditional | `? :`                                                 | Right |
-| 1 | Assignment | `=` `:=` `+=` `-=` `*=` `/=` `%=` `~=`                | Right |
-| 0 | Sequential | `,` `;` `\n`                                          | Left |
+| 15 | Transform | `x -> f`                                 | Left |
+| 14 | Multiplicative | `*` `/` `%` `div`                        | Left |
+| 13 | Additive | `+` `-`                                  | Left |
+| 12 | Shift | `<<` `>>` `>>>`                          | Left |
+| 11 | Ordinal | `..` (range)                             | — |
+| 10 | Comparison | `<` `>` `<=` `>=` `in` `not in` `instanceof` `is` | — |
+| 9 | Equality | `==` `!=` `===` `!==`                    | — |
+| 8 | Bitwise AND | `` `&``                                  | Left |
+| 7 | Bitwise XOR | `` `^``                                  | Left |
+| 6 | Bitwise OR | `` `\|``                                  | Left |
+| 5 | Logical AND | `&&` `and`                               | Left |
+| 4 | Logical OR | `\|\|` `or`                              | Left |
+| 3 | Coalesce | `??`                                     | Left |
+| 2 | Conditional | `? :`                                    | Right |
+| 1 | Assignment | `=` `:=` `+=` `-=` `*=` `/=` `%=` `~=`   | Right |
+| 0 | Sequential | `,` `;` `\n`                             | Left |
 
 ---
 
@@ -1201,7 +1152,6 @@ Methods with operator names overload the corresponding operators:
 | `<(other)` | `a < b` | Less-than (also enables `<=`, `>`, `>=`) |
 | `~()` | `~x` | Unary string conversion |
 | `->(other)` | `x -> op` | Pipe/message send |
-| `@(other)` | `x @ op` | Postfix application |
 
 ```elite
 class Vector(x, y) {

@@ -312,7 +312,7 @@ public final class CoercionBootstrap {
       target = identity(Object.class);
     else if (obj instanceof Coercible)
       target = insertArguments(MH_selfCoerce, 1, getBoxedType(type));
-    else if (type == String.class)
+    else if (type == String.class || type == CharSequence.class)
       target = dispatchStringCoerce(obj);
     else if (type == Boolean.class || type == boolean.class)
       target = dispatchBooleanCoerce(obj);

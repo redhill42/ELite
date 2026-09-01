@@ -1165,7 +1165,7 @@ public class BytecodeCompiler {
             value instanceof Float   || value instanceof Double) {
           emitPushPrimitive(v, value);
         } else if (value instanceof String) {
-          emitPushString(v, (String)value);
+          mc.LDC(value);
         } else if (value instanceof Class<?> c) {
           if (c.isPrimitive()) {
             if (c == Void.TYPE)
@@ -1709,30 +1709,17 @@ public class BytecodeCompiler {
       case NEW_ARRAY ->
         mc.NEWARRAY((Class<?>)fn.getConstant(v.poolIndex()));
 
-      case NEW_FIXED_ARRAY -> {
-        mc.PUSH(v.payload());
-        mc.NEWARRAY((Class<?>)fn.getConstant(v.poolIndex()));
-      }
-
       case NEW_MULTI_ARRAY -> {
         Class<?> type = (Class<?>)fn.getConstant(v.poolIndex());
         Object array = Array.newInstance(type, new int[v.payload()]);
         mc.MULTIANEWARRAY(array.getClass(), v.payload());
       }
 
-      case LOAD_ARRAY -> {
-        mc.PUSH(v.payload());
+      case LOAD_ARRAY ->
         mc.XALOAD((Class<?>)fn.getConstant(v.poolIndex()));
-      }
-  
-      case STORE_ARRAY -> {
-        Class<?> c = (Class<?>)fn.getConstant(v.poolIndex());
-        emitCoerce(c);
-        mc.PUSH(v.payload());
-        mc.SWAP();
-        mc.XASTORE(c);
-      }
-  
+      case STORE_ARRAY ->
+        mc.XASTORE((Class<?>)fn.getConstant(v.poolIndex()));
+
       case GETFIELD -> {
         Object field = fn.getConstant(v.poolIndex());
         if (field instanceof Descriptors.Field f) {
@@ -2018,19 +2005,6 @@ public class BytecodeCompiler {
         }
         break;
       }
-
-      case STORE_ARRAY: {
-        Class<?> arrayType = (Class<?>)fn.getConstant(next.poolIndex());
-        if (arrayType.isPrimitive()) {
-          mc.PUSH(next.payload());
-          mc.PUSH_CONST(value);
-          emitPrimitiveConversion(value, arrayType);
-          mc.XASTORE(arrayType);
-          v.advance();
-          return;
-        }
-        break;
-      }
       }
 
       mc.BOX(value);
@@ -2067,22 +2041,6 @@ public class BytecodeCompiler {
         else
           mc.I2D();
       }
-    }
-
-    private void emitPushString(InstructionView v, String value) {
-      InstructionView next = peekNext(v);
-      if (next != null && next.opcode() == STORE_ARRAY) {
-        Class<?> arrayType = (Class<?>)fn.getConstant(next.poolIndex());
-        if (arrayType == String.class || arrayType == Object.class) {
-          mc.PUSH(next.payload());
-          mc.LDC(value);
-          mc.AASTORE();
-          v.advance();
-          return;
-        }
-      }
-
-      mc.LDC(value);
     }
 
     private void emitCoerce(Class<?> type) {

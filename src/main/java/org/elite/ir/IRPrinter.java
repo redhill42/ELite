@@ -108,7 +108,8 @@ final class IRPrinter {
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
          Opcode.INVOKE_DIRECT, Opcode.INVOKE_DYNAMIC, Opcode.INVOKE_METHOD,
-         Opcode.NEW, Opcode.CONSTRUCTOR, Opcode.GETFIELD, Opcode.PUTFIELD,
+         Opcode.NEW, Opcode.CONSTRUCTOR, Opcode.NEW_ARRAY, Opcode.NEW_MULTI_ARRAY,
+         Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY, Opcode.GETFIELD, Opcode.PUTFIELD,
          Opcode.GETSTATIC, Opcode.PUTSTATIC, Opcode.CHECKCAST, Opcode.BOX,
          Opcode.UNBOX, Opcode.DECLARE_NS ->
       formatConstPool(sb, constants, v.poolIndex());
@@ -116,12 +117,6 @@ final class IRPrinter {
     case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
          Opcode.JUMP_IF_NULL, Opcode.JUMP_IF_NONNULL ->
       sb.append(" B").append(v.jumpTarget());
-
-    case Opcode.NEW_FIXED_ARRAY, Opcode.NEW_MULTI_ARRAY,
-         Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY -> {
-      sb.append(" ").append(v.payload()).append(",");
-      formatConstPool(sb, constants, v.poolIndex());
-    }
 
     case Opcode.TRY, Opcode.NEW_TUPLE ->
       sb.append(" ").append(v.count());

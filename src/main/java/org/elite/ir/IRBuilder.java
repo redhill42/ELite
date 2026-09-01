@@ -1125,7 +1125,7 @@ public class IRBuilder extends ELNode.Visitor {
       buildConst(target.id);
       emitInvokeMethod(Runtime.class, "resolveCallTarget",
                        EvaluationContext.class, String.class);
-      buildTuple(args);
+      buildTuple(Object.class, args);
       emitCallIndy(keys);
       return;
     }
@@ -1151,7 +1151,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     // Evaluate target and generate dynamic call.
-    buildTuple(args);
+    buildTuple(Object.class, args);
     emitCallIndy(keys);
   }
 
@@ -1235,12 +1235,12 @@ public class IRBuilder extends ELNode.Visitor {
     if (acc.index instanceof ELNode.STRINGVAL key) {
       current.emitPushEnv();
       build(acc.right);
-      buildTuple(args);
+      buildTuple(Object.class, args);
       emitInvokeIndy(key.value, keys, false);
     } else {
       current.emitPushEnv();
       build(acc);
-      buildTuple(args);
+      buildTuple(Object.class, args);
       emitCallIndy(keys);
     }
   }
@@ -1428,20 +1428,23 @@ public class IRBuilder extends ELNode.Visitor {
     int nvars = lambda.vars.length;
 
     // Build argument for argument list, exclude varargs.
-    current.emitNewFixedArray(nvars, Object.class);
+    buildConstUnbox(nvars);
+    current.emitNewArray(Object.class);
     if (lambda.varargs)
       nvars--;
     for (int i = 0; i < nvars; i++) {
       current.emitDup();
+      buildConstUnbox(i);
       build(args[i]);
-      current.emitStoreArray(i, Object.class);
+      current.emitStoreArray(Object.class);
     }
 
     // Build vararg list as an array and put the array into argument list.
     if (lambda.varargs) {
       current.emitDup();
-      buildTuple(args, nvars, args.length - nvars);
-      current.emitStoreArray(nvars, Object.class);
+      buildConstUnbox(nvars);
+      buildTuple(Object.class, args, nvars, args.length - nvars);
+      current.emitStoreArray(Object.class);
     }
   }
 
@@ -1502,7 +1505,7 @@ public class IRBuilder extends ELNode.Visitor {
 
         current.emitPushEnv();
         buildConst(javaClass);
-        buildTuple(args);
+        buildTuple(Object.class, args);
         emitInvokeIndy("valueOf", null, false);
         return;
       }
@@ -1522,7 +1525,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Build tuple for var arg list.
     if (lambda.varargs)
-      buildTuple(args, nvars, args.length - nvars);
+      buildTuple(Object.class, args, nvars, args.length - nvars);
 
     // Copy tail call arguments.
     for (int i = lambda.vars.length; --i >= 0; ) {
@@ -1821,7 +1824,7 @@ public class IRBuilder extends ELNode.Visitor {
         buildConst(clazz.base);
       else
         current.emitPushThis();
-      buildTuple(args);
+      buildTuple(Object.class, args);
       emitInvokeIndy(name, keys, isSuper && !isStatic);
       return true;
     }
@@ -1876,7 +1879,7 @@ public class IRBuilder extends ELNode.Visitor {
       buildConst(expandoClass);
     else
       current.emitPushVar(0);
-    buildTuple(args);
+    buildTuple(Object.class, args);
     emitInvokeIndy(name, keys, false);
     return true;
   }
@@ -2157,13 +2160,17 @@ public class IRBuilder extends ELNode.Visitor {
     if (method.getDeclaringClass() == MathLib.class) {
       switch (method.getName()) {
       case "sum":
-        return buildMathReduce(args, Token.ADD);
+        buildMathReduce(args, Token.ADD);
+        return true;
       case "difference":
-        return buildMathReduce(args, Token.SUB);
+        buildMathReduce(args, Token.SUB);
+        return true;
       case "product":
-        return buildMathReduce(args, Token.MUL);
+        buildMathReduce(args, Token.MUL);
+        return true;
       case "divide":
-        return buildMathReduce(args, Token.DIV);
+        buildMathReduce(args, Token.DIV);
+        return true;
 
       case "remainder":
         build(args[0]);
@@ -2355,10 +2362,10 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitPushNull();
   }
 
-  private boolean buildMathReduce(ELNode[] args, int op) {
+  private void buildMathReduce(ELNode[] args, int op) {
     if (args.length == 0) {
       buildConst(0);
-      return true;
+      return;
     }
 
     build(args[0]);
@@ -2366,7 +2373,6 @@ public class IRBuilder extends ELNode.Visitor {
       build(args[i]);
       emitDynBinOp(op);
     }
-    return true;
   }
 
   // ── Literals: list, map, tuple, range ──
@@ -2419,7 +2425,7 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.TUPLE node) {
-    buildTuple(node.elems);
+    buildTuple(Object.class, node.elems);
   }
 
   public void visit(ELNode.RANGE node) {
@@ -2461,8 +2467,9 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.init != null) {
         for (int i = 0; i < node.init.elems.length; i++) {
           current.emitDup();
-          build(node.init.elems[i]);
-          current.emitStoreArray(i, componentType);
+          buildConstUnbox(i);
+          buildCoerce(node.init.elems[i], componentType);
+          current.emitStoreArray(componentType);
         }
       }
     } else {
@@ -2526,23 +2533,25 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPushNull();
       current.emitPushNull();
     } else {
-      buildTuple(node.keys);
+      buildTuple(Object.class, node.keys);
 
-      current.emitNewFixedArray(node.values.length, Object.class);
+      buildConstUnbox(node.values.length);
+      current.emitNewArray(Object.class);
       for (int i = 0; i < node.values.length; i++) {
         current.emitDup();
+        buildConstUnbox(i);
         if (tmpSlots != null && tmpSlots[i] != null)
           tmpSlots[i].load();
         else
           build(node.values[i]);
-        current.emitStoreArray(i, Object.class);
+        current.emitStoreArray(Object.class);
       }
     }
 
     if (node.children == null) {
       current.emitPushNull();
     } else {
-      buildTuple(node.children);
+      buildTuple(Object.class, node.children);
     }
 
     emitInvokeMethod(Runtime.class, "newXML", EvaluationContext.class,
@@ -2668,7 +2677,7 @@ public class IRBuilder extends ELNode.Visitor {
       } else {
         current.emitPushEnv();
         build(node.oper);
-        buildTuple(node.right);
+        buildTuple(Object.class, node.right);
         emitCallIndy(null);
       }
     } else {
@@ -2686,7 +2695,7 @@ public class IRBuilder extends ELNode.Visitor {
       } else {
         current.emitPushEnv();
         build(node.oper);
-        buildTuple(node.left, node.right);
+        buildTuple(Object.class, node.left, node.right);
         emitCallIndy(null);
       }
     } else {
@@ -4039,9 +4048,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     if (pat instanceof ELNode.CONS cons) {
       Slot seqSlot = new Slot();
-      Slot tmpSlot = null;
-      if (!isSimplePattern(cons.head) || !isSimplePattern(cons.tail))
-        tmpSlot = new Slot();
+      Slot tmpSlot = new Slot();
 
       current.emitInstanceOf(List.class);
       current.emitJumpIfFalse(failBlock);
@@ -4343,7 +4350,7 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitConstructor(ctor);
     } else {
       current.emitPushEnv();
-      buildTuple(args);
+      buildTuple(Object.class, args);
       current.emitInvokeDynamic(new Descriptors.Indy(
         constructBootstrap, cls.getSimpleName(), new Object[]{cls},
         Object.class, EvaluationContext.class, Object[].class));
@@ -5060,30 +5067,24 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   private void buildTuple(Class<?> type, ELNode[] elems, int start, int len) {
-    current.emitNewFixedArray(len, type);
+    buildConstUnbox(len);
+    current.emitNewArray(type);
     for (int i = 0; i < len; i++) {
       current.emitDup();
-      build(elems[start + i]);
-      if (type != Object.class)
-        current.emitCheckCast(type);
-      current.emitStoreArray(i, type);
+      buildConstUnbox(i);
+      buildCoerce(elems[start + i], type);
+      current.emitStoreArray(type);
     }
   }
 
-  private void buildTuple(ELNode... args) {
-    buildTuple(Object.class, args);
-  }
-
-  private void buildTuple(ELNode[] args, int start, int len) {
-    buildTuple(Object.class, args, start, len);
-  }
-
   private void buildTuple(Slot... slots) {
-    current.emitNewFixedArray(slots.length, Object.class);
+    buildConstUnbox(slots.length);
+    current.emitNewArray(Object.class);
     for (int i = 0; i < slots.length; i++) {
       current.emitDup();
+      buildConstUnbox(i);
       slots[i].load();
-      current.emitStoreArray(i, Object.class);
+      current.emitStoreArray(Object.class);
     }
   }
 

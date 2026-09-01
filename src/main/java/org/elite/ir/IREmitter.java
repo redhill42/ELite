@@ -454,20 +454,16 @@ final class IREmitter {
     emit(NEW_ARRAY, 0, builder.putConstant(type));
   }
 
-  public void emitNewFixedArray(int count, Class<?> type) {
-    emit(NEW_FIXED_ARRAY, count, builder.putConstant(type));
-  }
-
   public void emitNewMultiArray(int dims, Class<?> type) {
     emit(NEW_MULTI_ARRAY, dims, builder.putConstant(type));
   }
 
-  public void emitLoadArray(int index, Class<?> type) {
-    emit(LOAD_ARRAY, index, builder.putConstant(type));
+  public void emitLoadArray(Class<?> type) {
+    emit(LOAD_ARRAY, 0, builder.putConstant(type));
   }
 
-  public void emitStoreArray(int index, Object type) {
-    emit(STORE_ARRAY, index, builder.putConstant(type));
+  public void emitStoreArray(Object type) {
+    emit(STORE_ARRAY, 0, builder.putConstant(type));
   }
 
   public void emitGetField(IRClass clazz, String field) {

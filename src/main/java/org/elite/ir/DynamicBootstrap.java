@@ -45,6 +45,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.MutableCallSite;
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -89,6 +90,7 @@ public final class DynamicBootstrap {
   private static final MethodHandle MH_fillDefaultArgs;
   private static final MethodHandle MH_fillConstantDefaultArgs;
   private static final MethodHandle MH_buildVarArgs;
+  private static final MethodHandle MH_buildTypedVarArgs;
   private static final MethodHandle MH_buildDynamicVarArgs;
   private static final MethodHandle MH_coerceArgs;
   private static final MethodHandle MH_invokeMethodResolvable;
@@ -178,6 +180,10 @@ public final class DynamicBootstrap {
       MH_buildVarArgs = lookup.findStatic(
         DynamicBootstrap.class, "buildVarArgs",
         methodType(Object[].class, Object[].class, int.class));
+
+      MH_buildTypedVarArgs = lookup.findStatic(
+        DynamicBootstrap.class, "buildTypedVarArgs",
+        methodType(Object[].class, Object[].class, int.class, Class.class));
 
       MH_buildDynamicVarArgs = lookup.findStatic(
         DynamicBootstrap.class, "buildDynamicVarArgs",
@@ -1434,6 +1440,18 @@ public final class DynamicBootstrap {
     return xargs;
   }
 
+  private static Object[] buildTypedVarArgs(Object[] args, int arity,
+                                            Class<?> type) {
+    int nvargs = args.length - arity + 1;
+    Object[] xargs = new Object[arity];
+    Object[] vargs = (Object[])Array.newInstance(type, nvargs);
+    System.arraycopy(args, 0, xargs, 0, arity - 1);
+    for (int i = 0; i < nvargs; i++)
+      vargs[i] = TypeCoercion.coerce(args[i + arity - 1], type);
+    xargs[arity - 1] = vargs;
+    return xargs;
+  }
+
   private static Object[] buildDynamicVarArgs(Object[] args, String name,
                                               String[] keys) {
     return new Object[] { name, new VarArgList(keys, args) };
@@ -1572,7 +1590,11 @@ public final class DynamicBootstrap {
 
       // Build argument list for varargs.
       if (m.isVarArgs()) {
-        MethodHandle filter = insertArguments(MH_buildVarArgs, 1, arity);
+        Class<?> type = types[types.length - 1].getComponentType();
+        MethodHandle filter =
+          type == Object.class
+            ? insertArguments(MH_buildVarArgs, 1, arity)
+            : insertArguments(MH_buildTypedVarArgs, 1, arity, type);
         mh = filterArguments(mh, 2, filter);
       }
 
