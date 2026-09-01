@@ -1,70 +1,42 @@
-package org.elite.shell;
+/*
+ * Copyright 2006-2026 Daniel Yuan.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-import com.beust.jcommander.IParameterValidator;
-import com.beust.jcommander.Parameter;
-import com.beust.jcommander.ParameterException;
+package org.elite.shell;
 
 import java.util.ArrayList;
 import java.util.List;
 
 class CommandOptions {
-    @Parameter(names = {"--help", "-h"},
-               description = "print this usage information", help = true)
-    public boolean help = false;
+  // Basic options
+  boolean version       = false;
+  String  encoding      = null;
+  boolean interactive   = false;
+  int     optLevel      = 2;
+  boolean debug         = false;
+  String  script        = null; // -e script string
 
-    @Parameter(names = "-i", description = "interactive mode")
-    public boolean interactive = false;
+  // Hidden options.
+  boolean dumpAST       = false;
+  boolean dumpIR        = false;
+  boolean dumpBC        = false;
 
-    @Parameter(names = "-e", description = "evaluate the expression")
-    public String script = null;
+  boolean hasDump() {
+    return dumpAST || dumpIR || dumpBC;
+  }
 
-    @Parameter(names = {"--encoding", "-c"},
-               description = "specify the encoding of script files")
-    public String encoding = null;
-
-    @Parameter(names = "--dump-ast", description = "dump program AST",
-               hidden = true)
-    public boolean dumpAST = false;
-
-    @Parameter(names = "--dump-ir", description = "dump program IR",
-               hidden = true)
-    public boolean dumpIR = false;
-
-    @Parameter(names = "--dump-bc", description = "dump bytecode",
-               hidden = true)
-    public boolean dumpBC = false;
-
-    @Parameter(names = "-O", description = "optimization level",
-               validateWith = OptLevelValidator.class)
-    public int optLevel = 2;
-
-    @Parameter(names = "--debug", description = "debug mode")
-    public boolean debug = false;
-
-    @Parameter(variableArity = true)
-    public List<String> args = new ArrayList<>();
-
-    public boolean hasDump() {
-        return dumpAST || dumpIR || dumpBC;
-    }
-
-    public static class OptLevelValidator implements IParameterValidator {
-        @Override
-        public void validate(String name, String value)
-            throws ParameterException
-        {
-            boolean valid;
-            try {
-                int level = Integer.parseInt(value);
-                valid = level >= 0 && level <= 3;
-            } catch (NumberFormatException ex) {
-                valid = false;
-            }
-
-            if (!valid) {
-                throw new ParameterException("optimization level can only be 0, 1, 2, 3, " +
-                                             "the current value is " + value);
-            }
-        }
-    }
+  // Positioned script file and arguments.
+  List<String> args = new ArrayList<>();
 }

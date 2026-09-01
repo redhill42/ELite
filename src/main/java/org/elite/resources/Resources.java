@@ -64,7 +64,7 @@ public final class Resources
     // Message keys
 
     public static final String ELITE_WELCOME = "ELITE_WELCOME";
-    public static final String ELITE_USAGE = "ELITE_USAGE";
+    public static final String ELITE_VERSION  = "ELITE_VERSION";
 
     public static final String EL_ILLEGAL_CHARACTER = "EL_ILLEGAL_CHARACTER";
     public static final String EL_ILLEGAL_ESCAPE_CHAR = "EL_ILLEGAL_ESCAPE_CHAR";
@@ -145,14 +145,6 @@ public final class Resources
     // IR subsystem
     public static final String IR_BYTECODE_COMPILE_FAILED = "IR_BYTECODE_COMPILE_FAILED";
     public static final String IR_BC_UNHANDLED_OPCODE      = "IR_BC_UNHANDLED_OPCODE";
-    public static final String IR_FUNCTION_NOT_REGISTERED   = "IR_FUNCTION_NOT_REGISTERED";
-    public static final String IR_TYPE_MISMATCH             = "IR_TYPE_MISMATCH";
-    public static final String IR_FIELD_READ_FROM_NULL      = "IR_FIELD_READ_FROM_NULL";
-    public static final String IR_FIELD_NOT_FOUND           = "IR_FIELD_NOT_FOUND";
-    public static final String IR_FIELD_ACCESS_ERROR        = "IR_FIELD_ACCESS_ERROR";
-    public static final String IR_FIELD_WRITE_TO_NULL       = "IR_FIELD_WRITE_TO_NULL";
-    public static final String IR_GETTER_INVOKE_FAILED = "IR_GETTER_INVOKE_FAILED";
-    public static final String IR_SETTER_INVOKE_FAILED = "IR_SETTER_INVOKE_FAILED";
 
     private Resources() {}
 }

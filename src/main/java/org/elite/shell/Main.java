@@ -16,8 +16,6 @@
 
 package org.elite.shell;
 
-import com.beust.jcommander.JCommander;
-import com.beust.jcommander.ParameterException;
 import elite.lang.Builtin;
 import org.elite.eval.StackTrace;
 import org.elite.parser.IncompleteException;
@@ -43,14 +41,11 @@ import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.elite.resources.Resources.*;
 
-// Experimental
 public class Main {
   private final ShellContext shellContext;
   private CommandOptions options;
@@ -72,8 +67,9 @@ public class Main {
   }
 
   public int run(String[] args) {
-    if (!parseOptions(args)) {
-      return 1;
+    int status = parseOptions(args);
+    if (status != PROCEED) {
+      return status;
     }
 
     if (shellContext.isInteractive()) {
@@ -83,7 +79,7 @@ public class Main {
     try {
       ScriptEngine engine = createScriptEngine(shellContext.getArguments());
       shellContext.setEngine(engine);
-      int status = 0;
+      int execStatus = 0;
 
       if (!shellContext.isInteractive())
         engine.put("elite.standalone", true);
@@ -94,17 +90,17 @@ public class Main {
           dumpWithFlags(source);
           return 0;
         }
-        status = CommandProvider.exec(shellContext, filename);
+        execStatus = CommandProvider.exec(shellContext, filename);
       } else if (options.script != null) {
         if (options.hasDump()) {
           dumpWithFlags(options.script);
           return 0;
         }
-        status = exec_script(engine, options.script);
+        execStatus = exec_script(engine, options.script);
       }
 
-      if (status != 0) {
-        return status;
+      if (execStatus != 0) {
+        return execStatus;
       }
 
       if (shellContext.isInteractive()) {
@@ -119,35 +115,29 @@ public class Main {
     return 0;
   }
 
-  private boolean parseOptions(String[] args) {
-    List<String> newArgs = new ArrayList<>();
-    for (String arg : args) {
-      if (arg.startsWith("-O")) {
-        newArgs.add("-O");
-        newArgs.add(arg.substring(2));
-      } else {
-        newArgs.add(arg);
-      }
-    }
+  // Return values of parseOptions: an exit status, or PROCEED to run the shell.
+  private static final int PROCEED = -1;
+  private static final int EXIT_OK = 0;
+  private static final int EXIT_ERROR = 1;
 
-    options = new CommandOptions();
-    JCommander commander = JCommander.newBuilder()
-      .programName("elite")
-      .addObject(options)
-      .build();
-
+  private int parseOptions(String[] args) {
     try {
-      commander.parse(newArgs.toArray(new String[0]));
-    } catch (ParameterException ex) {
-      System.out.println(ex.getMessage());
-      System.out.println();
-      commander.usage();
-      return false;
+      options = Cli.parse(args);
+    } catch (CliException ex) {
+      System.err.println(ex.getMessage());
+      System.err.println();
+      Cli.printUsage(System.err);
+      return EXIT_ERROR;
     }
 
-    if (options.help) {
-      commander.usage();
-      return false;
+    if (options == null) {   // --help/-h
+      Cli.printUsage(System.out);
+      return EXIT_OK;
+    }
+
+    if (options.version) {
+      System.out.println(_T(ELITE_VERSION));
+      return EXIT_OK;
     }
 
     if (options.encoding != null)
@@ -168,7 +158,7 @@ public class Main {
       shellContext.setInteractive(true);
     }
 
-    return true;
+    return PROCEED;
   }
 
   private void repl(ScriptEngine engine) throws IOException {

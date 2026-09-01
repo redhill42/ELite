@@ -204,6 +204,18 @@ bin/xel
 Hello, World!
 ```
 
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `-e <script>` | evaluate the expression |
+| `-i` | interactive mode (REPL) |
+| `-O <level>` | optimization level (default `2`) |
+| `--encoding <enc>`, `-c <enc>` | encoding of script files |
+| `--debug` | debug mode |
+| `--help`, `-h` | print this usage information |
+| `--version` | print version information |
+
 ## Embed in Java
 
 ```java
