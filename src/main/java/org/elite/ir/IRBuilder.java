@@ -18,8 +18,10 @@ package org.elite.ir;
 
 import elite.lang.Builtin;
 import elite.lang.Closure;
+import elite.lang.Decimal;
 import elite.lang.MathLib;
 import elite.lang.Range;
+import elite.lang.Rational;
 import elite.lang.Seq;
 import elite.lang.annotation.Data;
 import elite.lang.annotation.Expando;
@@ -52,6 +54,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -1053,197 +1057,192 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.APPLY node) {
-    ELNode base = node.right;
-
-    if (base instanceof ELNode.IDENT ident) {
-      if (ident.id.equals("super")) {
-        reportError(node.pos, _T(EL_MISPLACED_SUPER));
-        return;
-      }
-
-      if (ident.symbol != null) {
-        if (ident.symbol.func != null) {
-          ELNode.LAMBDA lambda = (ELNode.LAMBDA)ident.symbol.def.expr;
-          ELNode[] args = getCallArgs(node.pos, lambda, node.args, node.keys);
-          if (inTailPosition && ident.symbol.func == this.func) {
-            buildTailCall(lambda, args);
-          } else {
-            buildDirectCall(ident.symbol, args);
-          }
-          return;
-        }
-
-        if (ident.symbol.clazz != null) {
-          buildClassCall(node.pos, ident.symbol.clazz, node.args, node.keys);
-          return;
-        }
-
-        if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
-          Class<?> cls = loadClassAtCompileTime(ident.pos, c.getClassName());
-          if (buildNew(cls, node.args))
-            return;
-        }
-      }
-
-      if (ident.symbol == null) {
-        // Resolve member function from super class.
-        if (buildThisCall(node, ident.id, false))
-          return;
-
-        // Resolve expando method.
-        if (expandoClass != null &&
-            buildExpandoCall(node.pos, ident.id, node.args, node.keys))
-          return;
-
-        // Resolve builtin function.
-        if (tryBuildGlobalMethodCall(ident.id, node.args))
-          return;
-
-        // Resolve java class.
-        Class<?> cls = resolveJavaClass(ident);
-        if (cls != null) {
-          if (cls.isPrimitive() && node.args.length == 1) {
-            if (cls == Void.TYPE) {
-              build(node.args[0]);
-              current.emitPop();
-              current.emitPushNull();
-            } else {
-              buildCoerce(node.args[0], TypeCoercion.getBoxedType(cls));
-            }
-            return;
-          } else {
-            if (buildNew(cls, node.args))
-              return;
-
-            current.emitPushEnv();
-            buildConst(cls);
-            buildTuple(node.args);
-            buildDynamicCall(node.keys);
-            return;
-          }
-        }
-
-        // Resolve target at runtime if the given id is not a local var
-        current.emitPushEnv();
-        current.emitPushEnv();
-        buildConst(ident.id);
-        emitInvokeMethod(Runtime.class, "resolveCallTarget",
-                         EvaluationContext.class, String.class);
-        buildTuple(node.args);
-        buildDynamicCall(node.keys);
-        return;
-      }
-    }
-
-    if (base instanceof ELNode.ACCESS acc) {
-      // Try to resolve direct method for known Java types.
-      if (acc.index instanceof ELNode.STRINGVAL) {
-        String key = ((ELNode.STRINGVAL)acc.index).value;
-
-        if (acc.right instanceof ELNode.IDENT var &&
-            (var.id.equals("this") || var.id.equals("super"))) {
-          if (var.id.equals("this") && var.symbol != null &&
-              var.symbol.scope.isLambdaScope()) {
-            // "this" may be the expando method receiver parameter.
-            ELNode.LAMBDA lambda = (ELNode.LAMBDA)var.symbol.scope.frontier;
-            if (expandoClass != null && var.symbol == lambda.vars[0].symbol) {
-              if (buildExpandoCall(node.pos, key, node.args, node.keys))
-                return;
-            }
-          } else {
-            Scope classScope = currentScope.enclosingClassScope();
-            if (var.symbol == null || classScope == null ||
-                var.symbol.scope != classScope) {
-              reportError(node.pos, _T(EL_DANGLING_REFERENCE, var.id));
-              return;
-            }
-
-            if (!buildThisCall(node, key, var.id.equals("super"))) {
-              reportError(node.pos, _T(EL_METHOD_NOT_FOUND,
-                                       currentScope.enclosingClass().name,
-                                       key));
-            }
-
-            return;
-          }
-        }
-
-        IRClass irc = resolveIRClass(acc.right);
-        if (irc != null) {
-          for (ELNode.DEFINE def : irc.node.cvars) {
-            if (def.id.equals(key)) {
-              if (!def.symbol.isPublic()) {
-                reportError(node.pos, _T(EL_ILLEGAL_ACCESS, irc.name, key));
-                return;
-              }
-              if (def.symbol.clazz != null) {
-                buildClassCall(node.pos, def.symbol.clazz, node.args, node.keys);
-                return;
-              }
-              if (def.expr instanceof ELNode.LAMBDA fn) {
-                ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
-                buildDirectCall(fn.symbol, args);
-                return;
-              }
-            }
-          }
-        }
-
-        Symbol outerSym = getOuterClassMember(acc.right, key);
-        if (outerSym != null) {
-          if (outerSym.def.expr instanceof ELNode.LAMBDA fn) {
-            ELNode[] args = getCallArgs(node.pos, fn, node.args, node.keys);
-            buildDirectCall(fn.symbol, args);
-            return;
-          } else {
-            reportError(node.pos,
-                        _T(EL_METHOD_NOT_FOUND, outerSym.clazz.name, key));
-            return;
-          }
-        }
-
-        if (tryBuildDirectMethodCall(node.pos, acc.right, key, node.args,
-                                     node.keys))
-          return;
-      }
-
-      Class<?> jc = resolveJavaClass(acc);
-      if (jc != null && buildNew(jc, node.args))
-        return;
-
-      // Resolve method at runtime.
-      if (acc.index instanceof ELNode.STRINGVAL key) {
-        current.emitPushEnv();
-        build(acc.right);
-        buildTuple(node.args);
-        emitInvokeIndy(key.value, node.keys, false);
-      } else {
-        current.emitPushEnv();
-        build(acc);
-        buildTuple(node.args);
-        buildDynamicCall(node.keys);
-      }
+    if (node.right instanceof ELNode.IDENT target) {
+      buildCall(node.pos, target, node.args, node.keys);
       return;
     }
 
-    current.emitPushEnv();
-    build(base);
+    if (node.right instanceof ELNode.ACCESS acc) {
+      buildInvoke(node.pos, acc, node.args, node.keys);
+      return;
+    }
 
-    if (base instanceof ELNode.LAMBDA lam && lam.symbol != null &&
+    buildDynamicCall(node.pos, node.right, node.args, node.keys);
+  }
+
+  private void buildCall(int pos, ELNode.IDENT target, ELNode[] args,
+                         String[] keys) {
+    if (target.id.equals("super")) {
+      reportError(pos, _T(EL_MISPLACED_SUPER));
+      return;
+    }
+
+    if (target.symbol != null) {
+      if (target.symbol.func != null) {
+        ELNode.LAMBDA lambda = (ELNode.LAMBDA)target.symbol.def.expr;
+        args = getCallArgs(pos, lambda, args, keys);
+        if (inTailPosition && target.symbol.func == this.func) {
+          buildTailCall(lambda, args);
+        } else {
+          buildDirectCall(target.symbol, args);
+        }
+        return;
+      }
+
+      if (target.symbol.clazz != null) {
+        buildClassCall(pos, target.symbol.clazz, args, keys);
+        return;
+      }
+
+      if (target.symbol.def.expr instanceof ELNode.CLASS c) {
+        Class<?> cls = loadClassAtCompileTime(target.pos, c.getClassName());
+        buildJavaClassCall(pos, cls, args);
+        return;
+      }
+    } else {
+      // Resolve member function from super class.
+      if (buildThisCall(pos, target.id, false, args, keys))
+        return;
+
+      // Resolve expando method.
+      if (expandoClass != null && buildExpandoCall(pos, target.id, args, keys))
+        return;
+
+      // Resolve builtin function.
+      if (buildGlobalMethodCall(target.id, args))
+        return;
+
+      // Resolve java class.
+      Class<?> javaClass = resolveJavaClass(target);
+      if (javaClass != null) {
+        buildJavaClassCall(pos, javaClass, args);
+        return;
+      }
+
+      // Resolve target at runtime if the given id is not a local var
+      current.emitPushEnv();
+      current.emitPushEnv();
+      buildConst(target.id);
+      emitInvokeMethod(Runtime.class, "resolveCallTarget",
+                       EvaluationContext.class, String.class);
+      buildTuple(args);
+      emitCallIndy(keys);
+      return;
+    }
+
+    buildDynamicCall(pos, target, args, keys);
+  }
+
+  private void buildDynamicCall(int pos, ELNode target, ELNode[] args,
+                                String[] keys) {
+    current.emitPushEnv();
+    build(target);
+
+    if (target instanceof ELNode.LAMBDA lam && lam.symbol != null &&
         lam.symbol.func != null) {
       // Lambda closure no longer used.
       current.emitPop();
       current.emitPop();
 
-      // One-shot lambda call. Let may be inlined to eliminate runtime overhead.
-      ELNode[] args = getCallArgs(node.pos, lam, node.args, node.keys);
+      // One-shot lambda call. "Let" may be inlined to eliminate runtime overhead.
+      args = getCallArgs(pos, lam, args, keys);
       buildDirectCall(lam.symbol, args);
       return;
     }
 
-    // Evaluate base and generate dynamic call.
-    buildTuple(node.args);
-    buildDynamicCall(node.keys);
+    // Evaluate target and generate dynamic call.
+    buildTuple(args);
+    emitCallIndy(keys);
+  }
+
+  private void buildInvoke(int pos, ELNode.ACCESS acc, ELNode[] args,
+                           String[] keys) {
+    // Try to resolve direct method for known Java types.
+    if (acc.index instanceof ELNode.STRINGVAL) {
+      String name = ((ELNode.STRINGVAL)acc.index).value;
+
+      if (acc.right instanceof ELNode.IDENT var &&
+          (var.id.equals("this") || var.id.equals("super"))) {
+        if (var.id.equals("this") && var.symbol != null &&
+            var.symbol.scope.isLambdaScope()) {
+          // "this" may be the expando method receiver parameter.
+          ELNode.LAMBDA lambda = (ELNode.LAMBDA)var.symbol.scope.frontier;
+          if (expandoClass != null && var.symbol == lambda.vars[0].symbol) {
+            if (buildExpandoCall(pos, name, args, keys))
+              return;
+          }
+        } else {
+          Scope classScope = currentScope.enclosingClassScope();
+          if (var.symbol == null || classScope == null ||
+              var.symbol.scope != classScope) {
+            reportError(pos, _T(EL_DANGLING_REFERENCE, var.id));
+            return;
+          }
+
+          if (!buildThisCall(pos, name, var.id.equals("super"), args, keys)) {
+            reportError(pos, _T(EL_METHOD_NOT_FOUND,
+                                currentScope.enclosingClass().name, name));
+          }
+
+          return;
+        }
+      }
+
+      IRClass irc = resolveIRClass(acc.right);
+      if (irc != null) {
+        for (ELNode.DEFINE def : irc.node.cvars) {
+          if (def.id.equals(name)) {
+            if (!def.symbol.isPublic()) {
+              reportError(pos, _T(EL_ILLEGAL_ACCESS, irc.name, name));
+              return;
+            }
+            if (def.symbol.clazz != null) {
+              buildClassCall(pos, def.symbol.clazz, args, keys);
+              return;
+            }
+            if (def.expr instanceof ELNode.LAMBDA fn) {
+              args = getCallArgs(pos, fn, args, keys);
+              buildDirectCall(fn.symbol, args);
+              return;
+            }
+          }
+        }
+      }
+
+      Symbol outerSym = getOuterClassMember(acc.right, name);
+      if (outerSym != null) {
+        if (outerSym.def.expr instanceof ELNode.LAMBDA fn) {
+          args = getCallArgs(pos, fn, args, keys);
+          buildDirectCall(fn.symbol, args);
+          return;
+        } else {
+          reportError(pos, _T(EL_METHOD_NOT_FOUND, outerSym.clazz.name, name));
+          return;
+        }
+      }
+
+      if (buildJavaMethodCall(pos, acc.right, name, args, keys))
+        return;
+    }
+
+    Class<?> javaClass = resolveJavaClass(acc);
+    if (javaClass != null) {
+      buildJavaClassCall(pos, javaClass, args);
+      return;
+    }
+
+    // Resolve method at runtime.
+    if (acc.index instanceof ELNode.STRINGVAL key) {
+      current.emitPushEnv();
+      build(acc.right);
+      buildTuple(args);
+      emitInvokeIndy(key.value, keys, false);
+    } else {
+      current.emitPushEnv();
+      build(acc);
+      buildTuple(args);
+      emitCallIndy(keys);
+    }
   }
 
   private IRClass resolveIRClass(ELNode node) {
@@ -1279,6 +1278,10 @@ public class IRBuilder extends ELNode.Visitor {
 
   private Class<?> resolveJavaClass(ELNode base) {
     return resolveJavaClass(base, false);
+  }
+
+  private Class<?> loadJavaClass(ELNode base) {
+    return resolveJavaClass(base, true);
   }
 
   private Class<?> resolveJavaClass(ELNode node, boolean load) {
@@ -1318,7 +1321,7 @@ public class IRBuilder extends ELNode.Visitor {
     IRClass irc = resolveIRClass(node);
     if (irc != null)
       return irc;
-    return resolveJavaClass(node, true);
+    return loadJavaClass(node);
   }
 
   private int indexOfVar(String name, ELNode.DEFINE[] vars, boolean varargs) {
@@ -1469,6 +1472,43 @@ public class IRBuilder extends ELNode.Visitor {
     current.emitPushEnv();
     buildCallArgs(irc.init_proc, args);
     current.emitConstructor(irc);
+  }
+
+  private void buildJavaClassCall(int pos, Class<?> javaClass, ELNode[] args) {
+    if (args.length == 1) {
+      if (javaClass == Void.TYPE) {
+        build(args[0]);
+        current.emitPop();
+        current.emitPushNull();
+        return;
+      }
+
+      if (TypeCoercion.getUnboxedType(javaClass).isPrimitive() ||
+          javaClass == String.class || javaClass == BigInteger.class ||
+          javaClass == BigDecimal.class || javaClass == Decimal.class ||
+          javaClass == Rational.class) {
+        buildCoerce(args[0], TypeCoercion.getBoxedType(javaClass));
+        return;
+      }
+    }
+
+    if (args.length != 0) {
+      MethodResolver resolver = MethodResolver.getInstance(elctx);
+      MethodClosure mc = resolver.resolveStaticMethod(javaClass, "valueOf");
+      if (mc != null) {
+        Method m = mc.getJavaMethod(args.length);
+        if (m != null && buildMethodCall(m, null, args))
+          return;
+
+        current.emitPushEnv();
+        buildConst(javaClass);
+        buildTuple(args);
+        emitInvokeIndy("valueOf", null, false);
+        return;
+      }
+    }
+
+    buildNew(pos, javaClass, args);
   }
 
   private void buildTailCall(ELNode.LAMBDA lambda, ELNode[] args) {
@@ -1719,7 +1759,8 @@ public class IRBuilder extends ELNode.Visitor {
     return true;
   }
 
-  private boolean buildThisCall(ELNode.APPLY node, String key, boolean isSuper) {
+  private boolean buildThisCall(int pos, String name, boolean isSuper,
+                                ELNode[] args, String[] keys) {
     IRClass clazz = currentScope.enclosingClass();
     if (clazz == null)
       return false;
@@ -1732,20 +1773,17 @@ public class IRBuilder extends ELNode.Visitor {
         Optional<ELNode.DEFINE> var =
           Stream.concat(Arrays.stream(clazz.node.cvars),
                         Arrays.stream(clazz.node.ivars))
-            .filter(x -> x.id.equals(key) &&
+            .filter(x -> x.id.equals(name) &&
                          x.expr instanceof ELNode.LAMBDA)
             .findFirst();
 
         if (var.isPresent()) {
           ELNode.DEFINE def = var.get();
           if (isSuperClass && def.symbol.isPrivate())
-            reportError(node.pos,
-                        _T(EL_ILLEGAL_ACCESS, clazz.name, key));
+            reportError(pos, _T(EL_ILLEGAL_ACCESS, clazz.name, name));
           if (currentScope.isStaticScope() && !def.symbol.isStatic())
-            reportError(node.pos,
-                        _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
-          ELNode[] args = getCallArgs(node.pos, (ELNode.LAMBDA)def.expr,
-                                      node.args, node.keys);
+            reportError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, name));
+          args = getCallArgs(pos, (ELNode.LAMBDA)def.expr, args, keys);
           if (!isSuper && inTailPosition && def.symbol.func == this.func)
             buildTailCall((ELNode.LAMBDA)def.expr, args);
           else
@@ -1767,13 +1805,12 @@ public class IRBuilder extends ELNode.Visitor {
     MethodClosure mc;
     boolean isStatic = true;
 
-    mc = resolver.resolveStaticMethod(baseClass, key);
+    mc = resolver.resolveStaticMethod(baseClass, name);
     if (mc == null) {
-      mc = resolver.resolveProtectedMethod(baseClass, key);
+      mc = resolver.resolveProtectedMethod(baseClass, name);
       isStatic = false;
       if (mc != null && currentScope.isStaticScope()) {
-        reportError(node.pos,
-                    _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, key));
+        reportError(pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, name));
         return true;
       }
     }
@@ -1784,8 +1821,8 @@ public class IRBuilder extends ELNode.Visitor {
         buildConst(clazz.base);
       else
         current.emitPushThis();
-      buildTuple(node.args);
-      emitInvokeIndy(key, node.keys, isSuper && !isStatic);
+      buildTuple(args);
+      emitInvokeIndy(name, keys, isSuper && !isStatic);
       return true;
     }
 
@@ -1857,7 +1894,7 @@ public class IRBuilder extends ELNode.Visitor {
       EvaluationContext.class, Object.class, Object[].class));
   }
 
-  private boolean tryBuildGlobalMethodCall(String name, ELNode[] args) {
+  private boolean buildGlobalMethodCall(String name, ELNode[] args) {
     var mc = MethodResolver.getInstance(elctx).resolveGlobalMethod(name);
     if (mc == null)
       return false;
@@ -1869,18 +1906,18 @@ public class IRBuilder extends ELNode.Visitor {
     return buildMethodCall(method, null, args);
   }
 
-  private boolean tryBuildDirectMethodCall(int pos, ELNode base, String name,
-                                           ELNode[] args, String[] keys) {
-    Class<?> baseClass = inferNodeType(base);
-    if (baseClass != null) {
-      ELNode.LAMBDA expando = expandoMap.find(baseClass, name);
+  private boolean buildJavaMethodCall(int pos, ELNode target, String name,
+                                      ELNode[] args, String[] keys) {
+    Class<?> javaClass = inferNodeType(target);
+    if (javaClass != null) {
+      ELNode.LAMBDA expando = expandoMap.find(javaClass, name);
       if (expando != null) {
         ELNode.DEFINE[] vars = new ELNode.DEFINE[expando.vars.length - 1];
         System.arraycopy(expando.vars, 1, vars, 0, vars.length);
         args = getCallArgs(pos, name, vars, args, keys, expando.varargs);
 
         ELNode[] xargs = new ELNode[args.length + 1];
-        xargs[0] = base;
+        xargs[0] = target;
         System.arraycopy(args, 0, xargs, 1, args.length);
 
         current.emitPushEnv();
@@ -1890,28 +1927,28 @@ public class IRBuilder extends ELNode.Visitor {
       }
     }
 
-    Method method = resolveStaticMethod(base, name, args);
+    Method method = resolveStaticMethod(target, name, args);
     if (method != null)
       return buildMethodCall(method, null, args);
 
-    method = resolveInstanceMethod(base, name, args);
+    method = resolveInstanceMethod(target, name, args);
     if (method != null)
-      return buildMethodCall(method, base, args);
+      return buildMethodCall(method, target, args);
 
-    Class<?> javaClass = resolveJavaClass(base);
+    javaClass = resolveJavaClass(target);
     if (javaClass != null) {
       var mc = MethodResolver.getInstance(elctx).resolveMethod(Class.class, name);
       if (mc != null) {
         Method m = mc.getJavaMethod(args.length);
         if (m != null)
-          return buildMethodCall(m, new ELNode.CONST(base.pos, javaClass), args);
+          return buildMethodCall(m, new ELNode.CONST(pos, javaClass), args);
       }
     }
 
     return false;
   }
 
-  private void buildDynamicCall(String[] keys) {
+  private void emitCallIndy(String[] keys) {
     String[] keyArgs;
     if (keys == null)
       keyArgs = new String[0];
@@ -2242,7 +2279,7 @@ public class IRBuilder extends ELNode.Visitor {
       current.emitPushEnv();
       bodySlot.load();
       buildTuple(indSlot);
-      buildDynamicCall(null);
+      emitCallIndy(null);
       current.emitPop();
     }
 
@@ -2406,7 +2443,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (resolveIRClass(node.type) != null)
       componentType = Object.class;
     else
-      componentType = resolveJavaClass(node.type, true);
+      componentType = loadJavaClass(node.type);
 
     if (node.dims == null || node.dims.length == 1) {
       if (node.dims == null) {
@@ -2632,7 +2669,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitPushEnv();
         build(node.oper);
         buildTuple(node.right);
-        buildDynamicCall(null);
+        emitCallIndy(null);
       }
     } else {
       reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
@@ -2650,7 +2687,7 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitPushEnv();
         build(node.oper);
         buildTuple(node.left, node.right);
-        buildDynamicCall(null);
+        emitCallIndy(null);
       }
     } else {
       reportError(node.pos, _T(EL_UNDEFINED_IDENTIFIER, node.oper.id));
@@ -3398,7 +3435,7 @@ public class IRBuilder extends ELNode.Visitor {
     Class<?>[] types = new Class<?>[count];
     for (int i = 0; i < count; i++) {
       if (node.types[i] != null)
-        types[i] = resolveJavaClass(node.types[i], true);
+        types[i] = loadJavaClass(node.types[i]);
       handlers[i] = buildScopedLambda((ELNode.LAMBDA)node.handlers[i]);
     }
 
@@ -4253,11 +4290,8 @@ public class IRBuilder extends ELNode.Visitor {
         current.emitConstructor(irc);
       }
     } else {
-      Class<?> cls = resolveJavaClass(node.base, true);
-      if (!buildNew(cls, node.args)) {
-        reportError(node.pos, "Constructor not found: " + cls.getName());
-        return;
-      }
+      Class<?> javaClass = loadJavaClass(node.base);
+      buildNew(node.pos, javaClass, node.args);
     }
 
     if (node.props != null) {
@@ -4285,26 +4319,28 @@ public class IRBuilder extends ELNode.Visitor {
     }
   }
 
-  private boolean buildNew(Class<?> cls, ELNode[] args) {
-    Constructor<?> cons = null;
+  private void buildNew(int pos, Class<?> cls, ELNode[] args) {
+    Constructor<?> ctor = null;
     boolean overload = false;
     for (Constructor<?> c : cls.getConstructors()) {
       if (c.getParameterCount() == args.length && !c.isVarArgs()) {
-        if (cons != null)
+        if (ctor != null)
           overload = true;
-        cons = c;
+        ctor = c;
       }
     }
 
-    if (cons == null)
-      return false;
+    if (ctor == null) {
+      reportError(pos, "Constructor not found for class: " + cls.getName());
+      return;
+    }
 
     if (!overload) {
-      Class<?>[] types = cons.getParameterTypes();
+      Class<?>[] types = ctor.getParameterTypes();
       current.emitNew(cls);
       for (int i = 0; i < args.length; i++)
         buildCoerce(args[i], types[i]);
-      current.emitConstructor(cons);
+      current.emitConstructor(ctor);
     } else {
       current.emitPushEnv();
       buildTuple(args);
@@ -4312,8 +4348,6 @@ public class IRBuilder extends ELNode.Visitor {
         constructBootstrap, cls.getSimpleName(), new Object[]{cls},
         Object.class, EvaluationContext.class, Object[].class));
     }
-
-    return true;
   }
 
   public void visitNode(ELNode node) {
