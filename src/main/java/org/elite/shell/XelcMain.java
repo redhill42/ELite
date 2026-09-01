@@ -16,6 +16,11 @@
 
 package org.elite.shell;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.ir.BytecodeCompiler;
@@ -26,6 +31,8 @@ import javax.el.ELContext;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -49,47 +56,53 @@ public final class XelcMain {
 
   private XelcMain() {}
 
-  public static void main(String[] args) {
-    String outputDir = ".";
-    String className = null;
-    String sourceFile = null;
+  private static final Options OPTIONS = buildOptions();
 
-    // Parse command line.
-    int i = 0;
-    while (i < args.length) {
-      String arg = args[i];
-      switch (arg) {
-      case "-d":
-        if (++i >= args.length) {
-          usage("Missing argument for -d");
-          return;
-        }
-        outputDir = args[i++];
-        break;
-      case "-C":
-        if (++i >= args.length) {
-          usage("Missing argument for -C");
-          return;
-        }
-        className = args[i++];
-        break;
-      case "-h":
-      case "--help":
-        usage(null);
-        return;
-      default:
-        if (arg.startsWith("-")) {
-          usage("Unknown option: " + arg);
-          return;
-        }
-        sourceFile = arg;
-        i++;
-        break;
-      }
+  private static Options buildOptions() {
+    Options opts = new Options();
+    opts.addOption(Option.builder("C").hasArg().argName("class-name")
+      .desc("fully qualified output class name" +
+            " (default: derived from source file name)").build());
+    opts.addOption(Option.builder("d").hasArg().argName("output-dir")
+      .desc("output directory for .class files (default: current directory)")
+      .build());
+    opts.addOption(Option.builder("h").longOpt("help")
+      .desc("show this message").build());
+    return opts;
+  }
+
+  private static void printUsage(PrintStream out) {
+    new HelpFormatter().printHelp(new PrintWriter(out, true), 80,
+      "xelc [options] <source-file>", null, OPTIONS, 1, 3, null);
+  }
+
+  public static void main(String[] args) {
+    CommandLine cmd;
+    try {
+      cmd = new DefaultParser().parse(OPTIONS, args);
+    } catch (org.apache.commons.cli.ParseException ex) {
+      System.err.println("xelc: " + ex.getMessage());
+      System.err.println();
+      printUsage(System.err);
+      System.exit(1);
+      return;
     }
 
+    if (cmd.hasOption("h")) {
+      printUsage(System.out);
+      return;
+    }
+
+    String outputDir = cmd.getOptionValue("d", ".");
+    String className = cmd.getOptionValue("C");
+    String sourceFile = cmd.getArgList().isEmpty()
+      ? null : cmd.getArgList().get(0);
+
     if (sourceFile == null) {
-      usage("Missing source file");
+      System.err.println("xelc: Missing source file");
+      System.err.println();
+      printUsage(System.err);
+      System.exit(1);
       return;
     }
 
@@ -97,7 +110,7 @@ public final class XelcMain {
     String source;
     try {
       source = new String(Files.readAllBytes(Path.of(sourceFile)));
-    } catch (java.io.IOException e) {
+    } catch (IOException e) {
       System.err.println(
         "xelc: cannot read " + sourceFile + ": " + e.getMessage());
       System.exit(1);
@@ -148,19 +161,6 @@ public final class XelcMain {
       }
     }
     return sb.length() > 0 ? sb.toString() : "Program";
-  }
-
-  private static void usage(String msg) {
-    if (msg != null)
-      System.err.println("xelc: " + msg);
-    System.err.println(
-      "Usage: xelc [options] <source-file>\n\nOptions:\n" +
-      "  -C <pkg.ClassName>   Fully qualified output class name\n" +
-      "  -d <output-dir>      Output directory for .class files (default: .)" +
-      "\n" +
-      "  -h, --help           Show this message\n");
-    if (msg != null)
-      System.exit(1);
   }
 
 
