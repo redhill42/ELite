@@ -44,6 +44,7 @@ import org.elite.eval.seq.Cons;
 import org.elite.eval.seq.DelayCons;
 import org.elite.ir.SymbolTable;
 import org.elite.resolver.MethodResolver;
+import org.elite.type.Type;
 import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -98,6 +99,13 @@ public abstract class ELNode implements Serializable {
    * Scope for control flow.
    */
   public transient SymbolTable.Scope scope;
+
+  /**
+   * The statically inferred type of this node, set by
+   * {@code TypeInference} after symbol table construction.
+   * Null until inference runs.
+   */
+  public transient Type inferredType;
 
     // Operator precedence
   public static final int

@@ -1,0 +1,150 @@
+package org.elite.ir;
+
+import java.util.Locale;
+import javax.el.ELContext;
+import org.elite.eval.ELEngine;
+import org.elite.eval.ELProgram;
+import org.elite.parser.ELNode;
+import org.elite.parser.ParseException;
+import org.elite.parser.Parser;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class TypeInferenceTest {
+
+  private static ELContext elctx;
+
+  @BeforeAll
+  static void createContext() {
+    elctx = ELEngine.createELContext();
+  }
+
+  /** Parse only; returns the program (no symbol table, no inference). */
+  private static ELProgram parse(String script) {
+    try {
+      return new Parser(elctx, script).parse();
+    } catch (ParseException e) {
+      throw new RuntimeException("parse failed: " + script, e);
+    }
+  }
+
+  /**
+   * Parse + build symbol table + infer; returns the last top-level node
+   * (the last expression if any, else the last definition).
+   */
+  private static ELNode infer(String script) {
+    ELProgram program = parse(script);
+    SymbolTableBuilder.build(program);
+    try {
+      TypeInference.infer(elctx, program);
+    } catch (ParseException e) {
+      throw new RuntimeException("inference failed: " + script, e);
+    }
+    var exps = program.getExpressions();
+    if (!exps.isEmpty()) {
+      return exps.get(exps.size() - 1);
+    }
+    var defs = program.getDefinitions();
+    assertFalse(defs.isEmpty(), "no top-level node in: " + script);
+    return defs.get(defs.size() - 1);
+  }
+
+  private static String typeOf(String script) {
+    return infer(script).inferredType.toString();
+  }
+
+  /** Parse + build + infer; returns the top-level DEFINE with the given id. */
+  private static ELNode.DEFINE def(String script, String id) {
+    ELProgram program = parse(script);
+    SymbolTableBuilder.build(program);
+    try {
+      TypeInference.infer(elctx, program);
+    } catch (ParseException e) {
+      throw new RuntimeException("inference failed: " + script, e);
+    }
+    for (ELNode n : program.getDefinitions()) {
+      if (n instanceof ELNode.DEFINE d && id.equals(d.id)) {
+        return d;
+      }
+    }
+    for (ELNode n : program.getExpressions()) {
+      if (n instanceof ELNode.DEFINE d && id.equals(d.id)) {
+        return d;
+      }
+    }
+    throw new AssertionError("define not found: " + id);
+  }
+
+  @Test
+  void annotatedVariable() {
+    assertEquals("Int", typeOf("define x::Int = 42"));
+  }
+
+  @Test
+  void annotatedAliases() {
+    assertEquals("Int", typeOf("define x::Int = 1 + 2"));
+    assertEquals("Char", typeOf("define c::Char = 'a'"));
+    assertEquals("BigInt", typeOf("define b::BigInt = 1"));
+  }
+
+  @Test
+  void annotatedJavaClass() {
+    assertEquals("Date", typeOf("define d::java.util.Date = null"));
+  }
+
+  @Test
+  void annotatedEliteClass() {
+    ELNode node = infer("class Point(x, y)\ndefine p::Point = new Point(1, 2)");
+    assertEquals("Point", node.inferredType.toString());
+  }
+
+  @Test
+  void unresolvableAnnotationIsError() throws Exception {
+    // Class load failure reports an error and types the node ErrorType.
+    // Messages resolve against the JVM default locale (Resources.getText /
+    // ELUtils.getCurrentLocale), which varies per host. Pin English around
+    // the inference and restore afterward so the text assertion below is
+    // deterministic and does not leak into sibling test classes sharing this
+    // forked JVM (e.g. ScopeCaptureTest, whose messages pin a zh locale).
+    Locale prior = Locale.getDefault();
+    Locale.setDefault(Locale.ENGLISH);
+    ParseException ex;
+    try {
+      ELProgram program = parse("define z::NoSuchClass = 1");
+      SymbolTableBuilder.build(program);
+      ex = assertThrows(ParseException.class,
+        () -> TypeInference.infer(elctx, program));
+      ELNode def = program.getExpressions().get(0);
+      assertEquals("Error", def.inferredType.toString());
+    } finally {
+      Locale.setDefault(prior);
+    }
+    assertTrue(ex.getMessage().contains("Class not found: NoSuchClass"),
+      "unexpected message: " + ex.getMessage());
+  }
+
+  @Test
+  void literals() {
+    assertEquals("Boolean", typeOf("true"));
+    // Bare 'x' is a one-char String; the character literal token is #'x'.
+    // (DefaultLexer.scanCharacter is only reachable via the "#'" prefix.)
+    assertEquals("String", typeOf("'x'"));
+    assertEquals("Char", typeOf("#'x'"));
+    assertEquals("String", typeOf("\"hi\""));
+    assertEquals("Int", typeOf("42"));
+    assertEquals("Long", typeOf("3000000000"));
+    assertEquals("Double", typeOf("1.5"));
+    assertEquals("Any", typeOf("null"));
+  }
+
+  @Test
+  void listLiteral() {
+    assertEquals("List[Any]", typeOf("[]"));
+  }
+
+  @Test
+  void conditionalMerge() {
+    assertEquals("Int", typeOf("true ? 1 : 2"));
+  }
+}
