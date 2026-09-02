@@ -307,4 +307,78 @@ class TypeInferenceTest {
       Locale.setDefault(prior);
     }
   }
+
+  @Test
+  void intArithmeticIsAnyInt() {
+    // Variable operands: bare integer-literal expressions (1 + 2) are
+    // constant-folded at parse time into a single Int NUMBER node, so no ADD
+    // subtype survives to exercise the promotion rule. Non-foldable operands
+    // (variables) keep the ADD node and yield AnyInt per "未标注的整型算术".
+    assertEquals("AnyInt", typeOf("define a = 1\ndefine b = 2\na + b"));
+    assertEquals("AnyInt", typeOf("define a = 1\ndefine b = 2\na * b"));
+  }
+
+  @Test
+  void constantFoldWithinInt() {
+    // Both operands are unannotated Ints (via variables, since literal-only
+    // expressions fold at parse time); the unannotated int arithmetic rule
+    // still yields AnyInt.
+    assertEquals("AnyInt", typeOf("define a = 1\ndefine b = 2\na + b"));
+  }
+
+  @Test
+  void annotatedArithmeticDoesNotPromote() {
+    assertEquals("Int", typeOf("define add(x::Int, y::Int)::Int => x + y\nadd(1, 2)"));
+  }
+
+  @Test
+  void bigintArithmeticIsBigInt() {
+    assertEquals("BigInt", typeOf("define b::BigInt = 1\nb + 2"));
+  }
+
+  @Test
+  void mixedIntLong() {
+    assertEquals("Long", typeOf("define l::Long = 1\nl + 1"));
+  }
+
+  @Test
+  void floatArithmeticIsAnyFloat() {
+    // Variable operands (1.5 + 2.5 would constant-fold at parse to a Double).
+    assertEquals("AnyFloat", typeOf("define a = 1.5\ndefine b = 2.5\na + b"));
+  }
+
+  @Test
+  void intFloatMixIsAnyFloat() {
+    assertEquals("AnyFloat", typeOf("define d::Double = 1.5\n1 + d"));
+  }
+
+  @Test
+  void decimalStaysDecimal() {
+    assertEquals("Decimal", typeOf("define m::elite.lang.Decimal = 1.5M\nm + 1"));
+  }
+
+  @Test
+  void numericNarrowingAssignIsError() {
+    // The parser only carries a :: annotation onto the DEFINE when it has an
+    // initializer (define x::Int alone leaves x untyped), so exercise the
+    // narrowing rejection on a later Double assignment once x is pinned Int.
+    Locale prior = Locale.getDefault();
+    Locale.setDefault(Locale.ENGLISH);
+    ParseException ex;
+    try {
+      ELProgram program = parse("define x::Int = 0\nx = 2.5");
+      SymbolTableBuilder.build(program);
+      ex = assertThrows(ParseException.class,
+        () -> TypeInference.infer(elctx, program));
+    } finally {
+      Locale.setDefault(prior);
+    }
+    assertTrue(ex.getMessage().contains("Type mismatch"),
+      "unexpected message: " + ex.getMessage());
+  }
+
+  @Test
+  void numericWideningAssignIsOk() {
+    assertEquals("Long", typeOf("define x::Long = 1\nx"));
+  }
 }

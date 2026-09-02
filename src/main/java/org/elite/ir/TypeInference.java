@@ -154,7 +154,104 @@ public class TypeInference extends DefaultVisitor {
     if (a.equals(b)) return a;
     if (a == AnyType.ANY) return b;
     if (b == AnyType.ANY) return a;
+    if (isNumeric(a) && isNumeric(b)) return normalize(a, b);
     return AnyType.ANY;
+  }
+
+  /** Widening rank per TypeCoercion's numeric distance order. */
+  private static final java.util.List<String> NUMERIC_ORDER = java.util.List.of(
+    "Byte", "Short", "Char", "Int", "Long", "Float", "Double",
+    "Decimal", "Rational", "BigInt", "BigDecimal");
+
+  private int rank(PrimitiveType pt) {
+    int i = NUMERIC_ORDER.indexOf(pt.toString());
+    return i >= 0 ? i : -1;
+  }
+
+  private boolean isIntFamily(Type t) {
+    if (t == PrimitiveType.ANY_INT) return true;
+    if (t instanceof PrimitiveType pt && pt.javaClass() != null) {
+      return pt.javaClass() == Byte.class || pt.javaClass() == Short.class ||
+             pt.javaClass() == Character.class ||
+             pt.javaClass() == Integer.class || pt.javaClass() == Long.class ||
+             pt.javaClass() == java.math.BigInteger.class;
+    }
+    return false;
+  }
+
+  private boolean isFloatFamily(Type t) {
+    if (t == PrimitiveType.ANY_FLOAT) return true;
+    if (t instanceof PrimitiveType pt && pt.javaClass() != null) {
+      return pt.javaClass() == Float.class || pt.javaClass() == Double.class ||
+             pt.javaClass() == java.math.BigDecimal.class;
+    }
+    return false;
+  }
+
+  /** Normalizes two concrete numeric types to the wider one per the
+   *  TypeCoercion distance order; ANY_INT/ANY_FLOAT follow family rules. */
+  private Type normalize(Type a, Type b) {
+    if (a == PrimitiveType.ANY_INT && isIntFamily(b)) return PrimitiveType.ANY_INT;
+    if (b == PrimitiveType.ANY_INT && isIntFamily(a)) return PrimitiveType.ANY_INT;
+    if (a == PrimitiveType.ANY_FLOAT || b == PrimitiveType.ANY_FLOAT) {
+      return PrimitiveType.ANY_FLOAT;
+    }
+    if (isFloatFamily(a) && (isFloatFamily(b) || isIntFamily(b))) return a;
+    if (isFloatFamily(b) && (isFloatFamily(a) || isIntFamily(a))) return b;
+    int ra = rank((PrimitiveType)a);
+    int rb = rank((PrimitiveType)b);
+    if (ra < 0 || rb < 0) return AnyType.ANY;
+    return ra >= rb ? a : b;
+  }
+
+  /** Types an arithmetic-like binary node with promotion semantics. */
+  private Type numericResult(ELNode.Binary e, Type lt, Type rt) {
+    if (lt == ErrorType.ERROR || rt == ErrorType.ERROR) {
+      return ErrorType.ERROR;
+    }
+    if (lt.toString().equals("String") || rt.toString().equals("String")) {
+      return PrimitiveType.of(String.class);
+    }
+    if (!isNumeric(lt) || !isNumeric(rt)) return AnyType.ANY;
+
+    // Int-family arithmetic promotes (may overflow at runtime). A concrete
+    // operand wider than plain Int (Long / BigInteger) pins the result to that
+    // concrete type instead of the AnyInt marker: Int + Long -> Long, Int +
+    // BigInt -> BigInt. Unannotated Int-level arithmetic is the AnyInt chain.
+    if (isIntFamily(lt) && isIntFamily(rt)) {
+      Type wider = normalize(lt, rt);   // the wider concrete int-family type
+      String n = wider.toString();
+      if (n.equals("BigInt") || n.equals("Long")) {
+        return wider;   // a pinned Long / BigInt operand dominates
+      }
+      return PrimitiveType.ANY_INT;
+    }
+    if (isFloatFamily(lt) && isFloatFamily(rt)) {
+      if (isConcreteBigDecimal(lt) && isConcreteBigDecimal(rt)) {
+        return lt;
+      }
+      return PrimitiveType.ANY_FLOAT;
+    }
+    // A float operand dominates an int operand: BigDecimal stays concrete,
+    // the Double/Float side becomes the AnyFloat marker (so Int + Double is
+    // AnyFloat, and Float/Double + BigDecimal is BigDecimal).
+    if (isFloatFamily(lt) && isIntFamily(rt)) {
+      return isConcreteBigDecimal(lt) ? lt : PrimitiveType.ANY_FLOAT;
+    }
+    if (isIntFamily(lt) && isFloatFamily(rt)) {
+      return isConcreteBigDecimal(rt) ? rt : PrimitiveType.ANY_FLOAT;
+    }
+    // Decimal / Rational and any other numeric: widen by distance order.
+    return normalize(lt, rt);
+  }
+
+  private boolean isConcreteBigDecimal(Type t) {
+    return t != null
+      && t.toString().equals("BigDecimal");
+  }
+
+  private boolean isAnyMarker(Type t) {
+    return t == PrimitiveType.ANY_INT || t == PrimitiveType.ANY_FLOAT;
   }
 
   /** Merges the collected ASSIGN right-hand types into per-variable types. */
@@ -533,8 +630,10 @@ public class TypeInference extends DefaultVisitor {
     if (expected.equals(actual)) {
       return true;
     }
+    // Numeric assignment is allowed only when the value widens to the
+    // annotated type (e.g. Int -> Long ok, Double -> Int rejected).
     if (isNumeric(expected) && isNumeric(actual)) {
-      return true;   // refined in Task 6
+      return normalize(actual, expected).equals(expected);
     }
     return false;
   }
@@ -779,15 +878,98 @@ public class TypeInference extends DefaultVisitor {
     setType(e, merge(typeOf(e.left), typeOf(e.right)));
   }
 
-  /**
-   * Arithmetic binary operators ({@code + - * /} etc.). Both operands lead a
-   * numeric result; numeric widening/normalization is refined in Task 6 so
-   * here we merge operand types (identical numerics produce themselves).
-   */
+  private void visitArithmetic(ELNode.Binary e) {
+    Type lt = typeOf(e.left);
+    Type rt = typeOf(e.right);
+    setType(e, numericResult(e, lt, rt));
+  }
+
+  @Override public void visit(ELNode.ADD e) { super.visit(e); visitArithmetic(e); }
+  @Override public void visit(ELNode.SUB e) { super.visit(e); visitArithmetic(e); }
+  @Override public void visit(ELNode.MUL e) { super.visit(e); visitArithmetic(e); }
+  @Override public void visit(ELNode.DIV e) { super.visit(e); visitArithmetic(e); }
+  @Override public void visit(ELNode.REM e) { super.visit(e); visitArithmetic(e); }
+  @Override public void visit(ELNode.POW e) { super.visit(e); visitArithmetic(e); }
+
   @Override
-  public void visit(ELNode.ADD e) {
+  public void visit(ELNode.BITOR e) {
     super.visit(e);
-    setType(e, merge(typeOf(e.left), typeOf(e.right)));
+    Type lt = typeOf(e.left), rt = typeOf(e.right);
+    if (lt.toString().equals("Boolean") && rt.toString().equals("Boolean")) {
+      setType(e, PrimitiveType.of(Boolean.class));
+    } else {
+      setType(e, numericResult(e, lt, rt));
+    }
+  }
+
+  @Override public void visit(ELNode.BITAND e) {
+    super.visit(e);
+    Type lt = typeOf(e.left), rt = typeOf(e.right);
+    if (lt.toString().equals("Boolean") && rt.toString().equals("Boolean")) {
+      setType(e, PrimitiveType.of(Boolean.class));
+    } else {
+      setType(e, numericResult(e, lt, rt));
+    }
+  }
+
+  @Override public void visit(ELNode.XOR e) {
+    super.visit(e);
+    setType(e, numericResult(e, typeOf(e.left), typeOf(e.right)));
+  }
+
+  @Override
+  public void visit(ELNode.SHL e) {
+    super.visit(e);
+    Type lt = typeOf(e.left);
+    setType(e, isIntFamily(lt) ? lt : AnyType.ANY);
+  }
+
+  @Override public void visit(ELNode.SHR e) {
+    super.visit(e);
+    Type lt = typeOf(e.left);
+    setType(e, isIntFamily(lt) ? lt : AnyType.ANY);
+  }
+
+  @Override public void visit(ELNode.USHR e) {
+    super.visit(e);
+    Type lt = typeOf(e.left);
+    setType(e, isIntFamily(lt) ? lt : AnyType.ANY);
+  }
+
+  @Override
+  public void visit(ELNode.NEG e) {
+    super.visit(e);
+    Type t = typeOf(e.right);
+    if (isIntFamily(t)) setType(e, t == PrimitiveType.of(java.math.BigInteger.class) ? t : PrimitiveType.ANY_INT);
+    else if (isFloatFamily(t)) setType(e, t == PrimitiveType.of(java.math.BigDecimal.class) ? t : PrimitiveType.ANY_FLOAT);
+    else setType(e, AnyType.ANY);
+  }
+
+  @Override
+  public void visit(ELNode.POS e) {
+    super.visit(e);
+    setType(e, typeOf(e.right));
+  }
+
+  @Override
+  public void visit(ELNode.BITNOT e) {
+    super.visit(e);
+    Type t = typeOf(e.right);
+    setType(e, isIntFamily(t) ? t : AnyType.ANY);
+  }
+
+  @Override
+  public void visit(ELNode.INC e) {
+    super.visit(e);
+    Type t = typeOf(e.right);
+    setType(e, isIntFamily(t) ? PrimitiveType.ANY_INT : AnyType.ANY);
+  }
+
+  @Override
+  public void visit(ELNode.DEC e) {
+    super.visit(e);
+    Type t = typeOf(e.right);
+    setType(e, isIntFamily(t) ? PrimitiveType.ANY_INT : AnyType.ANY);
   }
 
   @Override
