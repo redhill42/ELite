@@ -36,10 +36,19 @@ List/Array,APPLY 只有粗粒度反射,实例字段/方法引用无类型)。
 |---|---|---|
 | `JavaMethodType` | `java.lang.reflect.Method` | `JavaMethod[void PrintStream.println(String)]` |
 | `JavaFieldType` | `java.lang.reflect.Field` | `JavaField[PrintStream]` |
+| `JavaConstructorType` | `java.lang.reflect.Constructor<?>` | `JavaConstructor[Point(int, int)]` |
 
 toString 格式:JavaMethod = `JavaMethod[<返回类型> <声明类SimpleName>.<方法名>(<参数类型,...>)]`;
-JavaField = `JavaField[<字段类型SimpleName>]`。参数/返回/字段类型显示名沿用
-PrimitiveType 别名规则(Int/Char/BigInt/void 等)。
+JavaField = `JavaField[<字段类型SimpleName>]`;
+JavaConstructor = `JavaConstructor[<声明类SimpleName>(<参数类型,...>)]`。
+参数/返回/字段类型显示名沿用 PrimitiveType 别名规则(Int/Char/BigInt/void 等)。
+
+**JavaConstructorType 落点(用户裁决)**:NEW/APPLY(类名直接调用)结点自身类型为
+`JavaConstructorType`(记录具体构造器,供下阶段静态分派);需要**值类型**的消费点
+(变量初始化、运算操作数、容器元素、比较、IDENT 传播等)统一经
+`valueType(Type)` 解引用:JavaConstructorType → 声明类的 `JavaClassType`,其余原样。
+`typeOf(node)` 保持原始类型;新增 `valueTypeOf(node) = valueType(typeOf(node))`
+供 Pass2 的值消费规则与 Pass3 的接收者处理使用。
 
 ## 架构:新子包 org.elite.ir.infer
 
@@ -99,14 +108,19 @@ NEW 4283-4358、resolveInstanceMethod/StaticMethod 1969-2000):
 - **APPLY Java 方法调用**:目标是 `JavaMethodType` → 其 Method 的返回类型;
   目标是 `JavaClassType` 且右操作数为方法引用 ACCESS →
   `MethodResolver.resolveMethod(resolveStaticMethod)` +
-  `getJavaMethod(args.length)` 命中 → `JavaMethodType`(结果类型 = 返回类型);
+  `getJavaMethod(args.length)` 命中 → 方法引用 ACCESS 记 `JavaMethodType`,
+  调用结点结果类型 = 返回类型;
   方法不存在 → `reportError(EL_METHOD_NOT_FOUND)` + ErrorType;
   参数数量不符(getJavaMethod(arity)==null 但同名方法存在)→
   `reportError(EL_FN_BAD_ARG_COUNT)` + ErrorType
+- **APPLY 构造器调用**:目标是 `JavaClassType` 且右操作数为按类解析的 IDENT
+  (IRBuilder buildJavaClassCall 形态)→ 构造器扫描同 NEW,命中 → 调用结点
+  `JavaConstructorType`(值类型经解引用)
 - **NEW**:base 是 ELite 类 → `ELiteClassType`;Java 类 →
-  `getConstructors()` 中 public 非 varargs 且参数数匹配者唯一 → `JavaClassType`;
+  `getConstructors()` 中 public 非 varargs 且参数数匹配者唯一 → 结点
+  `JavaConstructorType`(值类型经解引用);
   无匹配 → `reportError(EL_CONSTRUCTOR_NOT_FOUND)` + ErrorType;
-  多个匹配 → 仍 `JavaClassType`(动态分派,记 TODO)
+  多个匹配 → `JavaClassType`(无法记录具体构造器,动态分派,记 TODO)
 - **MATCH**:Pass2 已处理结果合并;`::Type` 模式守卫的类型在注解解析范围
 - 前置条件不满足(目标未推导)时保持 null,下轮重试
 
@@ -129,6 +143,9 @@ NEW 4283-4358、resolveInstanceMethod/StaticMethod 1969-2000):
 | `System.out`(ACCESS) | Pass3 轮1 | JavaField[PrintStream](getField) |
 | `System.out.println`(ACCESS) | Pass3 轮1 | JavaMethod[void PrintStream.println(String)] |
 | `println("hello")`(APPLY) | Pass3 轮1 | void |
+
+构造器示例(`define p = new java.util.ArrayList()`):NEW 结点 →
+`JavaConstructor[ArrayList()]`,`p` 经解引用 → `JavaClass[ArrayList]`。
 
 全部静态类型;下一阶段编译器可据此生成与 Java 无差别的字节码。
 
@@ -158,11 +175,12 @@ NEW 4283-4358、resolveInstanceMethod/StaticMethod 1969-2000):
 
 ## 分步实施
 
-1. JavaMethodType/JavaFieldType + 测试
+1. JavaMethodType/JavaFieldType/JavaConstructorType + 测试
 2. InferenceContext + Pass1(迁移 + 一次性语义)+ 编排骨架(暂单轮)+ 测试
-3. Pass2 迁移(现有规则归类)+ 现有测试全绿
-4. Pass3 反射推导 + 语义检查 + 测试
-5. 编排循环/收敛/强制 Any + System.out.println 走查测试 + 手工验证
+3. Pass2 迁移(现有规则归类,值消费点改 valueTypeOf)+ 现有测试全绿
+4. Pass3 反射推导(ACCESS/APPLY/NEW 含构造器)+ 语义检查 + 测试
+5. 编排循环/收敛/强制 Any + System.out.println 与 ArrayList 构造器走查测试
+   + 手工验证
 6. 全量回归与文档同步
 
 每步独立提交、可独立验证。
