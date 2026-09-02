@@ -1101,35 +1101,39 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ```java
   @Test
   void unaryAndLogicalOps() {
-    assertEquals("Boolean", typeOf("!true"));
+    assertEquals("Boolean", typeOf("define b = true\n!b"));
     assertEquals("Boolean", typeOf("empty([])"));
     assertEquals("Boolean", typeOf("1 instanceof Int"));
   }
 
   @Test
   void comparisons() {
-    assertEquals("Boolean", typeOf("1 < 2"));
-    assertEquals("Boolean", typeOf("1 == 2"));
-    assertEquals("Boolean", typeOf("1 <=> 2"));   // CMP
-    assertEquals("Boolean", typeOf("1 in [1]"));
+    assertEquals("Boolean", typeOf("define a = 1\ndefine b = 2\na < b"));
+    assertEquals("Boolean", typeOf("define a = 1\ndefine b = 2\na == b"));
+    assertEquals("Boolean", typeOf("define a = 1\ndefine b = 2\na <=> b"));   // CMP
+    assertEquals("Boolean", typeOf("define a = 1\na in [1]"));
   }
 
   @Test
   void logicalOps() {
-    assertEquals("Boolean", typeOf("true && false"));
-    assertEquals("Boolean", typeOf("true || false"));
+    assertEquals("Boolean", typeOf("define x = true\ndefine y = false\nx && y"));
+    assertEquals("Boolean", typeOf("define x = true\ndefine y = false\nx || y"));
   }
 
   @Test
   void stringInterpolation() {
-    assertEquals("String", typeOf("\"x=\" ~ 42"));
+    assertEquals("String", typeOf("define n = 42\n\"x=\" ~ n"));
   }
 
   @Test
   void compoundLastExpression() {
-    assertEquals("Int", typeOf("{ 1; 2 }"));
+    ELNode.DEFINE f = def("define f() { 1; 2 }", "f");
+    ELNode body = ((ELNode.LAMBDA)f.expr).body;
+    assertEquals("Int", body.inferredType.toString());
   }
 ```
+
+注意(执行时判定依据,来自实际语法验证):字面量-only 的表达式会被 Parser 的 ConstantFolder 在解析期折叠成常量节点(`1 <=> 2` 折叠为 NUMBER),新规则根本不会执行——因此测试必须用变量作操作数(IDENT 类型为 Any 不影响比较/逻辑规则,它们无条件推导 Boolean);顶层 `{ ... }` 是 MAP 字面量语法,COMPOUND 只能经由函数体访问(用 `def()` helper 取 LAMBDA body)。
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -1202,7 +1206,7 @@ Expected: 新用例失败(节点类型为 Any 或推断错误)
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeInferenceTest`
-Expected: BUILD SUCCESS(14 个测试)
+Expected: BUILD SUCCESS(13 个测试 = 8 既有 + 5 新增)
 
 - [ ] **Step 5: Commit**
 
