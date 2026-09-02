@@ -1,20 +1,28 @@
 package org.elite.ir.infer;
 
 import java.math.BigInteger;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 import javax.el.ELContext;
 import org.elite.eval.ELProgram;
 import org.elite.eval.TypeCoercion;
+import org.elite.eval.closure.MethodClosure;
 import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
 import org.elite.ir.SymbolTable;
 import org.elite.resolver.ClassResolver;
+import org.elite.resolver.MethodResolver;
 import org.elite.type.AnyType;
 import org.elite.type.ELiteClassType;
 import org.elite.type.ErrorType;
 import org.elite.type.JavaClassType;
 import org.elite.type.JavaConstructorType;
+import org.elite.type.JavaFieldType;
+import org.elite.type.JavaMethodType;
 import org.elite.type.PrimitiveType;
 import org.elite.type.Type;
 
@@ -147,12 +155,29 @@ public final class InferenceContext {
     return node != null && node.inferredType != null;
   }
 
-  /** A whole member/expression value resolves to its declaring class. */
+  /**
+   * The Java class a value of this node would evaluate to at runtime — the
+   * receiver for further member access. A Java constructor's value is its
+   * declaring class; a Java field's value is the field's type. Anything else
+   * keeps its own type (so a JavaMethod reference stays a JavaMethodType).
+   */
   public Type valueType(Type t) {
     if (t instanceof JavaConstructorType jc) {
-      return new JavaClassType(jc.declaringClass());
+      return typeOfJavaClass(jc.declaringClass());
+    }
+    if (t instanceof JavaFieldType jf) {
+      return typeOfJavaClass(jf.field().getType());
     }
     return t;
+  }
+
+  /** Type of a reflected Java class: the boxed/primitive PrimitiveType when
+   *  TypeCoercion knows it, otherwise a JavaClassType of the given class. */
+  public Type typeOfJavaClass(Class<?> c) {
+    if (TypeCoercion.typeof(c) != TypeCoercion.UNKNOWN_TYPE) {
+      return PrimitiveType.of(c);
+    }
+    return new JavaClassType(c);
   }
 
   public Type valueTypeOf(ELNode node) {
@@ -488,14 +513,67 @@ public final class InferenceContext {
       }
     }
     if (match == null) return null;
-    Class<?> rt = match.getReturnType();
+    return methodReturnType(match);
+  }
+
+  /** Type a resolved reflective Method: void → the void PrimitiveType, known
+   *  boxed/primitive returns → their PrimitiveType, otherwise JavaClassType. */
+  Type methodReturnType(Method m) {
+    Class<?> rt = m.getReturnType();
     if (rt == void.class || rt == Void.class) {
       return PrimitiveType.of(void.class);
     }
-    if (TypeCoercion.typeof(rt) != TypeCoercion.UNKNOWN_TYPE) {
-      return PrimitiveType.of(rt);
+    return typeOfJavaClass(rt);
+  }
+
+  // ---- reflective Java member resolution (Task 4) ----
+
+  /**
+   * Resolves a named public Java method (static first, then instance)
+   * on the given class with exact arity; null when absent or ambiguous.
+   */
+  public Method resolveJavaMethod(Class<?> cls, String name, int arity) {
+    MethodClosure mc = MethodResolver.getInstance(elctx).resolveStaticMethod(cls, name);
+    if (mc == null) {
+      mc = MethodResolver.getInstance(elctx).resolveMethod(cls, name);
     }
-    return new JavaClassType(rt);
+    if (mc == null) return null;
+    return mc.getJavaMethod(arity);
+  }
+
+  /** Resolves a public Java field by name; null when absent or non-public. */
+  public Field resolveJavaField(Class<?> cls, String name) {
+    try {
+      Field f = cls.getField(name);
+      return Modifier.isPublic(f.getModifiers()) ? f : null;
+    } catch (NoSuchFieldException e) {
+      return null;
+    }
+  }
+
+  /** True when a declared field exists but is not public. */
+  public boolean hasNonPublicField(Class<?> cls, String name) {
+    try {
+      cls.getDeclaredField(name);
+      return true;
+    } catch (NoSuchFieldException e) {
+      return false;
+    }
+  }
+
+  /**
+   * Resolves a public non-varargs constructor with exact arity; null when
+   * absent or ambiguous (multiple candidates).
+   */
+  public Constructor<?> resolveJavaConstructor(Class<?> cls, int arity) {
+    Constructor<?> match = null;
+    for (Constructor<?> c : cls.getConstructors()) {
+      if (!c.isVarArgs() && c.getParameterCount() == arity) {
+        if (match != null) return null;   // ambiguous
+        match = c;
+      }
+    }
+    return match;
   }
 
   /**

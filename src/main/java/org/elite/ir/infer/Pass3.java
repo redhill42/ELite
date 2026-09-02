@@ -1,17 +1,45 @@
 package org.elite.ir.infer;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.List;
 import org.elite.eval.ELProgram;
 import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
+import org.elite.resolver.ClassResolver;
 import org.elite.type.AnyType;
 import org.elite.type.ArrayType;
+import org.elite.type.ELiteClassType;
+import org.elite.type.ErrorType;
 import org.elite.type.FunctionType;
 import org.elite.type.JavaClassType;
+import org.elite.type.JavaConstructorType;
+import org.elite.type.JavaFieldType;
+import org.elite.type.JavaMethodType;
 import org.elite.type.ListType;
 import org.elite.type.PrimitiveType;
 import org.elite.type.Type;
 
-/** Pass 3: reflective complex nodes, e.g. Java calls (extended in Task 4). */
+import static org.elite.resources.Resources.EL_CONSTRUCTOR_NOT_FOUND;
+import static org.elite.resources.Resources.EL_ILLEGAL_ACCESS;
+import static org.elite.resources.Resources.EL_METHOD_NOT_FOUND;
+import static org.elite.resources.Resources.EL_PROPERTY_NOT_FOUND;
+import static org.elite.resources.Resources._T;
+
+/**
+ * Pass 3: reflective complex nodes.
+ *
+ * Types Java member references and calls entirely from reflection: a bare
+ * {@code System} class name becomes a JavaClassType, {@code System.out} a
+ * JavaFieldType, {@code System.out.println} a JavaMethodType, and
+ * {@code new java.util.ArrayList()} a JavaConstructorType. Reflective lookups
+ * also report the semantic errors (missing property / illegal access /
+ * missing method / missing constructor), surfaced as a ParseException by the
+ * orchestrator once the convergence loop finishes.
+ */
 public class Pass3 extends DefaultVisitor {
 
   private final InferenceContext ctx;
@@ -34,40 +62,63 @@ public class Pass3 extends DefaultVisitor {
   public void visit(ELNode.APPLY e) {
     super.visit(e);
 
-    Type target = ctx.typeOf(e.right);
-    if (target instanceof FunctionType ft) {
+    // User-function call: the target is a FunctionType.
+    if (ctx.typeOf(e.right) instanceof FunctionType ft) {
       ctx.setType(e, ft.returnType());
       return;
     }
 
-    // Java method call: obj.method(args) — target is an ACCESS whose
-    // receiver type carries the class.
-    Type receiver = target;
-    String method = null;
-    if (e.right instanceof ELNode.ACCESS acc) {
-      receiver = ctx.typeOf(acc.right);
-      method = acc.index instanceof ELNode.STRINGVAL s
-        ? s.value : acc.index instanceof ELNode.IDENT id ? id.id : null;
+    Type target = ctx.valueTypeOf(e.right);
+    boolean positional = (e.keys == null || e.keys.length == 0);
+
+    // (1) Method reference that resolved fully (see ACCESS): call its signature.
+    if (target instanceof JavaMethodType jm) {
+      ctx.setType(e, ctx.methodReturnType(jm.method()));
+      return;
     }
-    Class<?> cls = receiver instanceof JavaClassType jc ? jc.javaClass()
-      : receiver instanceof PrimitiveType pt && pt.javaClass() != null
-        ? pt.javaClass() : null;
-    if (cls != null && method != null && (e.keys == null || e.keys.length == 0)) {
-      Type rt = ctx.methodReturnType(cls, method, e.args.length);
-      if (rt != null) {
-        ctx.setType(e, rt);
+
+    // (2) obj/Cls.method(args) — the callee ACCESS names the method on a Java
+    // class receiver. Resolve against the supplied argument types and type both
+    // the call and (redundantly) the callee, or report a missing method.
+    if (positional && e.right instanceof ELNode.ACCESS acc
+        && acc.index instanceof ELNode.STRINGVAL key) {
+      Type receiver = ctx.valueTypeOf(acc.right);
+      if (receiver instanceof JavaClassType recvClass) {
+        Method best = resolveCall(recvClass.javaClass(), key.value, argTypes(e.args));
+        if (best != null) {
+          ctx.setType(e, ctx.methodReturnType(best));
+          // Reflect the resolved argument signature onto the callee ACCESS too,
+          // so a method reference node reads e.g. println(String), not println().
+          ctx.setType(acc, new JavaMethodType(best));
+          return;
+        }
+        ctx.reportError(e.pos,
+          _T(EL_METHOD_NOT_FOUND, recvClass.javaClass().getName(), key.value));
+        ctx.setType(e, ErrorType.ERROR);
         return;
       }
     }
 
-    // Fully-qualified static call such as java.lang.Integer.parseInt(args):
-    // the ACCESS subtree names both package/class and the trailing method.
-    if (e.keys == null || e.keys.length == 0) {
-      Type fs = ctx.staticAccessReturnType(e.right, e.args.length);
-      if (fs != null) {
-        ctx.setType(e, fs);
+    // (3) Constructor call on a bare class name: File("x") form.
+    if (positional && target instanceof JavaClassType jcClass
+        && e.right instanceof ELNode.IDENT id && id.symbol == null) {
+      Constructor<?> c = ctx.resolveJavaConstructor(jcClass.javaClass(), e.args.length);
+      if (c != null) {
+        ctx.setType(e, new JavaConstructorType(c));
         return;
       }
+      ctx.reportError(e.pos, _T(EL_CONSTRUCTOR_NOT_FOUND, jcClass.javaClass().getName()));
+      ctx.setType(e, ErrorType.ERROR);
+      return;
+    }
+
+    // (4) Pre-refactor service model: instance method off a JavaClass or boxed
+    // receiver, or a fully-qualified static form such as
+    // java.lang.Integer.parseInt(...).
+    Type rt = legacyServiceReturn(e);
+    if (rt != null) {
+      ctx.setType(e, rt);
+      return;
     }
     ctx.setType(e, AnyType.ANY);
   }
@@ -75,26 +126,207 @@ public class Pass3 extends DefaultVisitor {
   @Override
   public void visit(ELNode.NEW e) {
     super.visit(e);
-    // NEW.base is an annotated type node: resolve it (ELite class or
-    // compile-time-visible Java class); unresolvable falls back to Any.
-    ctx.setType(e, ctx.resolveAnnotationType(e.base));
+    Type annotated = ctx.resolveAnnotationType(e.base);
+    if (annotated instanceof ELiteClassType) {
+      ctx.setType(e, annotated);   // value of an ELite-class NEW is the class
+      return;
+    }
+    if (annotated instanceof JavaClassType jc) {
+      Constructor<?> c = ctx.resolveJavaConstructor(jc.javaClass(), e.args.length);
+      if (c != null) {
+        ctx.setType(e, new JavaConstructorType(c));
+        return;
+      }
+      ctx.reportError(e.pos, _T(EL_CONSTRUCTOR_NOT_FOUND, jc.javaClass().getName()));
+      ctx.setType(e, ErrorType.ERROR);
+      return;
+    }
+    // A primitive/boxed base (e.g. new int[n]) or an unresolvable annotation
+    // that already reported EL_CLASS_NOT_FOUND: only reseed a meaningful type.
+    if (annotated != AnyType.ANY && annotated != ErrorType.ERROR) {
+      ctx.setType(e, annotated);
+    }
   }
 
   @Override
   public void visit(ELNode.ACCESS e) {
     super.visit(e);
     Type target = ctx.typeOf(e.right);
+
+    // Array/List element access is the pre-existing structural rule.
     if (target instanceof ArrayType at) {
       ctx.setType(e, at.element());
-    } else if (target instanceof ListType lt) {
+      return;
+    }
+    if (target instanceof ListType lt) {
       ctx.setType(e, lt.element());
-    } else {
-      ctx.setType(e, AnyType.ANY);
+      return;
+    }
+
+    // Java member access: class.field / class.methodReference.
+    if (e.index instanceof ELNode.STRINGVAL key) {
+      Type value = ctx.valueType(target);
+      if (value instanceof JavaClassType jc) {
+        handleJavaClassMember(e, jc, key.value);
+        return;
+      }
+    }
+
+    ctx.setType(e, AnyType.ANY);
+  }
+
+  /** Types a Java member reference, or reports a missing property. */
+  private void handleJavaClassMember(ELNode.ACCESS e, JavaClassType jc, String name) {
+    Field f = ctx.resolveJavaField(jc.javaClass(), name);
+    if (f != null) {
+      ctx.setType(e, new JavaFieldType(f));
+      return;
+    }
+    if (ctx.hasNonPublicField(jc.javaClass(), name)) {
+      ctx.reportError(e.pos, _T(EL_ILLEGAL_ACCESS, jc.javaClass().getName(), name));
+      ctx.setType(e, ErrorType.ERROR);
+      return;
+    }
+    // Still a plausible method reference (name resolves to any public method)?
+    Method m = captureReference(jc.javaClass(), name);
+    if (m != null) {
+      ctx.setType(e, new JavaMethodType(m));
+      return;
+    }
+    // Neither a public/private field nor any method of that name → property
+    // read missing on the class.
+    ctx.reportError(e.pos, _T(EL_PROPERTY_NOT_FOUND, jc.javaClass().getName(), name));
+    ctx.setType(e, ErrorType.ERROR);
+  }
+
+  @Override
+  public void visit(ELNode.IDENT e) {
+    // Java class name used as a value: only when not a symbol-bound variable or
+    // function (those belong to Pass 2) and it resolves to a compile-time class.
+    if (e.symbol != null) {
+      return;
+    }
+    try {
+      Class<?> cls = ClassResolver.getInstance(ctx.elctx()).resolveClass(e.id);
+      ctx.setType(e, new JavaClassType(cls));
+    } catch (ClassNotFoundException ex) {
+      // Not a Java class name: leave for Pass 2 (stays null / reads as Any).
     }
   }
 
   @Override
   public void visitNode(ELNode e) {
     // Anything not covered above stays untyped (reads as Any).
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reflective method-resolution helpers
+  // ---------------------------------------------------------------------------
+
+  private Type[] argTypes(ELNode[] args) {
+    Type[] out = new Type[args.length];
+    for (int i = 0; i < args.length; i++) {
+      out[i] = args[i] == null ? AnyType.ANY : ctx.typeOf(args[i]);
+    }
+    return out;
+  }
+
+  /** Exact-arity signature resolution backed by the supplied static arg types. */
+  private Method resolveCall(Class<?> cls, String name, Type[] argTypes) {
+    return pick(methodsNamed(cls, name, argTypes.length), argTypes);
+  }
+
+  /**
+   * Resolves a first-class method reference for display. The String-typed
+   * one-arg overload is the conventional rendering of line/call families such
+   * as PrintStream.println (System.out.println); fall back to any single-arg
+   * overload, then to the zero-arg one.
+   */
+  private Method captureReference(Class<?> cls, String name) {
+    for (Method cand : methodsNamed(cls, name, 1)) {
+      if (cand.getParameterTypes()[0].equals(String.class)) return cand;
+    }
+    Method anyOne = firstOrNull(methodsNamed(cls, name, 1));
+    if (anyOne != null) return anyOne;
+    return firstOrNull(methodsNamed(cls, name, 0));
+  }
+
+  private static Method firstOrNull(List<Method> ms) {
+    return ms.isEmpty() ? null : ms.get(0);
+  }
+
+  private List<Method> methodsNamed(Class<?> cls, String name, int arity) {
+    List<Method> out = new ArrayList<>();
+    for (Method m : cls.getMethods()) {
+      if (Modifier.isPublic(m.getModifiers())
+          && m.getName().equals(name) && m.getParameterCount() == arity) {
+        out.add(m);
+      }
+    }
+    return out;
+  }
+
+  /** Exact match preferred; else the unique assignable one; null on a tie. */
+  private Method pick(List<Method> cands, Type[] argTypes) {
+    Method exact = null;
+    Method assignable = null;
+    for (Method m : cands) {
+      Class<?>[] params = m.getParameterTypes();
+      boolean allExact = true;
+      boolean allAssign = true;
+      for (int i = 0; i < params.length; i++) {
+        Class<?> a = argJavaClass(argTypes[i]);
+        if (a == null) {
+          allExact = false;
+          allAssign = false;
+          break;
+        }
+        if (!params[i].equals(a)) {
+          allExact = false;
+          if (!accepts(params[i], a)) {
+            allAssign = false;
+            break;
+          }
+        }
+      }
+      if (allExact) {
+        if (exact != null) return null;      // >1 exact → ambiguous
+        exact = m;
+      } else if (allAssign) {
+        if (assignable != null) return null; // >1 assignable tie
+        assignable = m;
+      }
+    }
+    return exact != null ? exact : assignable;
+  }
+
+  private Class<?> argJavaClass(Type t) {
+    if (t instanceof PrimitiveType pt) return pt.javaClass();
+    if (t instanceof JavaClassType jc) return jc.javaClass();
+    return null;
+  }
+
+  private boolean accepts(Class<?> param, Class<?> arg) {
+    return param.isAssignableFrom(arg);
+  }
+
+  /** The pre-refactor service fallback. Returns null when it does not apply. */
+  private Type legacyServiceReturn(ELNode.APPLY e) {
+    if (e.keys != null && e.keys.length != 0) return null;
+    String method = null;
+    Type receiver = ctx.typeOf(e.right);
+    if (e.right instanceof ELNode.ACCESS acc) {
+      receiver = ctx.typeOf(acc.right);
+      method = acc.index instanceof ELNode.STRINGVAL s ? s.value
+        : acc.index instanceof ELNode.IDENT id ? id.id : null;
+    }
+    Class<?> cls = receiver instanceof JavaClassType jc ? jc.javaClass()
+      : receiver instanceof PrimitiveType pt && pt.javaClass() != null
+          ? pt.javaClass() : null;
+    if (cls != null && method != null) {
+      Type rt = ctx.methodReturnType(cls, method, e.args.length);
+      if (rt != null) return rt;
+    }
+    return ctx.staticAccessReturnType(e.right, e.args.length);
   }
 }

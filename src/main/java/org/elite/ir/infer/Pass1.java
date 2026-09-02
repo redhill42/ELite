@@ -59,7 +59,7 @@ public class Pass1 extends DefaultVisitor {
       return;   // function/class definitions are Pass 2 / this pass respectively
     }
     if (e.symbol != null && e.symbol.immutable && ctx.hasType(e.expr)) {
-      Type t = ctx.typeOf(e.expr);
+      Type t = ctx.valueTypeOf(e.expr);
       ctx.varTypes.put(e.symbol, t);
       ctx.setType(e, t);
     }
