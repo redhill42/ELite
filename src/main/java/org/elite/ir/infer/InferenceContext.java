@@ -45,10 +45,10 @@ public final class InferenceContext {
 
   private boolean progress;
 
-  private final Map<SymbolTable.Symbol, java.util.List<Type>> assigns = new HashMap<>();
+  final Map<SymbolTable.Symbol, java.util.List<Type>> assigns = new HashMap<>();
   final Map<SymbolTable.Symbol, Type> varTypes = new HashMap<>();
-  private final Map<String, ELNode.DEFINE> topDefs = new HashMap<>();
-  private final Map<String, Type> forVars = new HashMap<>();
+  final Map<String, ELNode.DEFINE> topDefs = new HashMap<>();
+  final Map<String, Type> forVars = new HashMap<>();
 
   public InferenceContext(ELContext elctx, ELProgram program) {
     this.elctx = elctx;
@@ -203,7 +203,7 @@ public final class InferenceContext {
     return i >= 0 ? i : -1;
   }
 
-  private boolean isIntFamily(Type t) {
+  boolean isIntFamily(Type t) {
     if (t == PrimitiveType.ANY_INT) return true;
     if (t instanceof PrimitiveType pt && pt.javaClass() != null) {
       return pt.javaClass() == Byte.class || pt.javaClass() == Short.class ||
@@ -214,7 +214,7 @@ public final class InferenceContext {
     return false;
   }
 
-  private boolean isFloatFamily(Type t) {
+  boolean isFloatFamily(Type t) {
     if (t == PrimitiveType.ANY_FLOAT) return true;
     if (t instanceof PrimitiveType pt && pt.javaClass() != null) {
       return pt.javaClass() == Float.class || pt.javaClass() == Double.class ||
@@ -240,7 +240,7 @@ public final class InferenceContext {
   }
 
   /** Types an arithmetic-like binary node with promotion semantics. */
-  private Type numericResult(ELNode.Binary e, Type lt, Type rt) {
+  Type numericResult(ELNode.Binary e, Type lt, Type rt) {
     if (lt == ErrorType.ERROR || rt == ErrorType.ERROR) {
       return ErrorType.ERROR;
     }
@@ -477,7 +477,7 @@ public final class InferenceContext {
   }
 
   /** Reflectively finds the return type of the named method; null if ambiguous. */
-  private Type methodReturnType(Class<?> cls, String name, int argCount) {
+  Type methodReturnType(Class<?> cls, String name, int argCount) {
     java.lang.reflect.Method match = null;
     for (java.lang.reflect.Method m : cls.getMethods()) {
       if (m.getName().equals(name) && m.getParameterCount() == argCount) {
@@ -503,7 +503,7 @@ public final class InferenceContext {
    * classpath, e.g. {@code java.lang.Integer.parseInt("1")}. Returns the
    * method return type or null when the shape is not a Java static call.
    */
-  private Type staticAccessReturnType(ELNode root, int argCount) {
+  Type staticAccessReturnType(ELNode root, int argCount) {
     if (!(root instanceof ELNode.ACCESS)) return null;
     java.util.List<String> parts = new java.util.ArrayList<>();
     ELNode cur = root;
