@@ -73,4 +73,45 @@ class OptLevelSmokeTest {
             // expected
         }
     }
+
+    // Mixed numeric dispatch must match the AST interpreter's type-check
+    // order (BigDecimal -> Decimal -> float/double -> Rational -> BigInteger
+    // -> Long -> Int). Literal suffixes give real runtime values without
+    // constant folding: b = BigInteger/BigDecimal, m = Decimal, r = Rational.
+
+    @Test void bigIntFloatArithmeticDispatch() throws Exception {
+        // 12b is a BigInteger literal, 3.5 a Double: mixed arithmetic takes
+        // the float path (double math), not BigInteger truncation.
+        assertTrue((Boolean) engine.eval(
+          "define x = 12b, y = 3.5\n(x * y) instanceof Double"));
+        assertEquals(42.0, ((Number) engine.eval(
+          "define x = 12b, y = 3.5\nx * y")).doubleValue());
+    }
+
+    @Test void bigDecimalFloatArithmeticDispatch() throws Exception {
+        // BigDecimal dominates: the double operand is coerced into BigDecimal.
+        assertTrue((Boolean) engine.eval(
+          "define x = 3.5b, y = 1.5\n(x + y) instanceof java.math.BigDecimal"));
+    }
+
+    @Test void rationalFloatArithmeticDispatch() throws Exception {
+        // The float check precedes Rational: 1r + 0.5 is double math.
+        assertTrue((Boolean) engine.eval("(1r + 0.5) instanceof Double"));
+    }
+
+    @Test void bigIntFloatComparisonDispatch() throws Exception {
+        // Mixed comparison takes the float path; 12.5 must not be truncated.
+        assertEquals(false, engine.eval("define x = 12b\nx == 12.5"));
+        assertEquals(true, engine.eval("define x = 12b\nx < 12.5"));
+    }
+
+    @Test void stringArithmeticDispatchTracksValues() throws Exception {
+        // String coercion depends on the string VALUE (int-like vs
+        // float-like). The dispatch is an invokedynamic PIC cached by
+        // class, so the value check must stay a per-call guard: the same
+        // (String, Integer) site sees both values here.
+        engine.eval("define f(s) => s + 1");
+        assertEquals(2L, ((Number) engine.eval("f(\"1\")")).longValue());
+        assertEquals(2.5, ((Number) engine.eval("f(\"1.5\")")).doubleValue());
+    }
 }

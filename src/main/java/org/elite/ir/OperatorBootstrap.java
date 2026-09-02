@@ -1108,19 +1108,23 @@ public final class OperatorBootstrap {
         return rationalOp;
     }
 
+    // Mixed-type dispatch mirrors ELNode.Arithmetic.evaluate exactly:
+    // BigDecimal -> Decimal -> float/double -> Rational -> BigInteger ->
+    // Long -> Int. Note: the CharSequence branch below must stay a
+    // per-call guardWithTest — looksLikeFloats inspects string VALUES,
+    // and an invokedynamic PIC caches by class, so a static decision
+    // would go stale when the value changes between calls.
     if (lhs instanceof BigDecimal || rhs instanceof BigDecimal)
       return commonCoerce(bigDecimalOp, BigDecimal.class, lhs, rhs);
     if (lhs instanceof Decimal || rhs instanceof Decimal)
       return commonCoerce(decimalOp, Decimal.class, lhs, rhs);
+    if ((lhs instanceof Float || lhs instanceof Double) ||
+        (rhs instanceof Float || rhs instanceof Double))
+      return commonCoerce(doubleOp, double.class, lhs, rhs);
     if (lhs instanceof Rational || rhs instanceof Rational)
       return commonCoerce(rationalOp, Rational.class, lhs, rhs);
     if (lhs instanceof BigInteger || rhs instanceof BigInteger)
       return commonCoerce(bigIntegerOp, BigInteger.class, lhs, rhs);
-
-    if (lhs instanceof Double || rhs instanceof Double)
-      return commonCoerce(doubleOp, double.class, lhs, rhs);
-    if (lhs instanceof Float || rhs instanceof Float)
-      return commonCoerce(floatOp, float.class, lhs, rhs);
 
     if (lhs instanceof CharSequence || rhs instanceof CharSequence) {
       return guardWithTest(
@@ -1472,6 +1476,9 @@ public final class OperatorBootstrap {
     if (lhs != null && rhs != null && lhs.getClass() == rhs.getClass())
       return objectOp;
 
+    // Mixed-type dispatch mirrors ELNode.Equality.evaluate exactly:
+    // BigDecimal -> Decimal -> float/double -> Rational -> BigInteger ->
+    // Long -> Int.
     if (lhs instanceof Number && rhs instanceof Number) {
       if (isELiteObject(lhs) || isELiteObject(rhs))
         return objectOp;
@@ -1479,14 +1486,13 @@ public final class OperatorBootstrap {
         return commonCoerce(objectOp, BigDecimal.class, lhs, rhs);
       if (lhs instanceof Decimal || rhs instanceof Decimal)
         return commonCoerce(objectOp, Decimal.class, lhs, rhs);
+      if ((lhs instanceof Float || lhs instanceof Double) ||
+          (rhs instanceof Float || rhs instanceof Double))
+        return commonCoerce(doubleOp, double.class, lhs, rhs);
       if (lhs instanceof Rational || rhs instanceof Rational)
         return commonCoerce(objectOp, Rational.class, lhs, rhs);
       if (lhs instanceof BigInteger || rhs instanceof BigInteger)
         return commonCoerce(objectOp, BigInteger.class, lhs, rhs);
-      if (lhs instanceof Double || rhs instanceof Double)
-        return commonCoerce(doubleOp, double.class, lhs, rhs);
-      if (lhs instanceof Float || rhs instanceof Float)
-        return commonCoerce(floatOp, float.class, lhs, rhs);
       if (lhs instanceof Long || rhs instanceof Long)
         return commonCoerce(longOp, long.class, lhs, rhs);
       return commonCoerce(intOp, int.class, lhs, rhs);
@@ -1594,18 +1600,20 @@ public final class OperatorBootstrap {
     if (operator != null)
       return operator;
 
+    // Mixed-type dispatch mirrors ELNode.Comparison.evaluate exactly:
+    // BigDecimal -> Decimal -> float/double -> Rational -> BigInteger ->
+    // Long -> Int.
     if (lhs instanceof BigDecimal || rhs instanceof BigDecimal)
       return commonCoerce(compareOp, BigDecimal.class, lhs, rhs);
     if (lhs instanceof Decimal || rhs instanceof Decimal)
       return commonCoerce(compareOp, Decimal.class, lhs, rhs);
+    if ((lhs instanceof Float || lhs instanceof Double) ||
+        (rhs instanceof Float || rhs instanceof Double))
+      return commonCoerce(doubleOp, double.class, lhs, rhs);
     if (lhs instanceof Rational || rhs instanceof Rational)
       return commonCoerce(compareOp, Rational.class, lhs, rhs);
     if (lhs instanceof BigInteger || rhs instanceof BigInteger)
       return commonCoerce(compareOp, BigInteger.class, lhs, rhs);
-    if (lhs instanceof Double || rhs instanceof Double)
-      return commonCoerce(doubleOp, double.class, lhs, rhs);
-    if (lhs instanceof Float || rhs instanceof Float)
-      return commonCoerce(floatOp, float.class, lhs, rhs);
     if (lhs instanceof Long || rhs instanceof Long)
       return commonCoerce(longOp, long.class, lhs, rhs);
     if ((lhs instanceof Integer || lhs instanceof Short || lhs instanceof Byte) ||

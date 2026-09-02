@@ -232,17 +232,29 @@ public class TypeInference extends DefaultVisitor {
       }
       return PrimitiveType.ANY_FLOAT;
     }
-    // A float operand dominates an int operand: BigDecimal stays concrete,
-    // the Double/Float side becomes the AnyFloat marker (so Int + Double is
-    // AnyFloat, and Float/Double + BigDecimal is BigDecimal).
+    // A float operand dominates an int operand: BigDecimal stays concrete;
+    // a concrete BigInt operand keeps the float side as-is (BigInt + Double
+    // -> Double, BigInt + Float -> Float, BigInt + AnyFloat -> AnyFloat);
+    // otherwise (Int/Long/AnyInt + float) the result is the AnyFloat marker.
     if (isFloatFamily(lt) && isIntFamily(rt)) {
-      return isConcreteBigDecimal(lt) ? lt : PrimitiveType.ANY_FLOAT;
+      return floatSideResult(lt, rt);
     }
     if (isIntFamily(lt) && isFloatFamily(rt)) {
-      return isConcreteBigDecimal(rt) ? rt : PrimitiveType.ANY_FLOAT;
+      return floatSideResult(rt, lt);
     }
     // Decimal / Rational and any other numeric: widen by distance order.
     return normalize(lt, rt);
+  }
+
+  private Type floatSideResult(Type floatSide, Type intSide) {
+    if (isConcreteBigDecimal(floatSide)) return floatSide;
+    if (isConcreteBigInt(intSide)) return floatSide;
+    return PrimitiveType.ANY_FLOAT;
+  }
+
+  private boolean isConcreteBigInt(Type t) {
+    return t instanceof PrimitiveType pt &&
+           pt.javaClass() == java.math.BigInteger.class;
   }
 
   private boolean isConcreteBigDecimal(Type t) {

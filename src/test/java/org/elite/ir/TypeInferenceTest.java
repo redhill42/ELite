@@ -391,4 +391,21 @@ class TypeInferenceTest {
   void negateBigIntStaysBigInt() {
     assertEquals("BigInt", typeOf("define b::BigInt = 1\n-b"));
   }
+
+  @Test
+  void bigIntWithConcreteFloatsKeepsFloatSide() {
+    assertEquals("Double", typeOf("define b::BigInt = 1\ndefine d::Double = 1.5\nb + d"));
+    assertEquals("Double", typeOf("define b::BigInt = 1\ndefine d::Double = 1.5\nd + b"));
+    // Int initializer widens to the Float annotation (Double would be a
+    // narrowing mismatch); the result keeps the concrete Float side.
+    assertEquals("Float", typeOf("define b::BigInt = 1\ndefine f::Float = 1\nb + f"));
+  }
+
+  @Test
+  void bigIntWithAnyFloatIsAnyFloat() {
+    // Variable operands so the float arithmetic cannot constant-fold.
+    assertEquals("AnyFloat",
+      typeOf("define b::BigInt = 1\ndefine d1 = 1.5\ndefine d2 = 2.5\n"
+             + "define x = d1 + d2\nb + x"));
+  }
 }
