@@ -149,4 +149,26 @@ class Pass3Test {
     ELNode id = (ELNode)((ELNode.DEFINE)def).expr;
     assertEquals("Any", id.inferredType.toString());
   }
+
+  @Test
+  void anyTypedArgumentJavaCallFallsBack() throws Exception {
+    // An Any-typed argument must not hard-error; the call types Any.
+    ELProgram program = parse("define v = noSuchThing\nSystem.out.println(v)");
+    SymbolTableBuilder.build(program);
+    assertDoesNotThrow(() -> TypeInference.infer(elctx, program));
+    ELNode apply = (ELNode)program.getExpressions().get(1);
+    assertEquals("Any", apply.inferredType.toString());
+  }
+
+  @Test
+  void ambiguousConstructorFallsBackToClass() throws Exception {
+    // java.io.File has File(String) and File(URI) — same arity, ambiguous.
+    ELProgram program = parse("define f = new java.io.File(\"x\")");
+    SymbolTableBuilder.build(program);
+    assertDoesNotThrow(() -> TypeInference.infer(elctx, program));
+    ELNode def = (ELNode)program.getExpressions().get(0);
+    assertEquals("File", def.inferredType.toString());
+    ELNode newExpr = (ELNode)((ELNode.DEFINE)def).expr;
+    assertEquals("File", newExpr.inferredType.toString());
+  }
 }

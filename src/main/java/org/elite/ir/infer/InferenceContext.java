@@ -576,6 +576,17 @@ public final class InferenceContext {
     return match;
   }
 
+  /** True when the class has any public non-varargs constructor with the
+   *  given arity (used to distinguish ambiguity from absence). */
+  public boolean hasJavaConstructor(Class<?> cls, int arity) {
+    for (Constructor<?> c : cls.getConstructors()) {
+      if (!c.isVarArgs() && c.getParameterCount() == arity) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Resolves a whole-dotted member reference reached only through the Java
    * classpath, e.g. {@code java.lang.Integer.parseInt("1")}. Returns the

@@ -48,7 +48,8 @@ JavaConstructor = `JavaConstructor[<声明类SimpleName>(<参数类型,...>)]`�
 (变量初始化、运算操作数、容器元素、比较、IDENT 传播等)统一经
 `valueType(Type)` 解引用:JavaConstructorType → 声明类的 `JavaClassType`,其余原样。
 `typeOf(node)` 保持原始类型;新增 `valueTypeOf(node) = valueType(typeOf(node))`
-供 Pass2 的值消费规则与 Pass3 的接收者处理使用。
+供 Pass2 的值消费规则与 Pass3 的接收者处理使用。JavaFieldType 同样经
+`valueType` 解引用为其字段类型的类(接收者链 System.out.println 需要)。
 
 ## 架构:新子包 org.elite.ir.infer
 
@@ -139,13 +140,13 @@ NEW 4283-4358、resolveInstanceMethod/StaticMethod 1969-2000):
 | 结点 | 轮次 | 类型 |
 |---|---|---|
 | `"hello"` | Pass1 | String |
-| `System`(IDENT,无符号) | Pass3 轮1 | JavaClass[System] |
+| `System`(IDENT,无符号) | Pass3 轮1 | System |
 | `System.out`(ACCESS) | Pass3 轮1 | JavaField[PrintStream](getField) |
 | `System.out.println`(ACCESS) | Pass3 轮1 | JavaMethod[void PrintStream.println(String)] |
 | `println("hello")`(APPLY) | Pass3 轮1 | void |
 
 构造器示例(`define p = new java.util.ArrayList()`):NEW 结点 →
-`JavaConstructor[ArrayList()]`,`p` 经解引用 → `JavaClass[ArrayList]`。
+`JavaConstructor[ArrayList()]`,`p` 经解引用 → `ArrayList`。
 
 全部静态类型;下一阶段编译器可据此生成与 Java 无差别的字节码。
 

@@ -140,9 +140,17 @@ public class Pass2 extends DefaultVisitor {
     SymbolTable.Symbol sym = e.symbol;
     if (sym == null) {
       // No symbol attached (e.g. a function referenced from a variable
-      // initializer): fall back to the same-named top-level definition.
+      // initializer): fall back to the same-named top-level definition. When
+      // there is none, the name may still be a Java class (Pass 3 types it and
+      // marks progress); only default to Any when nothing has typed the node
+      // yet, otherwise Pass 3's JavaClassType would be overwritten back to Any
+      // every iteration and the fixpoint would never converge.
       ELNode.DEFINE top = ctx.topDefs.get(e.id);
-      ctx.setType(e, top != null ? ctx.typeOf(top) : AnyType.ANY);
+      if (top != null) {
+        ctx.setType(e, ctx.typeOf(top));
+      } else if (!ctx.hasType(e)) {
+        ctx.setType(e, AnyType.ANY);
+      }
     } else if (sym.isFunction()) {
       ctx.setType(e, ctx.typeOf(sym.def));
     } else {

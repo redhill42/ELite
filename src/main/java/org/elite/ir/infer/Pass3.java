@@ -73,6 +73,15 @@ public class Pass3 extends DefaultVisitor {
 
     // (1) Method reference that resolved fully (see ACCESS): call its signature.
     if (target instanceof JavaMethodType jm) {
+      // The reference captured one overload purely for display (arg-blind), so a
+      // call carrying a statically-indeterminate (Any/marker) argument cannot be
+      // bound to that overload's return — per the reflective spec it falls back
+      // to Any rather than hard-erroring or claiming a guessed return type.
+      // Concrete arguments keep the static method's return type.
+      if (someArgIndeterminate(argTypes(e.args))) {
+        ctx.setType(e, AnyType.ANY);
+        return;
+      }
       ctx.setType(e, ctx.methodReturnType(jm.method()));
       return;
     }
@@ -92,6 +101,15 @@ public class Pass3 extends DefaultVisitor {
           ctx.setType(acc, new JavaMethodType(best));
           return;
         }
+        // Typed resolution failed (any arg Any/marker-typed, or an overload
+        // tie): an uncovered reflective scenario per spec falls back to Any —
+        // no static method dispatch, but no hard error either. Only when the
+        // method is absent at this arity at all is a missing-method reported.
+        Method arity = ctx.resolveJavaMethod(recvClass.javaClass(), key.value, e.args.length);
+        if (arity != null) {
+          ctx.setType(e, AnyType.ANY);
+          return;
+        }
         ctx.reportError(e.pos,
           _T(EL_METHOD_NOT_FOUND, recvClass.javaClass().getName(), key.value));
         ctx.setType(e, ErrorType.ERROR);
@@ -102,12 +120,24 @@ public class Pass3 extends DefaultVisitor {
     // (3) Constructor call on a bare class name: File("x") form.
     if (positional && target instanceof JavaClassType jcClass
         && e.right instanceof ELNode.IDENT id && id.symbol == null) {
-      Constructor<?> c = ctx.resolveJavaConstructor(jcClass.javaClass(), e.args.length);
+      Class<?> cls = jcClass.javaClass();
+      Type[] at = argTypes(e.args);
+      Constructor<?> c = ctx.resolveJavaConstructor(cls, at.length);
       if (c != null) {
         ctx.setType(e, new JavaConstructorType(c));
         return;
       }
-      ctx.reportError(e.pos, _T(EL_CONSTRUCTOR_NOT_FOUND, jcClass.javaClass().getName()));
+      // No single unambiguous candidate at this arity (two same-arity ctors,
+      // e.g. File(String) and File(URI)): when some candidate accepts the
+      // argument types the call falls back to the class type (dynamic
+      // dispatch); when no candidate accepts them (e.g. ArrayList(String)
+      // against the int/Collection ctors) it is a genuine mismatch and stays a
+      // missing-constructor error.
+      if (ctx.hasJavaConstructor(cls, at.length) && someCtorAccepts(cls, at)) {
+        ctx.setType(e, new JavaClassType(cls));
+        return;
+      }
+      ctx.reportError(e.pos, _T(EL_CONSTRUCTOR_NOT_FOUND, cls.getName()));
       ctx.setType(e, ErrorType.ERROR);
       return;
     }
@@ -132,9 +162,18 @@ public class Pass3 extends DefaultVisitor {
       return;
     }
     if (annotated instanceof JavaClassType jc) {
-      Constructor<?> c = ctx.resolveJavaConstructor(jc.javaClass(), e.args.length);
+      Type[] at = argTypes(e.args);
+      Constructor<?> c = ctx.resolveJavaConstructor(jc.javaClass(), at.length);
       if (c != null) {
         ctx.setType(e, new JavaConstructorType(c));
+        return;
+      }
+      // No single unambiguous candidate (see APPLY): dynamic-dispatch fallback
+      // to the class type only when some same-arity candidate accepts the args;
+      // otherwise (e.g. ArrayList(String)) it is a genuine mismatch and stays a
+      // missing-constructor error.
+      if (ctx.hasJavaConstructor(jc.javaClass(), at.length) && someCtorAccepts(jc.javaClass(), at)) {
+        ctx.setType(e, new JavaClassType(jc.javaClass()));
         return;
       }
       ctx.reportError(e.pos, _T(EL_CONSTRUCTOR_NOT_FOUND, jc.javaClass().getName()));
@@ -304,6 +343,39 @@ public class Pass3 extends DefaultVisitor {
     if (t instanceof PrimitiveType pt) return pt.javaClass();
     if (t instanceof JavaClassType jc) return jc.javaClass();
     return null;
+  }
+
+  /** True when any argument type has no concrete Java class (Any / promotion
+   *  markers / untyped), so the reflective method/ctor result is indeterminate. */
+  private boolean someArgIndeterminate(Type[] argTypes) {
+    for (Type t : argTypes) {
+      if (argJavaClass(t) == null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** True when some public, non-varargs, same-arity constructor accepts the
+   *  argument types. Any/marker-typed args are treated as possibly-accepting so
+   *  an untyped reflective call never hard-errors on a constructor ambiguity. */
+  private boolean someCtorAccepts(Class<?> cls, Type[] argTypes) {
+    for (Constructor<?> c : cls.getConstructors()) {
+      if (c.isVarArgs()) continue;
+      if (c.getParameterCount() != argTypes.length) continue;
+      Class<?>[] params = c.getParameterTypes();
+      boolean allAccept = true;
+      for (int i = 0; i < params.length; i++) {
+        Class<?> a = argJavaClass(argTypes[i]);
+        if (a == null) continue;   // Any / promotion marker — assume it might
+        if (!accepts(params[i], a)) {
+          allAccept = false;
+          break;
+        }
+      }
+      if (allAccept) return true;
+    }
+    return false;
   }
 
   private boolean accepts(Class<?> param, Class<?> arg) {
