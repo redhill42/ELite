@@ -334,6 +334,63 @@ public class TypeInference extends DefaultVisitor {
   }
 
   @Override
+  public void visit(ELNode.NOT e) {
+    super.visit(e);
+    setType(e, PrimitiveType.of(Boolean.class));
+  }
+
+  @Override
+  public void visit(ELNode.EMPTY e) {
+    super.visit(e);
+    setType(e, PrimitiveType.of(Boolean.class));
+  }
+
+  @Override
+  public void visit(ELNode.INSTANCEOF e) {
+    super.visit(e);
+    setType(e, PrimitiveType.of(Boolean.class));
+  }
+
+  @Override
+  public void visit(ELNode.EQ e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.NE e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.IDEQ e) { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.IDNE e) { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.LT e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.LE e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.GT e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.GE e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.CMP e) { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+  @Override
+  public void visit(ELNode.IN e)  { super.visit(e); setType(e, PrimitiveType.of(Boolean.class)); }
+
+  @Override
+  public void visit(ELNode.OR e) {
+    super.visit(e);
+    setType(e, PrimitiveType.of(Boolean.class));
+  }
+
+  @Override
+  public void visit(ELNode.AND e) {
+    super.visit(e);
+    setType(e, PrimitiveType.of(Boolean.class));
+  }
+
+  @Override
+  public void visit(ELNode.CAT e) {
+    super.visit(e);
+    setType(e, PrimitiveType.of(String.class));
+  }
+
+  @Override
   public void visit(ELNode.COND e) {
     super.visit(e);
     setType(e, merge(typeOf(e.left), typeOf(e.right)));

@@ -147,4 +147,37 @@ class TypeInferenceTest {
   void conditionalMerge() {
     assertEquals("Int", typeOf("true ? 1 : 2"));
   }
+
+  @Test
+  void unaryAndLogicalOps() {
+    assertEquals("Boolean", typeOf("define b = true\n!b"));
+    assertEquals("Boolean", typeOf("empty([])"));
+    assertEquals("Boolean", typeOf("1 instanceof Int"));
+  }
+
+  @Test
+  void comparisons() {
+    assertEquals("Boolean", typeOf("define a = 1\ndefine b = 2\na < b"));
+    assertEquals("Boolean", typeOf("define a = 1\ndefine b = 2\na == b"));
+    assertEquals("Boolean", typeOf("define a = 1\ndefine b = 2\na <=> b"));   // CMP
+    assertEquals("Boolean", typeOf("define a = 1\na in [1]"));
+  }
+
+  @Test
+  void logicalOps() {
+    assertEquals("Boolean", typeOf("define x = true\ndefine y = false\nx && y"));
+    assertEquals("Boolean", typeOf("define x = true\ndefine y = false\nx || y"));
+  }
+
+  @Test
+  void stringInterpolation() {
+    assertEquals("String", typeOf("define n = 42\n\"x=\" ~ n"));
+  }
+
+  @Test
+  void compoundLastExpression() {
+    ELNode.DEFINE f = def("define f() { 1; 2 }", "f");
+    ELNode body = ((ELNode.LAMBDA)f.expr).body;
+    assertEquals("Int", body.inferredType.toString());
+  }
 }
