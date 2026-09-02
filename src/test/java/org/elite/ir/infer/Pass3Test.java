@@ -127,13 +127,24 @@ class Pass3Test {
 
   @Test
   void everyNodeTypedAfterInference() throws Exception {
-    // Unknown identifiers stay null through Pass 1-3 and must be forced
-    // to Any so the postcondition holds.
-    ELProgram program = parse("define x = noSuchVariable");
+    // This guard proves the force-Any filler (TypeInference.infer) does real
+    // work. ASSERT has no visit rule in any sub-pass, so its node would stay
+    // null without the filler — a genuinely-nullable assertion target. (An
+    // unknown IDENT would NOT be: Pass 2 Any-defaults unknown identifiers, so
+    // the old define/IDENT-only guard passed even with the filler removed.)
+    ELProgram program = parse("assert true\ndefine x = noSuchVariable");
     SymbolTableBuilder.build(program);
     TypeInference.infer(elctx, program);
 
-    ELNode def = (ELNode)program.getExpressions().get(0);
+    // The untyped ASSERT statement kind is forced to Any by the filler.
+    ELNode assertNode = (ELNode)program.getExpressions().get(0);
+    assertEquals("Any", assertNode.inferredType.toString());
+    ELNode bool = (ELNode)((ELNode.ASSERT)assertNode).exp;
+    assertEquals("Boolean", bool.inferredType.toString());
+
+    // Unknown identifiers are Any-defaulted by Pass 2; both the DEFINE and its
+    // IDENT carry Any after the full pipeline.
+    ELNode def = (ELNode)program.getExpressions().get(1);
     assertEquals("Any", def.inferredType.toString());
     ELNode id = (ELNode)((ELNode.DEFINE)def).expr;
     assertEquals("Any", id.inferredType.toString());
