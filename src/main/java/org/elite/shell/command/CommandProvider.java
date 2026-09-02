@@ -21,6 +21,8 @@ import org.elite.eval.VariableMapperImpl;
 import org.elite.ir.BytecodeCompiler;
 import org.elite.ir.BytecodeConsumer;
 import org.elite.ir.SymbolTableBuilder;
+import org.elite.ir.TypeInference;
+import org.elite.parser.ASTDumper;
 import org.elite.parser.ParseException;
 import org.elite.parser.Parser;
 import org.elite.resolver.MethodResolver;
@@ -100,10 +102,15 @@ public final class CommandProvider {
     ScriptEngine engine = shellContext.getEngine();
     ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
     Parser parser = new Parser(elctx, script);
-    ELProgram program = parser.parse();
-    program.setStandalone(true);
-    SymbolTableBuilder.build(program);
-    System.out.println(program.dump());
+    try {
+      ELProgram program = parser.parse();
+      program.setStandalone(true);
+      SymbolTableBuilder.build(program);
+      TypeInference.infer(elctx, program);
+      System.out.println(ASTDumper.dumpTyped(program));
+    } catch (ParseException e) {
+      System.err.println(e.getMessage());
+    }
   }
 
   public static void dump(ShellContext shellContext, String script) {

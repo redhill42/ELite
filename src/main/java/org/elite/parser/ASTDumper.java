@@ -34,18 +34,41 @@ public final class ASTDumper {
    */
   public static String dump(ELNode node) {
     StringBuilder sb = new StringBuilder();
-    dumpNode(node, sb, "", true, true);
+    dumpNode(node, sb, "", true, true, false);
     return sb.toString();
   }
 
   public static String dump(ELProgram program) {
     StringBuilder sb = new StringBuilder();
     for (ELNode node : program.getDefinitions()) {
-      dumpNode(node, sb, "", true, true);
+      dumpNode(node, sb, "", true, true, false);
       sb.append('\n');
     }
     for (ELNode node : program.getExpressions()) {
-      dumpNode(node, sb, "", true, true);
+      dumpNode(node, sb, "", true, true, false);
+      sb.append('\n');
+    }
+    return sb.toString();
+  }
+
+  /**
+   * Like {@link #dump(ELNode)} but appends " :: <type>" to each node line that
+   * carries a non-null {@link ELNode#inferredType}.
+   */
+  public static String dumpTyped(ELNode node) {
+    StringBuilder sb = new StringBuilder();
+    dumpNode(node, sb, "", true, true, true);
+    return sb.toString();
+  }
+
+  public static String dumpTyped(ELProgram program) {
+    StringBuilder sb = new StringBuilder();
+    for (ELNode node : program.getDefinitions()) {
+      dumpNode(node, sb, "", true, true, true);
+      sb.append('\n');
+    }
+    for (ELNode node : program.getExpressions()) {
+      dumpNode(node, sb, "", true, true, true);
       sb.append('\n');
     }
     return sb.toString();
@@ -54,7 +77,8 @@ public final class ASTDumper {
   // ── Internal tree printer ──
 
   private static void dumpNode(ELNode node, StringBuilder sb, String prefix,
-                               boolean isLast, boolean isRoot) {
+                               boolean isLast, boolean isRoot,
+                               boolean withTypes) {
     if (node == null) {
       sb.append(prefix).append(isLast ? "└─ " : "├─ ").append("(null)\n");
       return;
@@ -68,7 +92,7 @@ public final class ASTDumper {
     sb.append(typeName);
 
     // Append key inline fields
-    appendInlineFields(node, sb);
+    appendInlineFields(node, sb, withTypes);
 
     sb.append('\n');
 
@@ -80,9 +104,9 @@ public final class ASTDumper {
       Child c = children[i];
       boolean last = (i == children.length - 1);
       if (c.node != null) {
-        dumpNode(c.node, sb, childPrefix, last, false);
+        dumpNode(c.node, sb, childPrefix, last, false, withTypes);
       } else if (c.nodes != null) {
-        dumpNodeList(c.nodes, sb, childPrefix, last, c.label);
+        dumpNodeList(c.nodes, sb, childPrefix, last, c.label, withTypes);
       } else if (c.value != null) {
         // Leaf field with a non-node value
         sb.append(childPrefix).append(last ? "└─ " : "├─ ").append(c.label)
@@ -93,7 +117,7 @@ public final class ASTDumper {
 
   private static void dumpNodeList(ELNode[] nodes, StringBuilder sb,
                                    String prefix, boolean isLast,
-                                   String label) {
+                                   String label, boolean withTypes) {
     String connector = isLast ? "└─ " : "├─ ";
     if (nodes.length == 0) {
       sb.append(prefix).append(connector).append(label).append(": []\n");
@@ -103,13 +127,15 @@ public final class ASTDumper {
     sb.append(":\n");
     String childPrefix = prefix + (isLast ? "   " : "│  ");
     for (int i = 0; i < nodes.length; i++) {
-      dumpNode(nodes[i], sb, childPrefix, i == nodes.length - 1, false);
+      dumpNode(nodes[i], sb, childPrefix, i == nodes.length - 1, false,
+               withTypes);
     }
   }
 
   // ── Inline fields ──
 
-  private static void appendInlineFields(ELNode node, StringBuilder sb) {
+  private static void appendInlineFields(ELNode node, StringBuilder sb,
+                                         boolean withTypes) {
     Class<?> cls = node.getClass();
     // id field (IDENT, DEFINE, CLASSDEF, etc.)
     try {
@@ -154,6 +180,10 @@ public final class ASTDumper {
       sb.append(" ").append(l.value);
     } else if (node instanceof ELNode.CONS cons && cons.delay) {
       sb.append(" ").append("delay");
+    }
+
+    if (withTypes && node.inferredType != null) {
+      sb.append(" :: ").append(node.inferredType);
     }
   }
 
