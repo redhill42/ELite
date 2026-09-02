@@ -124,7 +124,7 @@ public class TypeInference extends DefaultVisitor {
   // ---- helpers ----
 
   protected final void setType(ELNode node, Type type) {
-    if (type != node.inferredType) {
+    if (node.inferredType == null || !node.inferredType.equals(type)) {
       node.inferredType = type;
       changed = true;
     }
@@ -257,15 +257,33 @@ public class TypeInference extends DefaultVisitor {
   /** Merges the collected ASSIGN right-hand types into per-variable types. */
   private void recomputeVarTypes() {
     for (Map.Entry<SymbolTable.Symbol, java.util.List<Type>> e : assigns.entrySet()) {
-      // Seed with the current variable type (e.g. an annotation-pinned type),
-      // then fold in each collected right-hand type.
-      Type merged = varTypes.get(e.getKey());
+      // Fold in each collected right-hand type, tracking whether any pair of
+      // distinct concrete types ever conflicts (which forces Any). Conflict
+      // detection is order-insensitive: "x = 1; x = \"s\"; x = 2" must be Any
+      // whether or not the Int assigns are adjacent.
+      Type merged = AnyType.ANY;
+      boolean first = true;
+      boolean conflicted = false;
       for (Type t : e.getValue()) {
-        merged = merged == null ? t : merge(merged, t);
+        if (first) {
+          merged = t;
+          first = false;
+          continue;
+        }
+        Type m = merge(merged, t);
+        // Only a real conflict if both operands were non-Any, different
+        // concrete types that degrade to Any. merge(Any, X) returning Any is
+        // just Any-as-identity and is NOT a conflict.
+        if (m == AnyType.ANY && merged != AnyType.ANY &&
+            t != AnyType.ANY && !merged.equals(t)) {
+          conflicted = true;
+        }
+        merged = m;
       }
+      Type result = conflicted ? AnyType.ANY : merged;
       Type old = varTypes.get(e.getKey());
-      if (old == null || !old.equals(merged)) {
-        varTypes.put(e.getKey(), merged);
+      if (old == null || !old.equals(result)) {
+        varTypes.put(e.getKey(), result);
         changed = true;
       }
     }
@@ -650,8 +668,12 @@ public class TypeInference extends DefaultVisitor {
   /**
    * Current inferred type of a variable symbol. When the symbol itself has no
    * recorded type but another symbol of the same name does (the annotation
-   * declaration and a use can arrive as distinct symbol objects), they are
-   * treated as the same top-level variable by name.
+   * declaration and a use can arrive as distinct symbol objects), this scans
+   * EVERY symbol across ALL scopes — any symbol sharing the name resolves the
+   * type, in HashMap iteration order. Known v1 limitation: this is scope-blind
+   * by design, so same-name collisions across different scopes may mis-type.
+   * Best-effort only; the consumer that reaches this fallback merely displays
+   * a type annotation.
    */
   private Type varType(SymbolTable.Symbol s) {
     Type t = varTypes.get(s);
@@ -940,9 +962,17 @@ public class TypeInference extends DefaultVisitor {
   public void visit(ELNode.NEG e) {
     super.visit(e);
     Type t = typeOf(e.right);
-    if (isIntFamily(t)) setType(e, t == PrimitiveType.of(java.math.BigInteger.class) ? t : PrimitiveType.ANY_INT);
-    else if (isFloatFamily(t)) setType(e, t == PrimitiveType.of(java.math.BigDecimal.class) ? t : PrimitiveType.ANY_FLOAT);
-    else setType(e, AnyType.ANY);
+    if (isIntFamily(t)) {
+      setType(e, t instanceof PrimitiveType pt &&
+                  pt.javaClass() == java.math.BigInteger.class
+        ? t : PrimitiveType.ANY_INT);
+    } else if (isFloatFamily(t)) {
+      setType(e, t instanceof PrimitiveType pt &&
+                  pt.javaClass() == java.math.BigDecimal.class
+        ? t : PrimitiveType.ANY_FLOAT);
+    } else {
+      setType(e, AnyType.ANY);
+    }
   }
 
   @Override

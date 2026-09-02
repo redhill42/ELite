@@ -381,4 +381,14 @@ class TypeInferenceTest {
   void numericWideningAssignIsOk() {
     assertEquals("Long", typeOf("define x::Long = 1\nx"));
   }
+
+  @Test
+  void mutableVariableSandwichConflictIsAny() {
+    assertEquals("Any", typeOf("define x = 0\nx = 1\nx = \"s\"\nx = 2\nx"));
+  }
+
+  @Test
+  void negateBigIntStaysBigInt() {
+    assertEquals("BigInt", typeOf("define b::BigInt = 1\n-b"));
+  }
 }
