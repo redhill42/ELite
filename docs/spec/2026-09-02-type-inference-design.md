@@ -17,9 +17,27 @@ IRBuilder 注释明言 "we lacks type inferrer"。
 ## 非目标
 
 - 不接入 IRBuilder / 不驱动任何代码生成优化(后续阶段)
-- 不做类型错误检查(注解与推导结果不符时不报错)
 - 不改动 `elite.ast.*`(javax.el 门面)
 - 不改动现有 `ELNode.dump()` / `ASTDumper.dump` 的输出格式
+
+## 错误处理(与推导并行)
+
+推导可以发现两类错误(v1 范围):
+
+1. **标注类型的 Java 类加载失败** —— Java 类必须编译期可见,加载不到即错误
+   (`EL_CLASS_NOT_FOUND`)
+2. **标注类型不匹配** —— 如 `define x::Int; x = "hello"`(`IR_TYPE_MISMATCH`)
+
+机制仿 IRBuilder(IRBuilder.java:298-312):
+
+- `reportError(pos, message)`:累积 `ParseError`;**不立即抛异常**,当错误数
+  ≥ 20 时立即 `failIfErrors`(熔断)
+- 出错节点推导为 **`ErrorType`**(单例,toString `Error`)
+- **ErrorType 传播**:任何基于 ErrorType 表达式的计算(合并/算术/容器元素/
+  函数返回等)也推导为 ErrorType;ErrorType 是比 Any 更强的吸收元
+- `TypeInference.infer(...)` 结束时 `failIfErrors()`:有错误则抛
+  `ParseException(filename, errors)`
+- 消费方 `dump_ast` 捕获 `ParseException`,错误消息打到 stderr
 
 ## 类型模型:新包 `org.elite.type`
 
@@ -44,6 +62,7 @@ public abstract class Type {
 | `Array` | 元素 `Type`、维数 int | `Array[Int, 2]` |
 | `Function` | 返回 `Type`、参数 `Type[]` | `Function[Int, [Int, Int]]` |
 | `Any` | 单例 | `Any` |
+| `ErrorType` | 单例 | `Error` |
 
 - `PrimitiveType` 覆盖:所有 Java 原始类型及装箱类型、`BigInteger`、`BigDecimal`、
   `elite.lang.Decimal`、`elite.lang.Rational`、`String`、`void`(Void.TYPE)。
@@ -56,18 +75,19 @@ public abstract class Type {
 
 ## 注解解析
 
-`DEFINE.type` / `LAMBDA.rtype` 是类名 ELNode(IDENT/ACCESS 链,`getFullClassName`
-取全名)。解析顺序:
+`DEFINE.type` / `LAMBDA.rtype` / `NEW.base` 是类名 ELNode(IDENT/ACCESS 链)。
+解析顺序:
 
 1. 查符号表:是 ELite class → `ELiteClass`
 2. 否则查别名表:`Int`→`Integer`、`Char`→`Character`、`BigInt`→`BigInteger`
    (同时接受装箱类全名 `java.lang.Integer` 等形式)
-3. 否则按 Java 类解析(原始类型名 `int`/`long`/`double`/`void`/... 解析为
-   `X.TYPE`);失败 → `Any`
-4. 解析结果命中 PrimitiveType 表 → `PrimitiveType`,否则 → `JavaClass`
+3. 否则按 Java 类**编译期加载**(复制 IRBuilder 私有方法 `loadJavaClass`,
+   IRBuilder.java:1283,以后重构共享):加载失败 → `reportError`
+   (`EL_CLASS_NOT_FOUND`)+ `ErrorType`
+4. 加载结果命中 PrimitiveType 表 → `PrimitiveType`,否则 → `JavaClass`
 
-解析失败不报错,回退 `Any`。ELite class 定义在推断开始前先整体登记
-(第一遍扫描收集所有 CLASSDEF,保证注解能解析出 `ELiteClass`)。
+ELite class 定义在推断开始前先整体登记(第一遍扫描收集所有 CLASSDEF,
+保证注解能解析出 `ELiteClass`)。
 
 ## 推断遍:新类 `org.elite.ir.TypeInference`
 
@@ -143,8 +163,15 @@ public abstract class Type {
 - **可变变量**(存在 ASSIGN):收集该变量**所有 ASSIGN 结点的右操作数类型**,
   两两归一化合并;合并结果一致且非 `Any` → 固定该类型,否则 `Any`
 - 合并规则:逐对应用二元数值归一化(如 `Int` 与 `Long` → `Long`);
-  `Any` 参与 → `Any`;不同类型族(如 `Int` 与 `String`)→ `Any`
-- ASSIGN 左值有类型标注:变量类型即标注类型,忽略右操作数(标注不提升)
+  `Any` 参与 → `Any`;`ErrorType` 参与 → `ErrorType`;不同类型族
+  (如 `Int` 与 `String`)→ `Any`
+- ASSIGN 左值有类型标注:变量类型即标注类型(标注不提升);**并做兼容性检查**
+  (v1):右值类型为具体类型且与标注不兼容 → `reportError`
+  (`IR_TYPE_MISMATCH`,expected 为标注类型,got 为右值类型)+ `ErrorType`
+- 兼容性(v1):右值为 Any/AnyInt/AnyFloat 视为无法判断(放行);类型相等放行;
+  两者都是数值且右值可加宽到标注类型(按 TypeCoercion 距离序)放行;
+  其余不兼容
+- 标注 DEFINE 的初始化表达式同样做该检查
 - ASSIGNOP 不参与变量类型计算
 
 ## 数值提升与归一化
@@ -187,14 +214,15 @@ public abstract class Type {
 
 ## 分步实施(每步独立提交、可独立验证)
 
-1. **类型模型**:`org.elite.type` 包全部类 + `TypeTest`
-2. **ELNode.inferredType 字段 + 注解解析**(别名表、ELite class 登记、
-   Java 类解析)+ 测试
+1. **类型模型**:`org.elite.type` 包全部类(含 `ErrorType`)+ `TypeTest`
+2. **ELNode.inferredType 字段 + 注解解析 + 报错机制**(别名表、ELite class
+   登记、Java 类编译期加载、reportError/failIfErrors、ErrorType)+ 测试
 3. **TypeInference 骨架**:visitor、收敛循环、字面量/IDENT/一元/比较/逻辑规则
    + 测试
 4. **容器与结构**:List/Tuple/Map/Array/RANGE/CONS/ACCESS/Composite + 测试
 5. **函数与变量**:LAMBDA→Function、DEFINE、APPLY(用户函数 + Java 反射)、
-   RETURN、可变/不可变变量、ASSIGNOP 约定 + 测试
-6. **数值提升与归一化**:AnyInt/AnyFloat、常量折叠提升链、混合归一化 + 测试
-7. **消费方**:ASTDumper.dumpTyped + CommandProvider.dump_ast 接入 +
-   手工验证 + 全量回归(817)
+   RETURN、可变/不可变变量、ASSIGNOP 约定、**标注兼容性检查** + 测试
+6. **数值提升与归一化**:AnyInt/AnyFloat、常量折叠提升链、混合归一化、
+   数值兼容性细化(加宽检查)+ 测试
+7. **消费方**:ASTDumper.dumpTyped + CommandProvider.dump_ast 接入(捕获
+   ParseException 打到 stderr)+ 手工验证 + 全量回归(817)

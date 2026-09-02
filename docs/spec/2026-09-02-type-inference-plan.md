@@ -26,7 +26,7 @@
 ### Task 1: 类型模型 org.elite.type
 
 **Files:**
-- Create: `src/main/java/org/elite/type/Type.java`、`PrimitiveType.java`、`JavaClassType.java`、`ELiteClassType.java`、`ListType.java`、`TupleType.java`、`MapType.java`、`ArrayType.java`、`FunctionType.java`、`AnyType.java`
+- Create: `src/main/java/org/elite/type/Type.java`、`PrimitiveType.java`、`JavaClassType.java`、`ELiteClassType.java`、`ListType.java`、`TupleType.java`、`MapType.java`、`ArrayType.java`、`FunctionType.java`、`AnyType.java`、`ErrorType.java`
 - Test: `src/test/java/org/elite/type/TypeTest.java`
 
 **Interfaces:**
@@ -42,6 +42,7 @@
   - `ArrayType`:c'tor `(Type element, int dims)`、`element()/dims()`
   - `FunctionType`:c'tor `(Type returnType, Type[] params)`、`returnType()/params()`
   - `AnyType`:`public static final AnyType ANY;`(单例,构造器私有)
+  - `ErrorType`:`public static final ErrorType ERROR;`(单例,构造器私有,toString `Error`)
   - toString 格式:`Int`/`AnyInt`/`AnyFloat`/`Long`/`void`、`List[Int]`、`Tuple[String, Int]`、`Map[String, Int]`、`Array[Int, 2]`、`Function[Int, [Int, Int]]`、`Any`
   - equals/hashCode 为结构相等(JavaClassType/PrimitiveType 比 `javaClass()`;ELiteClassType 比 `symbol()` 恒等;AnyType/ANY_INT/ANY_FLOAT 各自单例恒等)
 
@@ -112,6 +113,13 @@ class TypeTest {
   void anyType() {
     assertEquals("Any", AnyType.ANY.toString());
     assertEquals(AnyType.ANY, AnyType.ANY);
+  }
+
+  @Test
+  void errorType() {
+    assertEquals("Error", ErrorType.ERROR.toString());
+    assertEquals(ErrorType.ERROR, ErrorType.ERROR);
+    assertNotEquals(ErrorType.ERROR, AnyType.ANY);
   }
 }
 ```
@@ -468,10 +476,36 @@ public final class AnyType extends Type {
 }
 ```
 
+创建 `src/main/java/org/elite/type/ErrorType.java`:
+
+```java
+package org.elite.type;
+
+/**
+ * The error type: annotated when inference detected a type error.
+ * Absorbs stronger than Any — computations based on an ErrorType
+ * expression are also ErrorType.
+ */
+public final class ErrorType extends Type {
+  public static final ErrorType ERROR = new ErrorType();
+
+  private ErrorType() {}
+
+  @Override
+  public String toString() { return "Error"; }
+
+  @Override
+  public boolean equals(Object o) { return o instanceof ErrorType; }
+
+  @Override
+  public int hashCode() { return 1; }
+}
+```
+
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeTest`
-Expected: BUILD SUCCESS(5 个测试通过)
+Expected: BUILD SUCCESS(6 个测试通过)
 
 - [ ] **Step 5: Commit**
 
@@ -496,13 +530,15 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Produces:
   - `ELNode` 新字段:`public transient Type inferredType;`
   - `public final class TypeInference extends DefaultVisitor`,静态入口:
-    `public static void infer(ELContext elctx, ELProgram program)` —— 多轮收敛循环(上限 20 轮,轮间类型无变化即停);内部状态:
+    `public static void infer(ELContext elctx, ELProgram program) throws ParseException` —— 多轮收敛循环(上限 20 轮,轮间类型无变化即停);循环结束后 `failIfErrors()`:有累积错误则抛 `ParseException(program.getFilename(), errors)`
+  - 报错机制(仿 IRBuilder.java:298-312):`private final List<ParseError> errors`、`private void reportError(int pos, String message)`(`errors.add(new ParseError(pos, message, null))`;`errors.size() >= 20` 时立即抛 `ParseException(program.getFilename(), errors)` 熔断)、`private void failIfErrors()`;`ParseError`/`ParseException` 来自 `org.elite.parser`
+  - 内部状态:
     - `private final Map<String, SymbolTable.Symbol> eliteClasses`(第 0 遍登记:遍历 program 定义,`node.symbol != null && node.symbol.clazz != null` 时 `put(sym.name, sym)`)
-    - `private Class<?> loadJavaClass(ELNode base)` —— **复制自 IRBuilder.loadJavaClass(IRBuilder.java:1283,私有,暂复制,以后重构共享)**,差异:加载失败返回 null 而不是 reportError(推导尽力而为)。连同其依赖 `resolveJavaClass(ELNode, boolean)`、`loadClassAtCompileTime(String)` 一并复制;`loadClassAtCompileTime` 中 `ClassNotFoundException → return null`
-    - `private Type resolveAnnotationType(ELNode typeNode)` —— typeNode 是 IDENT/ACCESS 链;若 typeNode 是 IDENT,先查 `eliteClasses` → `ELiteClassType`;查别名表(Int/Char/BigInt)→ `Class.forName(别名)`;否则 `loadJavaClass(typeNode)`(编译期可见性加载,返回 null → Any);加载出的类命中 PrimitiveType 表(`TypeCoercion.typeof` 非 UNKNOWN)→ `PrimitiveType.of`,否则 `JavaClassType`;任何异常 → `AnyType.ANY`
+    - `private Class<?> loadJavaClass(ELNode base)` —— **复制自 IRBuilder.loadJavaClass(IRBuilder.java:1283,私有,暂复制,以后重构共享)**,差异:加载失败 `reportError(pos, _T(EL_CLASS_NOT_FOUND, name))` 后返回 null(而非返回 Object.class)。连同其依赖 `resolveJavaClass(ELNode, boolean)`、`loadClassAtCompileTime(int pos, String name)` 一并复制
+    - `private Type resolveAnnotationType(ELNode typeNode)` —— typeNode 是 IDENT/ACCESS 链;若 typeNode 是 IDENT,先查 `eliteClasses` → `ELiteClassType`;查别名表(Int/Char/BigInt)→ `Class.forName(别名)`;否则 `loadJavaClass(typeNode)`(编译期可见性加载,失败已报错并返回 null → `ErrorType.ERROR`);加载出的类命中 PrimitiveType 表(`TypeCoercion.typeof` 非 UNKNOWN)→ `PrimitiveType.of`,否则 `JavaClassType`;其他运行时异常 → `ErrorType.ERROR`
     - `protected boolean changed` + `protected void setType(ELNode node, Type t)`(仅当 `node.inferredType` 不为 t 时写并置 changed)
     - `protected Type typeOf(ELNode node)` → `node.inferredType != null ? node.inferredType : AnyType.ANY`
-    - `protected Type merge(Type a, Type b)` —— 相等→a;任一 Any→ANY(本任务版本;Task 6 扩展数值归一化)
+    - `protected Type merge(Type a, Type b)` —— 任一 ErrorType→ERROR;相等→a;任一 Any→ANY(本任务版本;Task 6 扩展数值归一化)
     - 本任务的 visit 规则:BOOLEANVAL→Boolean、CHARVAL→Char、STRINGVAL→String、NUMBER(整数按量级 Int/Long/BigInt,浮点 Double,BigDecimal→BigDecimal)、NULL→ANY、NIL→`List[Any]`、SYMBOL→ANY、CONST(value 的运行时类→PrimitiveType.of/JavaClassType,失败 ANY)、Composite→String、COMPOUND→最后子节点类型、LET→right 类型、EXPR→right 类型、METADATA/METASET→子节点类型、IDENT→`AnyType.ANY`(Task 5 补变量/函数)、COND/COALESCE→merge(分支)、其余未覆盖节点→ANY
 - [ ] **Step 1: ELNode 加字段**
 
@@ -547,16 +583,24 @@ class TypeInferenceTest {
     elctx = ELEngine.createELContext();
   }
 
-  /** Parse + build symbol table + infer; returns the last top-level expression. */
-  private static ELNode infer(String script) {
-    ELProgram program;
+  /** Parse only; returns the program (no symbol table, no inference). */
+  private static ELProgram parse(String script) {
     try {
-      program = new Parser(elctx, script).parse();
+      return new Parser(elctx, script).parse();
     } catch (ParseException e) {
       throw new RuntimeException("parse failed: " + script, e);
     }
+  }
+
+  /** Parse + build symbol table + infer; returns the last top-level expression. */
+  private static ELNode infer(String script) {
+    ELProgram program = parse(script);
     SymbolTableBuilder.build(program);
-    TypeInference.infer(elctx, program);
+    try {
+      TypeInference.infer(elctx, program);
+    } catch (ParseException e) {
+      throw new RuntimeException("inference failed: " + script, e);
+    }
     var exps = program.getExpressions();
     assertFalse(exps.isEmpty(), "no top-level expression in: " + script);
     return exps.get(exps.size() - 1);
@@ -606,8 +650,16 @@ class TypeInferenceTest {
   }
 
   @Test
-  void unresolvableAnnotationFallsBackToAny() {
-    assertEquals("Any", typeOf("define z::NoSuchClass = 1"));
+  void unresolvableAnnotationIsError() throws Exception {
+    // Class load failure reports an error and types the node ErrorType.
+    ELProgram program = parse("define z::NoSuchClass = 1");
+    SymbolTableBuilder.build(program);
+    ParseException ex = assertThrows(ParseException.class,
+      () -> TypeInference.infer(elctx, program));
+    assertTrue(ex.getMessage().contains("Class not found: NoSuchClass"),
+      "unexpected message: " + ex.getMessage());
+    ELNode def = program.getExpressions().get(0);
+    assertEquals("Error", def.inferredType.toString());
   }
 
   @Test
@@ -633,7 +685,7 @@ class TypeInferenceTest {
 }
 ```
 
-注意:`find` helper 本任务未用,Task 3+ 使用;`visitNode` 覆盖需小心——DefaultVisitor 的叶子 visit 不经过 visitNode,find 只用于非叶子节点(后续任务用)。
+注意:`find` helper 本任务未用,Task 3+ 使用;测试类需要额外 import:`org.elite.eval.ELProgram`、`org.junit.jupiter.api.Assertions.assertThrows` 已在断言 import 中。`visitNode` 覆盖需小心——DefaultVisitor 的叶子 visit 不经过 visitNode,find 只用于非叶子节点(后续任务用)。
 
 - [ ] **Step 3: 运行确认失败**
 
@@ -658,10 +710,13 @@ import org.elite.parser.ELNode;
 import org.elite.resolver.ClassResolver;
 import org.elite.type.AnyType;
 import org.elite.type.ELiteClassType;
+import org.elite.type.ErrorType;
 import org.elite.type.JavaClassType;
 import org.elite.type.ListType;
 import org.elite.type.PrimitiveType;
 import org.elite.type.Type;
+
+import static org.elite.resources.Resources.*;
 
 /**
  * Static type inference over the ELite AST.
@@ -669,7 +724,10 @@ import org.elite.type.Type;
  * Runs after {@code SymbolTableBuilder} and annotates every
  * {@code ELNode.inferredType} in multiple passes until convergence.
  * Inference is best-effort: anything that cannot be typed becomes
- * {@code AnyType.ANY}, and no errors are ever raised.
+ * {@code AnyType.ANY}. Type errors (unloadable annotation classes,
+ * annotation mismatches) are recorded and reported at the end via
+ * {@code ParseException}, and the offending nodes are typed
+ * {@code ErrorType.ERROR}.
  */
 public class TypeInference extends DefaultVisitor {
 
@@ -683,16 +741,22 @@ public class TypeInference extends DefaultVisitor {
     "BigInt", "java.math.BigInteger");
 
   private final ELContext elctx;
+  private final String filename;
   private final Map<String, SymbolTable.Symbol> eliteClasses = new HashMap<>();
+  private final java.util.List<org.elite.parser.ParseError> errors =
+    new java.util.ArrayList<>();
 
   private boolean changed;
 
-  private TypeInference(ELContext elctx) {
+  private TypeInference(ELContext elctx, ELProgram program) {
     this.elctx = elctx;
+    this.filename = program.getFilename();
   }
 
-  public static void infer(ELContext elctx, ELProgram program) {
-    TypeInference infer = new TypeInference(elctx);
+  public static void infer(ELContext elctx, ELProgram program)
+    throws org.elite.parser.ParseException
+  {
+    TypeInference infer = new TypeInference(elctx, program);
     infer.registerEliteClasses(program);
 
     int passes = 0;
@@ -705,6 +769,23 @@ public class TypeInference extends DefaultVisitor {
         infer.scan(node);
       }
     } while (infer.changed && ++passes < MAX_PASSES);
+
+    infer.failIfErrors();
+  }
+
+  // ---- error reporting (mirrors IRBuilder.reportError / failIfErrors) ----
+
+  private void reportError(int pos, String message) {
+    errors.add(new org.elite.parser.ParseError(pos, message, null));
+    if (errors.size() >= 20) {
+      failIfErrors();
+    }
+  }
+
+  private void failIfErrors() throws org.elite.parser.ParseException {
+    if (!errors.isEmpty()) {
+      throw new org.elite.parser.ParseException(filename, errors);
+    }
   }
 
   /** First pass: collect all ELite classes so annotations can resolve. */
@@ -749,8 +830,9 @@ public class TypeInference extends DefaultVisitor {
     return new JavaClassType(cls);
   }
 
-  /** Merge two types: equal types merge to themselves, else Any. */
+  /** Merge two types: errors absorb, equal types merge to themselves, else Any. */
   protected Type merge(Type a, Type b) {
+    if (a == ErrorType.ERROR || b == ErrorType.ERROR) return ErrorType.ERROR;
     if (a.equals(b)) return a;
     return AnyType.ANY;
   }
@@ -758,9 +840,9 @@ public class TypeInference extends DefaultVisitor {
   /**
    * Copies of IRBuilder's private class-loading helpers (IRBuilder.java:1283
    * loadJavaClass / resolveJavaClass / loadClassAtCompileTime). Loads are
-   * required because Java classes must be compile-time visible; failures
-   * return null here (inference is best-effort) instead of reporting errors.
-   * TODO: refactor into a shared helper later.
+   * required because Java classes must be compile-time visible; a failed
+   * load is an error: report it and return null (the caller types the node
+   * ErrorType). TODO: refactor into a shared helper later.
    */
   private Class<?> loadJavaClass(ELNode base) {
     return resolveJavaClass(base, true);
@@ -769,7 +851,7 @@ public class TypeInference extends DefaultVisitor {
   private Class<?> resolveJavaClass(ELNode node, boolean load) {
     if (node instanceof ELNode.IDENT var && var.symbol != null &&
         var.symbol.def.expr instanceof ELNode.CLASS c) {
-      return loadClassAtCompileTime(c.getClassName());
+      return loadClassAtCompileTime(node.pos, c.getClassName());
     }
 
     StringBuilder buf = new StringBuilder();
@@ -784,17 +866,18 @@ public class TypeInference extends DefaultVisitor {
     if (node instanceof ELNode.IDENT var) {
       buf.insert(0, var.id);
       if (var.symbol == null) {
-        return loadClassAtCompileTime(buf.toString());
+        return loadClassAtCompileTime(node.pos, buf.toString());
       }
     }
     return null;
   }
 
-  private Class<?> loadClassAtCompileTime(String name) {
+  private Class<?> loadClassAtCompileTime(int pos, String name) {
     try {
       return ClassResolver.getInstance(elctx).resolveClass(name);
     } catch (ClassNotFoundException ex) {
-      return null;   // best-effort: unloadable annotation falls back to Any
+      reportError(pos, _T(EL_CLASS_NOT_FOUND, name));
+      return null;
     }
   }
 
@@ -815,21 +898,21 @@ public class TypeInference extends DefaultVisitor {
         try {
           return PrimitiveType.of(Class.forName(alias));
         } catch (ClassNotFoundException e) {
-          return AnyType.ANY;
+          return ErrorType.ERROR;
         }
       }
     }
 
-    // 3. Java class — must be compile-time visible.
+    // 3. Java class — must be compile-time visible; failure is an error.
     try {
       Class<?> cls = loadJavaClass(typeNode);
-      if (cls == null) return AnyType.ANY;
+      if (cls == null) return ErrorType.ERROR;
       if (TypeCoercion.typeof(cls) != TypeCoercion.UNKNOWN_TYPE) {
         return PrimitiveType.of(cls);
       }
       return new JavaClassType(cls);
     } catch (RuntimeException e) {
-      return AnyType.ANY;
+      return ErrorType.ERROR;
     }
   }
 
@@ -973,7 +1056,7 @@ public class TypeInference extends DefaultVisitor {
 - [ ] **Step 5: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeInferenceTest`
-Expected: BUILD SUCCESS(9 个测试通过)。若 `define x::Int = 1 + 2` 用例失败,检查 `visit(DEFINE)` 对 expr 的标注覆盖是否生效(该用例中 1+2 尚未有规则,expr 类型由标注覆盖为 Int)。
+Expected: BUILD SUCCESS(8 个测试通过)。若 `define x::Int = 1 + 2` 用例失败,检查 `visit(DEFINE)` 对 expr 的标注覆盖是否生效(该用例中 1+2 尚未有规则,expr 类型由标注覆盖为 Int)。
 
 - [ ] **Step 6: Commit**
 
@@ -1346,6 +1429,27 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   void newEliteClass() {
     assertEquals("Point", typeOf("class Point(x, y)\nnew Point(1, 2)"));
   }
+
+  @Test
+  void annotatedAssignMismatchIsError() {
+    ELProgram program = parse("define x::Int\nx = \"hello\"");
+    SymbolTableBuilder.build(program);
+    ParseException ex = assertThrows(ParseException.class,
+      () -> TypeInference.infer(elctx, program));
+    assertTrue(ex.getMessage().contains("Type mismatch"),
+      "unexpected message: " + ex.getMessage());
+    ELNode assign = find(program.getExpressions().get(1),
+      n -> n instanceof ELNode.ASSIGN);
+    assertEquals("Error", assign.inferredType.toString());
+  }
+
+  @Test
+  void annotatedInitializerMismatchIsError() {
+    ELProgram program = parse("define x::Int = \"hello\"");
+    SymbolTableBuilder.build(program);
+    assertThrows(ParseException.class, () -> TypeInference.infer(elctx, program));
+    assertEquals("Error", program.getExpressions().get(0).inferredType.toString());
+  }
 ```
 
 注意:`"abc".substring(1)` 的目标是 ACCESS(STRINGVAL 的 `.substring`),String 字面量的 ACCESS 类型目前是 Any(Task 4 的 ACCESS 规则只处理 Array/List)→ Java 反射需要 ACCESS 的右操作数类型是 JavaClassType;本用例若失败,检查是否需要在 `visit(ACCESS)` 中把 `typeOf(e.right) instanceof PrimitiveType pt` 时给 ACCESS 节点标目标类型……不——反射在 `visit(APPLY)` 中应基于 `e.right`(APPLY 的 target)类型;`"abc".substring(1)` 的 APPLY.right 是 ACCESS 节点,其类型为 Any。**实现时**:`visit(APPLY)` 中若 target 是 ACCESS acc 且 `typeOf(acc.right)` 是 PrimitiveType/JavaClassType,则用 `typeOf(acc.right)` 的类做反射。此注释是执行时判定依据,若测试失败按此实现。
@@ -1435,6 +1539,15 @@ Expected: 新用例失败
 
     Type annotated = resolveAnnotationType(e.type);
     if (annotated != AnyType.ANY) {
+      if (e.expr != null && !compatible(annotated, typeOf(e.expr))) {
+        reportError(e.pos, _T(IR_TYPE_MISMATCH, annotated, typeOf(e.expr)));
+        setType(e, ErrorType.ERROR);
+        setType(e.expr, ErrorType.ERROR);
+        if (e.symbol != null) {
+          varTypes.put(e.symbol, ErrorType.ERROR);
+        }
+        return;
+      }
       setType(e, annotated);
       if (e.expr != null) {
         setType(e.expr, annotated);
@@ -1495,12 +1608,48 @@ Expected: 新用例失败
     Type t = typeOf(e.right);
     if (e.left instanceof ELNode.IDENT id && id.symbol != null &&
         !id.symbol.isFunction() && id.symbol.clazz == null) {
+      Type expected = varTypes.get(id.symbol);
+      if (expected != null && !compatible(expected, t)) {
+        reportError(e.pos, _T(IR_TYPE_MISMATCH, expected, t));
+        varTypes.put(id.symbol, ErrorType.ERROR);
+        setType(e, ErrorType.ERROR);
+        return;
+      }
       assigns.computeIfAbsent(id.symbol, k -> new java.util.ArrayList<>());
       if (!assigns.get(id.symbol).contains(t)) {
         assigns.get(id.symbol).add(t);
       }
     }
     setType(e, t);
+  }
+
+  /**
+   * Whether a value of type actual may be stored into a variable of the
+   * annotated type expected. Cannot judge Any / promotion markers /
+   * errors; both-numeric is allowed here and refined (widening check)
+   * in the numeric task.
+   */
+  private boolean compatible(Type expected, Type actual) {
+    if (actual == AnyType.ANY || actual == PrimitiveType.ANY_INT ||
+        actual == PrimitiveType.ANY_FLOAT || actual == ErrorType.ERROR) {
+      return true;   // cannot judge
+    }
+    if (expected.equals(actual)) {
+      return true;
+    }
+    if (isNumeric(expected) && isNumeric(actual)) {
+      return true;   // refined in Task 6
+    }
+    return false;
+  }
+
+  private boolean isNumeric(Type t) {
+    if (t == PrimitiveType.ANY_INT || t == PrimitiveType.ANY_FLOAT) return true;
+    if (t instanceof PrimitiveType pt && pt.javaClass() != null) {
+      return Number.class.isAssignableFrom(pt.javaClass()) ||
+             pt.javaClass() == Character.class;
+    }
+    return false;
   }
 
   @Override
@@ -1669,7 +1818,7 @@ Expected: 新用例失败
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeInferenceTest`
-Expected: BUILD SUCCESS(28 个测试)。Step 1 注释中的 Java 反射用例若不通过,按注释的判定依据修正 `visit(APPLY)`。
+Expected: BUILD SUCCESS(30 个测试)。Step 1 注释中的 Java 反射用例若不通过,按注释的判定依据修正 `visit(APPLY)`。Task 6 将把 `isNumeric` 替换为带归一化的版本,本任务的 `isNumeric` 是临时最简版(两者行为一致,Task 6 只是把"both-numeric"细化成"加宽检查")。
 
 - [ ] **Step 5: Commit**
 
@@ -1746,6 +1895,21 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   void decimalStaysDecimal() {
     assertEquals("Decimal", typeOf("define m::elite.lang.Decimal = 1.5M\nm + 1"));
   }
+
+  @Test
+  void numericNarrowingAssignIsError() {
+    ELProgram program = parse("define x::Int\nx = 2.5");
+    SymbolTableBuilder.build(program);
+    ParseException ex = assertThrows(ParseException.class,
+      () -> TypeInference.infer(elctx, program));
+    assertTrue(ex.getMessage().contains("Type mismatch"),
+      "unexpected message: " + ex.getMessage());
+  }
+
+  @Test
+  void numericWideningAssignIsOk() {
+    assertEquals("Long", typeOf("define x::Long = 1\nx"));
+  }
 ```
 
 注意:`1.5M` 的字面量语法若不存在,把 Decimal 用例改为注解变量 + 算术(如上已写);若 `Decimal` 名解析失败(需 import 或全名),测试按实际语法调整。**执行时以解析成功为准,失败则调整语法而非实现。**
@@ -1757,21 +1921,29 @@ Expected: 新用例失败
 
 - [ ] **Step 3: 实现规则**
 
-**(a) 扩展 merge**(替换 Task 2 版 merge):
+**(a) 扩展 merge 与 compatible**(替换 Task 2 版 merge;`isNumeric` 保持 Task 5 版;`compatible` 替换 Task 5 版,数值改为加宽检查):
 
 ```java
   protected Type merge(Type a, Type b) {
+    if (a == ErrorType.ERROR || b == ErrorType.ERROR) return ErrorType.ERROR;
     if (a.equals(b)) return a;
     if (a == AnyType.ANY || b == AnyType.ANY) return AnyType.ANY;
     if (isNumeric(a) && isNumeric(b)) return normalize(a, b);
     return AnyType.ANY;
   }
 
-  private boolean isNumeric(Type t) {
-    if (t == PrimitiveType.ANY_INT || t == PrimitiveType.ANY_FLOAT) return true;
-    if (t instanceof PrimitiveType pt && pt.javaClass() != null) {
-      return Number.class.isAssignableFrom(pt.javaClass()) ||
-             pt.javaClass() == Character.class;
+  private boolean compatible(Type expected, Type actual) {
+    if (actual == AnyType.ANY || actual == PrimitiveType.ANY_INT ||
+        actual == PrimitiveType.ANY_FLOAT || actual == ErrorType.ERROR) {
+      return true;   // cannot judge
+    }
+    if (expected.equals(actual)) {
+      return true;
+    }
+    // Numeric assignment is allowed only when the value widens to the
+    // annotated type (e.g. Int -> Long ok, Double -> Int rejected).
+    if (isNumeric(expected) && isNumeric(actual)) {
+      return normalize(actual, expected).equals(expected);
     }
     return false;
   }
@@ -1828,6 +2000,9 @@ Expected: 新用例失败
 
   /** Types an arithmetic-like binary node with promotion semantics. */
   private Type numericResult(ELNode.Binary e, Type lt, Type rt) {
+    if (lt == ErrorType.ERROR || rt == ErrorType.ERROR) {
+      return ErrorType.ERROR;
+    }
     if (lt.toString().equals("String") || rt.toString().equals("String")) {
       return PrimitiveType.of(String.class);
     }
@@ -1960,7 +2135,7 @@ Expected: 新用例失败
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeInferenceTest`
-Expected: BUILD SUCCESS(36 个测试)
+Expected: BUILD SUCCESS(38 个测试)
 
 - [ ] **Step 5: Commit**
 
@@ -2074,15 +2249,31 @@ Expected: 编译错误(dumpTyped 不存在)
 
 - [ ] **Step 4: 接入 CommandProvider.dump_ast**
 
-将 `CommandProvider.java` 第 95-107 行的方法体在 `SymbolTableBuilder.build(program);` 之后、`System.out.println(program.dump());` 之前插入 `TypeInference.infer(elctx, program);`,并把输出改为 `ASTDumper.dumpTyped(program)`:
+将 `CommandProvider.java` 第 95-107 行的方法体改为(注意 `TypeInference.infer` 会抛 `ParseException`——推导错误消息打到 stderr,不打印 dump):
 
 ```java
-    SymbolTableBuilder.build(program);
-    TypeInference.infer(elctx, program);
-    System.out.println(ASTDumper.dumpTyped(program));
+  @Command("dump-ast")
+  public static void dump_ast(ShellContext shellContext, String script) {
+    if (script.isBlank())
+      script = shellContext.getLastScript();
+    if (script.isBlank())
+      return;
+    ScriptEngine engine = shellContext.getEngine();
+    ELContext elctx = (ELContext)engine.get(ELContext.class.getName());
+    Parser parser = new Parser(elctx, script);
+    try {
+      ELProgram program = parser.parse();
+      program.setStandalone(true);
+      SymbolTableBuilder.build(program);
+      TypeInference.infer(elctx, program);
+      System.out.println(ASTDumper.dumpTyped(program));
+    } catch (ParseException e) {
+      System.err.println(e.getMessage());
+    }
+  }
 ```
 
-补 import:`import org.elite.ir.TypeInference;` 与 `import org.elite.parser.ASTDumper;`。
+补 import:`import org.elite.ir.TypeInference;` 与 `import org.elite.parser.ASTDumper;`(`ParseException` 已是现有 import)。
 
 - [ ] **Step 5: 运行测试确认通过 + 全量回归**
 
@@ -2114,7 +2305,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ## 计划自审记录
 
-- 规格覆盖:类型模型(Task 1)、inferredType 字段 + 注解解析(Task 2)、骨架与收敛(Task 2)、字面量/一元/比较/逻辑(Task 2/3)、容器(Task 4)、函数与变量含不可变/可变/ASSIGNOP(Task 5)、数值提升 AnyInt/AnyFloat 与归一化(Task 6)、消费方 dump-ast(Task 7)——规格全部条目有对应任务;标注不提升由 Task 2/5 的标注覆盖机制实现;NULL→Any 在 Task 2;20 轮收敛上限在 Task 2 骨架。
+- 规格覆盖:类型模型含 ErrorType(Task 1)、inferredType 字段 + 注解解析 + 报错机制(Task 2)、骨架与收敛(Task 2)、字面量/一元/比较/逻辑(Task 2/3)、容器(Task 4)、函数与变量含不可变/可变/ASSIGNOP/标注兼容性(Task 5)、数值提升 AnyInt/AnyFloat 与归一化含数值加宽检查(Task 6)、消费方 dump-ast 捕获 ParseException(Task 7)——规格全部条目有对应任务;标注不提升由 Task 2/5 的标注覆盖机制实现;NULL→Any 在 Task 2;20 轮收敛上限在 Task 2 骨架;类加载失败报错(EL_CLASS_NOT_FOUND)在 Task 2;类型不匹配报错(IR_TYPE_MISMATCH)在 Task 5/6。
 - 无占位符:所有步骤含完整代码或精确命令与预期。
-- 一致性:`TypeInference.infer(ELContext, ELProgram)` 在 Task 2 定义,Task 7 按同签名调用;`typeOf/merge/setType/resolveAnnotationType` 内部签名各任务一致;Java 类加载走复制的 `loadJavaClass`(Task 2 Interfaces 注明复制来源与 TODO),NEW.base 在 Task 5 复用 `resolveAnnotationType`;测试类总数与各任务预期数一致(5+9+5+5+10+8+2=44 个新测试)。
+- 一致性:`TypeInference.infer(ELContext, ELProgram) throws ParseException` 在 Task 2 定义,Task 7 按同签名调用并捕获;`typeOf/merge/setType/resolveAnnotationType/compatible/isNumeric/normalize` 内部签名各任务一致(isNumeric 于 Task 5 引入,Task 6 复用并细化 compatible);ErrorType 在 Task 1 定义,Task 2(merge/注解失败)、Task 5(标注不匹配)、Task 6(numericResult/兼容性)消费;Java 类加载走复制的 `loadJavaClass`(Task 2 Interfaces 注明复制来源与 TODO,失败 reportError EL_CLASS_NOT_FOUND),NEW.base 在 Task 5 复用 `resolveAnnotationType`;测试类总数与各任务预期数一致(6+8+5+5+12+10+2=48 个新测试)。
 - 执行时判定点(明示,不属占位符):`[1,2,3]` 的 AST 形态(ARRAY 或 CONS 链)、`1.5M` Decimal 字面量语法、`"abc".substring(1)` 的 ACCESS 反射路径——测试失败时按计划内注释的判定依据调整,而非猜测实现。
