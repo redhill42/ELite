@@ -592,7 +592,10 @@ class TypeInferenceTest {
     }
   }
 
-  /** Parse + build symbol table + infer; returns the last top-level expression. */
+  /**
+   * Parse + build symbol table + infer; returns the last top-level node
+   * (the last expression if any, else the last definition).
+   */
   private static ELNode infer(String script) {
     ELProgram program = parse(script);
     SymbolTableBuilder.build(program);
@@ -602,28 +605,38 @@ class TypeInferenceTest {
       throw new RuntimeException("inference failed: " + script, e);
     }
     var exps = program.getExpressions();
-    assertFalse(exps.isEmpty(), "no top-level expression in: " + script);
-    return exps.get(exps.size() - 1);
+    if (!exps.isEmpty()) {
+      return exps.get(exps.size() - 1);
+    }
+    var defs = program.getDefinitions();
+    assertFalse(defs.isEmpty(), "no top-level node in: " + script);
+    return defs.get(defs.size() - 1);
   }
 
   private static String typeOf(String script) {
     return infer(script).inferredType.toString();
   }
 
-  /** Finds the first node matching the predicate anywhere in the program. */
-  private static ELNode find(ELNode root, java.util.function.Predicate<ELNode> pred) {
-    ELNode[] found = new ELNode[1];
-    new DefaultVisitor() {
-      @Override
-      public void visitNode(ELNode e) {
-        if (found[0] == null && pred.test(e)) {
-          found[0] = e;
-        } else {
-          super.visitNode(e);
-        }
+  /** Parse + build + infer; returns the top-level DEFINE with the given id. */
+  private static ELNode.DEFINE def(String script, String id) {
+    ELProgram program = parse(script);
+    SymbolTableBuilder.build(program);
+    try {
+      TypeInference.infer(elctx, program);
+    } catch (ParseException e) {
+      throw new RuntimeException("inference failed: " + script, e);
+    }
+    for (ELNode n : program.getDefinitions()) {
+      if (n instanceof ELNode.DEFINE d && id.equals(d.id)) {
+        return d;
       }
-    }.scan(root);
-    return found[0];
+    }
+    for (ELNode n : program.getExpressions()) {
+      if (n instanceof ELNode.DEFINE d && id.equals(d.id)) {
+        return d;
+      }
+    }
+    throw new AssertionError("define not found: " + id);
   }
 
   @Test
@@ -685,7 +698,7 @@ class TypeInferenceTest {
 }
 ```
 
-注意:`find` helper 本任务未用,Task 3+ 使用;测试类需要额外 import:`org.elite.eval.ELProgram`、`org.junit.jupiter.api.Assertions.assertThrows` 已在断言 import 中。`visitNode` 覆盖需小心——DefaultVisitor 的叶子 visit 不经过 visitNode,find 只用于非叶子节点(后续任务用)。
+注意:测试类需要额外 import `org.elite.eval.ELProgram`;`assertThrows` 由 `org.junit.jupiter.api.Assertions.*` 静态导入覆盖。`visitNode` 覆盖需小心——DefaultVisitor 的叶子 visit 不经过 visitNode,find 只用于非叶子节点(后续任务用)。
 
 - [ ] **Step 3: 运行确认失败**
 
@@ -1383,9 +1396,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
   @Test
   void functionReturnAnnotationPinsBody() {
-    ELNode node = infer("define add(x::Int, y::Int)::Int => x + y");
-    ELNode add = find(node, n -> n instanceof ELNode.DEFINE d && "add".equals(d.id));
-    ELNode body = ((ELNode.LAMBDA)((ELNode.DEFINE)add).expr).body;
+    ELNode.DEFINE add = def("define add(x::Int, y::Int)::Int => x + y", "add");
+    ELNode body = ((ELNode.LAMBDA)add.expr).body;
     assertEquals("Int", body.inferredType.toString());
   }
 
@@ -1438,8 +1450,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
       () -> TypeInference.infer(elctx, program));
     assertTrue(ex.getMessage().contains("Type mismatch"),
       "unexpected message: " + ex.getMessage());
-    ELNode assign = find(program.getExpressions().get(1),
-      n -> n instanceof ELNode.ASSIGN);
+    // exps[0] = define x::Int, exps[1] = the ASSIGN
+    ELNode assign = program.getExpressions().get(1);
     assertEquals("Error", assign.inferredType.toString());
   }
 
