@@ -227,7 +227,9 @@ class TypeInferenceTest {
 
   @Test
   void immutableVariableFixedByInitializer() {
-    assertEquals("Int", typeOf("define x = 42\nx + 1"));
+    // NOTE: no arithmetic in the final expression — x + 1 would be AnyInt
+    // once Task 6 lands; this test only asserts the variable typing rule.
+    assertEquals("Int", typeOf("define x = 42\nx"));
   }
 
   @Test

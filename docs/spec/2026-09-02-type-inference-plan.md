@@ -1416,7 +1416,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
   @Test
   void immutableVariableFixedByInitializer() {
-    assertEquals("Int", typeOf("define x = 42\nx + 1"));
+    // NOTE: no arithmetic in the final expression — x + 1 would be AnyInt
+    // once Task 6 lands; this test only asserts the variable typing rule.
+    assertEquals("Int", typeOf("define x = 42\nx"));
   }
 
   @Test
@@ -1946,7 +1948,9 @@ Expected: 新用例失败
 
 - [ ] **Step 3: 实现规则**
 
-**(a) 扩展 merge 与 compatible**(替换 Task 2 版 merge;`isNumeric` 保持 Task 5 版;`compatible` 替换 Task 5 版,数值改为加宽检查):
+**前置注意(来自 Task 5 审查):** `visit(ELNode.ADD)` 已由 Task 5 加入(merge 语义,位于 visit(CAT) 之后)——本任务的 `@Override public void visit(ELNode.ADD e)` 是**替换**该既有方法体,不是新增;SUB/MUL/DIV/REM/POW/BITOR/BITAND/XOR/SHL/SHR/USHR/NEG/POS/BITNOT/INC/DEC 是全新方法。`visit(ELNode.INFIX)`(Task 5 加的 merge 语义)不在本任务范围,保留不动,数值归一化留待后续。
+
+**(a) 扩展 merge 与 compatible**(替换 Task 2 版 merge;`isNumeric` 保持 Task 5 版——两处版本必须一致;`compatible` 替换 Task 5 版,数值改为加宽检查):
 
 ```java
   protected Type merge(Type a, Type b) {
