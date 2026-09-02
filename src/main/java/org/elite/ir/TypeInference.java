@@ -9,12 +9,15 @@ import org.elite.eval.TypeCoercion;
 import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
 import org.elite.resolver.ClassResolver;
+import org.elite.type.ArrayType;
 import org.elite.type.AnyType;
 import org.elite.type.ELiteClassType;
 import org.elite.type.ErrorType;
 import org.elite.type.JavaClassType;
 import org.elite.type.ListType;
+import org.elite.type.MapType;
 import org.elite.type.PrimitiveType;
+import org.elite.type.TupleType;
 import org.elite.type.Type;
 
 import static org.elite.resources.Resources.*;
@@ -131,10 +134,16 @@ public class TypeInference extends DefaultVisitor {
     return new JavaClassType(cls);
   }
 
-  /** Merge two types: errors absorb, equal types merge to themselves, else Any. */
+  /**
+   * Merge two types: errors absorb, Any is the identity (so [1,2,3] builds
+   * List[Int] from NIL's List[Any]), equal types merge to themselves,
+   * numeric pairs normalize (Task 6), anything else degrades to Any.
+   */
   protected Type merge(Type a, Type b) {
     if (a == ErrorType.ERROR || b == ErrorType.ERROR) return ErrorType.ERROR;
     if (a.equals(b)) return a;
+    if (a == AnyType.ANY) return b;
+    if (b == AnyType.ANY) return a;
     return AnyType.ANY;
   }
 
@@ -388,6 +397,84 @@ public class TypeInference extends DefaultVisitor {
   public void visit(ELNode.CAT e) {
     super.visit(e);
     setType(e, PrimitiveType.of(String.class));
+  }
+
+  @Override
+  public void visit(ELNode.CONS e) {
+    super.visit(e);
+    Type head = typeOf(e.head);
+    Type tail = typeOf(e.tail);
+    if (tail instanceof ListType lt) {
+      setType(e, new ListType(merge(head, lt.element())));
+    } else {
+      setType(e, new ListType(head));
+    }
+  }
+
+  @Override
+  public void visit(ELNode.TUPLE e) {
+    super.visit(e);
+    Type[] elems = new Type[e.elems.length];
+    for (int i = 0; i < e.elems.length; i++) {
+      elems[i] = typeOf(e.elems[i]);
+    }
+    setType(e, new TupleType(elems));
+  }
+
+  @Override
+  public void visit(ELNode.MAP e) {
+    super.visit(e);
+    Type key = AnyType.ANY;
+    Type value = AnyType.ANY;
+    boolean first = true;
+    for (int i = 0; i < e.keys.length; i++) {
+      if (first) {
+        key = typeOf(e.keys[i]);
+        value = typeOf(e.values[i]);
+        first = false;
+      } else {
+        key = merge(key, typeOf(e.keys[i]));
+        value = merge(value, typeOf(e.values[i]));
+      }
+    }
+    setType(e, new MapType(key, value));
+  }
+
+  @Override
+  public void visit(ELNode.ARRAY e) {
+    super.visit(e);
+    if (e.init != null) {
+      // [1, 2] style: array literal with initializer tuple
+      Type[] elems = new Type[e.init.elems.length];
+      Type merged = AnyType.ANY;
+      for (int i = 0; i < e.init.elems.length; i++) {
+        elems[i] = typeOf(e.init.elems[i]);
+        merged = i == 0 ? elems[i] : merge(merged, elems[i]);
+      }
+      setType(e, new ArrayType(merged, 1));
+      return;
+    }
+    Type element = e.type != null ? resolveAnnotationType(e.type) : AnyType.ANY;
+    setType(e, new ArrayType(element, e.dims.length));
+  }
+
+  @Override
+  public void visit(ELNode.RANGE e) {
+    super.visit(e);
+    setType(e, new JavaClassType(elite.lang.Range.class));
+  }
+
+  @Override
+  public void visit(ELNode.ACCESS e) {
+    super.visit(e);
+    Type target = typeOf(e.right);
+    if (target instanceof ArrayType at) {
+      setType(e, at.element());
+    } else if (target instanceof ListType lt) {
+      setType(e, lt.element());
+    } else {
+      setType(e, AnyType.ANY);
+    }
   }
 
   @Override

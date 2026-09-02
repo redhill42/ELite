@@ -180,4 +180,28 @@ class TypeInferenceTest {
     ELNode body = ((ELNode.LAMBDA)f.expr).body;
     assertEquals("Int", body.inferredType.toString());
   }
+
+  @Test
+  void consList() {
+    assertEquals("List[Int]", typeOf("[1, 2, 3]"));
+  }
+
+  @Test
+  void tupleAndMap() {
+    assertEquals("Tuple[String, Int]", typeOf("(\"Bob\", 42)"));
+    assertEquals("Map[String, Int]", typeOf("{\"a\": 1, \"b\": 2}"));
+  }
+
+  @Test
+  void arrayAndNewArray() {
+    assertEquals("Array[Int, 2]", typeOf("new int[4][4]"));
+    // ARRAY-with-initializer form exercises the element-merge branch:
+    // [1,2]-style list literals are CONS chains (List[Int]), not arrays.
+    assertEquals("Array[Int, 1]", typeOf("new int[2](1, 2)"));
+  }
+
+  @Test
+  void rangeType() {
+    assertEquals("Range", typeOf("[1..10]"));
+  }
 }
