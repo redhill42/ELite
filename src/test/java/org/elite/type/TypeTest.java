@@ -69,4 +69,33 @@ class TypeTest {
     assertEquals(ErrorType.ERROR, ErrorType.ERROR);
     assertNotEquals(ErrorType.ERROR, AnyType.ANY);
   }
+
+  @Test
+  void javaReflectiveTypes() throws Exception {
+    java.lang.reflect.Method println = java.io.PrintStream.class
+      .getMethod("println", String.class);
+    Type t = new JavaMethodType(println);
+    assertEquals("JavaMethod[void PrintStream.println(String)]", t.toString());
+    assertEquals(t, new JavaMethodType(println));
+
+    java.lang.reflect.Field out = System.class.getField("out");
+    Type f = new JavaFieldType(out);
+    assertEquals("JavaField[PrintStream]", f.toString());
+    assertEquals(f, new JavaFieldType(out));
+
+    java.lang.reflect.Constructor<?> ctor =
+      java.util.ArrayList.class.getConstructor();
+    Type c = new JavaConstructorType(ctor);
+    assertEquals("JavaConstructor[ArrayList()]", c.toString());
+    assertEquals(c, new JavaConstructorType(ctor));
+    assertNotEquals(c, t);
+  }
+
+  @Test
+  void javaConstructorWithParams() throws Exception {
+    java.lang.reflect.Constructor<?> ctor =
+      java.awt.Point.class.getConstructor(int.class, int.class);
+    assertEquals("JavaConstructor[Point(int, int)]",
+      new JavaConstructorType(ctor).toString());
+  }
 }
