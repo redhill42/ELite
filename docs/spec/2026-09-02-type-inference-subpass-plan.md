@@ -32,9 +32,10 @@
 **Interfaces:**
 - Consumes: Task 1 前无;`PrimitiveType.of`(既有)
 - Produces(后续任务依赖):
-  - `public final class JavaMethodType extends Type`:c'tor `(java.lang.reflect.Method method)`、`method()`、toString `JavaMethod[<ret> <DeclaringSimple>.<name>(<paramSimple>,...)]`(ret/param 显示名:void→"void",其余 `PrimitiveType.of` 的 toString;参数间 ", ")、equals/hashCode 按 `method`
-  - `public final class JavaFieldType extends Type`:c'tor `(java.lang.reflect.Field field)`、`field()`、toString `JavaField[<typeSimple>]`(字段类型 `PrimitiveType.of(field.getType())` 显示名)、equals/hashCode 按 `field`
-  - `public final class JavaConstructorType extends Type`:c'tor `(java.lang.reflect.Constructor<?> ctor)`、`ctor()`、`declaringClass()`、toString `JavaConstructor[<DeclaringSimple>(<paramSimple>,...)]`、equals/hashCode 按 `ctor`
+  - `public final class JavaMethodType extends Type`:c'tor `(java.lang.reflect.Method method)`、`method()`、toString `JavaMethod[<ret> <DeclaringSimple>.<name>(<param>,...)]`、equals/hashCode 按 `method`
+  - `public final class JavaFieldType extends Type`:c'tor `(java.lang.reflect.Field field)`、`field()`、toString `JavaField[<type>]`、equals/hashCode 按 `field`
+  - `public final class JavaConstructorType extends Type`:c'tor `(java.lang.reflect.Constructor<?> ctor)`、`ctor()`、`declaringClass()`、toString `JavaConstructor[<DeclaringSimple>(<param>,...)]`、equals/hashCode 按 `ctor`
+  - **显示名规则(以规格示例为准,与 PrimitiveType 别名规则不同)**:三个类的参数/返回/字段类型用共享 helper `jvmTypeName(Class<?> c)`:原始类型 → 小写 JVM 名(`int`/`long`/`void`/...),其余 → `PrimitiveType.of(c).toString()`(如 `String`、`Int`)。规格示例:`JavaMethod[void PrintStream.println(String)]`、`JavaConstructor[Point(int, int)]`——原始类型小写、类名按现有显示名。三个类各自私有实现该 helper(3 行,允许复制)
 
 - [ ] **Step 1: 追加失败测试**(TypeTest.java 类末尾追加)
 
@@ -712,7 +713,7 @@ Expected: 失败(类型为 Any / 不抛异常)
   public boolean hasNonPublicField(Class<?> cls, String name) {
     try {
       cls.getDeclaredField(name);
-      return cls.getField(name) == null ? false : false;
+      return true;
     } catch (NoSuchFieldException e) {
       return false;
     }
