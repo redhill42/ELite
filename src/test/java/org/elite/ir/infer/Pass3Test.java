@@ -124,4 +124,18 @@ class Pass3Test {
       Locale.setDefault(prior);
     }
   }
+
+  @Test
+  void everyNodeTypedAfterInference() throws Exception {
+    // Unknown identifiers stay null through Pass 1-3 and must be forced
+    // to Any so the postcondition holds.
+    ELProgram program = parse("define x = noSuchVariable");
+    SymbolTableBuilder.build(program);
+    TypeInference.infer(elctx, program);
+
+    ELNode def = (ELNode)program.getExpressions().get(0);
+    assertEquals("Any", def.inferredType.toString());
+    ELNode id = (ELNode)((ELNode.DEFINE)def).expr;
+    assertEquals("Any", id.inferredType.toString());
+  }
 }
