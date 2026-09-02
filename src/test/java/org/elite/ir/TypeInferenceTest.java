@@ -84,7 +84,9 @@ class TypeInferenceTest {
   @Test
   void annotatedAliases() {
     assertEquals("Int", typeOf("define x::Int = 1 + 2"));
-    assertEquals("Char", typeOf("define c::Char = 'a'"));
+    // Bare 'a' is a String; a Char initializer needs the #'x' literal token so
+    // the annotation (Character) and the value type agree.
+    assertEquals("Char", typeOf("define c::Char = #'a'"));
     assertEquals("BigInt", typeOf("define b::BigInt = 1"));
   }
 
@@ -203,5 +205,104 @@ class TypeInferenceTest {
   @Test
   void rangeType() {
     assertEquals("Range", typeOf("[1..10]"));
+  }
+
+  @Test
+  void functionType() {
+    assertEquals("Function[Int, [Int, Int]]",
+      typeOf("define add(x::Int, y::Int)::Int => x + y\ndefine _ = add"));
+  }
+
+  @Test
+  void functionReturnAnnotationPinsBody() {
+    ELNode.DEFINE add = def("define add(x::Int, y::Int)::Int => x + y", "add");
+    ELNode body = ((ELNode.LAMBDA)add.expr).body;
+    assertEquals("Int", body.inferredType.toString());
+  }
+
+  @Test
+  void applyUserFunction() {
+    assertEquals("Int", typeOf("define add(x::Int, y::Int)::Int => x + y\nadd(1, 2)"));
+  }
+
+  @Test
+  void immutableVariableFixedByInitializer() {
+    assertEquals("Int", typeOf("define x = 42\nx + 1"));
+  }
+
+  @Test
+  void mutableVariableMergedFromAssigns() {
+    assertEquals("Int", typeOf("define x = 0\nx = 1\nx = 2\nx"));
+  }
+
+  @Test
+  void mutableVariableConflictIsAny() {
+    assertEquals("Any", typeOf("define x = 0\nx = 1\nx = \"s\"\nx"));
+  }
+
+  @Test
+  void assignopDoesNotChangeType() {
+    assertEquals("Int", typeOf("define x = 1\nx += 2\nx"));
+  }
+
+  @Test
+  void foreachElementType() {
+    // Body's last expression is the loop variable; the FOREACH node inherits
+    // that type, so the element type of [1, 2] (List[Int]) is observable.
+    assertEquals("Int",
+      typeOf("for (i in [1, 2]) { print(i); i }"));
+  }
+
+  @Test
+  void javaMethodReflection() {
+    assertEquals("Int", typeOf("java.lang.Integer.parseInt(\"1\")"));
+    assertEquals("String", typeOf("\"abc\".substring(1)"));
+  }
+
+  @Test
+  void newEliteClass() {
+    assertEquals("Point", typeOf("class Point(x, y)\nnew Point(1, 2)"));
+  }
+
+  @Test
+  void listIndexAccess() {
+    assertEquals("Int", typeOf("define l = [1, 2, 3]\nl[0]"));
+  }
+
+  @Test
+  void annotatedAssignMismatchIsError() {
+    // An annotated declaration needs an initializer for the parser to carry
+    // the ::Int annotation onto the DEFINE; x = "hello" then mismatches.
+    // Pin English around inference for a deterministic message.
+    Locale prior = Locale.getDefault();
+    Locale.setDefault(Locale.ENGLISH);
+    ParseException ex;
+    try {
+      ELProgram program = parse("define x::Int = 0\nx = \"hello\"");
+      SymbolTableBuilder.build(program);
+      ex = assertThrows(ParseException.class,
+        () -> TypeInference.infer(elctx, program));
+      // exps[0] = define x::Int = 0, exps[1] = the ASSIGN
+      ELNode assign = program.getExpressions().get(1);
+      assertEquals("Error", assign.inferredType.toString());
+    } finally {
+      Locale.setDefault(prior);
+    }
+    assertTrue(ex.getMessage().contains("Type mismatch"),
+      "unexpected message: " + ex.getMessage());
+  }
+
+  @Test
+  void annotatedInitializerMismatchIsError() {
+    Locale prior = Locale.getDefault();
+    Locale.setDefault(Locale.ENGLISH);
+    try {
+      ELProgram program = parse("define x::Int = \"hello\"");
+      SymbolTableBuilder.build(program);
+      assertThrows(ParseException.class, () -> TypeInference.infer(elctx, program));
+      assertEquals("Error", program.getExpressions().get(0).inferredType.toString());
+    } finally {
+      Locale.setDefault(prior);
+    }
   }
 }

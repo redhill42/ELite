@@ -145,6 +145,7 @@ public final class Resources
     // IR subsystem
     public static final String IR_BYTECODE_COMPILE_FAILED = "IR_BYTECODE_COMPILE_FAILED";
     public static final String IR_BC_UNHANDLED_OPCODE      = "IR_BC_UNHANDLED_OPCODE";
+    public static final String IR_TYPE_MISMATCH            = "IR_TYPE_MISMATCH";
 
     private Resources() {}
 }
