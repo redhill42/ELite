@@ -1,5 +1,7 @@
 # ELite 类型推导设计
 
+> 推断遍的子 Pass 结构(Pass1/Pass2/Pass3 与反射类型推导)见 2026-09-02-type-inference-subpass-design.md。
+
 日期:2026-09-02
 状态:已批准(方案 A,不接 IRBuilder,消费方仅 --dump-ast)
 
