@@ -50,7 +50,10 @@ public final class PrimitiveType extends Type {
   public boolean equals(Object o) {
     if (this == o) return true;
     if (!(o instanceof PrimitiveType that)) return false;
-    return Objects.equals(javaClass, that.javaClass);
+    if (javaClass == null || that.javaClass == null) {
+      return false;   // ANY_INT / ANY_FLOAT are distinct singleton markers
+    }
+    return javaClass.equals(that.javaClass);
   }
 
   @Override

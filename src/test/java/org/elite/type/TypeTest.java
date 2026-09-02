@@ -31,6 +31,7 @@ class TypeTest {
     assertEquals("AnyFloat", PrimitiveType.ANY_FLOAT.toString());
     assertTrue(PrimitiveType.ANY_INT.isAnyInt());
     assertFalse(PrimitiveType.ANY_INT.isAnyFloat());
+    assertNotEquals(PrimitiveType.ANY_INT, PrimitiveType.ANY_FLOAT);
   }
 
   @Test
