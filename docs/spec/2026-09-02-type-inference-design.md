@@ -98,7 +98,8 @@ ELite class 定义在推断开始前先整体登记(第一遍扫描收集所有 
   正常应远少于 20 轮收敛)。
 - 每轮开始时清空"已变化"标记;`setType(node, type)` 仅在类型真正变化时写入
   `node.inferredType` 并置变化标记。
-- 结果写入新字段 `ELNode.inferredType`(公开非 transient)。
+- 结果写入新字段 `ELNode.inferredType`(public transient;与 `symbol`/`scope`
+  一致——推断在每次 dump 前于进程内运行,transient 避免影响序列化)。
 - **接入点:仅 `CommandProvider.dump_ast`**——`SymbolTableBuilder.build(program)`
   之后、dump 之前调用 `TypeInference.infer(program)`。IRBuilder 不调用。
 
