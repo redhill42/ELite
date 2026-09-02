@@ -1,6 +1,25 @@
+/*
+ * Copyright 2006-2026 Daniel Yuan.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.elite.type;
 
-/** An array type, e.g. Array[Int, 2]. */
+import java.lang.reflect.Array;
+
+/**
+ * An array type, e.g. Array[Int, 2].
+ */
 public final class ArrayType extends Type {
   private final Type element;
   private final int dims;
@@ -10,12 +29,26 @@ public final class ArrayType extends Type {
     this.dims = dims;
   }
 
-  public Type element() { return element; }
+  public Type element() {
+    return element;
+  }
 
-  public int dims() { return dims; }
+  public int dims() {
+    return dims;
+  }
 
   @Override
-  public String toString() { return "Array[" + element + ", " + dims + "]"; }
+  public Class<?> javaClass() {
+    Class<?> componentType = element.javaClass();
+    if (componentType == null)
+      return null;
+    return Array.newInstance(componentType, dims).getClass();
+  }
+
+  @Override
+  public String toString() {
+    return element + "[]".repeat(dims);
+  }
 
   @Override
   public boolean equals(Object o) {
@@ -24,5 +57,7 @@ public final class ArrayType extends Type {
   }
 
   @Override
-  public int hashCode() { return element.hashCode() * 31 + dims; }
+  public int hashCode() {
+    return element.hashCode() * 31 + dims;
+  }
 }

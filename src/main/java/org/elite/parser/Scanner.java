@@ -319,6 +319,7 @@ public class Scanner implements Cloneable {
         nextchar();
       scan();
     }
+    scan();
   }
 
   protected void errorRecover(String message) {

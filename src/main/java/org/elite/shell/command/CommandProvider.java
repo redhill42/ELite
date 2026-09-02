@@ -20,6 +20,7 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.VariableMapperImpl;
 import org.elite.ir.BytecodeCompiler;
 import org.elite.ir.BytecodeConsumer;
+import org.elite.ir.SymbolTable;
 import org.elite.ir.SymbolTableBuilder;
 import org.elite.ir.TypeInference;
 import org.elite.parser.ASTDumper;
@@ -105,8 +106,9 @@ public final class CommandProvider {
     try {
       ELProgram program = parser.parse();
       program.setStandalone(true);
-      SymbolTableBuilder.build(program);
-      TypeInference.infer(elctx, program);
+      program.getImports().importExternals(elctx);
+      SymbolTable symbolTable = SymbolTableBuilder.build(elctx, program);
+      TypeInference.infer(elctx, program, symbolTable.currentScope());
       System.out.println(ASTDumper.dumpTyped(program));
     } catch (ParseException e) {
       System.err.println(e.getMessage());

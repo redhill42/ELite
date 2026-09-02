@@ -426,6 +426,10 @@ final class IREmitter {
     emit(INVOKE_METHOD, 0, builder.putConstant(method));
   }
 
+  public void emitInvokeSuper(Method method) {
+    emit(INVOKE_SUPER, 0, builder.putConstant(method));
+  }
+
   public void emitInvokeDynamic(Descriptors.Indy desc) {
     emit(INVOKE_DYNAMIC, 0, builder.putConstant(desc));
   }

@@ -29,6 +29,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serial;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 
 import static org.elite.resources.Resources.*;
 
@@ -49,14 +50,21 @@ class SingleMethodClosure extends JavaMethodClosure {
   }
 
   protected JavaMethodClosure addMethod(Method method) {
-    if (method.equals(this.method)) {
+    if (method.equals(this.method))
       return this;
-    } else {
-      JavaMethodClosure closure = new MultiMethodClosure(getName());
-      closure.addMethod(this.method);
-      closure.addMethod(method);
-      return closure;
+
+    if (Arrays.equals(this.method.getParameterTypes(),
+                      method.getParameterTypes())) {
+      // Replace synthetic method with normal method.
+      if ((this.method.getModifiers() & 0x1000) != 0)
+        this.method = method;
+      return this;
     }
+
+    JavaMethodClosure closure = new MultiMethodClosure(getName());
+    closure.addMethod(this.method);
+    closure.addMethod(method);
+    return closure;
   }
 
   @Override
@@ -71,6 +79,10 @@ class SingleMethodClosure extends JavaMethodClosure {
 
   public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
     return getJavaMethod(args.length);
+  }
+
+  public Method getJavaMethod(Class<?> receiverType, Class<?>... argTypes) {
+    return getJavaMethod(argTypes.length);
   }
 
   public int arity(ELContext elctx) {

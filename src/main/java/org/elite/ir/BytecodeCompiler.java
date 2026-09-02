@@ -1624,7 +1624,7 @@ public class BytecodeCompiler {
         }
       }
 
-      case INVOKE_METHOD -> {
+      case INVOKE_METHOD, INVOKE_SUPER -> {
         Method m = (Method)fn.getConstant(v.poolIndex());
         if (Modifier.isStatic(m.getModifiers())) {
           mc.INVOKESTATIC(m.getDeclaringClass(), m.getName(), m.getReturnType(),
@@ -1632,6 +1632,9 @@ public class BytecodeCompiler {
         } else if (m.getDeclaringClass().isInterface()) {
           mc.INVOKEINTERFACE(m.getDeclaringClass(), m.getName(),
                              m.getReturnType(), m.getParameterTypes());
+        } else if (v.opcode() == INVOKE_SUPER) {
+          mc.INVOKESPECIAL(m.getDeclaringClass(), m.getName(), m.getReturnType(),
+                           m.getParameterTypes());
         } else {
           mc.INVOKEVIRTUAL(m.getDeclaringClass(), m.getName(), m.getReturnType(),
                            m.getParameterTypes());

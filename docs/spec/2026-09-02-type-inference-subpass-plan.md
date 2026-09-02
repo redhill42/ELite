@@ -487,6 +487,7 @@ import org.elite.parser.ParseException;
 import org.elite.parser.Parser;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class Pass1Test {
@@ -530,7 +531,8 @@ class Pass1Test {
     new Pass1(ctx).run(program);
 
     ELNode add = (ELNode)program.getExpressions().get(1);
-    assertNull(add.inferredType, "operator node must stay null after Pass 1 only");
+    assertNull(add.inferredType,
+               "operator node must stay null after Pass 1 only");
   }
 }
 ```

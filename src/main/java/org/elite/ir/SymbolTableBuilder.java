@@ -3,7 +3,9 @@ package org.elite.ir;
 import org.elite.eval.ELProgram;
 import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
+import org.elite.resolver.ClassResolver;
 
+import javax.el.ELContext;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,9 +27,9 @@ public final class SymbolTableBuilder {
   /**
    * Build a symbol table for the given program.
    */
-  public static SymbolTable build(ELProgram program) {
+  public static SymbolTable build(ELContext elctx, ELProgram program) {
     SymbolTable table = new SymbolTable();
-    BuilderVisitor visitor = new BuilderVisitor(table);
+    BuilderVisitor visitor = new BuilderVisitor(elctx, table);
     table.enterScope(null);
     if (program.isStandalone()) // set local scope for standalone program
       table.enterProgramScope();
@@ -44,9 +46,9 @@ public final class SymbolTableBuilder {
   /**
    * Build a symbol table for a single expression or subtree.
    */
-  public static SymbolTable build(ELNode node) {
+  public static SymbolTable build(ELContext elctx, ELNode node) {
     SymbolTable table = new SymbolTable();
-    BuilderVisitor visitor = new BuilderVisitor(table);
+    BuilderVisitor visitor = new BuilderVisitor(elctx, table);
     table.enterScope(null);
     node.accept(visitor);
     visitor.finish();
@@ -59,15 +61,19 @@ public final class SymbolTableBuilder {
    * and function symbols have {@code paramFlags} set.
    */
   static class BuilderVisitor extends DefaultVisitor {
+    final ELContext elctx;
     final SymbolTable table;
     SymbolTable.Scope enclosingScope;
+
+    List<ELNode.CLASSDEF> classesToProcess = new ArrayList<>();
 
     record Undefined(ELNode.IDENT var, SymbolTable.Scope scope, boolean call) {}
     List<Undefined> undefined = new ArrayList<>();
 
     Set<ELNode.IDENT> mutableSymbols = new HashSet<>();
 
-    BuilderVisitor(SymbolTable table) {
+    BuilderVisitor(ELContext elctx, SymbolTable table) {
+      this.elctx = elctx;
       this.table = table;
       this.enclosingScope = null;
     }
@@ -155,6 +161,9 @@ public final class SymbolTableBuilder {
       SymbolTable.Scope previous = enclosingScope;
       table.enterScope(e, e);
       enclosingScope = table.currentScope();
+
+      // Post process after full table built.
+      classesToProcess.add(e);
 
       IRClass clazz = e.symbol.clazz;
 
@@ -375,7 +384,7 @@ public final class SymbolTableBuilder {
              e instanceof ELNode.TUPLE;
 
       if (e instanceof ELNode.IDENT v) {
-        if (v.symbol != null)
+        if (v.symbol != null && !v.symbol.isFinal())
           v.symbol.immutable = false;
         else
           mutableSymbols.add(v);
@@ -384,7 +393,7 @@ public final class SymbolTableBuilder {
         while (!worklist.isEmpty()) {
           ELNode elem = worklist.remove(0);
           if (elem instanceof ELNode.IDENT v) {
-            if (v.symbol != null)
+            if (v.symbol != null && !v.symbol.isFinal())
               v.symbol.immutable = false;
             else
               mutableSymbols.add(v);
@@ -540,9 +549,99 @@ public final class SymbolTableBuilder {
           if (!(undef.call && sym.def.expr instanceof ELNode.LAMBDA) &&
               sym.scope.enclosingScope() != undef.scope.enclosingScope())
             sym.captured = true;
-          if (mutableSymbols.contains(undef.var))
+          if (!sym.isFinal() && mutableSymbols.contains(undef.var))
             sym.immutable = false;
         }
+      }
+
+      // Post process classes after all references resolved
+      for (ELNode.CLASSDEF e : classesToProcess) {
+        // Determine the base class. The base class must exist at compile time.
+        Object base;
+        if (e.base == null) {
+          // No base class, defaults to java.lang.Object.
+          base = Object.class;
+        } else if ((base = resolveIRClass(e.base)) == null) {
+          if (e.base instanceof ELNode.IDENT ident && ident.symbol != null) {
+            if (ident.symbol.def.expr instanceof ELNode.CLASS c) {
+              // The base class is an imported java class.
+              base = loadJavaClass(e.pos, c.getClassName());
+            } else {
+              table.addError(e.pos, _T(EL_NOT_A_CLASS, ident.id));
+              base = Object.class;
+            }
+          } else {
+            // The base class may be an implicitly imported java class or a full
+            // class name.
+            base = loadJavaClass(e.pos, e.getClassName());
+          }
+        }
+
+        // Resolve interfaces.
+        Class<?>[] interfaces;
+        if (e.ifaces != null) {
+          interfaces = new Class<?>[e.ifaces.length];
+          for (int i = 0; i < interfaces.length; i++) {
+            interfaces[i] = loadJavaClass(e.pos, e.ifaces[i]);
+            if (!interfaces[i].isInterface())
+              table.addError(e.pos, e.ifaces[i] + " is not an interface");
+          }
+        } else {
+          interfaces = new Class<?>[0];
+        }
+
+        if (base instanceof Class<?> c && c.isInterface()) {
+          interfaces = Arrays.copyOf(interfaces, interfaces.length + 1);
+          interfaces[interfaces.length - 1] = c;
+          base = Object.class;
+        }
+
+        e.symbol.clazz.base = base;
+        e.symbol.clazz.interfaces = interfaces;
+
+        // Determine the outer class.
+        if (!e.symbol.isStatic())
+          e.symbol.clazz.outer = e.scope.parent.enclosingClass();
+      }
+    }
+
+    private IRClass resolveIRClass(ELNode node) {
+      if (node instanceof ELNode.IDENT var) {
+        if (var.symbol != null && var.symbol.clazz != null)
+          return var.symbol.clazz;
+      }
+
+      if (node instanceof ELNode.ACCESS acc &&
+          acc.index instanceof ELNode.STRINGVAL key) {
+        IRClass c = resolveIRClass(acc.right);
+        if (c != null) {
+          for (ELNode.DEFINE def : c.node.cvars) {
+            if (def.id.equals(key.value) && def.symbol.clazz != null) {
+              if (!def.symbol.isPublic())
+                table.addError(node.pos, _T(EL_ILLEGAL_ACCESS, c.name, def.id));
+              return def.symbol.clazz;
+            }
+          }
+
+          for (ELNode.DEFINE def : c.node.ivars) {
+            if (def.id.equals(key.value) && def.symbol.clazz != null) {
+              table.addError(
+                node.pos, _T(EL_STATIC_CONTEXT_ACCESS_INSTANCE_MEMBER, def.id));
+              return null;
+            }
+          }
+        }
+      }
+
+      return null;
+    }
+
+    private Class<?> loadJavaClass(int pos, String className) {
+      try {
+        return ClassResolver.getInstance(elctx).resolveClass(className);
+      } catch (ClassNotFoundException e) {
+        table.addError(pos, _T(EL_CLASS_NOT_FOUND, className));
+        return Object.class;
       }
     }
 

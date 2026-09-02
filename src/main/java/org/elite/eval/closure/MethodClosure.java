@@ -46,6 +46,10 @@ public abstract class MethodClosure extends AbstractClosure
         return null;
     }
 
+    public Method getJavaMethod(Class<?> receiverType, Class<?>... argTypes) {
+        return null;
+    }
+
     /**
      * 调用Java方法, 如果方法对象包含多个Java方法则需要按参数类型进行匹配.
      */

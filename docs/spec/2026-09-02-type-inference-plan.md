@@ -569,13 +569,12 @@ package org.elite.ir;
 import javax.el.ELContext;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
-import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
 import org.elite.parser.ParseException;
 import org.elite.parser.Parser;
-import org.elite.type.PrimitiveType;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class TypeInferenceTest {
@@ -672,9 +671,9 @@ class TypeInferenceTest {
     ELProgram program = parse("define z::NoSuchClass = 1");
     SymbolTableBuilder.build(program);
     ParseException ex = assertThrows(ParseException.class,
-      () -> TypeInference.infer(elctx, program));
+                                     () -> TypeInference.infer(elctx, program));
     assertTrue(ex.getMessage().contains("Class not found: NoSuchClass"),
-      "unexpected message: " + ex.getMessage());
+               "unexpected message: " + ex.getMessage());
     ELNode def = program.getExpressions().get(0);
     assertEquals("Error", def.inferredType.toString());
   }
@@ -728,7 +727,7 @@ import org.elite.resolver.ClassResolver;
 import org.elite.type.AnyType;
 import org.elite.type.ELiteClassType;
 import org.elite.type.ErrorType;
-import org.elite.type.JavaClassType;
+import org.elite.type.ClassType;
 import org.elite.type.ListType;
 import org.elite.type.PrimitiveType;
 import org.elite.type.Type;
@@ -752,16 +751,18 @@ public class TypeInference extends DefaultVisitor {
   private static final int MAX_PASSES = 20;
 
   /** Alias names for boxed classes used in type annotations. */
-  private static final Map<String, String> ALIASES = Map.of(
-    "Int", "java.lang.Integer",
-    "Char", "java.lang.Character",
-    "BigInt", "java.math.BigInteger");
+  private static final Map<String, String> ALIASES = Map.of("Int",
+                                                            "java.lang.Integer",
+                                                            "Char",
+                                                            "java.lang.Character",
+                                                            "BigInt",
+                                                            "java.math.BigInteger");
 
   private final ELContext elctx;
   private final String filename;
   private final Map<String, SymbolTable.Symbol> eliteClasses = new HashMap<>();
-  private final java.util.List<org.elite.parser.ParseError> errors =
-    new java.util.ArrayList<>();
+  private final java.util.List<org.elite.parser.ParseError> errors
+    = new java.util.ArrayList<>();
 
   private boolean changed;
 
@@ -771,8 +772,7 @@ public class TypeInference extends DefaultVisitor {
   }
 
   public static void infer(ELContext elctx, ELProgram program)
-    throws org.elite.parser.ParseException
-  {
+    throws org.elite.parser.ParseException {
     TypeInference infer = new TypeInference(elctx, program);
     infer.registerEliteClasses(program);
 
@@ -834,17 +834,18 @@ public class TypeInference extends DefaultVisitor {
   }
 
   protected final Type typeOf(ELNode node) {
-    return node != null && node.inferredType != null
-      ? node.inferredType : AnyType.ANY;
+    return node != null && node.inferredType != null ? node.inferredType
+                                                     : AnyType.ANY;
   }
 
   protected final Type typeOfValue(Object value) {
-    if (value == null) return AnyType.ANY;
+    if (value == null)
+      return AnyType.ANY;
     Class<?> cls = value.getClass();
     if (TypeCoercion.typeof(cls) != TypeCoercion.UNKNOWN_TYPE) {
       return PrimitiveType.of(cls);
     }
-    return new JavaClassType(cls);
+    return new ClassType(cls);
   }
 
   /**
@@ -853,10 +854,14 @@ public class TypeInference extends DefaultVisitor {
    * numeric pairs normalize (Task 6), anything else degrades to Any.
    */
   protected Type merge(Type a, Type b) {
-    if (a == ErrorType.ERROR || b == ErrorType.ERROR) return ErrorType.ERROR;
-    if (a.equals(b)) return a;
-    if (a == AnyType.ANY) return b;
-    if (b == AnyType.ANY) return a;
+    if (a == ErrorType.ERROR || b == ErrorType.ERROR)
+      return ErrorType.ERROR;
+    if (a.equals(b))
+      return a;
+    if (a == AnyType.ANY)
+      return b;
+    if (b == AnyType.ANY)
+      return a;
     return AnyType.ANY;
   }
 
@@ -906,7 +911,8 @@ public class TypeInference extends DefaultVisitor {
 
   /** Resolves a ::Type annotation node (IDENT/ACCESS chain). */
   private Type resolveAnnotationType(ELNode typeNode) {
-    if (typeNode == null) return AnyType.ANY;
+    if (typeNode == null)
+      return AnyType.ANY;
 
     // 1. ELite class? (simple-name annotations only in v1)
     if (typeNode instanceof ELNode.IDENT id) {
@@ -929,11 +935,12 @@ public class TypeInference extends DefaultVisitor {
     // 3. Java class — must be compile-time visible; failure is an error.
     try {
       Class<?> cls = loadJavaClass(typeNode);
-      if (cls == null) return ErrorType.ERROR;
+      if (cls == null)
+        return ErrorType.ERROR;
       if (TypeCoercion.typeof(cls) != TypeCoercion.UNKNOWN_TYPE) {
         return PrimitiveType.of(cls);
       }
-      return new JavaClassType(cls);
+      return new ClassType(cls);
     } catch (RuntimeException e) {
       return ErrorType.ERROR;
     }
@@ -1022,7 +1029,8 @@ public class TypeInference extends DefaultVisitor {
   @Override
   public void visit(ELNode.COMPOUND e) {
     super.visit(e);
-    setType(e, e.exps.length == 0 ? AnyType.ANY : typeOf(e.exps[e.exps.length - 1]));
+    setType(e, e.exps.length == 0 ? AnyType.ANY
+                                  : typeOf(e.exps[e.exps.length - 1]));
   }
 
   @Override
@@ -2205,6 +2213,7 @@ import org.elite.ir.SymbolTableBuilder;
 import org.elite.ir.TypeInference;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ASTDumperTest {
@@ -2234,7 +2243,8 @@ class ASTDumperTest {
     ELProgram program = new Parser(elctx, "define x::Int = 42").parse();
     SymbolTableBuilder.build(program);
     String out = ASTDumper.dump(program);
-    assertFalse(out.contains(" :: "), "plain dump must not contain type suffixes");
+    assertFalse(out.contains(" :: "),
+                "plain dump must not contain type suffixes");
   }
 }
 ```

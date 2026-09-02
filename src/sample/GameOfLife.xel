@@ -46,11 +46,13 @@ require 'io'
  */
 class GameOfLife extends Panel implements Runnable
 {
-    protected gameOfLifeFrame, gameOfLifeCanvas, gameOfLifeGrid;
-    protected cellSize, cellCols, cellRows, genTime;
-    protected controls;
-    protected gridIO;
-    protected static gameThread;
+    protected gameOfLifeFrame::GameOfLifeFrame;
+    protected gameOfLifeCanvas::CellGridCanvas;
+    protected gameOfLifeGrid::GameOfLifeGrid;
+    protected cellSize::Int, cellCols::Int, cellRows::Int, genTime::Int;
+    protected controls::GameOfLifeControls;
+    protected gridIO::GameOfLifeGridIO;
+    protected static gameThread::Thread;
 
     /**
      * main() for Game of Life.
@@ -69,7 +71,7 @@ class GameOfLife extends Panel implements Runnable
     /**
      * Initialize UI.
      */
-    public void init(parent) {
+    public void init(parent::GameOfLifeFrame) {
         this.gameOfLifeFrame = parent;
         getParams();
 
@@ -126,12 +128,12 @@ class GameOfLife extends Panel implements Runnable
      * @param defaultParam default when parameter is unavailable
      * @return value of parameter
      */
-    protected getParamInteger(name, defaultParam) {
+    protected getParamInteger(name::String, defaultParam::Int)::Int {
         define param = getParameter(name);
         return param == null ? defaultParam : int(param);
     }
 
-    protected getParameter(param) {
+    protected getParameter(param::String)::String {
         return System.getProperty(param);
     }
 
@@ -300,13 +302,14 @@ class GameOfLife extends Panel implements Runnable
     */
     class GameOfLifeGridIO {
         public static final FILE_EXTENSION = ".cells";
-        private grid, filename;
+        private grid::GameOfLifeGrid;
+        private filename::String;
 
         /**
          * Constructor.
          * @param grid grid to read/write files from/to
          */
-        public GameOfLifeGridIO(grid) {
+        public GameOfLifeGridIO(grid::GameOfLifeGrid) {
             this.grid = grid;
         }
 
@@ -489,14 +492,14 @@ class GameOfLife extends Panel implements Runnable
  */
 class GameOfLifeFrame extends Frame
 {
-    private applet;
+    private applet::GameOfLife;
 
     /**
      * Constructor.
      * @param title title of window
      * @param applet applet to show
      */
-    public GameOfLifeFrame(title, applet) {
+    public GameOfLifeFrame(title::String, applet::GameOfLife) {
         super(title);
         this.applet = applet;
 
@@ -604,13 +607,13 @@ class GameOfLifeFrame extends Frame
  * when the Game of Life play. Whether a cell is alive or not, is not
  * part of the Cell-object.
  */
-class Cell(final col, final row) {
+class Cell(final col::Int, final row::Int) {
     /**
      * Number of neighbours of this cell.
      *
      * Determines the next state.
      */
-    define neighbour = 0;
+    define neighbour::Int = 0;
 }
 
 /**
@@ -825,9 +828,9 @@ class GameOfLifeControls extends Panel
     public static final SIZE_MEDIUM = 7;
     public static final SIZE_SMALL = 3;
 
-    private genLabel;
-    private startstopButton, nextButton;
-    private shapesChoice, zoomChoice;
+    private genLabel::Label;
+    private startstopButton::Button, nextButton::Button;
+    private shapesChoice::Choice, zoomChoice::Choice;
     private listeners = [];
 
     /**
@@ -1003,7 +1006,7 @@ class GameOfLifeControls extends Panel
  */
 class GameOfLifeControlsEvent extends java.awt.Event
 {
-    private speed, zoom, shapeName;
+    private speed::Int, zoom::Int, shapeName::String;
 
     /**
      * Construct a GameOfLifeControls.ControlsEvent
@@ -1064,7 +1067,7 @@ class GameOfLifeGrid
 {
     private cellRows, cellCols;
     private generations;
-    private currentShape, nextShape;
+    private currentShape, nextShape
     private grid;
 
     /**
@@ -1241,7 +1244,7 @@ class GameOfLifeGrid
 /**
  * Shape contains data of one (predefined) shape.
  */
-class Shape(final name, final cells)
+class Shape(final name::String, final cells)
 {
     /**
      * Get dimension of shape.
@@ -1298,7 +1301,7 @@ class ShapeCollection
  */
 class AboutDialog extends Dialog
 {
-    define okButton;
+    define okButton::Button;
 
     /**
      * Construct an AboutDialog.

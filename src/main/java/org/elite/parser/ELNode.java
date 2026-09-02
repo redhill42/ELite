@@ -45,6 +45,7 @@ import org.elite.eval.seq.DelayCons;
 import org.elite.ir.SymbolTable;
 import org.elite.resolver.MethodResolver;
 import org.elite.type.Type;
+import org.elite.type.Types;
 import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -105,9 +106,10 @@ public abstract class ELNode implements Serializable {
    * {@code TypeInference} after symbol table construction.
    * Null until inference runs.
    */
-  public transient Type inferredType;
+  public transient Type inferredType = Types.UNKNOWN;
+  public transient Type memberType;
 
-    // Operator precedence
+  // Operator precedence
   public static final int
     ASSIGN_PREC     = 10,
     ASSIGNOP_PREC   = 20,

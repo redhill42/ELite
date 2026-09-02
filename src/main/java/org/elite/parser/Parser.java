@@ -1417,9 +1417,71 @@ public class Parser extends Scanner {
     return result;
   }
 
-  private ELNode parseTypeNameOpt() {
+  private ELNode parseClassTypeOpt() {
     if (token == COLONCOLON) {
       return class_node(scan(), parseClassLiteral(false));
+    } else {
+      return null;
+    }
+  }
+
+  private ELNode parseType(int p) {
+    ELNode left = parseSubType(p);
+    while (token == XFORM) {
+      ELNode right = parseSubType(scan());
+      if (right instanceof ELNode.TUPLE t &&
+          t.elems.length == 1 && t.elems[0] instanceof ELNode.XFORM)
+        right = t.elems[0];
+      left = new ELNode.XFORM(p, left.order(), right);
+    }
+    return left;
+  }
+
+  private ELNode parseSubType(int p) {
+    switch (token) {
+    case IDENT: {
+      ELNode t = class_node(p, parseClassLiteral(false));
+      if (token == LBRACKET) {
+        int dims = 0;
+        while (token == LBRACKET) {
+          dims++;
+          scan();
+          expect(RBRACKET);
+        }
+        t = new ELNode.ARRAY(p, t, new ELNode[dims], null);
+      }
+      return t;
+    }
+    case LBRACKET:
+      ELNode t = new ELNode.CONS(p, parseType(scan()), new ELNode.NIL(p));
+      expect(RBRACKET);
+      return t;
+    case LPAREN:
+      scan();
+      List<ELNode> elems = new ArrayList<>();
+      while (token != RPAREN) {
+        do {
+          elems.add(parseType(p));
+        } while (scan(COMMA));
+      }
+      expect(RPAREN);
+      return new ELNode.TUPLE(p, to_a(elems));
+    case LBRACE:
+      scan();
+      ELNode key = parseType(p);
+      expect(COLON);
+      ELNode value = parseType(p);
+      expect(RBRACE);
+      return new ELNode.MAP(p, new ELNode[]{key}, new ELNode[]{value});
+    default:
+      expect(IDENT);
+      return new ELNode.IDENT(p, "<error>");
+    }
+  }
+
+  private ELNode parseTypeOpt() {
+    if (token == COLONCOLON) {
+      return parseType(scan());
     } else {
       return null;
     }
@@ -1660,7 +1722,7 @@ public class Parser extends Scanner {
     } else {
       // optional return type annotation
       if (rtype == null) {
-        rtype = parseTypeNameOpt();
+        rtype = parseTypeOpt();
       }
 
       // look ahead for '{|', disable alternate equation if found
@@ -1895,8 +1957,9 @@ public class Parser extends Scanner {
 
     // Translate to expando attach call.
     return new ELNode.APPLY(
-      p, new ELNode.ACCESS(p, expando, new ELNode.STRINGVAL(p, "attach")),
-      new ELNode[] {new ELNode.STRINGVAL(p, var.id), lambda}, null);
+      p, new ELNode.IDENT(p, "*attach*"),
+      new ELNode[] {expando, new ELNode.STRINGVAL(p, var.id), lambda},
+      null);
   }
 
   private static class Param {
@@ -2036,7 +2099,7 @@ public class Parser extends Scanner {
     ELNode.METASET meta = parseMetaData();
     String var = scanQName();
     expect(IDENT);
-    ELNode type = parseTypeNameOpt();
+    ELNode type = parseTypeOpt();
     ELNode exp = scan(ASSIGN) ? parseExpression() : null;
     return new ELNode.DEFINE(p, var, type, meta, exp);
   }
@@ -2249,7 +2312,7 @@ public class Parser extends Scanner {
     }
 
     var = scanVar(p, meta);
-    type = parseTypeNameOpt();
+    type = parseTypeOpt();
 
     if (token == ASSIGN || token == ARROW || token == XFORM) {
       // define id=exp;
@@ -2275,6 +2338,7 @@ public class Parser extends Scanner {
     }
 
     // define x;
+    var.type = type;
     var.expr = new ELNode.NULL(pos);
     return var;
   }
@@ -2992,7 +3056,7 @@ public class Parser extends Scanner {
     if (!sequential && idValue != null) {
       name = scanQName();
       expect(IDENT);
-      type = parseTypeNameOpt();
+      type = parseTypeOpt();
     } else {
       name = null;
       type = null;
@@ -3550,7 +3614,7 @@ public class Parser extends Scanner {
         scan();
         return parseConstructorPattern(p, id, bindings);
       } else {
-        ELNode type = parseTypeNameOpt();
+        ELNode type = parseTypeOpt();
         ELNode apat = scan(ATSIGN) ? (ELNode)parsePattern(bindings) : null;
         ELNode.DEFINE def = new ELNode.DEFINE(p, id, type, null, apat); // variable
         if (!"_".equals(id))
@@ -3787,7 +3851,7 @@ public class Parser extends Scanner {
         expect(LPAREN);
         String id = idValue != null ? idValue : "<error>";
         expect(IDENT);
-        ELNode type = parseTypeNameOpt();
+        ELNode type = parseClassTypeOpt();
         expect(RPAREN);
         ELNode.DEFINE var = new ELNode.DEFINE(p2, id);
         expect(LBRACE);

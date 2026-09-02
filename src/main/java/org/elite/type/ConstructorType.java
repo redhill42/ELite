@@ -4,27 +4,36 @@ import java.lang.reflect.Constructor;
 
 /**
  * A Java constructor resolved by reflection; the payload is the
- * Constructor. Value-consumption sites dereference it to the declaring
- * class's JavaClassType via InferenceContext.valueType.
+ * Constructor.
  */
-public final class JavaConstructorType extends Type {
+public final class ConstructorType extends MemberType {
   private final Constructor<?> ctor;
 
-  public JavaConstructorType(Constructor<?> ctor) {
+  public ConstructorType(Constructor<?> ctor) {
     this.ctor = ctor;
   }
 
-  public Constructor<?> ctor() { return ctor; }
+  public Constructor<?> ctor() {
+    return ctor;
+  }
 
-  public Class<?> declaringClass() { return ctor.getDeclaringClass(); }
+  @Override
+  public Type getResultType() {
+    return Type.of(ctor.getDeclaringClass());
+  }
+
+  @Override
+  public Class<?> javaClass() {
+    return ctor.getDeclaringClass();
+  }
 
   private static String jvmTypeName(Class<?> c) {
-    return c.isPrimitive() ? c.getName() : PrimitiveType.of(c).toString();
+    return c.isPrimitive() ? c.getName() : Type.of(c).toString();
   }
 
   @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder("JavaConstructor[")
+    StringBuilder sb = new StringBuilder("Constructor[")
       .append(ctor.getDeclaringClass().getSimpleName()).append('(');
     Class<?>[] params = ctor.getParameterTypes();
     for (int i = 0; i < params.length; i++) {
@@ -36,7 +45,7 @@ public final class JavaConstructorType extends Type {
 
   @Override
   public boolean equals(Object o) {
-    return o instanceof JavaConstructorType that && ctor.equals(that.ctor);
+    return o instanceof ConstructorType that && ctor.equals(that.ctor);
   }
 
   @Override

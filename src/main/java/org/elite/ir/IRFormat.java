@@ -59,6 +59,17 @@ final class IRFormat {
     throw new AssertionError();
   }
 
+  public static Class<?> kindType(int kind) {
+    return switch (kind) {
+      case K_INT -> int.class;
+      case K_LONG -> long.class;
+      case K_FLOAT -> float.class;
+      case K_DOUBLE -> double.class;
+      case K_BOOL -> boolean.class;
+      default -> throw new AssertionError();
+    };
+  }
+
   // ── Packing helpers ──
 
   /**

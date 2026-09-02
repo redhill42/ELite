@@ -71,6 +71,17 @@ public class ExpandoMethodClosure extends MethodClosure {
     return null;
   }
 
+  @Override
+  public Method getJavaMethod(Class<?> receiverType, Class<?>... parameterTypes) {
+    if (delegate instanceof MethodClosure) {
+      Class<?>[] expando = new Class<?>[parameterTypes.length + 1];
+      expando[0] = receiverType;
+      System.arraycopy(parameterTypes, 0, expando, 1, parameterTypes.length);
+      return ((MethodClosure)delegate).getJavaMethod(null, expando);
+    }
+    return null;
+  }
+
   public int arity(ELContext elctx) {
     return delegate.arity(elctx);
   }

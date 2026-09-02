@@ -35,13 +35,6 @@ public final class IO
 {
     private IO() {}
 
-    // Module initialization
-
-    public static void __init__(ELContext elctx) {
-        ClassResolver resolver = ClassResolver.getInstance(elctx);
-        resolver.addImport("java.io.*");
-    }
-
     // File operations
 
     /**

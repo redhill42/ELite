@@ -183,7 +183,8 @@ public final class ASTDumper {
     }
 
     if (withTypes && node.inferredType != null) {
-      sb.append(" :: ").append(node.inferredType);
+      sb.append(" :: ");
+      sb.append(node.memberType != null ? node.memberType : node.inferredType);
     }
   }
 

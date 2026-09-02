@@ -39,11 +39,6 @@ public final class XMLLib
 {
     private XMLLib() {}
 
-    public static void __init__(ELContext elctx) {
-        ClassResolver resolver = ClassResolver.getInstance(elctx);
-        resolver.addImport("org.w3c.dom.*");
-    }
-
     /**
      * 分析给定的字符串并将其解析成XML文档片段, 返回该文档片段的XmlNode包装.
      */

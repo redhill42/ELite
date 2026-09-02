@@ -17,6 +17,7 @@
 package org.elite.ir;
 
 import elite.lang.Symbol;
+import org.elite.eval.ELUtils;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -45,20 +46,12 @@ final class IRPrinter {
       .append(fn.blockCount()).append(" words=").append(fn.code().length)
       .append("\n");
 
-    DebugInfo di = fn.debugInfo();
     InstructionView v = new InstructionView(fn.code(), 0);
     while (v.inBounds()) {
       int blockId = fn.blockOfPc(v.offset());
       if (blockId != -1)
         sb.append("  B").append(blockId).append(":\n");
-      int startIdx = sb.length();
       sb.append("    ").append(formatInst(v, fn.constantPool()));
-      int line = di.lineForPC(v.offset());
-      if (line != 0) {
-        if (sb.length() - startIdx < 40)
-          sb.append(" ".repeat(40 - (sb.length() - startIdx)));
-        sb.append(" ; #").append(line);
-      }
       sb.append("\n");
       v.advance();
     }
@@ -92,7 +85,7 @@ final class IRPrinter {
   private static String formatInst(InstructionView v, Object[] constants) {
     int op = v.opcode();
     StringBuilder sb = new StringBuilder();
-    sb.append(String.format("%-14s", Opcode.name(op)));
+    sb.append(String.format("%-18s", Opcode.name(op)));
 
     switch (op) {
     case Opcode.PUSH_VAR, Opcode.STORE_VAR, Opcode.STORE_VAR_POP -> {
@@ -108,10 +101,10 @@ final class IRPrinter {
     case Opcode.PUSH_CONST, Opcode.DEFINE_GLOBAL, Opcode.STORE_GLOBAL,
          Opcode.PUSH_GLOBAL, Opcode.INSTANCEOF, Opcode.CLOSURE,
          Opcode.INVOKE_DIRECT, Opcode.INVOKE_DYNAMIC, Opcode.INVOKE_METHOD,
-         Opcode.NEW, Opcode.CONSTRUCTOR, Opcode.NEW_ARRAY, Opcode.NEW_MULTI_ARRAY,
-         Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY, Opcode.GETFIELD, Opcode.PUTFIELD,
-         Opcode.GETSTATIC, Opcode.PUTSTATIC, Opcode.CHECKCAST, Opcode.BOX,
-         Opcode.UNBOX, Opcode.DECLARE_NS ->
+         Opcode.INVOKE_SUPER, Opcode.NEW, Opcode.CONSTRUCTOR, Opcode.NEW_ARRAY,
+         Opcode.NEW_MULTI_ARRAY, Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY,
+         Opcode.GETFIELD, Opcode.PUTFIELD, Opcode.GETSTATIC, Opcode.PUTSTATIC,
+         Opcode.CHECKCAST, Opcode.BOX, Opcode.UNBOX, Opcode.DECLARE_NS ->
       formatConstPool(sb, constants, v.poolIndex());
 
     case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
@@ -127,7 +120,6 @@ final class IRPrinter {
 
   private static void formatConstPool(StringBuilder sb, Object[] constants,
                                       int idx) {
-    sb.append(" #").append(idx);
     if (idx < constants.length) {
       Object val = constants[idx];
       sb.append(" ").append(formatConst(val));
@@ -136,7 +128,7 @@ final class IRPrinter {
 
   private static String formatConst(Object c) {
     if (c instanceof String s)
-      return "\"" + s + "\"";
+      return "\"" + ELUtils.escape(s) + "\"";
     if (c instanceof Number || c instanceof Boolean)
       return c.toString();
     if (c instanceof Symbol)
@@ -158,7 +150,8 @@ final class IRPrinter {
     if (c instanceof Constructor<?> cons)
       return "<" + cons.getDeclaringClass().getSimpleName() + ">";
     if (c instanceof Descriptors.Indy i)
-      return i.name() + "(" + i.bootstrap().getName() + ")";
+      return i.name() + "(" + i.bootstrap().getName() + ")" +
+             i.rtype().getSimpleName();
     return c.getClass().getSimpleName();
   }
 }

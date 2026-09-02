@@ -130,7 +130,7 @@ public final class TypeCoercion
         return UNKNOWN_TYPE;
     }
 
-    public static Class getBoxedType(Class t) {
+    public static Class<?> getBoxedType(Class<?> t) {
         if (t.isPrimitive()) {
             return primitives.get(t);
         } else {

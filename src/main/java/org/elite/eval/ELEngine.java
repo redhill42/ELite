@@ -254,7 +254,7 @@ public final class ELEngine {
 
       // chop first argument if it's an ELContext
       if (nargs > 0 && types[0] == ELContext.class) {
-        Class<?>[] temp = new Class[nargs - 1];
+        Class<?>[] temp = new Class<?>[nargs - 1];
         System.arraycopy(types, 1, temp, 0, nargs - 1);
         types = temp;
         nargs--;
@@ -290,6 +290,114 @@ public final class ELEngine {
           Class<?> vargtype = types[nargs - 1].getComponentType();
           for (int i = nfixed; i < argc; i++) {
             int d = distanceof(elctx, args[i], vargtype);
+            if (d == -1) {
+              dist = -1;
+              break;
+            } else {
+              dist += d;
+            }
+          }
+        }
+      }
+
+      if (dist == 0) {
+        // found exact candidate
+        return method;
+      } else if (dist != -1) {
+        // compare the type distance of candidates and select
+        // the candidate with shortest type distance
+        if (candidate == null) {
+          candidate = method;
+          shortest_distance = dist;
+        } else if (dist < shortest_distance) {
+          candidate = method;
+          shortest_distance = dist;
+        }
+      }
+    }
+
+    return candidate;
+  }
+
+  public static Method resolveMethod(Method[] methods, String name,
+                                     Class<?>[] args) {
+    int argc = args.length;
+    Method candidate = null;
+    int shortest_distance = 0;
+
+    // find method that have the given name and argument count
+    for (Method method : methods) {
+      if (name.equals(method.getName()) && !method.isVarArgs()) {
+        Class<?>[] types = method.getParameterTypes();
+        int nargs = types.length;
+        if (nargs > 0 && types[0] == ELContext.class) {
+          nargs--; // chop first argument if it's an ELContext
+        }
+        if (argc == nargs) {
+          if (candidate == null) {
+            candidate = method;
+          } else {
+            // multiple occurrence found, do deep match
+            candidate = null;
+            break;
+          }
+        }
+      }
+    }
+
+    if (candidate != null) {
+      // found the only method that have the given name and argument count
+      return candidate;
+    }
+
+    // find all candidates that match the argument list
+    for (Method method : methods) {
+      if (!name.equals(method.getName())) {
+        continue;
+      }
+
+      Class<?>[] types = method.getParameterTypes();
+      int nargs = types.length;
+      int dist = -1;
+
+      // chop first argument if it's an ELContext
+      if (nargs > 0 && types[0] == ELContext.class) {
+        Class<?>[] temp = new Class<?>[nargs - 1];
+        System.arraycopy(types, 1, temp, 0, nargs - 1);
+        types = temp;
+        nargs--;
+      }
+
+      if (nargs == argc) {
+        if (!method.isVarArgs()) {
+          // do loose match on extra arguments
+          dist = distanceof(types, args, nargs);
+        } else {
+          // do loose match on extra arguments before var-args
+          dist = distanceof(types, args, nargs - 1);
+
+          // match for var-args; the var-args may be passed as an array or
+          // individual args
+          if (dist != -1) {
+            Class<?> vargtype = types[nargs - 1];
+            Class<?> varg = args[nargs - 1];
+            int d = distanceof(varg, vargtype);
+            if (d == -1)
+              d = distanceof(varg, vargtype.getComponentType());
+            if (d != -1)
+              dist += d;
+          }
+        }
+      } else if (nargs >= 1 && nargs <= argc + 1 && method.isVarArgs()) {
+        // do loose match on extra arguments before var-args
+        int nfixed = nargs - 1;
+        dist = distanceof(types, args, nfixed);
+
+        // match for var-args
+        if (dist != -1 && nfixed < argc) {
+          Class<?> vargtype = types[nargs - 1].getComponentType();
+          for (int i = nfixed; i < argc; i++) {
+            int d = distanceof(args[i], vargtype);
             if (d == -1) {
               dist = -1;
               break;
@@ -450,7 +558,7 @@ public final class ELEngine {
         return proc.getMethodInfo(elctx);
       }
     } else if (target instanceof Class<?> cls) {
-      return new MethodInfo(cls.getSimpleName(), cls, new Class[]{Object.class});
+      return new MethodInfo(cls.getSimpleName(), cls, new Class<?>[]{Object.class});
     } else {
       MethodClosure method = MethodResolver.getInstance(elctx)
         .resolveMethod(target.getClass(), "__call__");
@@ -487,15 +595,6 @@ public final class ELEngine {
 
     throw new EvaluationException(
       elctx, _T(EL_METHOD_NOT_FOUND, target.getClass().getName(), "__call__"));
-  }
-
-  public static Object callTarget(ELContext elctx, Object target,
-                                  Object... args) {
-    if (target instanceof Closure c) {
-      return c.call(elctx, args);
-    } else {
-      return invokeTarget(elctx, target, getCallArgs(args));
-    }
   }
 
   private static Object invokeClass(ELContext elctx, Class<?> target,
@@ -667,6 +766,32 @@ public final class ELEngine {
     return candidate;
   }
 
+  public static Constructor<?> resolveConstructor(Class<?> cls,
+                                                  Class<?>[] argTypes) {
+    Constructor<?> candidate = null;
+    int shortest_dist = 0;
+
+    for (Constructor<?> cons : cls.getConstructors()) {
+      Class<?>[] types = cons.getParameterTypes();
+      if (types.length == argTypes.length) {
+        int d = distanceof(types, argTypes, argTypes.length);
+        if (d == 0) {
+          return cons;
+        } else if (d != -1) {
+          if (candidate == null) {
+            candidate = cons;
+            shortest_dist = d;
+          } else if (d < shortest_dist) {
+            candidate = cons;
+            shortest_dist = d;
+          }
+        }
+      }
+    }
+
+    return candidate;
+  }
+
   /**
    * 创建一个Java对象实例. 该方法将根据参数类型找到最佳匹配的构造方法, 并将参数
    * 值转换成构造方法的实际参数类型.
@@ -737,6 +862,25 @@ public final class ELEngine {
     int dist = 0;
     for (int i = 0; i < nargs; i++) {
       int d = distanceof(elctx, args[i], types[i]);
+      if (d == -1)
+        return -1;
+      dist += d;
+    }
+    return dist;
+  }
+
+  private static int distanceof(Class<?> arg, Class<?> type) {
+    if (arg == null)
+      return -1;
+    if (delayed(type))
+      return 0;
+    return TypeCoercion.distanceof(arg, type);
+  }
+
+  private static int distanceof(Class<?>[] types, Class<?>[] args, int nargs) {
+    int dist = 0;
+    for (int i = 0; i < nargs; i++) {
+      int d = distanceof(args[i], types[i]);
       if (d == -1)
         return -1;
       dist += d;

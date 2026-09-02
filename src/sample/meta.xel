@@ -26,7 +26,7 @@ define tree = LAMBDA(:celsius_fahrenheit_converter, (),
                             :fahrenheit##'text' := (CONST(1.8)*:c+32) ~ " Fahrenheit"))),
 
         APPLY(NEW(:JFrame)##'do',
-          LAMBDA((), COMPOUND(
+          LAMBDA((:$), COMPOUND(
             :title := 'Celsius Converter',
             :layout := NEW(:GridLayout, 2,2,3,3),
             :defaultCloseOperation := JFrame.EXIT_ON_CLOSE,

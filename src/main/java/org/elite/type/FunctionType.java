@@ -1,8 +1,26 @@
+/*
+ * Copyright 2006-2026 Daniel Yuan.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.elite.type;
 
+import elite.lang.Closure;
 import java.util.Arrays;
 
-/** An ELite function type, e.g. Function[Int, [Int, Int]]. */
+/**
+ * An ELite function type, e.g. Function[Int, [Int, Int]].
+ */
 public final class FunctionType extends Type {
   private final Type returnType;
   private final Type[] params;
@@ -12,9 +30,18 @@ public final class FunctionType extends Type {
     this.params = params;
   }
 
-  public Type returnType() { return returnType; }
+  public Type returnType() {
+    return returnType;
+  }
 
-  public Type[] params() { return params; }
+  public Type[] params() {
+    return params;
+  }
+
+  @Override
+  public Class<?> javaClass() {
+    return Closure.class;
+  }
 
   @Override
   public String toString() {
@@ -35,5 +62,7 @@ public final class FunctionType extends Type {
   }
 
   @Override
-  public int hashCode() { return returnType.hashCode() * 31 + Arrays.hashCode(params); }
+  public int hashCode() {
+    return returnType.hashCode() * 31 + Arrays.hashCode(params);
+  }
 }

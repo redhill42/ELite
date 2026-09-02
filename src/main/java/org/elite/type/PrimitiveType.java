@@ -1,61 +1,39 @@
+/*
+ * Copyright 2006-2026 Daniel Yuan.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.elite.type;
-
-import java.math.BigInteger;
-import java.util.Map;
-import java.util.Objects;
-import org.elite.eval.TypeCoercion;
 
 /**
  * A Java primitive/boxed type or an ELite exact numeric type, or one of
  * the two promotion-chain markers ANY_INT / ANY_FLOAT.
  */
-public final class PrimitiveType extends Type {
-
-  /** Int -> Long -> BigInt promotion chain marker. */
-  public static final PrimitiveType ANY_INT = new PrimitiveType("AnyInt", null);
-
-  /** Float -> Double -> BigDecimal promotion chain marker. */
-  public static final PrimitiveType ANY_FLOAT = new PrimitiveType("AnyFloat", null);
-
-  private static final Map<Class<?>, String> ALIASES = Map.of(
-    Integer.class, "Int",
-    Character.class, "Char",
-    BigInteger.class, "BigInt",
-    Void.class, "void");
-
+public final class PrimitiveType extends ClassType {
   private final String name;
-  private final Class<?> javaClass;   // null for ANY_INT / ANY_FLOAT
 
-  private PrimitiveType(String name, Class<?> javaClass) {
+  PrimitiveType(String name, Class<?> javaClass) {
+    super(javaClass);
     this.name = name;
-    this.javaClass = javaClass;
   }
-
-  public static PrimitiveType of(Class<?> c) {
-    Class<?> boxed = TypeCoercion.getBoxedType(c);
-    String display = ALIASES.getOrDefault(boxed, boxed.getSimpleName());
-    return new PrimitiveType(display, boxed);
-  }
-
-  public Class<?> javaClass() { return javaClass; }
-
-  public boolean isAnyInt() { return this == ANY_INT; }
-
-  public boolean isAnyFloat() { return this == ANY_FLOAT; }
 
   @Override
-  public String toString() { return name; }
+  public String toString() {
+    return name;
+  }
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (!(o instanceof PrimitiveType that)) return false;
-    if (javaClass == null || that.javaClass == null) {
-      return false;   // ANY_INT / ANY_FLOAT are distinct singleton markers
-    }
-    return javaClass.equals(that.javaClass);
+    return this == o;
   }
-
-  @Override
-  public int hashCode() { return Objects.hashCode(javaClass); }
 }

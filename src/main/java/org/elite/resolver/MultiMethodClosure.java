@@ -16,191 +16,200 @@
 
 package org.elite.resolver;
 
-import java.lang.reflect.Method;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.lang.reflect.Modifier;
-import java.util.Arrays;
-import javax.el.ELContext;
-import javax.el.ELException;
-import javax.el.MethodNotFoundException;
-import javax.el.MethodInfo;
-
 import elite.lang.Closure;
 import org.elite.eval.ELEngine;
 import org.elite.eval.closure.NamedClosure;
 import org.elite.util.Utils;
+import javax.el.ELContext;
+import javax.el.ELException;
+import javax.el.MethodInfo;
+import javax.el.MethodNotFoundException;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serial;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 
 import static org.elite.resources.Resources.*;
 
 /**
  * 重载方法的包装对象.
  */
-class MultiMethodClosure extends JavaMethodClosure
-{
-    private transient String name;
-    private transient Method[] methods;
+class MultiMethodClosure extends JavaMethodClosure {
+  private transient String name;
+  private transient Method[] methods;
 
-    private static final long serialVersionUID = -3244166360202624828L;
+  @Serial
+  private static final long serialVersionUID = -3244166360202624828L;
 
-    public MultiMethodClosure(String name) {
-        this.name = name;
-        this.methods = new Method[0];
+  public MultiMethodClosure(String name) {
+    this.name = name;
+    this.methods = new Method[0];
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  @Override
+  public Method getJavaMethod(int arity) {
+    Method candidate = null;
+    for (Method method : methods) {
+      if (method.isVarArgs())
+        continue;
+      int paramCount = method.getParameterCount();
+      if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
+        --paramCount;
+      if (paramCount == arity) {
+        if (candidate != null)
+          return null;
+        candidate = method;
+      }
     }
+    return candidate;
+  }
 
-    public String getName() {
-        return name;
-    }
+  public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
+    return ELEngine.resolveMethod(elctx, methods, name,
+                                  ELEngine.getCallArgs(args));
+  }
 
-    @Override
-    public Method getJavaMethod(int arity) {
-        Method candidate = null;
-        for (Method method : methods) {
-            if (method.isVarArgs())
-                continue;
-            int paramCount = method.getParameterCount();
-            if (paramCount > 0 && method.getParameterTypes()[0] == ELContext.class)
-                --paramCount;
-            if (paramCount == arity) {
-                if (candidate != null)
-                    return null;
-                candidate = method;
-            }
-        }
-        return candidate;
-    }
+  public Method getJavaMethod(Class<?> receiverType, Class<?>... argTypes) {
+    return ELEngine.resolveMethod(methods, name, argTypes);
+  }
 
-    public Method getJavaMethod(ELContext elctx, Object obj, Object... args) {
-        return ELEngine.resolveMethod(elctx, methods, name,
-                                      ELEngine.getCallArgs(args));
-    }
-
-    protected JavaMethodClosure addMethod(Method method) {
-        for (Method m : this.methods) {
-            if (m.equals(method)) {
-                return this;
-            }
-        }
-
-        Method[] newlist = new Method[methods.length+1];
-        System.arraycopy(methods, 0, newlist, 0, methods.length);
-        newlist[methods.length] = method;
-        methods = newlist;
-        Utils.setAccessible(method);
+  protected JavaMethodClosure addMethod(Method method) {
+    for (int i = 0; i < methods.length; i++) {
+      if (methods[i].equals(method))
         return this;
+      if (Arrays.equals(methods[i].getParameterTypes(),
+                        method.getParameterTypes())) {
+        // Replace synthetic method with normal method.
+        if ((methods[i].getModifiers() & 0x1000) != 0)
+          methods[i] = method;
+        return this;
+      }
     }
 
-    public int arity(ELContext elctx) {
-        int arity = 0;
-        for (Method m : methods) {
-            int n = m.getParameterTypes().length;
-            if (n > arity)
-                arity = n;
+    Method[] newList = new Method[methods.length + 1];
+    System.arraycopy(methods, 0, newList, 0, methods.length);
+    newList[methods.length] = method;
+    methods = newList;
+    Utils.setAccessible(method);
+    return this;
+  }
+
+  public int arity(ELContext elctx) {
+    int arity = 0;
+    for (Method m : methods) {
+      int n = m.getParameterTypes().length;
+      if (n > arity)
+        arity = n;
+    }
+    return arity;
+  }
+
+  public MethodInfo getMethodInfo(ELContext elctx) {
+    return new MethodInfo(methods[0].getName(), methods[0].getReturnType(),
+                          methods[0].getParameterTypes());
+  }
+
+  public int getModifiers() {
+    return methods[0].getModifiers();
+  }
+
+  public Object invoke(ELContext elctx, Object base, Closure[] args) {
+    Method method = checkMethod(elctx, args);
+    return ELEngine.invokeMethod(elctx, base, method, args);
+  }
+
+  public Object invokeSuper(ELContext elctx, Object base, Closure[] args) {
+    Method method = checkMethod(elctx, args);
+    return invokeSuper(elctx, method, base, args);
+  }
+
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+
+    if (o instanceof MultiMethodClosure that) {
+      return this.name.equals(that.name) &&
+             Arrays.equals(this.methods, that.methods);
+    }
+
+    return false;
+  }
+
+  public int hashCode() {
+    int result = name.hashCode();
+    for (Method method : methods) {
+      result = 31 * result + method.hashCode();
+    }
+    return result;
+  }
+
+  public String toString() {
+    StringBuilder buf = new StringBuilder("#<primitive:");
+    buf.append(name);
+    buf.append("[");
+    for (int i = 0; i < methods.length; i++) {
+      if (i != 0)
+        buf.append(",");
+      buf.append(methods[i].toString());
+    }
+    buf.append("]>");
+    return buf.toString();
+  }
+
+  @Serial
+  private void writeObject(ObjectOutputStream out)
+    throws IOException, ClassNotFoundException {
+    out.writeUTF(name);
+    out.writeInt(methods.length);
+    for (Method method : methods) {
+      writeMethod(out, method);
+    }
+  }
+
+  @Serial
+  private void readObject(ObjectInputStream in)
+    throws IOException, ClassNotFoundException {
+    name = in.readUTF();
+
+    int count = in.readInt();
+    methods = new Method[count];
+    for (int i = 0; i < count; i++) {
+      methods[i] = readMethod(in);
+      Utils.setAccessible(methods[i]);
+    }
+  }
+
+  private Method checkMethod(ELContext elctx, Closure[] args) {
+    Method method = ELEngine.resolveMethod(elctx, methods, name, args);
+    if (method == null) {
+      String clsname = methods[0].getDeclaringClass().getName();
+      throw new MethodNotFoundException(
+        _T(EL_FN_NO_SUCH_METHOD, name, name, clsname));
+    }
+
+    StringBuilder named_args = null;
+    for (Closure a : args) {
+      if (a instanceof NamedClosure) {
+        if (named_args == null) {
+          named_args = new StringBuilder();
+        } else {
+          named_args.append(",");
         }
-        return arity;
+        named_args.append(((NamedClosure)a).name());
+      }
     }
 
-    public MethodInfo getMethodInfo(ELContext elctx) {
-        return new MethodInfo(methods[0].getName(),
-                              methods[0].getReturnType(),
-                              methods[0].getParameterTypes());
+    if (named_args != null) {
+      throw new ELException(_T(EL_UNKNOWN_ARG_NAME, named_args.toString()));
     }
 
-    public int getModifiers() {
-        return methods[0].getModifiers();
-    }
-
-    public Object invoke(ELContext elctx, Object base, Closure[] args) {
-        Method method = checkMethod(elctx, args);
-        return ELEngine.invokeMethod(elctx, base, method, args);
-    }
-
-    public Object invokeSuper(ELContext elctx, Object base, Closure[] args) {
-        Method method = checkMethod(elctx, args);
-        return invokeSuper(elctx, method, base, args);
-    }
-
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-
-        if (o instanceof MultiMethodClosure) {
-            MultiMethodClosure that = (MultiMethodClosure)o;
-            return this.name.equals(that.name)
-                && Arrays.equals(this.methods, that.methods);
-        }
-
-        return false;
-    }
-
-    public int hashCode() {
-        int result = name.hashCode();
-        for (Method method : methods) {
-            result = 31 * result + method.hashCode();
-        }
-        return result;
-    }
-
-    public String toString() {
-        StringBuilder buf = new StringBuilder("#<primitive:");
-        buf.append(name);
-        buf.append("[");
-        for (int i = 0; i < methods.length; i++) {
-            if (i != 0) buf.append(",");
-            buf.append(methods[i].toString());
-        }
-        buf.append("]>");
-        return buf.toString();
-    }
-
-    private void writeObject(ObjectOutputStream out)
-        throws IOException, ClassNotFoundException
-    {
-        out.writeUTF(name);
-        out.writeInt(methods.length);
-        for (Method method : methods) {
-            writeMethod(out, method);
-        }
-    }
-
-    private void readObject(ObjectInputStream in)
-        throws IOException, ClassNotFoundException
-    {
-        name = in.readUTF();
-
-        int count = in.readInt();
-        methods = new Method[count];
-        for (int i = 0; i < count; i++) {
-            methods[i] = readMethod(in);
-            Utils.setAccessible(methods[i]);
-        }
-    }
-
-    private Method checkMethod(ELContext elctx, Closure[] args) {
-        Method method = ELEngine.resolveMethod(elctx, methods, name, args);
-        if (method == null) {
-            String clsname = methods[0].getDeclaringClass().getName();
-            throw new MethodNotFoundException(_T(EL_FN_NO_SUCH_METHOD, name, name, clsname));
-        }
-
-        StringBuilder named_args = null;
-        for (Closure a : args) {
-            if (a instanceof NamedClosure) {
-                if (named_args == null) {
-                    named_args = new StringBuilder();
-                } else {
-                    named_args.append(",");
-                }
-                named_args.append(((NamedClosure)a).name());
-            }
-        }
-
-        if (named_args != null) {
-            throw new ELException(_T(EL_UNKNOWN_ARG_NAME, named_args.toString()));
-        }
-
-        return method;
-    }
+    return method;
+  }
 }
