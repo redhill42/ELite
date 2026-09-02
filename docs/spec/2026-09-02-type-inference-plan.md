@@ -492,13 +492,14 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Test: `src/test/java/org/elite/ir/TypeInferenceTest.java`(测试基架 + 注解解析用例)
 
 **Interfaces:**
-- Consumes: Task 1 类型模型;`org.elite.parser.DefaultVisitor`(scan/visit 全递归)、`ELNode.DEFINE.type`、`SymbolTableBuilder.build(ELProgram)`、`ELEngine.createELContext()`、`org.elite.resolver.ClassResolver.getInstance(ELContext).resolveClass(String) throws ClassNotFoundException`、`org.elite.eval.ELProgram.getDefinitions()/getExpressions()`
+- Consumes: Task 1 类型模型;`org.elite.parser.DefaultVisitor`(scan/visit 全递归)、`ELNode.DEFINE.type`、`SymbolTableBuilder.build(ELProgram)`、`ELEngine.createELContext()`、`org.elite.resolver.ClassResolver.getInstance(ELContext).resolveClass(String) throws ClassNotFoundException`、`org.elite.eval.ELProgram.getDefinitions()/getExpressions()`、`ELNode.CLASS.getClassName()`
 - Produces:
   - `ELNode` 新字段:`public transient Type inferredType;`
   - `public final class TypeInference extends DefaultVisitor`,静态入口:
     `public static void infer(ELContext elctx, ELProgram program)` —— 多轮收敛循环(上限 20 轮,轮间类型无变化即停);内部状态:
     - `private final Map<String, SymbolTable.Symbol> eliteClasses`(第 0 遍登记:遍历 program 定义,`node.symbol != null && node.symbol.clazz != null` 时 `put(sym.name, sym)`)
-    - `private Type resolveAnnotationType(ELNode typeNode)` —— typeNode 是 IDENT/ACCESS 链,先 `getFullClassName` 取全名;查 `eliteClasses` → `ELiteClassType`;查别名表(Int/Char/BigInt)→ `Class.forName(别名)`;否则 `ClassResolver.getInstance(elctx).resolveClass(name)`;命中 PrimitiveType 表(`TypeCoercion.typeof` 非 UNKNOWN 或 Number 子类/String/void)→ `PrimitiveType.of`,否则 `JavaClassType`;任何异常 → `AnyType.ANY`
+    - `private Class<?> loadJavaClass(ELNode base)` —— **复制自 IRBuilder.loadJavaClass(IRBuilder.java:1283,私有,暂复制,以后重构共享)**,差异:加载失败返回 null 而不是 reportError(推导尽力而为)。连同其依赖 `resolveJavaClass(ELNode, boolean)`、`loadClassAtCompileTime(String)` 一并复制;`loadClassAtCompileTime` 中 `ClassNotFoundException → return null`
+    - `private Type resolveAnnotationType(ELNode typeNode)` —— typeNode 是 IDENT/ACCESS 链;若 typeNode 是 IDENT,先查 `eliteClasses` → `ELiteClassType`;查别名表(Int/Char/BigInt)→ `Class.forName(别名)`;否则 `loadJavaClass(typeNode)`(编译期可见性加载,返回 null → Any);加载出的类命中 PrimitiveType 表(`TypeCoercion.typeof` 非 UNKNOWN)→ `PrimitiveType.of`,否则 `JavaClassType`;任何异常 → `AnyType.ANY`
     - `protected boolean changed` + `protected void setType(ELNode node, Type t)`(仅当 `node.inferredType` 不为 t 时写并置 changed)
     - `protected Type typeOf(ELNode node)` → `node.inferredType != null ? node.inferredType : AnyType.ANY`
     - `protected Type merge(Type a, Type b)` —— 相等→a;任一 Any→ANY(本任务版本;Task 6 扩展数值归一化)
@@ -754,36 +755,80 @@ public class TypeInference extends DefaultVisitor {
     return AnyType.ANY;
   }
 
+  /**
+   * Copies of IRBuilder's private class-loading helpers (IRBuilder.java:1283
+   * loadJavaClass / resolveJavaClass / loadClassAtCompileTime). Loads are
+   * required because Java classes must be compile-time visible; failures
+   * return null here (inference is best-effort) instead of reporting errors.
+   * TODO: refactor into a shared helper later.
+   */
+  private Class<?> loadJavaClass(ELNode base) {
+    return resolveJavaClass(base, true);
+  }
+
+  private Class<?> resolveJavaClass(ELNode node, boolean load) {
+    if (node instanceof ELNode.IDENT var && var.symbol != null &&
+        var.symbol.def.expr instanceof ELNode.CLASS c) {
+      return loadClassAtCompileTime(c.getClassName());
+    }
+
+    StringBuilder buf = new StringBuilder();
+    while (node instanceof ELNode.ACCESS acc) {
+      if (!(acc.index instanceof ELNode.STRINGVAL str))
+        return null;
+      buf.insert(0, str.value);
+      buf.insert(0, '.');
+      node = acc.right;
+    }
+
+    if (node instanceof ELNode.IDENT var) {
+      buf.insert(0, var.id);
+      if (var.symbol == null) {
+        return loadClassAtCompileTime(buf.toString());
+      }
+    }
+    return null;
+  }
+
+  private Class<?> loadClassAtCompileTime(String name) {
+    try {
+      return ClassResolver.getInstance(elctx).resolveClass(name);
+    } catch (ClassNotFoundException ex) {
+      return null;   // best-effort: unloadable annotation falls back to Any
+    }
+  }
+
   /** Resolves a ::Type annotation node (IDENT/ACCESS chain). */
   private Type resolveAnnotationType(ELNode typeNode) {
     if (typeNode == null) return AnyType.ANY;
-    String name = ELNode.getFullClassName(typeNode);
-    if (name == null) return AnyType.ANY;
 
-    // 1. ELite class?
-    SymbolTable.Symbol sym = eliteClasses.get(name);
-    if (sym != null) {
-      return new ELiteClassType(sym);
-    }
+    // 1. ELite class? (simple-name annotations only in v1)
+    if (typeNode instanceof ELNode.IDENT id) {
+      SymbolTable.Symbol sym = eliteClasses.get(id.id);
+      if (sym != null) {
+        return new ELiteClassType(sym);
+      }
 
-    // 2. Alias?
-    String alias = ALIASES.get(name);
-    if (alias != null) {
-      try {
-        return PrimitiveType.of(Class.forName(alias));
-      } catch (ClassNotFoundException e) {
-        return AnyType.ANY;
+      // 2. Alias?
+      String alias = ALIASES.get(id.id);
+      if (alias != null) {
+        try {
+          return PrimitiveType.of(Class.forName(alias));
+        } catch (ClassNotFoundException e) {
+          return AnyType.ANY;
+        }
       }
     }
 
-    // 3. Java class.
+    // 3. Java class — must be compile-time visible.
     try {
-      Class<?> cls = ClassResolver.getInstance(elctx).resolveClass(name);
+      Class<?> cls = loadJavaClass(typeNode);
+      if (cls == null) return AnyType.ANY;
       if (TypeCoercion.typeof(cls) != TypeCoercion.UNKNOWN_TYPE) {
         return PrimitiveType.of(cls);
       }
       return new JavaClassType(cls);
-    } catch (ClassNotFoundException | RuntimeException e) {
+    } catch (RuntimeException e) {
       return AnyType.ANY;
     }
   }
@@ -923,7 +968,7 @@ public class TypeInference extends DefaultVisitor {
 }
 ```
 
-注意:`visitNode` 覆盖后,未覆盖节点不再报 assert 失败(DefaultVisitor 默认 `assert false`);覆盖成空实现即"未覆盖节点保持无类型"。`ELNode.getFullClassName` 是 private static——需要把它改为 package-private(去掉 private,ELNode.java:460 附近),TypeInference 在 org.elite.ir 包无法访问 private;改法:`private static String getFullClassName(ELNode node)` → `static String getFullClassName(ELNode node)`。
+注意:`visitNode` 覆盖后,未覆盖节点不再报 assert 失败(DefaultVisitor 默认 `assert false`);覆盖成空实现即"未覆盖节点保持无类型"。
 
 - [ ] **Step 5: 运行测试确认通过**
 
@@ -1296,6 +1341,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
     assertEquals("Int", typeOf("java.lang.Integer.parseInt(\"1\")"));
     assertEquals("String", typeOf("\"abc\".substring(1)"));
   }
+
+  @Test
+  void newEliteClass() {
+    assertEquals("Point", typeOf("class Point(x, y)\nnew Point(1, 2)"));
+  }
 ```
 
 注意:`"abc".substring(1)` 的目标是 ACCESS(STRINGVAL 的 `.substring`),String 字面量的 ACCESS 类型目前是 Any(Task 4 的 ACCESS 规则只处理 Array/List)→ Java 反射需要 ACCESS 的右操作数类型是 JavaClassType;本用例若失败,检查是否需要在 `visit(ACCESS)` 中把 `typeOf(e.right) instanceof PrimitiveType pt` 时给 ACCESS 节点标目标类型……不——反射在 `visit(APPLY)` 中应基于 `e.right`(APPLY 的 target)类型;`"abc".substring(1)` 的 APPLY.right 是 ACCESS 节点,其类型为 Any。**实现时**:`visit(APPLY)` 中若 target 是 ACCESS acc 且 `typeOf(acc.right)` 是 PrimitiveType/JavaClassType,则用 `typeOf(acc.right)` 的类做反射。此注释是执行时判定依据,若测试失败按此实现。
@@ -1608,10 +1658,9 @@ Expected: 新用例失败
   @Override
   public void visit(ELNode.NEW e) {
     super.visit(e);
-    // Class instantiation typing arrives with ELite class / Java class
-    // resolution in a follow-up; arrays are handled by visit(ELNode.ARRAY)
-    // and NEW-of-array via base name below.
-    setType(e, AnyType.ANY);
+    // NEW.base is an annotated type node: resolve it (ELite class or
+    // compile-time-visible Java class); unresolvable falls back to Any.
+    setType(e, resolveAnnotationType(e.base));
   }
 ```
 
@@ -2067,5 +2116,5 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 - 规格覆盖:类型模型(Task 1)、inferredType 字段 + 注解解析(Task 2)、骨架与收敛(Task 2)、字面量/一元/比较/逻辑(Task 2/3)、容器(Task 4)、函数与变量含不可变/可变/ASSIGNOP(Task 5)、数值提升 AnyInt/AnyFloat 与归一化(Task 6)、消费方 dump-ast(Task 7)——规格全部条目有对应任务;标注不提升由 Task 2/5 的标注覆盖机制实现;NULL→Any 在 Task 2;20 轮收敛上限在 Task 2 骨架。
 - 无占位符:所有步骤含完整代码或精确命令与预期。
-- 一致性:`TypeInference.infer(ELContext, ELProgram)` 在 Task 2 定义,Task 7 按同签名调用;`typeOf/merge/setType/resolveAnnotationType` 内部签名各任务一致;`getFullClassName` 可见性修改(Task 2 注明)是前置条件;测试类总数与各任务预期数一致(5+9+5+5+9+8+2=43 个新测试)。
+- 一致性:`TypeInference.infer(ELContext, ELProgram)` 在 Task 2 定义,Task 7 按同签名调用;`typeOf/merge/setType/resolveAnnotationType` 内部签名各任务一致;Java 类加载走复制的 `loadJavaClass`(Task 2 Interfaces 注明复制来源与 TODO),NEW.base 在 Task 5 复用 `resolveAnnotationType`;测试类总数与各任务预期数一致(5+9+5+5+10+8+2=44 个新测试)。
 - 执行时判定点(明示,不属占位符):`[1,2,3]` 的 AST 形态(ARRAY 或 CONS 链)、`1.5M` Decimal 字面量语法、`"abc".substring(1)` 的 ACCESS 反射路径——测试失败时按计划内注释的判定依据调整,而非猜测实现。
