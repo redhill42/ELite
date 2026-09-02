@@ -542,7 +542,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
     - `private Type resolveAnnotationType(ELNode typeNode)` —— typeNode 是 IDENT/ACCESS 链;若 typeNode 是 IDENT,先查 `eliteClasses` → `ELiteClassType`;查别名表(Int/Char/BigInt)→ `Class.forName(别名)`;否则 `loadJavaClass(typeNode)`(编译期可见性加载,失败已报错并返回 null → `ErrorType.ERROR`);加载出的类命中 PrimitiveType 表(`TypeCoercion.typeof` 非 UNKNOWN)→ `PrimitiveType.of`,否则 `JavaClassType`;其他运行时异常 → `ErrorType.ERROR`
     - `protected boolean changed` + `protected void setType(ELNode node, Type t)`(仅当 `node.inferredType` 不为 t 时写并置 changed)
     - `protected Type typeOf(ELNode node)` → `node.inferredType != null ? node.inferredType : AnyType.ANY`
-    - `protected Type merge(Type a, Type b)` —— 任一 ErrorType→ERROR;相等→a;任一 Any→ANY(本任务版本;Task 6 扩展数值归一化)
+    - `protected Type merge(Type a, Type b)` —— 任一 ErrorType→ERROR;相等→a;任一 Any→**另一侧类型**(Any 是合并单位元,保证 `[1,2,3]` 从 NIL 的 `List[Any]` 收敛为 `List[Int]`);(本任务版本;Task 6 扩展数值归一化)
     - 本任务的 visit 规则:BOOLEANVAL→Boolean、CHARVAL→Char、STRINGVAL→String、NUMBER(整数按量级 Int/Long/BigInt,浮点 Double,BigDecimal→BigDecimal)、NULL→ANY、NIL→`List[Any]`、SYMBOL→ANY、CONST(value 的运行时类→PrimitiveType.of/JavaClassType,失败 ANY)、Composite→String、COMPOUND→最后子节点类型、LET→right 类型、EXPR→right 类型、METADATA/METASET→子节点类型、IDENT→`AnyType.ANY`(Task 5 补变量/函数)、COND/COALESCE→merge(分支)、其余未覆盖节点→ANY
 - [ ] **Step 1: ELNode 加字段**
 
@@ -847,10 +847,16 @@ public class TypeInference extends DefaultVisitor {
     return new JavaClassType(cls);
   }
 
-  /** Merge two types: errors absorb, equal types merge to themselves, else Any. */
+  /**
+   * Merge two types: errors absorb, Any is the identity (so [1,2,3] builds
+   * List[Int] from NIL's List[Any]), equal types merge to themselves,
+   * numeric pairs normalize (Task 6), anything else degrades to Any.
+   */
   protected Type merge(Type a, Type b) {
     if (a == ErrorType.ERROR || b == ErrorType.ERROR) return ErrorType.ERROR;
     if (a.equals(b)) return a;
+    if (a == AnyType.ANY) return b;
+    if (b == AnyType.ANY) return a;
     return AnyType.ANY;
   }
 
@@ -1241,7 +1247,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   @Test
   void consList() {
     assertEquals("List[Int]", typeOf("[1, 2, 3]"));
-    assertEquals("List[Int]", typeOf("cons(1, [2])"));
   }
 
   @Test
@@ -1253,21 +1258,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   @Test
   void arrayAndNewArray() {
     assertEquals("Array[Int, 2]", typeOf("new int[4][4]"));
-    assertEquals("Array[Any, 1]", typeOf("[1, 2]"));
+    assertEquals("Array[Int, 1]", typeOf("new int[2](1, 2)"));
   }
 
   @Test
   void rangeType() {
-    assertEquals("Range", typeOf("1..10"));
-  }
-
-  @Test
-  void listIndexAccess() {
-    assertEquals("Int", typeOf("[1, 2][0]"));
+    assertEquals("Range", typeOf("[1..10]"));
   }
 ```
 
-注意:`[1,2]` 是 ARRAY 字面量(元素类型无注解时 Any),`1..10` 是 RANGE。若 `[1,2,3]` 在语法上是 CONS 链(运行时列表)而非 ARRAY,测试照实际解析结果调整——先跑看失败信息,若实际是 ARRAY 节点则按 ARRAY 规则补元素合并:ARRAY 有 `init`(TUPLE)时元素类型 = merge(init 各元素)(此时 `[1,2,3]` → `Array[Int, 1]`,测试期望相应改为 `Array[Int, 1]`)。**以实际节点结构为准,此注释是执行时的判定依据。**
+注意(实际语法验证后的判定依据):`[1,2,3]` **和 `[1, 2]` 都**解析为 CONS 链(NIL 终止),靠 merge 的 Any-单位元语义收敛为 `List[Int]`;ARRAY 带初始化器的形态是 `new int[2](1, 2)`(元素合并走 init TUPLE);`cons(1, [2])` 是 APPLY 调用(Task 5 才处理),删去;RANGE 语法是 `[1..10]`(方括号区间字面量),裸 `1..10` 不能解析;列表元素 ACCESS(`l[0]`)依赖变量类型(Task 5),本任务的 `listIndexAccess` 用例移到 Task 5(变量 `define l = [1, 2, 3]` 后 `l[0]` → `Int`)。
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -1361,7 +1361,7 @@ Expected: 新用例失败
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeInferenceTest`
-Expected: BUILD SUCCESS(19 个测试;若 Step 1 注释中 `[1,2,3]` 实际解析为 ARRAY,期望值按注释调整后应全绿)
+Expected: BUILD SUCCESS(17 个测试 = 13 既有 + 4 新增)
 
 - [ ] **Step 5: Commit**
 
@@ -1448,6 +1448,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   @Test
   void newEliteClass() {
     assertEquals("Point", typeOf("class Point(x, y)\nnew Point(1, 2)"));
+  }
+
+  @Test
+  void listIndexAccess() {
+    assertEquals("Int", typeOf("define l = [1, 2, 3]\nl[0]"));
   }
 
   @Test
@@ -1838,7 +1843,7 @@ Expected: 新用例失败
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -q test -Dtest=TypeInferenceTest`
-Expected: BUILD SUCCESS(30 个测试)。Step 1 注释中的 Java 反射用例若不通过,按注释的判定依据修正 `visit(APPLY)`。Task 6 将把 `isNumeric` 替换为带归一化的版本,本任务的 `isNumeric` 是临时最简版(两者行为一致,Task 6 只是把"both-numeric"细化成"加宽检查")。
+Expected: BUILD SUCCESS(31 个测试)。Step 1 注释中的 Java 反射用例若不通过,按注释的判定依据修正 `visit(APPLY)`。Task 6 将把 `isNumeric` 替换为带归一化的版本,本任务的 `isNumeric` 是临时最简版(两者行为一致,Task 6 只是把"both-numeric"细化成"加宽检查")。
 
 - [ ] **Step 5: Commit**
 
@@ -1947,7 +1952,8 @@ Expected: 新用例失败
   protected Type merge(Type a, Type b) {
     if (a == ErrorType.ERROR || b == ErrorType.ERROR) return ErrorType.ERROR;
     if (a.equals(b)) return a;
-    if (a == AnyType.ANY || b == AnyType.ANY) return AnyType.ANY;
+    if (a == AnyType.ANY) return b;
+    if (b == AnyType.ANY) return a;
     if (isNumeric(a) && isNumeric(b)) return normalize(a, b);
     return AnyType.ANY;
   }

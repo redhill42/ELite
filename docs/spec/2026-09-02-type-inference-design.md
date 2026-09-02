@@ -104,8 +104,9 @@ ELite class 定义在推断开始前先整体登记(第一遍扫描收集所有 
 
 ## 节点推导规则
 
-通用原则:推导不出 → `Any`;`Any` 是吸收元素(与任何类型合并/参与运算 → `Any`
-或对应 Any 族)。
+通用原则:推导不出 → `Any`;`ErrorType` 是吸收元素(参与合并/运算 → `ErrorType`);
+**merge 中 `Any` 是单位元**(已知类型 T 与 Any 合并 → T,保证 `[1,2,3]` 从
+NIL 的 `List[Any]` 起能收敛为 `List[Int]`);算术运算中 Any 作为操作数 → `Any`。
 
 **字面量与常量**
 - `BOOLEANVAL` → `Boolean`;`CHARVAL` → `Char`;`STRINGVAL` → `String`
@@ -163,8 +164,8 @@ ELite class 定义在推断开始前先整体登记(第一遍扫描收集所有 
 - **可变变量**(存在 ASSIGN):收集该变量**所有 ASSIGN 结点的右操作数类型**,
   两两归一化合并;合并结果一致且非 `Any` → 固定该类型,否则 `Any`
 - 合并规则:逐对应用二元数值归一化(如 `Int` 与 `Long` → `Long`);
-  `Any` 参与 → `Any`;`ErrorType` 参与 → `ErrorType`;不同类型族
-  (如 `Int` 与 `String`)→ `Any`
+  `Any` 参与 → 另一侧类型(单位元);`ErrorType` 参与 → `ErrorType`;
+  不同类型族(如 `Int` 与 `String`)→ `Any`
 - ASSIGN 左值有类型标注:变量类型即标注类型(标注不提升);**并做兼容性检查**
   (v1):右值类型为具体类型且与标注不兼容 → `reportError`
   (`IR_TYPE_MISMATCH`,expected 为标注类型,got 为右值类型)+ `ErrorType`
