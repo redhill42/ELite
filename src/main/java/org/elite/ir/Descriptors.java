@@ -15,6 +15,7 @@
  */
 package org.elite.ir;
 
+import org.elite.type.Type;
 import java.lang.reflect.Method;
 
 /**
@@ -56,4 +57,9 @@ final class Descriptors {
       this(bootstrap, name, new Object[0], rtype, ptypes);
     }
   }
+
+  /**
+   * Type coercion.
+   */
+  record Coercion(Class<?> from, Class<?> to) {}
 }

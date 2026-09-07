@@ -104,7 +104,8 @@ final class IRPrinter {
          Opcode.INVOKE_SUPER, Opcode.NEW, Opcode.CONSTRUCTOR, Opcode.NEW_ARRAY,
          Opcode.NEW_MULTI_ARRAY, Opcode.LOAD_ARRAY, Opcode.STORE_ARRAY,
          Opcode.GETFIELD, Opcode.PUTFIELD, Opcode.GETSTATIC, Opcode.PUTSTATIC,
-         Opcode.CHECKCAST, Opcode.BOX, Opcode.UNBOX, Opcode.DECLARE_NS ->
+         Opcode.CHECKCAST, Opcode.BOX, Opcode.UNBOX, Opcode.COERCE,
+         Opcode.DECLARE_NS ->
       formatConstPool(sb, constants, v.poolIndex());
 
     case Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE,
@@ -152,6 +153,8 @@ final class IRPrinter {
     if (c instanceof Descriptors.Indy i)
       return i.name() + "(" + i.bootstrap().getName() + ")" +
              i.rtype().getSimpleName();
+    if (c instanceof Descriptors.Coercion conv)
+      return conv.from().getSimpleName() + "->" + conv.to().getSimpleName();
     return c.getClass().getSimpleName();
   }
 }

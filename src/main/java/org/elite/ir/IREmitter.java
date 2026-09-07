@@ -527,6 +527,10 @@ final class IREmitter {
     emit(UNBOX, 0, builder.putConstant(type));
   }
 
+  public void emitCoerce(Class<?> from, Class<?> to) {
+    emit(COERCE, 0, builder.putConstant(new Descriptors.Coercion(from, to)));
+  }
+
   public void emitNewTuple(int count) {
     emit(NEW_TUPLE, count, 0);
   }

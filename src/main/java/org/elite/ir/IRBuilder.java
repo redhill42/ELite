@@ -5106,33 +5106,57 @@ public class IRBuilder extends ELNode.Visitor {
       coerceBootstrap, "coerce", type, ELContext.class, Object.class));
   }
 
-  private void buildCoerce(ELNode node, Class<?> type) {
+  private void buildCoerce(ELNode node, Class<?> toType) {
     // No coercion for Object.
-    if (type == Object.class) {
+    if (toType == Object.class) {
       build(node);
       return;
     }
 
-    // No coercion if constant matches target type.
-    if (node instanceof ELNode.Constant cst) {
-      Object value = cst.getValue(null);
-      if (value != null && getBoxedType(type).isInstance(value)) {
-        buildConst(value);
-        if (type.isPrimitive())
-          emitter.emitUnbox(type);
+    Class<?> nodeType = node.inferredType.javaClass();
+    if (nodeType != null) {
+      if (toType.isAssignableFrom(nodeType)) {
+        build(node);
+        emitter.emitCheckCast(toType);
         return;
       }
-    }
 
-    if (node instanceof ELNode.LAMBDA && type == Closure.class) {
-      build(node);
-      return;
+      // Optimize primitive coercion.
+      Class<?> from = TypeCoercion.getUnboxedType(nodeType);
+      Class<?> to = TypeCoercion.getUnboxedType(toType);
+      if (from.isPrimitive() && to.isPrimitive()) {
+        if (from == to) {
+          build(node);
+          if (!nodeType.isPrimitive() && toType.isPrimitive())
+            emitter.emitUnbox(toType);
+          else if (nodeType.isPrimitive() && !toType.isPrimitive())
+            emitter.emitBox(toType);
+          return;
+        }
+
+        if (from == Void.TYPE || from == Boolean.TYPE ||
+            to == Void.TYPE || to == Boolean.TYPE) {
+          reportError(node.pos, "Cannot convert " + from.getName() + " to " +
+                                to.getName());
+          return;
+        }
+
+        if (node instanceof ELNode.Constant) {
+          buildConstUnbox(TypeCoercion.coerce(node.getValue(null), to));
+          if (!toType.isPrimitive())
+            emitter.emitBox(to);
+        } else {
+          build(node);
+          emitter.emitCoerce(nodeType, toType);
+        }
+        return;
+      }
     }
 
     // Coerce at runtime.
     emitter.emitPushCtx();
     build(node);
-    buildCoerce(type);
+    buildCoerce(toType);
   }
 
   private void emitInvokeMethod(Class<?> c, String name, Class<?>... types) {

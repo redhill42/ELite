@@ -114,6 +114,7 @@ public final class Opcode {
   public static final int CHECKCAST         = 0x5C;
   public static final int BOX               = 0x5D;
   public static final int UNBOX             = 0x5E;
+  public static final int COERCE            = 0x5F;
 
   // ── Data structure ──
   public static final int NEW_TUPLE         = 0x60;
@@ -203,6 +204,7 @@ public final class Opcode {
       case CHECKCAST      -> "CHECKCAST";
       case BOX            -> "BOX";
       case UNBOX          -> "UNBOX";
+      case COERCE         -> "COERCE";
 
       case NEW_TUPLE      -> "NEW_TUPLE";
       case DECLARE_NS     -> "DECLARE_NS";

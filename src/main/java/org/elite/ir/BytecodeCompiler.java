@@ -1832,6 +1832,12 @@ public class BytecodeCompiler {
       case UNBOX ->
         mc.UNBOX((Class<?>)fn.getConstant(v.poolIndex()));
 
+      case COERCE -> {
+        Descriptors.Coercion coercion =
+          (Descriptors.Coercion)fn.getConstant(v.poolIndex());
+        emitCoerce(coercion.from(), coercion.to());
+      }
+
       case NEW_TUPLE -> {
         int cnt = v.count();
         mc.PUSH(cnt);
@@ -2054,6 +2060,123 @@ public class BytecodeCompiler {
                          AsmType.getMethodDescriptor(
                            type, ELContext.class, Object.class));
       }
+    }
+
+    @FunctionalInterface
+    interface CoerceAction {
+      void accept(MethodAssembly mc);
+    }
+
+    private static final CoerceAction NO_ACTION = mc -> {};
+
+    private static final CoerceAction[][] CoerceMatrix = {
+      // void
+      {null, null, null, null, null, null, null, null, null},
+      // boolean
+      {null, null, null, null, null, null, null, null, null},
+      // char
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ NO_ACTION,
+        /* byte    */ MethodAssembly::I2B,
+        /* short   */ MethodAssembly::I2S,
+        /* int     */ NO_ACTION,
+        /* float   */ MethodAssembly::I2F,
+        /* long    */ MethodAssembly::I2L,
+        /* double  */ MethodAssembly::I2D
+      },
+      // byte
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ NO_ACTION,
+        /* byte    */ NO_ACTION,
+        /* short   */ NO_ACTION,
+        /* int     */ NO_ACTION,
+        /* float   */ MethodAssembly::I2F,
+        /* long    */ MethodAssembly::I2L,
+        /* double  */ MethodAssembly::I2D
+      },
+      // short
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ MethodAssembly::I2C,
+        /* byte    */ MethodAssembly::I2B,
+        /* short   */ NO_ACTION,
+        /* int     */ NO_ACTION,
+        /* float   */ MethodAssembly::I2F,
+        /* long    */ MethodAssembly::I2L,
+        /* double  */ MethodAssembly::I2D
+      },
+      // int
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ MethodAssembly::I2C,
+        /* byte    */ MethodAssembly::I2B,
+        /* short   */ MethodAssembly::I2S,
+        /* int     */ NO_ACTION,
+        /* float   */ MethodAssembly::I2F,
+        /* long    */ MethodAssembly::I2L,
+        /* double  */ MethodAssembly::I2D
+      },
+      // float
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ mc -> { mc.F2I(); mc.I2C(); },
+        /* byte    */ mc -> { mc.F2I(); mc.I2B(); },
+        /* short   */ mc -> { mc.F2I(); mc.I2S(); },
+        /* int     */ MethodAssembly::F2I,
+        /* float   */ NO_ACTION,
+        /* long    */ MethodAssembly::F2L,
+        /* double  */ MethodAssembly::F2D
+      },
+      // long
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ mc -> { mc.L2I(); mc.I2C(); },
+        /* byte    */ mc -> { mc.L2I(); mc.I2B(); },
+        /* short   */ mc -> { mc.L2I(); mc.I2S(); },
+        /* int     */ MethodAssembly::L2I,
+        /* float   */ MethodAssembly::L2F,
+        /* long    */ NO_ACTION,
+        /* double  */ MethodAssembly::L2D
+      },
+      // double
+      {
+        /* void    */ null,
+        /* boolean */ null,
+        /* char    */ mc -> { mc.D2I(); mc.I2C(); },
+        /* byte    */ mc -> { mc.D2I(); mc.I2B(); },
+        /* short   */ mc -> { mc.D2I(); mc.I2S(); },
+        /* int     */ MethodAssembly::D2I,
+        /* float   */ MethodAssembly::D2F,
+        /* long    */ MethodAssembly::D2L,
+        /* double  */ NO_ACTION,
+      },
+    };
+
+    private void emitCoerce(Class<?> from, Class<?> to) {
+      Class<?> fromPrimitive = TypeCoercion.getUnboxedType(from);
+      Class<?> toPrimitive = TypeCoercion.getUnboxedType(to);
+      assert fromPrimitive.isPrimitive() && toPrimitive.isPrimitive();
+      assert fromPrimitive != Void.TYPE && toPrimitive != Void.TYPE &&
+             fromPrimitive != Boolean.TYPE && toPrimitive != Boolean.TYPE;
+
+      CoerceAction action =
+        CoerceMatrix[Type.getType(fromPrimitive).getSort()]
+                    [Type.getType(toPrimitive).getSort()];
+
+      assert action != null;
+      if (!from.isPrimitive())
+        mc.UNBOX(fromPrimitive);
+      action.accept(mc);
+      if (!to.isPrimitive())
+        mc.BOX(toPrimitive);
     }
 
     private void emitBinary(InstructionView v, String name, Class<?> returnType) {
