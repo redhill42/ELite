@@ -209,10 +209,15 @@ final class InferencePass extends DefaultVisitor {
   public void visit(ELNode.RANGE e) {
     super.visit(e);
 
-    if (e.end == null || e.begin.inferredType == e.end.inferredType)
+    if (e.end == null || e.begin.inferredType.equals(e.end.inferredType))
       setType(e, new ListType(e.begin.inferredType));
+    else if ((e.begin.inferredType == Types.INT &&
+              e.end.inferredType == Types.LONG) ||
+             (e.begin.inferredType == Types.LONG &&
+              e.end.inferredType == Types.INT))
+      setType(e, new ListType(Types.LONG));
     else
-      setType(e, new ListType(Types.ANY));
+      setType(e, new ListType(Types.UNKNOWN));
   }
 
   @Override
@@ -955,6 +960,7 @@ final class InferencePass extends DefaultVisitor {
   public void visit(ELNode.ASSIGNOP e) {
     // A compound assignment does not change the variable type.
     super.visit(e);
+    setType(e, e.left.inferredType);
   }
 
   @Override
@@ -965,11 +971,16 @@ final class InferencePass extends DefaultVisitor {
 
   @Override
   public void visit(ELNode.FOREACH e) {
-    if (e.index != null)
-      setType(e.index, Types.INT);
     scan(e.range);
-    if (e.range.inferredType instanceof ListType t)
-      setType(e.var, t.element());
+    if (e.range.inferredType instanceof ListType t) {
+      Type etype = t.element();
+      setType(e.var, etype);
+      if (e.index != null && (etype == Types.INT || etype == Types.LONG))
+        setType(e.index, etype);
+    }
+    if (e.index != null && e.index.inferredType == Types.UNKNOWN) {
+      setType(e.index, Types.INT);
+    }
     scan(e.body);
     setType(e, Types.ANY);
   }
@@ -1016,9 +1027,9 @@ final class InferencePass extends DefaultVisitor {
 
     if (lt == Double.TYPE || rt == Double.TYPE) {
       setType(e, Types.DOUBLE);
-    } if (lt == Float.TYPE || rt == Float.TYPE) {
+    } else if (lt == Float.TYPE || rt == Float.TYPE) {
       setType(e, Types.FLOAT);
-    } if (lt == Long.TYPE || rt == Long.TYPE) {
+    } else if (lt == Long.TYPE || rt == Long.TYPE) {
       setType(e, Types.LONG);
     } else {
       setType(e, Types.INT);

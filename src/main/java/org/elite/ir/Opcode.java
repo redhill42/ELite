@@ -38,6 +38,7 @@ public final class Opcode {
   public static final int PUSH_GLOBAL       = 0x09;
   public static final int POP               = 0x0A;
   public static final int DUP               = 0x0B;
+  public static final int DUP2              = 0x0C;
 
   // ── Operators ──
   public static final int ADD               = 0x10;
@@ -135,6 +136,7 @@ public final class Opcode {
       case PUSH_GLOBAL    -> "PUSH_GLOBAL";
       case POP            -> "POP";
       case DUP            -> "DUP";
+      case DUP2           -> "POP2";
 
       case ADD            -> "ADD";
       case SUB            -> "SUB";

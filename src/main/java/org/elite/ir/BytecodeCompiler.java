@@ -1153,10 +1153,11 @@ public class BytecodeCompiler {
   
     private void compileInstruction(InstructionView v) {
       switch (v.opcode()) {
-      case NOP -> {}
-      case DUP -> mc.DUP();
-      case POP -> mc.POP();
-  
+      case NOP  -> {}
+      case POP  -> mc.POP();
+      case DUP  -> mc.DUP();
+      case DUP2 -> mc.DUP2();
+
       case PUSH_CONST -> {
         Object value = fn.getConstant(v.poolIndex());
         if (value instanceof Boolean || value instanceof Byte ||

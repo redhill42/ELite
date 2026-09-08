@@ -41,6 +41,7 @@ final class PeepholeOpt {
     int last = code.size() - 1;
     int lastInst = code.get(last);
     int lastOpcode = IRFormat.opcode(lastInst);
+    int lastPayload = IRFormat.payload(lastInst);
     int lastOperand = IRFormat.operand(lastInst);
 
     switch (opcode) {
@@ -80,20 +81,22 @@ final class PeepholeOpt {
       break;
 
     case PUSH_VAR:
-      if (lastOpcode == PUSH_VAR && operand == lastOperand) {
-        // PUSH_VAR x, PUSH_VAR x -> PUSH_VAR x, DUP
-        code.add(IRFormat.pack(DUP, 0, 0));
-        return true;
-      }
-      if (lastOpcode == STORE_VAR && operand == lastOperand) {
-        // STORE_VAR, PUSH_VAR -> STORE_VAR, DUP
-        code.add(IRFormat.pack(DUP, 0, 0));
-        return true;
-      }
-      if (lastOpcode == STORE_VAR_POP && operand == lastOperand) {
-        // STORE_VAR_POP, PUSH_VAR -> STORE_VAR
-        code.set(last, IRFormat.pack(STORE_VAR, 0, operand));
-        return true;
+      if (lastPayload == 0) {
+        if (lastOpcode == PUSH_VAR && operand == lastOperand) {
+          // PUSH_VAR x, PUSH_VAR x -> PUSH_VAR x, DUP
+          code.add(IRFormat.pack(DUP, 0, 0));
+          return true;
+        }
+        if (lastOpcode == STORE_VAR && operand == lastOperand) {
+          // STORE_VAR, PUSH_VAR -> STORE_VAR, DUP
+          code.add(IRFormat.pack(DUP, 0, 0));
+          return true;
+        }
+        if (lastOpcode == STORE_VAR_POP && operand == lastOperand) {
+          // STORE_VAR_POP, PUSH_VAR -> STORE_VAR
+          code.set(last, IRFormat.pack(STORE_VAR, 0, operand));
+          return true;
+        }
       }
       break;
 

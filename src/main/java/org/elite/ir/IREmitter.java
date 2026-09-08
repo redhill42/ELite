@@ -138,6 +138,10 @@ final class IREmitter {
     emit(DUP, 0);
   }
 
+  public void emitDup2() {
+    emit(DUP2, 0);
+  }
+
   // ── Typed arithmetic (with inline primitive type in kind field) ──
 
   public void emitAdd() {

@@ -49,7 +49,7 @@ class TypeTest {
     assertEquals("Int[][]",
       new ArrayType(Type.of(Integer.class), 2).toString());
 
-    assertEquals("Function[Int, [Int, Int]]",
+    assertEquals("(Int,Int)->Int",
       new FunctionType(Type.of(Integer.class),
                        new Type[]{ Type.of(Integer.class),
                     Type.of(Integer.class) }).toString());

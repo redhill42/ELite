@@ -45,13 +45,17 @@ public final class FunctionType extends Type {
 
   @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder("Function[")
-      .append(returnType).append(", [");
+    if (params.length == 1)
+      return params[0] + "->" + returnType;
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("(");
     for (int i = 0; i < params.length; i++) {
-      if (i > 0) sb.append(", ");
+      if (i > 0)
+        sb.append(",");
       sb.append(params[i]);
     }
-    return sb.append("]]").toString();
+    return sb.append(")->").append(returnType).toString();
   }
 
   @Override

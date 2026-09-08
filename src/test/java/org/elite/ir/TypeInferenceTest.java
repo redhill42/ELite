@@ -212,7 +212,7 @@ class TypeInferenceTest {
 
   @Test
   void functionType() {
-    assertEquals("Function[Int, [Int, Int]]",
+    assertEquals("(Int,Int)->Int",
       typeOf("define add(x::Int, y::Int)::Int => x + y\ndefine f = add"));
   }
 
