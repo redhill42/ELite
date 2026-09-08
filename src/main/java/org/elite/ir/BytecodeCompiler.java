@@ -2188,11 +2188,11 @@ public class BytecodeCompiler {
         if (returnType == Boolean.TYPE)
           emitJumpAfterCond(v);
       } else {
-        emitBuiltinBinary(v, returnType);
+        emitPrimitiveBinary(v, returnType);
       }
     }
 
-    private void emitBuiltinBinary(InstructionView v, Class<?> returnType) {
+    private void emitPrimitiveBinary(InstructionView v, Class<?> returnType) {
       if (returnType == boolean.class) {
         InstructionView next = peekNext(v);
         if (next != null && (next.opcode() == JUMP_IF_TRUE ||
@@ -2218,7 +2218,8 @@ public class BytecodeCompiler {
             .GOTO(e)
             .label(t)
             .TRUE()
-            .label(e);
+            .label(e)
+            .BOX(Boolean.TYPE);
         }
         return;
       }

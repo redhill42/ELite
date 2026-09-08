@@ -28,6 +28,7 @@ import org.elite.eval.ELProgram;
 import org.elite.eval.ELUtils;
 import org.elite.eval.EvaluationContext;
 import org.elite.eval.EvaluationException;
+import org.elite.eval.GlobalScope;
 import org.elite.eval.Runtime;
 import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
@@ -48,6 +49,7 @@ import org.elite.type.ELiteClassType;
 import org.elite.type.FieldType;
 import org.elite.type.FunctionType;
 import org.elite.type.MemberType;
+import org.elite.type.PrimitiveType;
 import org.elite.type.Types;
 import org.elite.util.BeanUtils;
 
@@ -64,6 +66,7 @@ import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static org.elite.ir.SymbolTable.Symbol;
@@ -2662,13 +2665,13 @@ public class IRBuilder extends ELNode.Visitor {
   public void visit(ELNode.DIV node)    { buildBinaryOp(node); }
   public void visit(ELNode.REM node)    { buildBinaryOp(node); }
   public void visit(ELNode.POW node)    { buildBinaryOp(node); }
-  public void visit(ELNode.SHL node)    { buildBinaryOp(node); }
   public void visit(ELNode.CAT node)    { buildBinaryOp(node); }
-  public void visit(ELNode.SHR node)    { buildBinaryOp(node); }
-  public void visit(ELNode.USHR node)   { buildBinaryOp(node); }
-  public void visit(ELNode.BITAND node) { buildBinaryOp(node); }
-  public void visit(ELNode.BITOR node)  { buildBinaryOp(node); }
-  public void visit(ELNode.XOR node)    { buildBinaryOp(node); }
+  public void visit(ELNode.SHL node)    { buildShiftOp(node); }
+  public void visit(ELNode.SHR node)    { buildShiftOp(node); }
+  public void visit(ELNode.USHR node)   { buildShiftOp(node); }
+  public void visit(ELNode.BITAND node) { buildBitwiseOp(node); }
+  public void visit(ELNode.BITOR node)  { buildBitwiseOp(node); }
+  public void visit(ELNode.XOR node)    { buildBitwiseOp(node); }
   public void visit(ELNode.EQ node)     { buildBinaryOp(node); }
   public void visit(ELNode.NE node)     { buildBinaryOp(node); }
   public void visit(ELNode.IDEQ node)   { buildBinaryOp(node); }
@@ -2696,37 +2699,203 @@ public class IRBuilder extends ELNode.Visitor {
       }
       // fallthrough
     case Token.LT: case Token.LE: case Token.GT: case Token.GE:
-      if (node.left.inferredType == node.right.inferredType) {
-        int kind = K_NONE;
-        Class<?> type = null;
-        if (node.left.inferredType == Types.INT) {
-          kind = K_INT;
-          type = int.class;
-        } else if (node.right.inferredType == Types.LONG) {
-          kind = K_LONG;
-          type = long.class;
-        } else if (node.right.inferredType == Types.FLOAT) {
-          kind = K_FLOAT;
-          type = float.class;
-        } else if (node.right.inferredType == Types.DOUBLE) {
-          kind = K_DOUBLE;
-          type = double.class;
-        }
+    case Token.ADD: case Token.SUB: case Token.MUL: case Token.REM:
+      if (buildPrimitiveBinary(node))
+        return;
+      break;
+    }
 
-        if (kind != K_NONE) {
-          build(node.left);
-          emitter.emitUnbox(type);
-          build(node.right);
-          emitter.emitUnbox(type);
-          emitBinOp(kind, node.op);
-          return;
+    build(node.left);
+    build(node.right);
+    emitDynBinOp(node.op);
+  }
+
+  private void buildShiftOp(ELNode.Binary node) {
+    if (node.left.inferredType == Types.BIGINT) {
+      String name = node.op == Token.SHL ? "shiftLeft" : "shiftRight";
+      build(node.left);
+      emitter.emitCheckCast(BigInteger.class);
+      buildCoerce(node.right, Integer.TYPE);
+      emitInvokeMethod(BigInteger.class, name, Integer.TYPE);
+      return;
+    }
+
+    Consumer<Integer> emitShift = (kind) -> {
+      switch (node.op) {
+      case Token.SHL -> emitter.emitShl(kind);
+      case Token.SHR -> emitter.emitShr(kind);
+      case Token.USHR -> emitter.emitUShr(kind);
+      default -> throw new AssertionError();
+      }
+    };
+
+    if (node.left.inferredType == Types.LONG ||
+        node.left.inferredType == Types.DOUBLE ||
+        node.left.inferredType == Types.FLOAT) {
+      buildCoerce(node.left, Long.TYPE);
+      buildCoerce(node.right, Integer.TYPE);
+      emitShift.accept(K_LONG);
+      emitter.emitBox(Long.TYPE);
+      return;
+    }
+
+    if (node.left.inferredType == Types.INT ||
+        node.left.inferredType == Types.BYTE ||
+        node.left.inferredType == Types.SHORT ||
+        node.left.inferredType == Types.CHAR) {
+      buildCoerce(node.left, Integer.TYPE);
+      buildCoerce(node.right, Integer.TYPE);
+      emitShift.accept(K_INT);
+      emitter.emitBox(Integer.TYPE);
+      return;
+    }
+
+    build(node.left);
+    build(node.right);
+    emitDynBinOp(node.op);
+  }
+
+  private void buildBitwiseOp(ELNode.Binary node) {
+    if (node.left.inferredType instanceof PrimitiveType &&
+        node.right.inferredType instanceof PrimitiveType) {
+      if (node.left.inferredType == Types.BIGINT ||
+          node.right.inferredType == Types.BIGINT) {
+        buildCoerce(node.left, BigInteger.class);
+        buildCoerce(node.right, BigInteger.class);
+        switch (node.op) {
+        case Token.BITAND:
+          emitInvokeMethod(BigInteger.class, "and", BigInteger.class);
+          break;
+        case Token.BITOR:
+          emitInvokeMethod(BigInteger.class, "or", BigInteger.class);
+          break;
+        case Token.XOR:
+          emitInvokeMethod(BigInteger.class, "xor", BigInteger.class);
+          break;
+        default:
+          throw new AssertionError();
         }
+        return;
+      }
+
+      Consumer<Integer> emitBitwise = (kind) -> {
+        switch (node.op) {
+        case Token.BITAND -> emitter.emitBitAnd(kind);
+        case Token.BITOR -> emitter.emitBitOr(kind);
+        case Token.XOR -> emitter.emitXor(kind);
+        default -> throw new AssertionError();
+        }
+      };
+
+      if (node.left.inferredType == Types.BOOLEAN &&
+          node.right.inferredType == Types.BOOLEAN) {
+        build(node.left);
+        emitter.emitUnbox(Boolean.TYPE);
+        build(node.right);
+        emitter.emitUnbox(Boolean.TYPE);
+        emitBitwise.accept(K_INT);
+        emitter.emitBox(Boolean.TYPE);
+        return;
+      }
+
+      if (node.left.inferredType == Types.LONG ||
+          node.left.inferredType == Types.FLOAT ||
+          node.left.inferredType == Types.DOUBLE ||
+          node.right.inferredType == Types.LONG ||
+          node.right.inferredType == Types.FLOAT ||
+          node.right.inferredType == Types.DOUBLE) {
+        buildCoerce(node.left, Long.TYPE);
+        buildCoerce(node.right, Long.TYPE);
+        emitBitwise.accept(K_LONG);
+        emitter.emitBox(Long.TYPE);
+        return;
+      }
+
+      if (node.left.inferredType == Types.INT ||
+          node.left.inferredType == Types.BYTE ||
+          node.left.inferredType == Types.SHORT ||
+          node.left.inferredType == Types.CHAR ||
+          node.right.inferredType == Types.INT ||
+          node.right.inferredType == Types.BYTE ||
+          node.right.inferredType == Types.SHORT ||
+          node.right.inferredType == Types.CHAR) {
+        buildCoerce(node.left, Integer.TYPE);
+        buildCoerce(node.right, Integer.TYPE);
+        emitBitwise.accept(K_INT);
+        emitter.emitBox(Integer.TYPE);
+        return;
       }
     }
 
     build(node.left);
     build(node.right);
     emitDynBinOp(node.op);
+  }
+
+  private boolean buildPrimitiveBinary(ELNode.Binary node) {
+    Class<?> lt = node.left.inferredType.javaClass();
+    Class<?> rt = node.right.inferredType.javaClass();
+    if (lt == null || rt == null)
+      return false;
+
+    Class<?> ltPrimitive = TypeCoercion.getUnboxedType(lt);
+    Class<?> rtPrimitive = TypeCoercion.getUnboxedType(rt);
+    if ((!ltPrimitive.isPrimitive() || ltPrimitive == Void.TYPE ||
+         ltPrimitive == Boolean.TYPE) ||
+        (!rtPrimitive.isPrimitive() || rtPrimitive == Void.TYPE ||
+         rtPrimitive == Boolean.TYPE))
+      return false;
+
+    if (ltPrimitive == Double.TYPE || rtPrimitive == Double.TYPE ||
+        ltPrimitive == Float.TYPE || rtPrimitive == Float.TYPE) {
+      switch (node.op) {
+      case Token.BITAND: case Token.BITOR: case Token.XOR:
+      case Token.SHL: case Token.SHR: case Token.USHR:
+        return false;
+      }
+    }
+
+    final boolean isComparison = switch (node.op) {
+      case Token.EQ, Token.NE,
+           Token.LT, Token.LE,
+           Token.GT, Token.GE -> true;
+      default -> false;
+    };
+    Consumer<Class<?>> box = (t) -> { if (!isComparison) emitter.emitBox(t); };
+
+    if (ltPrimitive == Double.TYPE || rtPrimitive == Double.TYPE) {
+      buildCoerce(node.left, Double.TYPE);
+      buildCoerce(node.right, Double.TYPE);
+      emitBinOp(K_DOUBLE, node.op);
+      box.accept(Double.TYPE);
+      return true;
+    }
+
+    if (ltPrimitive == Float.TYPE || rtPrimitive == Float.TYPE) {
+      buildCoerce(node.left, Float.TYPE);
+      buildCoerce(node.right, Float.TYPE);
+      emitBinOp(K_FLOAT, node.op);
+      box.accept(Float.TYPE);
+      return true;
+    }
+
+    if (ltPrimitive == Long.TYPE || rtPrimitive == Long.TYPE) {
+      buildCoerce(node.left, Long.TYPE);
+      buildCoerce(node.right, Long.TYPE);
+      emitBinOp(K_LONG, node.op);
+      box.accept(Long.TYPE);
+      return true;
+    }
+
+    if (GlobalScope.isBigIntegerEnabled(elctx) &&
+        (node.op == Token.ADD || node.op == Token.SUB || node.op == Token.MUL))
+      return false;
+
+    buildCoerce(node.left, Integer.TYPE);
+    buildCoerce(node.right, Integer.TYPE);
+    emitBinOp(K_INT, node.op);
+    box.accept(Integer.TYPE);
+    return true;
   }
 
   private void emitDynBinOp(int op) {
@@ -2943,25 +3112,52 @@ public class IRBuilder extends ELNode.Visitor {
   }
 
   public void visit(ELNode.INC node) {
-    buildIncDec(node.right, true, node.is_preincrement);
+    buildIncDec(node.right, Token.ADD, node.is_preincrement);
   }
 
   public void visit(ELNode.DEC node) {
-    buildIncDec(node.right, false, node.is_preincrement);
+    buildIncDec(node.right, Token.SUB, node.is_preincrement);
   }
 
   /**
    * Expand ++x / x++ / --x / x-- for local variables.
    */
-  private void buildIncDec(ELNode target, boolean isInc, boolean isPre) {
+  private void buildIncDec(ELNode target, int op, boolean isPre) {
     // Evaluate right value.
     build(target);
     if (!isPre)
       emitter.emitDup();
 
+    Class<?> type = target.inferredType.javaClass();
+    if (type != null)
+      type = TypeCoercion.getUnboxedType(type);
+
     // Increment or decrement the value.
-    buildConst(1);
-    emitDynBinOp(isInc ? Token.ADD : Token.SUB);
+    if (type == Double.TYPE) {
+      emitter.emitUnbox(Double.TYPE);
+      buildConstUnbox(1.0d);
+      emitBinOp(K_DOUBLE, op);
+      emitter.emitBox(Double.TYPE);
+    } else if (type == Float.TYPE) {
+      emitter.emitUnbox(Float.TYPE);
+      buildConstUnbox(1.0f);
+      emitBinOp(K_FLOAT, op);
+      emitter.emitBox(Float.TYPE);
+    } else if (type == Long.TYPE) {
+      emitter.emitUnbox(Long.TYPE);
+      buildConstUnbox(1L);
+      emitBinOp(K_LONG, op);
+      emitter.emitBox(Long.TYPE);
+    } else if (type == Integer.TYPE || type == Byte.TYPE ||
+               type == Short.TYPE || type == Character.TYPE) {
+      emitter.emitUnbox(type);
+      buildConstUnbox(1);
+      emitBinOp(K_INT, op);
+      emitter.emitBox(Integer.TYPE);
+    } else {
+      buildConst(1);
+      emitDynBinOp(op);
+    }
 
     // Assign to right value itself.
     if (target instanceof ELNode.IDENT ident)

@@ -21,11 +21,13 @@ import elite.xml.XmlNode;
 import org.elite.eval.ELEngine;
 import org.elite.eval.ELProgram;
 import org.elite.eval.ELUtils;
+import org.elite.eval.TypeCoercion;
 import org.elite.eval.closure.MethodClosure;
 import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
 import org.elite.parser.ParseError;
 import org.elite.parser.ParseException;
+import org.elite.parser.Token;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 import org.elite.type.*;
@@ -962,39 +964,134 @@ final class InferencePass extends DefaultVisitor {
   }
 
   private void visitArithmetic(ELNode.Binary e) {
+    scan(e.left);
+    scan(e.right);
+
+    Class<?> lt = e.left.inferredType.javaClass();
+    Class<?> rt = e.right.inferredType.javaClass();
+    if (lt == null || rt == null)
+      return;
+
+    lt = TypeCoercion.getUnboxedType(lt);
+    rt = TypeCoercion.getUnboxedType(rt);
+    if (!lt.isPrimitive() || !rt.isPrimitive() ||
+        lt == Void.TYPE || lt == Boolean.TYPE ||
+        rt == Void.TYPE || rt == Boolean.TYPE)
+      return;
+
+    if (lt == Double.TYPE || rt == Double.TYPE) {
+      setType(e, Types.DOUBLE);
+    } if (lt == Float.TYPE || rt == Float.TYPE) {
+      setType(e, Types.FLOAT);
+    } if (lt == Long.TYPE || rt == Long.TYPE) {
+      setType(e, Types.LONG);
+    } else {
+      setType(e, Types.INT);
+    }
   }
 
-  @Override public void visit(ELNode.ADD e) { super.visit(e); visitArithmetic(e); }
-  @Override public void visit(ELNode.SUB e) { super.visit(e); visitArithmetic(e); }
-  @Override public void visit(ELNode.MUL e) { super.visit(e); visitArithmetic(e); }
-  @Override public void visit(ELNode.DIV e) { super.visit(e); visitArithmetic(e); }
-  @Override public void visit(ELNode.REM e) { super.visit(e); visitArithmetic(e); }
-  @Override public void visit(ELNode.POW e) { super.visit(e); visitArithmetic(e); }
+  @Override public void visit(ELNode.ADD e) { visitArithmetic(e); }
+  @Override public void visit(ELNode.SUB e) { visitArithmetic(e); }
+  @Override public void visit(ELNode.MUL e) { visitArithmetic(e); }
+  @Override public void visit(ELNode.REM e) { visitArithmetic(e); }
 
   @Override
-  public void visit(ELNode.BITOR e) {
+  public void visit(ELNode.DIV e) {
     super.visit(e);
   }
 
-  @Override public void visit(ELNode.BITAND e) {
-    super.visit(e);
-  }
-
-  @Override public void visit(ELNode.XOR e) {
+  @Override
+  public void visit(ELNode.POW e) {
     super.visit(e);
   }
 
   @Override
   public void visit(ELNode.SHL e) {
-    super.visit(e);
+    inferShift(e);
   }
 
   @Override public void visit(ELNode.SHR e) {
-    super.visit(e);
+    inferShift(e);
   }
 
   @Override public void visit(ELNode.USHR e) {
-    super.visit(e);
+    inferShift(e);
+  }
+
+  private void inferShift(ELNode.Binary e) {
+    scan(e.left);
+    scan(e.right);
+
+    if (e.left.inferredType == Types.BIGINT) {
+      setType(e, Types.BIGINT);
+    } else if (e.left.inferredType == Types.LONG ||
+               e.left.inferredType == Types.DOUBLE ||
+               e.left.inferredType == Types.FLOAT) {
+      setType(e, Types.LONG);
+    } else if (e.left.inferredType == Types.INT ||
+               e.left.inferredType == Types.BYTE ||
+               e.left.inferredType == Types.SHORT ||
+               e.left.inferredType == Types.CHAR) {
+      setType(e, Types.INT);
+    }
+  }
+
+  @Override
+  public void visit(ELNode.BITAND e) {
+    inferBitwise(e);
+  }
+
+  @Override
+  public void visit(ELNode.BITOR e) {
+    inferBitwise(e);
+  }
+
+  @Override
+  public void visit(ELNode.XOR e) {
+    inferBitwise(e);
+  }
+
+  private void inferBitwise(ELNode.Binary e) {
+    scan(e.left);
+    scan(e.right);
+
+    if (e.left.inferredType instanceof PrimitiveType) {
+      if (e.left.inferredType == Types.BIGINT ||
+          e.right.inferredType == Types.BIGINT) {
+        setType(e, Types.BIGINT);
+      } else if (e.left.inferredType == Types.BOOLEAN ||
+                 e.right.inferredType == Types.BOOLEAN) {
+        if (e.left.inferredType != Types.BOOLEAN) {
+          reportError(e.pos,
+                      _T(JSPRT_COERCE_ERROR, e.left.inferredType, "boolean"));
+          setType(e, Types.ERROR);
+          return;
+        }
+        if (e.right.inferredType != Types.BOOLEAN) {
+          reportError(e.pos,
+                      _T(JSPRT_COERCE_ERROR, e.right.inferredType, "boolean"));
+          setType(e, Types.ERROR);
+          return;
+        }
+        setType(e, Types.BOOLEAN);
+      } else if (e.left.inferredType == Types.LONG ||
+                 e.left.inferredType == Types.FLOAT ||
+                 e.left.inferredType == Types.DOUBLE ||
+                 e.right.inferredType == Types.LONG ||
+                 e.right.inferredType == Types.FLOAT ||
+                 e.right.inferredType == Types.DOUBLE) {
+        setType(e, Types.LONG);
+      } else if (e.left.inferredType == Types.INT ||
+                 e.left.inferredType == Types.BYTE ||
+                 e.left.inferredType == Types.SHORT ||
+                 e.left.inferredType == Types.CHAR ||
+                 e.right.inferredType == Types.INT ||
+                 e.right.inferredType == Types.BYTE ||
+                 e.right.inferredType == Types.SHORT ||
+                 e.right.inferredType == Types.CHAR) {
+        setType(e, Types.INT);
+      }
+    }
   }
 
   @Override
@@ -1014,12 +1111,27 @@ final class InferencePass extends DefaultVisitor {
 
   @Override
   public void visit(ELNode.INC e) {
-    super.visit(e);
+    inferIncDec(e);
   }
 
   @Override
   public void visit(ELNode.DEC e) {
-    super.visit(e);
+    inferIncDec(e);
+  }
+
+  private void inferIncDec(ELNode.Unary e) {
+    scan(e.right);
+
+    Class<?> type = e.right.inferredType.javaClass();
+    if (type != null) {
+      type = TypeCoercion.getUnboxedType(type);
+      if (type == Double.TYPE || type == Float.TYPE || type == Long.TYPE) {
+        setType(e, e.right.inferredType);
+      } else if (type == Integer.TYPE || type == Byte.TYPE ||
+                 type == Short.TYPE || type == Character.TYPE) {
+        setType(e, Types.INT);
+      }
+    }
   }
 
   @Override

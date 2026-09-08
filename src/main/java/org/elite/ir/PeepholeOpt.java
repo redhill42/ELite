@@ -64,6 +64,21 @@ final class PeepholeOpt {
       break;
     }
 
+    case BOX:
+      if (lastOpcode == UNBOX) {
+        assert operand == lastOperand;
+        code.reset(last);
+        return true;
+      }
+      break;
+    case UNBOX:
+      if (lastOpcode == BOX) {
+        assert operand == lastOperand;
+        code.reset(last);
+        return true;
+      }
+      break;
+
     case PUSH_VAR:
       if (lastOpcode == PUSH_VAR && operand == lastOperand) {
         // PUSH_VAR x, PUSH_VAR x -> PUSH_VAR x, DUP
