@@ -27,7 +27,6 @@ import org.elite.parser.DefaultVisitor;
 import org.elite.parser.ELNode;
 import org.elite.parser.ParseError;
 import org.elite.parser.ParseException;
-import org.elite.parser.Token;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 import org.elite.type.*;
@@ -172,8 +171,38 @@ final class InferencePass extends DefaultVisitor {
   public void visit(ELNode.ARRAY e) {
     super.visit(e);
     int dims = e.dims != null ? e.dims.length : 1;
-    Type element = resolveAnnotatedType(e.type);
-    setType(e, new ArrayType(element, dims));
+
+    if (e.type instanceof ELNode.IDENT id) {
+      switch (id.id) {
+      case "boolean":
+        setType(e, new ArrayType(boolean.class, dims));
+        return;
+      case "byte":
+        setType(e, new ArrayType(byte.class, dims));
+        return;
+      case "short":
+        setType(e, new ArrayType(short.class, dims));
+        return;
+      case "char":
+        setType(e, new ArrayType(char.class, dims));
+        return;
+      case "int":
+        setType(e, new ArrayType(int.class, dims));
+        return;
+      case "long":
+        setType(e, new ArrayType(long.class, dims));
+        return;
+      case "float":
+        setType(e, new ArrayType(float.class, dims));
+        return;
+      case "double":
+        setType(e, new ArrayType(double.class, dims));
+        return;
+      }
+    }
+
+    Type component = resolveAnnotatedType(e.type);
+    setType(e, new ArrayType(component, dims));
   }
 
   @Override
@@ -355,6 +384,12 @@ final class InferencePass extends DefaultVisitor {
         if (javaClass != null && inferJavaClassMember(e, javaClass, name, false))
           return;
       }
+    }
+
+    if (e.right.inferredType instanceof ArrayType at &&
+        e.index.inferredType == Types.INT) {
+      setType(e, at.component());
+      return;
     }
 
     IRClass irc = resolveIRClass(e);
@@ -1516,6 +1551,26 @@ final class InferencePass extends DefaultVisitor {
     }
 
     if (typeNode instanceof ELNode.ARRAY a) {
+      if (a.type instanceof ELNode.IDENT id) {
+        switch (id.id) {
+        case "boolean":
+          return new ArrayType(boolean.class, a.dims.length);
+        case "byte":
+          return new ArrayType(byte.class, a.dims.length);
+        case "short":
+          return new ArrayType(short.class, a.dims.length);
+        case "char":
+          return new ArrayType(char.class, a.dims.length);
+        case "int":
+          return new ArrayType(int.class, a.dims.length);
+        case "long":
+          return new ArrayType(long.class, a.dims.length);
+        case "float":
+          return new ArrayType(float.class, a.dims.length);
+        case "double":
+          return new ArrayType(double.class, a.dims.length);
+        }
+      }
       return new ArrayType(resolveAnnotatedType(a.type), a.dims.length);
     }
 

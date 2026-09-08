@@ -38,7 +38,7 @@ public abstract class Type {
         dims++;
         javaClass = javaClass.getComponentType();
       }
-      return new ArrayType(of(javaClass), dims);
+      return new ArrayType(javaClass, dims);
     }
 
     Type t = Types.PRIMITIVES.get(TypeCoercion.getBoxedType(javaClass));

@@ -42,6 +42,7 @@ import org.elite.parser.Token;
 import org.elite.resolver.ClassResolver;
 import org.elite.resolver.MethodResolver;
 import org.elite.resources.Resources;
+import org.elite.type.ArrayType;
 import org.elite.type.ClassObjectType;
 import org.elite.type.ConstructorType;
 import org.elite.type.ELiteClassObjectType;
@@ -808,6 +809,22 @@ public class IRBuilder extends ELNode.Visitor {
       if (node.memberType instanceof org.elite.type.MethodType mt) {
         // Invoke getter method.
         buildMethodCall(mt.method(), node.right, new ELNode[0]);
+        return;
+      }
+    }
+
+    if (node.right.inferredType instanceof ArrayType at &&
+        node.index.inferredType == Types.INT) {
+      Class<?> arrayType = at.javaClass();
+      if (arrayType != null) {
+        Class<?> componentType = arrayType.getComponentType();
+        build(node.right);
+        emitter.emitCheckCast(at.javaClass());
+        build(node.index);
+        emitter.emitUnbox(Integer.TYPE);
+        emitter.emitLoadArray(componentType);
+        if (componentType.isPrimitive())
+          emitter.emitBox(componentType);
         return;
       }
     }
@@ -3047,9 +3064,25 @@ public class IRBuilder extends ELNode.Visitor {
       return;
     }
 
-    if (node.left instanceof ELNode.ACCESS access) {
+    if (node.left instanceof ELNode.ACCESS acc) {
+      if (acc.right.inferredType instanceof ArrayType at &&
+          acc.index.inferredType == Types.INT) {
+        Class<?> arrayType = at.javaClass();
+        if (arrayType != null) {
+          Class<?> componentType = arrayType.getComponentType();
+          build(acc.right);
+          emitter.emitCheckCast(at.javaClass());
+          build(acc.index);
+          emitter.emitUnbox(Integer.TYPE);
+          buildCoerce(node.right, componentType);
+          emitter.emitStoreArray(componentType);
+          emitter.emitPushNull();
+          return;
+        }
+      }
+
       build(node.right);
-      buildStoreProperty(access);
+      buildStoreProperty(acc);
       return;
     }
 
@@ -3555,7 +3588,7 @@ public class IRBuilder extends ELNode.Visitor {
       countSlot = new Slot();
       build(range.end);
       if (range.exclude) {
-        buildConst(1L);
+        buildConst(1);
         emitter.emitSub();
       }
       varSlot.load();
@@ -3564,13 +3597,13 @@ public class IRBuilder extends ELNode.Visitor {
         stepSlot.load();
         emitter.emitDiv();
       }
-      buildConst(1L);
+      buildConst(1);
       emitter.emitAdd();
       countSlot.store(); // count = (end - begin) / step + 1
       emitter.emitPop();
     }
 
-    buildConst(0L);
+    buildConst(0);
     idxSlot.store();
     emitter.emitPop();
 
@@ -3601,7 +3634,7 @@ public class IRBuilder extends ELNode.Visitor {
     // Generate loop step.
     startBlock(contB);
     idxSlot.load();
-    buildConst(1L);
+    buildConst(1);
     emitter.emitAdd();
     idxSlot.store();
     emitter.emitPop();
@@ -3610,7 +3643,7 @@ public class IRBuilder extends ELNode.Visitor {
     if (stepSlot != null)
       stepSlot.load();
     else
-      buildConst(1L);
+      buildConst(1);
     emitDynBinOp(Token.ADD);
     varSlot.store();
     emitter.emitPop();

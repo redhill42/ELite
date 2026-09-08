@@ -15,6 +15,7 @@
  */
 package org.elite.type;
 
+import org.elite.eval.TypeCoercion;
 import java.lang.reflect.Array;
 
 /**
@@ -22,10 +23,22 @@ import java.lang.reflect.Array;
  */
 public final class ArrayType extends Type {
   private final Type element;
+  private final boolean primitive;
   private final int dims;
 
+  public ArrayType(Class<?> elementType, int dims) {
+    this.element = Type.of(elementType);
+    this.primitive = elementType.isPrimitive();
+    this.dims = dims;
+  }
+
   public ArrayType(Type element, int dims) {
+    this(element, false, dims);
+  }
+
+  private ArrayType(Type element, boolean primitive, int dims) {
     this.element = element;
+    this.primitive = primitive;
     this.dims = dims;
   }
 
@@ -37,27 +50,42 @@ public final class ArrayType extends Type {
     return dims;
   }
 
+  public Type component() {
+    if (dims > 1)
+      return new ArrayType(element, primitive, dims - 1);
+    return element;
+  }
+
   @Override
   public Class<?> javaClass() {
-    Class<?> componentType = element.javaClass();
-    if (componentType == null)
+    Class<?> elementType = element.javaClass();
+    if (elementType == null)
       return null;
-    return Array.newInstance(componentType, dims).getClass();
+    if (primitive)
+      elementType = TypeCoercion.getUnboxedType(elementType);
+    return Array.newInstance(elementType, new int[dims]).getClass();
   }
 
   @Override
   public String toString() {
-    return element + "[]".repeat(dims);
+    if (primitive) {
+      Class<?> elementType = element.javaClass();
+      elementType = TypeCoercion.getUnboxedType(elementType);
+      return elementType.getName() + "[]".repeat(dims);
+    } else {
+      return element + "[]".repeat(dims);
+    }
   }
 
   @Override
   public boolean equals(Object o) {
     return o instanceof ArrayType that &&
-           dims == that.dims && element.equals(that.element);
+           dims == that.dims && primitive == that.primitive &&
+           element.equals(that.element);
   }
 
   @Override
   public int hashCode() {
-    return element.hashCode() * 31 + dims;
+    return (element.hashCode() * 31 + dims) * 32 + (primitive ? 1 : 0);
   }
 }

@@ -199,10 +199,10 @@ class TypeInferenceTest {
 
   @Test
   void arrayAndNewArray() {
-    assertEquals("Int[][]", typeOf("new int[4][4]"));
+    assertEquals("int[][]", typeOf("new int[4][4]"));
     // ARRAY-with-initializer form exercises the element-merge branch:
     // [1,2]-style list literals are CONS chains (List[Int]), not arrays.
-    assertEquals("Int[]", typeOf("new int[2](1, 2)"));
+    assertEquals("int[]", typeOf("new int[2](1, 2)"));
   }
 
   @Test
