@@ -1116,13 +1116,16 @@ public class BytecodeCompiler {
   
       // Copy arguments to local slots.
       if (fn.paramCount() != 0) {
+        Class<?>[] paramTypes = fn.paramTypes();
         mc.ALOAD(S_ARGS());
         for (int i = 0; i < fn.paramCount(); i++) {
           if (i != fn.paramCount() - 1)
             mc.DUP();
           mc.PUSH(i)
-            .AALOAD()
-            .ASTORE(SLOT(i));
+            .AALOAD();
+          if (paramTypes != null && paramTypes[i] != null)
+            emitCoerce(paramTypes[i]);
+          mc.ASTORE(SLOT(i));
         }
       }
   

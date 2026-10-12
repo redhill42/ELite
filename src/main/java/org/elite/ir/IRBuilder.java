@@ -1681,6 +1681,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Allocate slots for inline function local variables.
     Slot[] slots = new Slot[fn.maxLocals()];
+    Class<?>[] paramTypes = fn.paramTypes();
     for (int i = 0; i < args.length; i++) {
       // If the slot never read, no need to allocate new slot. Argument still
       // need to build for side effects. Constant argument will be discarded
@@ -1698,14 +1699,18 @@ public class IRBuilder extends ELNode.Visitor {
           slots[i] = new Slot(ident);
           continue;
         }
-        if (args[i] instanceof ELNode.Constant) {
+        if (args[i] instanceof ELNode.Constant &&
+            (paramTypes == null || paramTypes[i] == null)) {
           slots[i] = null;
           continue;
         }
       }
 
       // Build argument and store to local slot.
-      build(args[i]);
+      if (paramTypes != null && paramTypes[i] != null)
+        buildCoerce(args[i], paramTypes[i]);
+      else
+        build(args[i]);
       slots[i] = new Slot();
       slots[i].store();
       emitter.emitPop();
@@ -1757,6 +1762,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     // Allocate slots for function local variables.
     Slot[] slots = new Slot[fn.maxLocals()];
+    Class<?>[] paramTypes = fn.paramTypes();
     for (int i = 0; i < args.length; i++) {
       if (readSlots.get(i)) {
         if (!modSlots.get(i)) {
@@ -1764,6 +1770,8 @@ public class IRBuilder extends ELNode.Visitor {
         } else {
           slots[i] = new Slot();
           args[i].load();
+          if (paramTypes != null && paramTypes[i] != null)
+            buildCoerce(paramTypes[i]);
           slots[i].store();
           emitter.emitPop();
         }
@@ -3861,22 +3869,6 @@ public class IRBuilder extends ELNode.Visitor {
     // pre-allocated slot, avoiding collisions.
     reserveSlots(node.scope.maxSlots);
 
-    // Initialize function parameters.
-    if (node.inferredType instanceof FunctionType ftype) {
-      assert ftype.params().length == node.vars.length;
-      for (int i = 0; i < node.vars.length; i++) {
-        Class<?> paramType = ftype.params()[i].javaClass();
-        if (paramType != null && paramType != Object.class &&
-            !(node.varargs && i == node.vars.length - 1)) {
-          emitter.emitPushCtx();
-          emitter.emitPushVar(i);
-          if (expandoClass == null || i != 0)
-            buildCoerce(paramType);
-          emitter.emitStoreVarPop(i);
-        }
-      }
-    }
-
     // Define globals for captured lamba parameters.
     for (ELNode.DEFINE var : node.vars) {
       if (var.symbol != null && var.symbol.captured) {
@@ -3895,7 +3887,22 @@ public class IRBuilder extends ELNode.Visitor {
     // current implementation where we lacks type inferrer.
     emitReturn(node.rtype);
 
-    return finish(getDefaultValues(node.vars));
+    // Initialize function parameters.
+    Class<?>[] paramTypes = null;
+    if (node.inferredType instanceof FunctionType ftype) {
+      assert ftype.params().length == node.vars.length;
+      paramTypes = new Class<?>[node.vars.length];
+      for (int i = 0; i < node.vars.length; i++) {
+        Class<?> paramType = ftype.params()[i].javaClass();
+        if (paramType != null && paramType != Object.class &&
+            !(node.varargs && i == node.vars.length - 1) &&
+            (expandoClass == null || i != 0)) {
+          paramTypes[i] = paramType;
+        }
+      }
+    }
+
+    return finish(paramTypes, getDefaultValues(node.vars));
   }
 
   private void emitSuperConstructor(int pos, IRClass initClass) {
@@ -4862,7 +4869,7 @@ public class IRBuilder extends ELNode.Visitor {
 
   // ── Finalization ──
 
-  IRFunction finish(Object[] defaultValues) {
+  IRFunction finish(Class<?>[] paramTypes, Object[] defaultValues) {
     // Finish current block.
     blocks.add(new Block(currentBlockId, emitter.toArray(), linePcMapping));
 
@@ -4921,7 +4928,7 @@ public class IRBuilder extends ELNode.Visitor {
 
     func.populate(merged.toArray(), maxLocals, offsets,
                   constants.toArray(new Object[0]),
-                  buildDebugInfo(), defaultValues);
+                  buildDebugInfo(), paramTypes, defaultValues);
     return func;
   }
 
@@ -5347,7 +5354,8 @@ public class IRBuilder extends ELNode.Visitor {
     if (nodeType != null) {
       if (toType.isAssignableFrom(nodeType)) {
         build(node);
-        emitter.emitCheckCast(toType);
+        if (!(node instanceof ELNode.Constant))
+          emitter.emitCheckCast(toType);
         return;
       }
 
@@ -5379,6 +5387,17 @@ public class IRBuilder extends ELNode.Visitor {
           build(node);
           emitter.emitCoerce(nodeType, toType);
         }
+        return;
+      }
+
+      if (from.isPrimitive() && to == BigInteger.class) {
+        if (node instanceof ELNode.NUMBER num) {
+          buildConstUnbox(num.value.longValue());
+        } else {
+          build(node);
+          emitter.emitCoerce(nodeType, long.class);
+        }
+        emitInvokeMethod(BigInteger.class, "valueOf", long.class);
         return;
       }
     }
@@ -5451,7 +5470,7 @@ public class IRBuilder extends ELNode.Visitor {
     b.build(node);
     b.emitter.emitReturn();
     b.failIfErrors();
-    return b.finish(null);
+    return b.finish(null, null);
   }
 
   public static IRProgram compile(ELContext elctx, ELProgram program) {
@@ -5491,7 +5510,7 @@ public class IRBuilder extends ELNode.Visitor {
     }
 
     b.failIfErrors();
-    b.finish(null);
+    b.finish(null, null);
     return output;
   }
 

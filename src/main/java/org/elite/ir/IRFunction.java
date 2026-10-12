@@ -64,6 +64,11 @@ public class IRFunction {
   private DebugInfo debugInfo;
 
   /**
+   * Annotated parameter types.
+   */
+  private Class<?>[] paramTypes;
+
+  /**
    * Default parameter values (parallel to params; null entries = no default).
    * Simple literals are evaluated at compile time; null for complex
    * expressions.
@@ -92,12 +97,13 @@ public class IRFunction {
   // Populate IRFunction with code after compilation.
   void populate(int[] code, int maxLocals, int[] blockOffsets,
                 Object[] constantPool, DebugInfo debugInfo,
-                Object[] defaultValues) {
+                Class<?>[] paramTypes, Object[] defaultValues) {
     this.code = code;
     this.maxLocals = maxLocals;
     this.blockOffsets = blockOffsets;
     this.constantPool = constantPool;
     this.debugInfo = debugInfo;
+    this.paramTypes = paramTypes;
     this.defaultValues = defaultValues;
   }
 
@@ -119,6 +125,10 @@ public class IRFunction {
 
   public String[] paramNames() {
     return paramNames;
+  }
+
+  public Class<?>[] paramTypes() {
+    return paramTypes;
   }
 
   public boolean isVarArgs() {
